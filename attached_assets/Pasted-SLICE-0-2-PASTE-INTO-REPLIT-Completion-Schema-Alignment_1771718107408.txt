@@ -1,0 +1,141 @@
+SLICE 0.2 (PASTE INTO REPLIT): Completion Schema Alignment (Sign-off + CompletedAt)
+
+Objective
+Make task completion records match real contractor workflow and be future-proof for work history and verification.
+
+Scope
+
+Update task_completions schema + Zod validators
+
+Update completion endpoint validation + storage logic
+
+Update Task Detail completion UI to capture required fields
+
+Keep optimistic locking and 409 conflict behavior unchanged
+
+Required Changes
+1) Database schema changes (shared/schema.ts)
+
+Update task_completions to include:
+
+employeeSignOffName (string, required)
+
+completedAt (timestamp, required)
+
+default to now() on the server if not supplied
+
+Keep existing:
+
+taskId
+
+completedBy
+
+notes
+
+Important: use drizzle-kit push to apply the schema change.
+
+2) API: Completion endpoint validation
+
+Update POST /api/tasks/:id/complete so it requires:
+
+Request body must include:
+
+version (required, used for optimistic locking)
+
+employeeSignOffName (required)
+
+completedAt (optional in request; server defaults to now)
+
+notes (optional)
+
+Behavior:
+
+Verify access (no regression)
+
+Verify version (no regression)
+
+Create a task_completions row with:
+
+taskId
+
+completedBy = logged-in user id
+
+employeeSignOffName
+
+completedAt (server timestamp if not provided)
+
+notes
+
+Set task status to completed
+
+Increment task version and update updatedAt
+
+Return response:
+
+Updated task (including new version)
+
+Completion record (or completion id)
+
+3) Mobile UI: Task completion form
+
+In app/task/[id].tsx:
+
+Add required input: Employee Sign-off Name
+
+Add optional input: Completed At (defaults to current time)
+
+Keep notes input
+
+Completion button should be disabled until sign-off name is provided
+
+Offline behavior:
+
+If offline completion is supported already, ensure the queued completion payload includes:
+
+employeeSignOffName
+
+completedAt
+
+notes
+
+taskVersionAtOpen
+
+4) Backward compatibility
+
+If any existing completion records exist:
+
+Allow display without crashing (e.g., show “(unknown)” sign-off if null),
+
+BUT new completions must require the fields going forward.
+
+Acceptance Tests
+
+Completing a task without employeeSignOffName → returns 400 with validation error.
+
+Completing a task with sign-off succeeds:
+
+task status becomes completed
+
+task version increments
+
+a completion record is created with employeeSignOffName + completedAt
+
+Conflict case:
+
+completing with stale version still returns 409 VERSION_CONFLICT (no regression)
+
+UI:
+
+completion button is disabled until sign-off name is filled
+
+completedAt defaults to now
+
+Out of Scope
+
+Admin verification workflow
+
+Expanded completion fields (time spent/materials/follow-up)
+
+Offline outbox refactor (Slice 0.3)
+
+Attachments pipeline refactor (later slice)
