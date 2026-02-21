@@ -1,6 +1,11 @@
-import React, { createContext, useContext, useCallback, type ReactNode } from 'react';
+import React, { createContext, useContext, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const PUSH_TOKEN_KEY = 'push_token';
 
 type User = {
   id: string;
@@ -19,14 +24,60 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+async function registerPushTokenWithServer() {
+  if (Platform.OS === 'web') return;
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const token = tokenData.data;
+    const platform = Platform.OS as 'ios' | 'android';
+
+    await apiRequest('POST', '/api/push-tokens', { token, platform });
+    await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
+  } catch (e) {
+    console.warn('Push token registration failed:', e);
+  }
+}
+
+async function unregisterPushToken() {
+  if (Platform.OS === 'web') return;
+  try {
+    const token = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+    if (token) {
+      await apiRequest('DELETE', '/api/push-tokens', { token });
+      await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
+    }
+  } catch (e) {
+    console.warn('Push token removal failed:', e);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const pushTokenRegistered = useRef(false);
 
   const { data: user, isLoading } = useQuery<User | null>({
     queryKey: ['/api/auth/me'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
     staleTime: Infinity,
   });
+
+  useEffect(() => {
+    if (user && !pushTokenRegistered.current) {
+      pushTokenRegistered.current = true;
+      registerPushTokenWithServer();
+    }
+    if (!user) {
+      pushTokenRegistered.current = false;
+    }
+  }, [user]);
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
@@ -50,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
+      await unregisterPushToken();
       await apiRequest('POST', '/api/auth/logout');
     },
     onSuccess: () => {
