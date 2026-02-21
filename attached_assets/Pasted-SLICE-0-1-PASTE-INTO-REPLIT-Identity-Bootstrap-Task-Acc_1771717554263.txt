@@ -1,0 +1,92 @@
+SLICE 0.1 (PASTE INTO REPLIT): Identity Bootstrap + Task Access Consistency
+
+Objective
+Stabilize foundation behavior so the app always has deterministic identity + community context, and contractors only see tasks assigned to them.
+
+Scope
+
+Update GET /api/auth/me to return a bootstrap payload
+
+Harden GET /api/tasks rules (contractor assigned-only + community membership validation)
+
+Ensure UI uses active community consistently
+
+Required Behaviors
+
+Bootstrap payload
+
+Modify GET /api/auth/me to return:
+
+user (safe user object, no password)
+
+communities:
+
+admin: all communities
+
+contractor: only communities from community_members
+
+defaultCommunityId:
+
+admin: first community in list (or null if none)
+
+contractor: first assigned community (or null if none)
+
+Task listing permissions
+
+Contractors can only list tasks where tasks.assignedTo == loggedInUserId.
+
+If a contractor provides ?communityId=<id>:
+
+server must verify the contractor is a member of that community via community_members
+
+if not a member, return 403
+
+if a member, filter to tasks assigned to them AND that community
+
+Admin behavior:
+
+GET /api/tasks?communityId=<id> returns all tasks in that community
+
+GET /api/tasks (no communityId) may return all tasks (optional but helpful for admin)
+
+Client community selection
+
+On login, client calls GET /api/auth/me and stores:
+
+user
+
+communities
+
+defaultCommunityId
+
+CommunityContext:
+
+if no active community selected, set it to:
+
+previously saved activeCommunityId from AsyncStorage if it exists and is still allowed
+
+else defaultCommunityId
+
+Tasks screen must fetch using ?communityId=<activeCommunityId>.
+
+Acceptance Tests
+
+Contractor logs in → /api/auth/me returns only assigned communities.
+
+Contractor calls /api/tasks?communityId=<unassigned> → receives 403.
+
+Contractor calls /api/tasks?communityId=<assigned> → receives only tasks assigned to them.
+
+Admin calls /api/tasks?communityId=<id> → receives all tasks in that community.
+
+Task detail /api/tasks/:id remains protected (no regressions).
+
+Out of Scope
+
+Community admin role
+
+Completion schema changes
+
+Offline queue improvements
+
+Maps / MBTiles
