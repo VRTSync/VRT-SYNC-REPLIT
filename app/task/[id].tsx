@@ -71,13 +71,13 @@ export default function TaskDetailScreen() {
   const [showCompleteForm, setShowCompleteForm] = useState(false);
 
   const { data: task, isLoading } = useQuery<Task>({
-    queryKey: ['/api/tasks', `/${id}`],
+    queryKey: [`/api/tasks/${id}`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
   });
 
   const { data: completions = [] } = useQuery<Completion[]>({
-    queryKey: ['/api/tasks', `/${id}`, '/completions'],
+    queryKey: [`/api/tasks/${id}/completions`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
   });
@@ -160,7 +160,7 @@ export default function TaskDetailScreen() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks', `/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
 
       Alert.alert('Task Completed', 'The task has been marked as complete.', [
         { text: 'OK', onPress: () => router.back() },

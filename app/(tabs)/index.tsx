@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getQueryFn } from '@/lib/query-client';
+import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
@@ -50,9 +50,14 @@ export default function TasksScreen() {
   const { isOnline, cachedTasks, cacheTasks, pendingCompletions } = useOffline();
   const insets = useSafeAreaInsets();
 
+  const communityId = activeCommunity?.id;
   const { data: serverTasks, isLoading, refetch } = useQuery<Task[]>({
-    queryKey: ['/api/tasks', activeCommunity?.id ? `?communityId=${activeCommunity.id}` : ''],
-    queryFn: getQueryFn({ on401: 'throw' }),
+    queryKey: ['/api/tasks', { communityId }],
+    queryFn: async () => {
+      const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
+      const res = await apiRequest('GET', route);
+      return res.json();
+    },
     enabled: !!activeCommunity && isOnline,
   });
 

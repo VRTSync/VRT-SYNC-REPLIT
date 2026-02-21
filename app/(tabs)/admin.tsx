@@ -67,7 +67,7 @@ export default function AdminScreen() {
   });
 
   const { data: members = [] } = useQuery<Member[]>({
-    queryKey: ['/api/communities', `/${activeCommunity?.id}`, '/members'],
+    queryKey: [`/api/communities/${activeCommunity?.id}/members`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!activeCommunity && user?.role === 'admin',
   });

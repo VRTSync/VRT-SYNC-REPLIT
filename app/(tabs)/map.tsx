@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getQueryFn } from '@/lib/query-client';
+import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 
 type Task = {
@@ -31,9 +31,14 @@ export default function MapScreen() {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [NativeMapComponent, setNativeMapComponent] = useState<React.ComponentType<any> | null>(null);
 
+  const communityId = activeCommunity?.id;
   const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ['/api/tasks', activeCommunity?.id ? `?communityId=${activeCommunity.id}` : ''],
-    queryFn: getQueryFn({ on401: 'throw' }),
+    queryKey: ['/api/tasks', { communityId }],
+    queryFn: async () => {
+      const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
+      const res = await apiRequest('GET', route);
+      return res.json();
+    },
     enabled: !!activeCommunity,
   });
 
