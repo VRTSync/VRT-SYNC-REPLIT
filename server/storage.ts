@@ -144,9 +144,15 @@ export async function createAttachment(data: {
   fileRef: string;
   url: string;
   uploadedBy: string;
+  idempotencyKey?: string;
 }): Promise<Attachment> {
   const [attachment] = await db.insert(attachments).values(data).returning();
   return attachment;
+}
+
+export async function getAttachmentByIdempotencyKey(key: string): Promise<Attachment | null> {
+  const [row] = await db.select().from(attachments).where(eq(attachments.idempotencyKey, key));
+  return row || null;
 }
 
 export async function getAttachmentsByCompletion(taskCompletionId: string): Promise<Attachment[]> {

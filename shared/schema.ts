@@ -78,6 +78,7 @@ export const attachments = pgTable("attachments", {
   fileRef: text("file_ref").notNull(),
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  idempotencyKey: varchar("idempotency_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

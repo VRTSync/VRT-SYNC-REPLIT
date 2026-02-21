@@ -167,18 +167,30 @@ export default function TaskDetailScreen() {
       const res = await apiRequest('POST', `/api/tasks/${task.id}/complete`, completionPayload);
       const { task: updatedTask, completion } = await res.json();
 
+      let failedUploads = 0;
       for (const photoUri of photos) {
-        try {
-          const file = new ExpoFile(photoUri);
-          const uploadURL = await uploadFileToStorage(file);
+        const idempotencyKey = Crypto.randomUUID();
+        let uploaded = false;
+        for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
+          try {
+            const file = new ExpoFile(photoUri);
+            const uploadURL = await uploadFileToStorage(file);
 
-          await apiRequest('POST', `/api/tasks/${task.id}/attachments`, {
-            taskCompletionId: completion.id,
-            uploadURL,
-          });
-        } catch (uploadError) {
-          console.error('Photo upload failed:', uploadError);
+            await apiRequest('POST', `/api/tasks/${task.id}/attachments`, {
+              taskCompletionId: completion.id,
+              uploadURL,
+              idempotencyKey,
+            });
+            uploaded = true;
+          } catch (uploadError) {
+            console.error(`Photo upload attempt ${attempt + 1} failed:`, uploadError);
+            if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          }
         }
+        if (!uploaded) failedUploads++;
+      }
+      if (failedUploads > 0) {
+        console.warn(`${failedUploads} photo(s) failed to upload after retries`);
       }
 
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });

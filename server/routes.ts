@@ -296,9 +296,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!allowed) {
         return res.status(403).json({ error: "You do not have access to this task" });
       }
-      const { taskCompletionId, uploadURL } = req.body;
+      const { taskCompletionId, uploadURL, idempotencyKey } = req.body;
       if (!taskCompletionId || !uploadURL) {
         return res.status(400).json({ error: "taskCompletionId and uploadURL are required" });
+      }
+
+      if (idempotencyKey) {
+        const existing = await storage.getAttachmentByIdempotencyKey(idempotencyKey);
+        if (existing) {
+          return res.status(200).json(existing);
+        }
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -312,6 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileRef: objectPath,
         url: objectPath,
         uploadedBy: req.session.userId!,
+        idempotencyKey: idempotencyKey || undefined,
       });
 
       res.status(201).json(attachment);
