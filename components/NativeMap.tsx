@@ -91,9 +91,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
   callout: { width: 200, padding: 4 },
-  calloutTitle: { fontSize: 14, fontWeight: '600', color: '#222' },
+  calloutTitle: { fontSize: 14, fontWeight: '600', color: '#0C1D31' },
   calloutAddress: { fontSize: 12, color: '#666', marginTop: 2 },
-  calloutAction: { fontSize: 11, color: '#1a73e8', marginTop: 4, fontWeight: '500' },
+  calloutAction: { fontSize: 11, color: '#25C1AC', marginTop: 4, fontWeight: '500' },
   legend: {
     position: 'absolute',
     bottom: 100,
