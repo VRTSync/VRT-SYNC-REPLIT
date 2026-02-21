@@ -1,9 +1,9 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
-  users, communities, communityMembers, tasks, taskCompletions, attachments,
+  users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   type User, type InsertUser, type Community, type CommunityMember,
-  type Task, type TaskCompletion, type Attachment
+  type Task, type TaskCompletion, type Attachment, type PushToken
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -149,4 +149,34 @@ export async function getAttachmentsByCompletion(taskCompletionId: string): Prom
   return db.select().from(attachments)
     .where(eq(attachments.taskCompletionId, taskCompletionId))
     .orderBy(desc(attachments.createdAt));
+}
+
+export async function registerPushToken(userId: string, token: string, platform: string): Promise<PushToken> {
+  const existing = await db.select().from(pushTokens)
+    .where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
+  if (existing.length > 0) {
+    const [updated] = await db.update(pushTokens)
+      .set({ updatedAt: new Date() })
+      .where(eq(pushTokens.id, existing[0].id))
+      .returning();
+    return updated;
+  }
+  const [created] = await db.insert(pushTokens).values({ userId, token, platform }).returning();
+  return created;
+}
+
+export async function removePushToken(userId: string, token: string): Promise<void> {
+  await db.delete(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
+}
+
+export async function getAllUsers(): Promise<User[]> {
+  return db.select().from(users).orderBy(users.displayName);
+}
+
+export async function updateUserRole(userId: string, role: "contractor" | "admin"): Promise<User | null> {
+  const [updated] = await db.update(users)
+    .set({ role })
+    .where(eq(users.id, userId))
+    .returning();
+  return updated || null;
 }

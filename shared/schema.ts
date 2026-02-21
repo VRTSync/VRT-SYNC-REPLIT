@@ -77,12 +77,28 @@ export const attachments = pgTable("attachments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  token: text("token").notNull(),
+  platform: text("platform").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
+  user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   communityMembers: many(communityMembers),
   assignedTasks: many(tasks, { relationName: "assignedTasks" }),
   createdTasks: many(tasks, { relationName: "createdTasks" }),
   completions: many(taskCompletions),
   uploadedAttachments: many(attachments),
+  pushTokens: many(pushTokens),
 }));
 
 export const communitiesRelations = relations(communities, ({ many }) => ({
@@ -147,6 +163,11 @@ export const completeTaskSchema = z.object({
   version: z.number(),
 });
 
+export const registerPushTokenSchema = z.object({
+  token: z.string().min(1),
+  platform: z.enum(["ios", "android", "web"]),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -154,3 +175,4 @@ export type CommunityMember = typeof communityMembers.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type TaskCompletion = typeof taskCompletions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
+export type PushToken = typeof pushTokens.$inferSelect;

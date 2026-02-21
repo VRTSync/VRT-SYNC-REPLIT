@@ -4,7 +4,7 @@ import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./a
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
-import { insertCommunitySchema, insertTaskSchema, completeTaskSchema } from "@shared/schema";
+import { insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupSession(app);
@@ -318,6 +318,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get contractors error:", error);
       res.status(500).json({ error: "Failed to fetch contractors" });
+    }
+  });
+
+  app.get("/api/users", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const allUsers = await storage.getAllUsers();
+      res.json(allUsers.map(({ password: _, ...u }) => u));
+    } catch (error) {
+      console.error("Get users error:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.put("/api/users/:id/role", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { role } = req.body;
+      if (role !== "admin" && role !== "contractor") {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      if (req.params.id === req.session.userId) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+      const updated = await storage.updateUserRole(req.params.id as string, role);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Update role error:", error);
+      res.status(500).json({ error: "Failed to update role" });
+    }
+  });
+
+  app.post("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const parsed = registerPushTokenSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const pushToken = await storage.registerPushToken(
+        req.session.userId!,
+        parsed.data.token,
+        parsed.data.platform,
+      );
+      res.status(201).json(pushToken);
+    } catch (error) {
+      console.error("Register push token error:", error);
+      res.status(500).json({ error: "Failed to register push token" });
+    }
+  });
+
+  app.delete("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return res.status(400).json({ error: "token is required" });
+      }
+      await storage.removePushToken(req.session.userId!, token);
+      res.json({ message: "Push token removed" });
+    } catch (error) {
+      console.error("Remove push token error:", error);
+      res.status(500).json({ error: "Failed to remove push token" });
     }
   });
 
