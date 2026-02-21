@@ -205,6 +205,7 @@ export default function AdminScreen() {
     try {
       await apiRequest('POST', `/api/communities/${communityId}/members`, { userId });
       queryClient.invalidateQueries({ queryKey: ['/api/communities'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${communityId}/members`] });
       Alert.alert('Success', 'Added to community');
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to add to community');
@@ -221,6 +222,7 @@ export default function AdminScreen() {
           try {
             await apiRequest('DELETE', `/api/communities/${communityId}/members/${userId}`);
             queryClient.invalidateQueries({ queryKey: ['/api/communities'] });
+            queryClient.invalidateQueries({ queryKey: [`/api/communities/${communityId}/members`] });
             Alert.alert('Success', 'Removed from community');
           } catch (e: any) {
             Alert.alert('Error', e.message || 'Failed to remove from community');

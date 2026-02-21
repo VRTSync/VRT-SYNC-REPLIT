@@ -45,9 +45,15 @@ Preferred communication style: Simple, everyday language.
 - **communities** — id, name, description; core organizational unit
 - **community_members** — many-to-many between users and communities
 - **tasks** — belong to a community, have status (pending/in_progress/completed), priority (low/medium/high/urgent), optional geolocation, assignee, version for optimistic concurrency
-- **task_completions** — completion records with notes
-- **attachments** — file references linked to task completions
+- **task_completions** — completion records with notes, employeeSignOffName (required), timeSpentMinutes, materialsUsed, followUpNeeded
+- **attachments** — file references linked to task completions, with idempotencyKey for retry safety
 - **push_tokens** — for push notification support
+
+### Access Control
+- Contractors can only view/complete tasks assigned to them within their communities
+- Admins bypass all access restrictions
+- `canUserAccessTask` and `isUserMemberOfCommunity` helpers enforce security on all task endpoints
+- 403 returned for unauthorized access; 409 for version conflicts (optimistic locking)
 
 ### Frontend Architecture
 - **Expo SDK 54** with Expo Router v6 (file-based routing with typed routes)
