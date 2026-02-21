@@ -63,6 +63,10 @@ export const taskCompletions = pgTable("task_completions", {
   taskId: varchar("task_id").notNull().references(() => tasks.id),
   completedBy: varchar("completed_by").notNull().references(() => users.id),
   notes: text("notes"),
+  employeeSignOffName: text("employee_sign_off_name").notNull().default(''),
+  timeSpentMinutes: integer("time_spent_minutes"),
+  materialsUsed: text("materials_used"),
+  followUpNeeded: text("follow_up_needed"),
   completedAt: timestamp("completed_at").defaultNow().notNull(),
 });
 
@@ -160,6 +164,10 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
 
 export const completeTaskSchema = z.object({
   notes: z.string().optional(),
+  employeeSignOffName: z.string().min(1, "Sign-off name is required"),
+  timeSpentMinutes: z.number().int().positive().optional(),
+  materialsUsed: z.string().optional(),
+  followUpNeeded: z.string().optional(),
   version: z.number(),
 });
 

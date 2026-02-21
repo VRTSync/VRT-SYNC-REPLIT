@@ -39,6 +39,10 @@ type Completion = {
   taskId: string;
   completedBy: string;
   notes: string | null;
+  employeeSignOffName: string;
+  timeSpentMinutes: number | null;
+  materialsUsed: string | null;
+  followUpNeeded: string | null;
   completedAt: string;
   attachments: { id: string; url: string; fileRef: string; createdAt: string }[];
 };
@@ -66,6 +70,10 @@ export default function TaskDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const [notes, setNotes] = useState('');
+  const [signOffName, setSignOffName] = useState('');
+  const [timeSpent, setTimeSpent] = useState('');
+  const [materialsUsed, setMaterialsUsed] = useState('');
+  const [followUpNeeded, setFollowUpNeeded] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
   const [completing, setCompleting] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
@@ -118,7 +126,20 @@ export default function TaskDetailScreen() {
 
   const handleComplete = async () => {
     if (!task) return;
+    if (!signOffName.trim()) {
+      Alert.alert('Required', 'Please enter your sign-off name.');
+      return;
+    }
     setCompleting(true);
+
+    const completionPayload = {
+      version: task.version,
+      notes: notes.trim() || undefined,
+      employeeSignOffName: signOffName.trim(),
+      timeSpentMinutes: timeSpent ? parseInt(timeSpent, 10) : undefined,
+      materialsUsed: materialsUsed.trim() || undefined,
+      followUpNeeded: followUpNeeded.trim() || undefined,
+    };
 
     if (!isOnline) {
       await addPendingCompletion({
@@ -126,6 +147,10 @@ export default function TaskDetailScreen() {
         taskId: task.id,
         version: task.version,
         notes: notes.trim() || undefined,
+        employeeSignOffName: signOffName.trim(),
+        timeSpentMinutes: timeSpent ? parseInt(timeSpent, 10) : undefined,
+        materialsUsed: materialsUsed.trim() || undefined,
+        followUpNeeded: followUpNeeded.trim() || undefined,
         photoUris: photos,
         createdAt: new Date().toISOString(),
       });
@@ -139,10 +164,7 @@ export default function TaskDetailScreen() {
     }
 
     try {
-      const res = await apiRequest('POST', `/api/tasks/${task.id}/complete`, {
-        version: task.version,
-        notes: notes.trim() || undefined,
-      });
+      const res = await apiRequest('POST', `/api/tasks/${task.id}/complete`, completionPayload);
       const { task: updatedTask, completion } = await res.json();
 
       for (const photoUri of photos) {
@@ -244,7 +266,11 @@ export default function TaskDetailScreen() {
               <Text style={styles.completionDate}>
                 {new Date(c.completedAt).toLocaleString()}
               </Text>
+              <Text style={styles.signOffLabel}>Signed off by: {c.employeeSignOffName}</Text>
               {c.notes ? <Text style={styles.completionNotes}>{c.notes}</Text> : null}
+              {c.timeSpentMinutes ? <Text style={styles.completionMeta}>Time: {c.timeSpentMinutes} min</Text> : null}
+              {c.materialsUsed ? <Text style={styles.completionMeta}>Materials: {c.materialsUsed}</Text> : null}
+              {c.followUpNeeded ? <Text style={styles.completionMeta}>Follow-up: {c.followUpNeeded}</Text> : null}
               {c.attachments && c.attachments.length > 0 && (
                 <View style={styles.attachmentRow}>
                   {c.attachments.map((a) => (
@@ -265,6 +291,17 @@ export default function TaskDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Complete Task</Text>
 
+          <Text style={styles.fieldLabel}>Sign-Off Name *</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="Your full name"
+            placeholderTextColor="#999"
+            value={signOffName}
+            onChangeText={setSignOffName}
+            testID="signoff-name"
+          />
+
+          <Text style={styles.fieldLabel}>Completion Notes</Text>
           <TextInput
             style={styles.notesInput}
             placeholder="Add completion notes..."
@@ -274,6 +311,34 @@ export default function TaskDetailScreen() {
             multiline
             numberOfLines={4}
             textAlignVertical="top"
+          />
+
+          <Text style={styles.fieldLabel}>Time Spent (minutes)</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="e.g. 90"
+            placeholderTextColor="#999"
+            value={timeSpent}
+            onChangeText={setTimeSpent}
+            keyboardType="numeric"
+          />
+
+          <Text style={styles.fieldLabel}>Materials Used</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="List materials used..."
+            placeholderTextColor="#999"
+            value={materialsUsed}
+            onChangeText={setMaterialsUsed}
+          />
+
+          <Text style={styles.fieldLabel}>Follow-Up Needed</Text>
+          <TextInput
+            style={styles.fieldInput}
+            placeholder="Any follow-up work required?"
+            placeholderTextColor="#999"
+            value={followUpNeeded}
+            onChangeText={setFollowUpNeeded}
           />
 
           <View style={styles.photoSection}>
@@ -362,9 +427,20 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   completionDate: { fontSize: 12, color: '#999', marginBottom: 4 },
+  signOffLabel: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 2 },
   completionNotes: { fontSize: 14, color: '#555' },
+  completionMeta: { fontSize: 13, color: '#777', marginTop: 2 },
   attachmentRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   attachmentThumb: { width: 60, height: 60, borderRadius: 8 },
+  fieldLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4, marginTop: 8 },
+  fieldInput: {
+    backgroundColor: '#f5f7fa',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: '#333',
+    marginBottom: 4,
+  },
   notesInput: {
     backgroundColor: '#f5f7fa',
     borderRadius: 10,
@@ -372,7 +448,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#333',
     minHeight: 100,
-    marginBottom: 12,
+    marginBottom: 4,
   },
   photoSection: { marginBottom: 12 },
   photoButtons: { flexDirection: 'row', gap: 12 },

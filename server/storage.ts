@@ -124,6 +124,10 @@ export async function createTaskCompletion(data: {
   taskId: string;
   completedBy: string;
   notes?: string;
+  employeeSignOffName: string;
+  timeSpentMinutes?: number;
+  materialsUsed?: string;
+  followUpNeeded?: string;
 }): Promise<TaskCompletion> {
   const [completion] = await db.insert(taskCompletions).values(data).returning();
   return completion;

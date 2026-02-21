@@ -47,8 +47,21 @@ export default function TasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
-  const { isOnline, cachedTasks, cacheTasks, pendingCompletions } = useOffline();
+  const { isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions } = useOffline();
   const insets = useSafeAreaInsets();
+  const [syncing, setSyncing] = React.useState(false);
+
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    try {
+      const result = await syncPendingCompletions();
+      if (result.synced > 0 || result.failed > 0) {
+        refetch();
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const communityId = activeCommunity?.id;
   const { data: serverTasks, isLoading, refetch } = useQuery<Task[]>({
@@ -126,9 +139,26 @@ export default function TasksScreen() {
       {!isOnline && (
         <View style={styles.offlineBanner}>
           <SymbolView name="wifi.slash" size={14} tintColor="#fff" />
-          <Text style={styles.offlineBannerText}>
-            Offline Mode{pendingCompletions.length > 0 ? ` (${pendingCompletions.length} pending)` : ''}
-          </Text>
+          <Text style={styles.offlineBannerText}>Offline Mode</Text>
+        </View>
+      )}
+      {pendingCompletions.length > 0 && (
+        <View style={styles.syncBanner}>
+          <View style={styles.syncInfo}>
+            <Text style={styles.syncBannerText}>
+              {pendingCompletions.filter(c => c.state === 'queued').length > 0 &&
+                `${pendingCompletions.filter(c => c.state === 'queued').length} queued`}
+              {pendingCompletions.filter(c => c.state === 'failed').length > 0 &&
+                `${pendingCompletions.filter(c => c.state === 'queued').length > 0 ? ', ' : ''}${pendingCompletions.filter(c => c.state === 'failed').length} failed`}
+              {pendingCompletions.filter(c => c.state === 'syncing').length > 0 &&
+                ` syncing...`}
+            </Text>
+          </View>
+          {isOnline && (
+            <TouchableOpacity style={styles.syncButton} onPress={handleSyncNow} disabled={syncing}>
+              <Text style={styles.syncButtonText}>{syncing ? 'Syncing...' : 'Sync Now'}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
       <View style={styles.headerBar}>
@@ -219,4 +249,23 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   offlineBannerText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  syncBanner: {
+    backgroundColor: '#fff3e0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ffe0b2',
+  },
+  syncInfo: { flex: 1 },
+  syncBannerText: { fontSize: 13, fontWeight: '500', color: '#e65100' },
+  syncButton: {
+    backgroundColor: '#1a73e8',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  syncButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
 });
