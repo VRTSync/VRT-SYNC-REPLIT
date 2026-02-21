@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image,
 } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -47,13 +47,13 @@ export default function ProfileScreen() {
           onPress={() => setShowCommunities(!showCommunities)}
         >
           <View style={styles.sectionLeft}>
-            <SymbolView name="building.2" size={20} tintColor="#25C1AC" />
+            <Ionicons name="business-outline" size={20} color="#25C1AC" />
             <Text style={styles.sectionTitle}>Communities</Text>
           </View>
-          <SymbolView
-            name={showCommunities ? 'chevron.up' : 'chevron.down'}
+          <Ionicons
+            name={showCommunities ? 'chevron-up' : 'chevron-down'}
             size={14}
-            tintColor="#999"
+            color="#999"
           />
         </TouchableOpacity>
 
@@ -80,7 +80,7 @@ export default function ProfileScreen() {
                     {c.name}
                   </Text>
                   {c.id === activeCommunity?.id && (
-                    <SymbolView name="checkmark.circle.fill" size={18} tintColor="#25C1AC" />
+                    <Ionicons name="checkmark-circle" size={18} color="#25C1AC" />
                   )}
                 </TouchableOpacity>
               ))
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
       </View>
 
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="logout-btn">
-        <SymbolView name="rectangle.portrait.and.arrow.right" size={20} tintColor="#f44336" />
+        <Ionicons name="log-out-outline" size={20} color="#f44336" />
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>

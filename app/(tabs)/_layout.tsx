@@ -2,7 +2,7 @@ import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
-import { SymbolView } from "expo-symbols";
+import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 import React from "react";
 
@@ -65,8 +65,8 @@ function ClassicTabLayout() {
         options={{
           title: "Tasks",
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="checklist" tintColor={color} size={24} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkmark-done-outline" color={color} size={size || 24} />
           ),
         }}
       />
@@ -75,8 +75,8 @@ function ClassicTabLayout() {
         options={{
           title: "Map",
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="map" tintColor={color} size={24} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" color={color} size={size || 24} />
           ),
         }}
       />
@@ -85,8 +85,8 @@ function ClassicTabLayout() {
         options={{
           title: "Admin",
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="gearshape" tintColor={color} size={24} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings-outline" color={color} size={size || 24} />
           ),
         }}
       />
@@ -95,8 +95,8 @@ function ClassicTabLayout() {
         options={{
           title: "Profile",
           headerShown: false,
-          tabBarIcon: ({ color }) => (
-            <SymbolView name="person" tintColor={color} size={24} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" color={color} size={size || 24} />
           ),
         }}
       />

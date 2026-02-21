@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -71,7 +71,7 @@ export default function MapScreen() {
     return (
       <View style={[styles.container, { paddingTop: 67 + insets.top }]}>
         <View style={styles.webFallback}>
-          <SymbolView name="map" size={48} tintColor="#ccc" />
+          <Ionicons name="map-outline" size={48} color="#ccc" />
           <Text style={styles.webFallbackTitle}>Map View</Text>
           <Text style={styles.webFallbackText}>
             The interactive map is available on your mobile device via Expo Go.
@@ -90,7 +90,7 @@ export default function MapScreen() {
                     <Text style={styles.taskListItemTitle}>{t.title}</Text>
                     {t.address && <Text style={styles.taskListItemAddr}>{t.address}</Text>}
                   </View>
-                  <SymbolView name="chevron.right" size={14} tintColor="#999" />
+                  <Ionicons name="chevron-forward" size={14} color="#999" />
                 </TouchableOpacity>
               ))}
             </View>

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { File as ExpoFile } from 'expo-file-system';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -231,7 +231,7 @@ export default function TaskDetailScreen() {
           headerRight: () =>
             task.status !== 'completed' ? (
               <TouchableOpacity onPress={() => setShowCompleteForm(true)}>
-                <SymbolView name="checkmark.circle" size={24} tintColor="#25C1AC" />
+                <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
               </TouchableOpacity>
             ) : null,
         }}
@@ -254,18 +254,18 @@ export default function TaskDetailScreen() {
         <Text style={styles.cardTitle}>Details</Text>
         {task.address ? (
           <View style={styles.detailRow}>
-            <SymbolView name="mappin" size={16} tintColor="#666" />
+            <Ionicons name="location-outline" size={16} color="#666" />
             <Text style={styles.detailText}>{task.address}</Text>
           </View>
         ) : null}
         {task.dueDate ? (
           <View style={styles.detailRow}>
-            <SymbolView name="calendar" size={16} tintColor="#666" />
+            <Ionicons name="calendar-outline" size={16} color="#666" />
             <Text style={styles.detailText}>Due: {new Date(task.dueDate).toLocaleDateString()}</Text>
           </View>
         ) : null}
         <View style={styles.detailRow}>
-          <SymbolView name="number" size={16} tintColor="#666" />
+          <Ionicons name="git-branch-outline" size={16} color="#666" />
           <Text style={styles.detailText}>Version: {task.version}</Text>
         </View>
       </View>
@@ -356,11 +356,11 @@ export default function TaskDetailScreen() {
           <View style={styles.photoSection}>
             <View style={styles.photoButtons}>
               <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-                <SymbolView name="camera" size={20} tintColor="#25C1AC" />
+                <Ionicons name="camera-outline" size={20} color="#25C1AC" />
                 <Text style={styles.photoButtonText}>Camera</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.photoButton} onPress={pickPhoto}>
-                <SymbolView name="photo" size={20} tintColor="#25C1AC" />
+                <Ionicons name="image-outline" size={20} color="#25C1AC" />
                 <Text style={styles.photoButtonText}>Gallery</Text>
               </TouchableOpacity>
             </View>
@@ -374,7 +374,7 @@ export default function TaskDetailScreen() {
                       style={styles.removePhoto}
                       onPress={() => removePhoto(index)}
                     >
-                      <SymbolView name="xmark.circle.fill" size={20} tintColor="#f44336" />
+                      <Ionicons name="close-circle" size={20} color="#f44336" />
                     </TouchableOpacity>
                   </View>
                 ))}

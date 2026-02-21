@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -107,13 +107,13 @@ export default function TasksScreen() {
       <View style={styles.taskFooter}>
         {item.address ? (
           <View style={styles.taskMeta}>
-            <SymbolView name="mappin" size={12} tintColor="#999" />
+            <Ionicons name="location-outline" size={12} color="#999" />
             <Text style={styles.metaText} numberOfLines={1}>{item.address}</Text>
           </View>
         ) : null}
         {item.dueDate ? (
           <View style={styles.taskMeta}>
-            <SymbolView name="calendar" size={12} tintColor="#999" />
+            <Ionicons name="calendar-outline" size={12} color="#999" />
             <Text style={styles.metaText}>
               {new Date(item.dueDate).toLocaleDateString()}
             </Text>
@@ -138,7 +138,7 @@ export default function TasksScreen() {
     <View style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
       {!isOnline && (
         <View style={styles.offlineBanner}>
-          <SymbolView name="wifi.slash" size={14} tintColor="#fff" />
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.offlineBannerText}>Offline Mode</Text>
         </View>
       )}
@@ -170,7 +170,7 @@ export default function TasksScreen() {
 
       {tasks.length === 0 && !isLoading ? (
         <View style={styles.emptyState}>
-          <SymbolView name="clipboard" size={48} tintColor="#ccc" />
+          <Ionicons name="clipboard-outline" size={48} color="#ccc" />
           <Text style={styles.emptyTitle}>No Tasks</Text>
           <Text style={styles.emptySubtitle}>
             {user?.role === 'admin'

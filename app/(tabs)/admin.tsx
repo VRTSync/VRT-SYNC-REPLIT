@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Alert, ActivityIndicator, Platform, Modal, FlatList, Image,
 } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
@@ -106,7 +106,7 @@ export default function AdminScreen() {
   if (user?.role !== 'admin') {
     return (
       <View style={[styles.container, styles.centerContent]}>
-        <SymbolView name="lock" size={48} tintColor="#ccc" />
+        <Ionicons name="lock-closed-outline" size={48} color="#ccc" />
         <Text style={styles.emptyTitle}>Admin Only</Text>
         <Text style={styles.emptySubtitle}>This section is for administrators</Text>
       </View>
@@ -233,11 +233,11 @@ export default function AdminScreen() {
   };
 
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent'];
-  const tabs: { id: TabId; label: string; icon: string }[] = [
-    { id: 'actions', label: 'Actions', icon: 'bolt.fill' },
-    { id: 'users', label: 'Users', icon: 'person.2' },
-    { id: 'members', label: 'Members', icon: 'person.crop.circle.badge.checkmark' },
-    { id: 'reports', label: 'Reports', icon: 'doc.text' },
+  const tabs: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { id: 'actions', label: 'Actions', icon: 'flash-outline' },
+    { id: 'users', label: 'Users', icon: 'people-outline' },
+    { id: 'members', label: 'Members', icon: 'person-circle-outline' },
+    { id: 'reports', label: 'Reports', icon: 'document-text-outline' },
   ];
 
   const memberUserIds = new Set(members.map((m) => m.userId));
@@ -251,10 +251,10 @@ export default function AdminScreen() {
             style={[styles.tab, activeTab === tab.id && styles.tabActive]}
             onPress={() => setActiveTab(tab.id)}
           >
-            <SymbolView
+            <Ionicons
               name={tab.icon}
               size={18}
-              tintColor={activeTab === tab.id ? '#25C1AC' : '#999'}
+              color={activeTab === tab.id ? '#25C1AC' : '#999'}
             />
             <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
               {tab.label}
@@ -271,11 +271,11 @@ export default function AdminScreen() {
 
             <View style={styles.actionGrid}>
               <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateTask(true)}>
-                <SymbolView name="plus.circle" size={28} tintColor="#25C1AC" />
+                <Ionicons name="add-circle-outline" size={28} color="#25C1AC" />
                 <Text style={styles.actionLabel}>Create Task</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateCommunity(true)}>
-                <SymbolView name="building.2" size={28} tintColor="#4caf50" />
+                <Ionicons name="business-outline" size={28} color="#4caf50" />
                 <Text style={styles.actionLabel}>New Community</Text>
               </TouchableOpacity>
             </View>
@@ -323,7 +323,7 @@ export default function AdminScreen() {
                     {u.role}
                   </Text>
                 </View>
-                <SymbolView name="chevron.right" size={14} tintColor="#ccc" />
+                <Ionicons name="chevron-forward" size={14} color="#ccc" />
               </TouchableOpacity>
             ))}
           </>
@@ -353,7 +353,7 @@ export default function AdminScreen() {
                       style={styles.removeBtn}
                       onPress={() => handleRemoveFromCommunity(activeCommunity.id, m.userId)}
                     >
-                      <SymbolView name="xmark.circle" size={20} tintColor="#f44336" />
+                      <Ionicons name="close-circle-outline" size={20} color="#f44336" />
                     </TouchableOpacity>
                   </View>
                 ))}
@@ -379,7 +379,7 @@ export default function AdminScreen() {
                         style={styles.addBtn}
                         onPress={() => handleAddToCommunity(u.id, activeCommunity.id)}
                       >
-                        <SymbolView name="plus.circle.fill" size={24} tintColor="#4caf50" />
+                        <Ionicons name="add-circle" size={24} color="#4caf50" />
                       </TouchableOpacity>
                     </View>
                   ))}
@@ -580,7 +580,7 @@ export default function AdminScreen() {
                 style={styles.roleToggleButton}
                 onPress={() => handleToggleRole(showUserDetail)}
               >
-                <SymbolView name="arrow.left.arrow.right" size={18} tintColor="#25C1AC" />
+                <Ionicons name="swap-horizontal" size={18} color="#25C1AC" />
                 <Text style={styles.roleToggleText}>
                   Switch to {showUserDetail.role === 'admin' ? 'Contractor' : 'Admin'}
                 </Text>
