@@ -14,8 +14,23 @@ type User = {
   role: 'contractor' | 'admin';
 };
 
+type Community = {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+};
+
+type BootstrapPayload = {
+  user: User;
+  communities: Community[];
+  defaultCommunityId: string | null;
+};
+
 type AuthContextType = {
   user: User | null;
+  bootstrapCommunities: Community[];
+  defaultCommunityId: string | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName: string, role: string) => Promise<void>;
@@ -63,11 +78,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const pushTokenRegistered = useRef(false);
 
-  const { data: user, isLoading } = useQuery<User | null>({
+  const { data: bootstrap, isLoading } = useQuery<BootstrapPayload | null>({
     queryKey: ['/api/auth/me'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
     staleTime: Infinity,
   });
+
+  const user = bootstrap?.user ?? null;
+  const bootstrapCommunities = bootstrap?.communities ?? [];
+  const defaultCommunityId = bootstrap?.defaultCommunityId ?? null;
 
   useEffect(() => {
     if (user && !pushTokenRegistered.current) {
@@ -123,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logoutMutation]);
 
   return (
-    <AuthContext.Provider value={{ user: user ?? null, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, bootstrapCommunities, defaultCommunityId, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
