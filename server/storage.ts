@@ -85,6 +85,10 @@ export async function getTaskById(id: string): Promise<Task | undefined> {
   return task;
 }
 
+export async function getAllTasks(): Promise<Task[]> {
+  return db.select().from(tasks).orderBy(desc(tasks.createdAt));
+}
+
 export async function getTasksByCommunity(communityId: string): Promise<Task[]> {
   return db.select().from(tasks)
     .where(eq(tasks.communityId, communityId))

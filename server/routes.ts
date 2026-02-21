@@ -152,11 +152,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
       const communityId = req.query.communityId as string | undefined;
-      if (user?.role === "admin" && communityId) {
-        const allTasks = await storage.getTasksByCommunity(communityId);
+
+      if (user.role === "admin") {
+        if (communityId) {
+          const allTasks = await storage.getTasksByCommunity(communityId);
+          return res.json(allTasks);
+        }
+        const allTasks = await storage.getAllTasks();
         return res.json(allTasks);
       }
+
+      if (communityId) {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) {
+          return res.status(403).json({ error: "You are not a member of this community" });
+        }
+      }
+
       const userTasks = await storage.getTasksForUser(req.session.userId!, communityId);
       res.json(userTasks);
     } catch (error) {

@@ -128,6 +128,21 @@ export function registerAuthRoutes(app: any) {
       return res.status(401).json({ message: "User not found" });
     }
     const { password: _, ...safeUser } = user;
-    res.json(safeUser);
+
+    let communities: any[] = [];
+    if (user.role === "admin") {
+      communities = await storage.getCommunities();
+    } else {
+      const memberships = await storage.getUserCommunities(user.id);
+      communities = memberships.map((m) => m.community);
+    }
+
+    const defaultCommunityId = communities.length > 0 ? communities[0].id : null;
+
+    res.json({
+      user: safeUser,
+      communities,
+      defaultCommunityId,
+    });
   });
 }
