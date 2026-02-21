@@ -218,7 +218,7 @@ export default function TaskDetailScreen() {
     return (
       <View style={styles.loadingContainer}>
         <Stack.Screen options={{ title: 'Loading...' }} />
-        <ActivityIndicator size="large" color="#1a73e8" />
+        <ActivityIndicator size="large" color="#25C1AC" />
       </View>
     );
   }
@@ -231,7 +231,7 @@ export default function TaskDetailScreen() {
           headerRight: () =>
             task.status !== 'completed' ? (
               <TouchableOpacity onPress={() => setShowCompleteForm(true)}>
-                <SymbolView name="checkmark.circle" size={24} tintColor="#1a73e8" />
+                <SymbolView name="checkmark.circle" size={24} tintColor="#25C1AC" />
               </TouchableOpacity>
             ) : null,
         }}
@@ -356,11 +356,11 @@ export default function TaskDetailScreen() {
           <View style={styles.photoSection}>
             <View style={styles.photoButtons}>
               <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-                <SymbolView name="camera" size={20} tintColor="#1a73e8" />
+                <SymbolView name="camera" size={20} tintColor="#25C1AC" />
                 <Text style={styles.photoButtonText}>Camera</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.photoButton} onPress={pickPhoto}>
-                <SymbolView name="photo" size={20} tintColor="#1a73e8" />
+                <SymbolView name="photo" size={20} tintColor="#25C1AC" />
                 <Text style={styles.photoButtonText}>Gallery</Text>
               </TouchableOpacity>
             </View>
@@ -427,9 +427,9 @@ const styles = StyleSheet.create({
   priorityBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   priorityText: { fontSize: 11, fontWeight: '700', color: '#fff' },
   statusLabel: { fontSize: 13, fontWeight: '600', color: '#888' },
-  title: { fontSize: 22, fontWeight: '700', color: '#222' },
+  title: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   description: { fontSize: 15, color: '#555', marginTop: 8, lineHeight: 22 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 12 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#0C1D31', marginBottom: 12 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   detailText: { fontSize: 14, color: '#555' },
   completionItem: {
@@ -468,19 +468,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#e8f0fe',
-    borderRadius: 10,
+    backgroundColor: '#E6F9F6',
+    borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  photoButtonText: { fontSize: 14, fontWeight: '500', color: '#1a73e8' },
+  photoButtonText: { fontSize: 14, fontWeight: '500', color: '#25C1AC' },
   photoPreview: { marginTop: 12 },
   photoItem: { marginRight: 8, position: 'relative' },
   photoThumb: { width: 80, height: 80, borderRadius: 10 },
   removePhoto: { position: 'absolute', top: -6, right: -6 },
   completeButton: {
-    backgroundColor: '#4caf50',
-    borderRadius: 12,
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
     padding: 16,
     alignItems: 'center',
     marginTop: 4,

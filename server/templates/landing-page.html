@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <head>
-    <title>APP_NAME_PLACEHOLDER</title>
+    <title>VRTSync - Contractor Portal</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
@@ -9,12 +9,12 @@
         box-sizing: border-box;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
         padding: 32px 20px;
         text-align: center;
         background: #fff;
-        color: #222;
+        color: #0C1D31;
         line-height: 1.5;
         min-height: 100vh;
       }
@@ -22,11 +22,16 @@
         max-width: 480px;
         margin: 0 auto;
       }
+      .logo {
+        width: 180px;
+        height: auto;
+        margin-bottom: 16px;
+      }
       h1 {
         font-size: 26px;
         font-weight: 600;
         margin: 0;
-        color: #111;
+        color: #0C1D31;
       }
       .subtitle {
         font-size: 15px;
@@ -39,8 +44,8 @@
         margin: 60px 0;
       }
       .spinner {
-        border: 2px solid #ddd;
-        border-top-color: #333;
+        border: 2px solid #E6F9F6;
+        border-top-color: #25C1AC;
         border-radius: 50%;
         width: 32px;
         height: 32px;
@@ -54,7 +59,7 @@
       }
       .loading-text {
         font-size: 16px;
-        color: #444;
+        color: #0C1D31;
       }
       .content {
         display: block;
@@ -68,10 +73,10 @@
 
       .step {
         padding: 24px;
-        border: 1px solid #ddd;
+        border: 1px solid #e0e0e0;
         border-radius: 12px;
         text-align: center;
-        background: #fafafa;
+        background: #F5F7FA;
       }
       .step-header {
         display: flex;
@@ -83,7 +88,7 @@
       .step-number {
         width: 28px;
         height: 28px;
-        border: 1px solid #999;
+        border: 2px solid #25C1AC;
         border-radius: 50%;
         display: flex;
         align-items: center;
@@ -91,13 +96,13 @@
         font-weight: 600;
         font-size: 14px;
         flex-shrink: 0;
-        color: #555;
+        color: #25C1AC;
       }
       .step-title {
         font-size: 18px;
         font-weight: 600;
         margin: 0;
-        color: #222;
+        color: #0C1D31;
       }
       .step-description {
         font-size: 14px;
@@ -120,16 +125,16 @@
         padding: 12px 20px;
         font-size: 14px;
         font-weight: 500;
-        border: 1px solid #ccc;
-        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        border-radius: 999px;
         text-decoration: none;
-        color: #333;
+        color: #0C1D31;
         background: #fff;
         transition: all 0.15s;
       }
       .store-button:hover {
-        background: #f5f5f5;
-        border-color: #999;
+        background: #E6F9F6;
+        border-color: #25C1AC;
       }
       .store-link {
         display: inline-flex;
@@ -147,7 +152,7 @@
         transition: color 0.15s;
       }
       .store-link:hover {
-        color: #333;
+        color: #25C1AC;
       }
       .store-link .store-icon {
         width: 14px;
@@ -159,13 +164,13 @@
       }
 
       .qr-section {
-        background: #333;
+        background: #0C1D31;
         color: #fff;
-        border-color: #333;
+        border-color: #0C1D31;
       }
       .qr-section .step-number {
-        border-color: rgba(255, 255, 255, 0.5);
-        color: #fff;
+        border-color: #25C1AC;
+        color: #25C1AC;
       }
       .qr-section .step-title {
         color: #fff;
@@ -190,11 +195,11 @@
         padding: 12px 24px;
         font-size: 14px;
         font-weight: 500;
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        border-radius: 8px;
+        border: none;
+        border-radius: 999px;
         text-decoration: none;
-        color: #333;
-        background: #fff;
+        color: #0C1D31;
+        background: #25C1AC;
         transition: opacity 0.15s;
       }
       .open-button:hover {
@@ -263,7 +268,7 @@
       /* Dark mode */
       @media (prefers-color-scheme: dark) {
         body {
-          background: #0d0d0d;
+          background: #0C1D31;
           color: #e0e0e0;
         }
         h1 {
@@ -273,19 +278,19 @@
           color: #999;
         }
         .spinner {
-          border-color: #444;
-          border-top-color: #ccc;
+          border-color: #1a2a3f;
+          border-top-color: #25C1AC;
         }
         .loading-text {
           color: #aaa;
         }
         .step {
-          border-color: #333;
-          background: #1a1a1a;
+          border-color: #1a2a3f;
+          background: #0f2740;
         }
         .step-number {
-          border-color: #666;
-          color: #bbb;
+          border-color: #25C1AC;
+          color: #25C1AC;
         }
         .step-title {
           color: #f0f0f0;
@@ -294,36 +299,36 @@
           color: #888;
         }
         .store-button {
-          border-color: #444;
+          border-color: #1a2a3f;
           color: #e0e0e0;
-          background: #222;
+          background: #0C1D31;
         }
         .store-button:hover {
-          background: #2a2a2a;
-          border-color: #666;
+          background: #1a2a3f;
+          border-color: #25C1AC;
         }
         .store-link {
           color: #888;
         }
         .store-link:hover {
-          color: #ccc;
+          color: #25C1AC;
         }
         .qr-section {
-          background: #111;
-          border-color: #333;
+          background: #071018;
+          border-color: #1a2a3f;
         }
         .qr-section .step-number {
-          border-color: rgba(255, 255, 255, 0.4);
+          border-color: #25C1AC;
         }
         .qr-section .step-description {
           color: rgba(255, 255, 255, 0.6);
         }
         .open-button {
-          background: #f0f0f0;
-          color: #111;
+          background: #25C1AC;
+          color: #0C1D31;
         }
         .open-button:hover {
-          background: #e0e0e0;
+          opacity: 0.85;
         }
       }
     </style>
@@ -336,7 +341,8 @@
       </div>
 
       <div class="content" id="content">
-        <h1>APP_NAME_PLACEHOLDER</h1>
+        <img src="https://vrtsync.com/assets/FINAL-02_1768843649073-eIfol9Dz.png" alt="VRTSync" class="logo" />
+        <h1>Contractor Portal</h1>
         <p class="subtitle">Preview this app on your phone</p>
 
         <div class="steps-container">
@@ -425,7 +431,7 @@
           height: 400,
           data: deepLink,
           dotsOptions: {
-            color: "#333333",
+            color: "#0C1D31",
             type: "rounded",
           },
           backgroundOptions: {
@@ -433,9 +439,11 @@
           },
           cornersSquareOptions: {
             type: "extra-rounded",
+            color: "#25C1AC",
           },
           cornersDotOptions: {
             type: "dot",
+            color: "#25C1AC",
           },
           qrOptions: {
             errorCorrectionLevel: "H",

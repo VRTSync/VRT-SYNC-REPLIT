@@ -254,7 +254,7 @@ export default function AdminScreen() {
             <SymbolView
               name={tab.icon}
               size={18}
-              tintColor={activeTab === tab.id ? '#1a73e8' : '#999'}
+              tintColor={activeTab === tab.id ? '#25C1AC' : '#999'}
             />
             <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
               {tab.label}
@@ -271,7 +271,7 @@ export default function AdminScreen() {
 
             <View style={styles.actionGrid}>
               <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateTask(true)}>
-                <SymbolView name="plus.circle" size={28} tintColor="#1a73e8" />
+                <SymbolView name="plus.circle" size={28} tintColor="#25C1AC" />
                 <Text style={styles.actionLabel}>Create Task</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateCommunity(true)}>
@@ -311,7 +311,7 @@ export default function AdminScreen() {
                 style={styles.userCard}
                 onPress={() => setShowUserDetail(u)}
               >
-                <View style={[styles.memberAvatar, u.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#1a73e8' }]}>
+                <View style={[styles.memberAvatar, u.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#25C1AC' }]}>
                   <Text style={styles.memberAvatarText}>{u.displayName?.charAt(0)?.toUpperCase()}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
@@ -342,7 +342,7 @@ export default function AdminScreen() {
               <>
                 {members.map((m) => (
                   <View key={m.id} style={styles.userCard}>
-                    <View style={[styles.memberAvatar, m.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#1a73e8' }]}>
+                    <View style={[styles.memberAvatar, m.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#25C1AC' }]}>
                       <Text style={styles.memberAvatarText}>{m.displayName?.charAt(0)?.toUpperCase()}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
@@ -561,7 +561,7 @@ export default function AdminScreen() {
             </View>
 
             <View style={styles.userDetailCard}>
-              <View style={[styles.bigAvatar, showUserDetail.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#1a73e8' }]}>
+              <View style={[styles.bigAvatar, showUserDetail.role === 'admin' ? { backgroundColor: '#9c27b0' } : { backgroundColor: '#25C1AC' }]}>
                 <Text style={styles.bigAvatarText}>
                   {showUserDetail.displayName?.charAt(0)?.toUpperCase()}
                 </Text>
@@ -580,7 +580,7 @@ export default function AdminScreen() {
                 style={styles.roleToggleButton}
                 onPress={() => handleToggleRole(showUserDetail)}
               >
-                <SymbolView name="arrow.left.arrow.right" size={18} tintColor="#1a73e8" />
+                <SymbolView name="arrow.left.arrow.right" size={18} tintColor="#25C1AC" />
                 <Text style={styles.roleToggleText}>
                   Switch to {showUserDetail.role === 'admin' ? 'Contractor' : 'Admin'}
                 </Text>
@@ -642,10 +642,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  tabActive: { backgroundColor: '#e8f0fe' },
+  tabActive: { backgroundColor: '#E6F9F6' },
   tabText: { fontSize: 13, fontWeight: '500', color: '#999' },
-  tabTextActive: { color: '#1a73e8', fontWeight: '600' },
-  pageTitle: { fontSize: 24, fontWeight: '700', color: '#222' },
+  tabTextActive: { color: '#25C1AC', fontWeight: '600' },
+  pageTitle: { fontSize: 24, fontWeight: '700', color: '#0C1D31' },
   pageSubtitle: { fontSize: 14, color: '#888', marginTop: 2, marginBottom: 20 },
   actionGrid: { flexDirection: 'row', gap: 12, marginBottom: 20 },
   actionCard: {
@@ -673,10 +673,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#0C1D31', marginBottom: 12 },
   statRow: { flexDirection: 'row', justifyContent: 'space-around' },
   statItem: { alignItems: 'center' },
-  statNumber: { fontSize: 28, fontWeight: '700', color: '#1a73e8' },
+  statNumber: { fontSize: 28, fontWeight: '700', color: '#25C1AC' },
   statLabel: { fontSize: 12, color: '#888', marginTop: 2 },
   userCard: {
     flexDirection: 'row',
@@ -697,12 +697,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#25C1AC',
     justifyContent: 'center',
     alignItems: 'center',
   },
   memberAvatarText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  memberName: { fontSize: 15, fontWeight: '500', color: '#222' },
+  memberName: { fontSize: 15, fontWeight: '500', color: '#0C1D31' },
   memberRole: { fontSize: 12, color: '#888' },
   roleBadge: {
     paddingHorizontal: 10,
@@ -710,10 +710,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   roleBadgeAdmin: { backgroundColor: '#f3e5f5' },
-  roleBadgeContractor: { backgroundColor: '#e3f2fd' },
+  roleBadgeContractor: { backgroundColor: '#E6F9F6' },
   roleBadgeText: { fontSize: 11, fontWeight: '600', textTransform: 'capitalize' },
   roleBadgeTextAdmin: { color: '#9c27b0' },
-  roleBadgeTextContractor: { color: '#1a73e8' },
+  roleBadgeTextContractor: { color: '#25C1AC' },
   removeBtn: { padding: 4 },
   addBtn: { padding: 4 },
   emptyText: { fontSize: 14, color: '#999', paddingVertical: 8 },
@@ -727,8 +727,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#222' },
-  cancelText: { fontSize: 16, color: '#1a73e8' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0C1D31' },
+  cancelText: { fontSize: 16, color: '#25C1AC' },
   input: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -748,7 +748,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#f0f0f0',
   },
-  priorityChipActive: { backgroundColor: '#1a73e8' },
+  priorityChipActive: { backgroundColor: '#25C1AC' },
   priorityChipText: { fontSize: 13, fontWeight: '500', color: '#666', textTransform: 'capitalize' },
   priorityChipTextActive: { color: '#fff' },
   assigneeChip: {
@@ -757,12 +757,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#f0f0f0',
   },
-  assigneeChipActive: { backgroundColor: '#1a73e8' },
+  assigneeChipActive: { backgroundColor: '#25C1AC' },
   assigneeChipText: { fontSize: 13, fontWeight: '500', color: '#666' },
   assigneeChipTextActive: { color: '#fff' },
   submitButton: {
-    backgroundColor: '#1a73e8',
-    borderRadius: 12,
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
     padding: 16,
     alignItems: 'center',
     marginTop: 16,
@@ -785,18 +785,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   bigAvatarText: { fontSize: 24, fontWeight: '700', color: '#fff' },
-  userDetailName: { fontSize: 20, fontWeight: '700', color: '#222' },
+  userDetailName: { fontSize: 20, fontWeight: '700', color: '#0C1D31' },
   userDetailUsername: { fontSize: 14, color: '#888', marginTop: 2 },
   roleToggleButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#e8f0fe',
-    borderRadius: 12,
+    backgroundColor: '#E6F9F6',
+    borderRadius: 999,
     padding: 14,
   },
-  roleToggleText: { fontSize: 15, fontWeight: '600', color: '#1a73e8' },
+  roleToggleText: { fontSize: 15, fontWeight: '600', color: '#25C1AC' },
   communityRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -825,7 +825,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  reportTaskTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 4 },
+  reportTaskTitle: { fontSize: 16, fontWeight: '700', color: '#0C1D31', marginBottom: 4 },
   reportAddress: { fontSize: 13, color: '#888', marginBottom: 8 },
   reportCompletion: {
     borderTopWidth: 1,

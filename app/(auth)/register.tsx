@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -41,8 +41,12 @@ export default function RegisterScreen() {
     >
       <View style={styles.inner}>
         <View style={styles.header}>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Join FieldWork</Text>
+          <Image
+            source={require('@/assets/images/vrtsync-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.subtitle}>Create Account</Text>
         </View>
 
         <View style={styles.form}>
@@ -121,20 +125,21 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   inner: { flex: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 40 },
-  title: { fontSize: 28, fontWeight: '800', color: '#1a73e8' },
+  logo: { width: 180, height: 50, marginBottom: 8 },
   subtitle: { fontSize: 16, color: '#666', marginTop: 4 },
   form: { gap: 16 },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: '#F5F7FA',
+    borderRadius: 999,
     padding: 16,
+    paddingHorizontal: 20,
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    color: '#333',
+    color: '#0C1D31',
   },
   roleContainer: { gap: 8 },
   roleLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
@@ -142,24 +147,29 @@ const styles = StyleSheet.create({
   roleButton: {
     flex: 1,
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: '#e0e0e0',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#F5F7FA',
   },
-  roleButtonActive: { borderColor: '#1a73e8', backgroundColor: '#e8f0fe' },
+  roleButtonActive: { borderColor: '#25C1AC', backgroundColor: '#E6F9F6' },
   roleButtonText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  roleButtonTextActive: { color: '#1a73e8' },
+  roleButtonTextActive: { color: '#25C1AC' },
   button: {
-    backgroundColor: '#1a73e8',
-    borderRadius: 12,
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   linkText: { textAlign: 'center', color: '#666', marginTop: 24, fontSize: 14 },
-  linkBold: { color: '#1a73e8', fontWeight: '600' },
+  linkBold: { color: '#25C1AC', fontWeight: '600' },
 });

@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   webFallbackTitle: { fontSize: 20, fontWeight: '600', color: '#666', marginTop: 12 },
   webFallbackText: { fontSize: 14, color: '#999', textAlign: 'center', marginTop: 8 },
   taskListFallback: { width: '100%', marginTop: 24 },
-  taskListTitle: { fontSize: 16, fontWeight: '600', color: '#444', marginBottom: 12 },
+  taskListTitle: { fontSize: 16, fontWeight: '600', color: '#0C1D31', marginBottom: 12 },
   taskListItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -143,6 +143,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   priorityDot: { width: 10, height: 10, borderRadius: 5 },
-  taskListItemTitle: { fontSize: 15, fontWeight: '500', color: '#222' },
+  taskListItemTitle: { fontSize: 15, fontWeight: '500', color: '#0C1D31' },
   taskListItemAddr: { fontSize: 12, color: '#888', marginTop: 2 },
 });

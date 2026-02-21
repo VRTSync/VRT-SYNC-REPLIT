@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +26,11 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.content}
     >
       <View style={styles.profileCard}>
+        <Image
+          source={require('@/assets/images/vrtsync-logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
             {user?.displayName?.charAt(0)?.toUpperCase() || '?'}
@@ -42,7 +47,7 @@ export default function ProfileScreen() {
           onPress={() => setShowCommunities(!showCommunities)}
         >
           <View style={styles.sectionLeft}>
-            <SymbolView name="building.2" size={20} tintColor="#1a73e8" />
+            <SymbolView name="building.2" size={20} tintColor="#25C1AC" />
             <Text style={styles.sectionTitle}>Communities</Text>
           </View>
           <SymbolView
@@ -75,7 +80,7 @@ export default function ProfileScreen() {
                     {c.name}
                   </Text>
                   {c.id === activeCommunity?.id && (
-                    <SymbolView name="checkmark.circle.fill" size={18} tintColor="#1a73e8" />
+                    <SymbolView name="checkmark.circle.fill" size={18} tintColor="#25C1AC" />
                   )}
                 </TouchableOpacity>
               ))
@@ -106,18 +111,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  logo: { width: 140, height: 40, marginBottom: 16 },
   avatar: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#0C1D31',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
   },
   avatarText: { fontSize: 28, fontWeight: '700', color: '#fff' },
-  name: { fontSize: 20, fontWeight: '700', color: '#222' },
-  role: { fontSize: 14, color: '#1a73e8', fontWeight: '500', marginTop: 4 },
+  name: { fontSize: 20, fontWeight: '700', color: '#0C1D31' },
+  role: { fontSize: 14, color: '#25C1AC', fontWeight: '500', marginTop: 4 },
   username: { fontSize: 13, color: '#999', marginTop: 2 },
   section: {
     backgroundColor: '#fff',
@@ -137,7 +143,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   sectionLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#222' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#0C1D31' },
   communityList: { paddingHorizontal: 16, paddingBottom: 12 },
   noCommunities: { fontSize: 14, color: '#999', paddingVertical: 8 },
   communityItem: {
@@ -149,9 +155,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 4,
   },
-  communityItemActive: { backgroundColor: '#e8f0fe' },
+  communityItemActive: { backgroundColor: '#E6F9F6' },
   communityName: { fontSize: 15, color: '#444' },
-  communityNameActive: { color: '#1a73e8', fontWeight: '600' },
+  communityNameActive: { color: '#25C1AC', fontWeight: '600' },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',

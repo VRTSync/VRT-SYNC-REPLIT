@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -35,7 +35,11 @@ export default function LoginScreen() {
     >
       <View style={styles.inner}>
         <View style={styles.header}>
-          <Text style={styles.title}>FieldWork</Text>
+          <Image
+            source={require('@/assets/images/vrtsync-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={styles.subtitle}>Contractor Portal</Text>
         </View>
 
@@ -84,30 +88,36 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   inner: { flex: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 48 },
-  title: { fontSize: 32, fontWeight: '800', color: '#1a73e8' },
+  logo: { width: 200, height: 60, marginBottom: 8 },
   subtitle: { fontSize: 16, color: '#666', marginTop: 4 },
   form: { gap: 16 },
   input: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: '#F5F7FA',
+    borderRadius: 999,
     padding: 16,
+    paddingHorizontal: 20,
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    color: '#333',
+    color: '#0C1D31',
   },
   button: {
-    backgroundColor: '#1a73e8',
-    borderRadius: 12,
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
   linkText: { textAlign: 'center', color: '#666', marginTop: 24, fontSize: 14 },
-  linkBold: { color: '#1a73e8', fontWeight: '600' },
+  linkBold: { color: '#25C1AC', fontWeight: '600' },
 });

@@ -39,7 +39,7 @@ const statusLabels: Record<string, string> = {
 
 const statusColors: Record<string, string> = {
   pending: '#ff9800',
-  in_progress: '#1a73e8',
+  in_progress: '#25C1AC',
   completed: '#4caf50',
 };
 
@@ -204,7 +204,7 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
-  communityName: { fontSize: 22, fontWeight: '700', color: '#222' },
+  communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   taskCount: { fontSize: 14, color: '#888', marginTop: 2 },
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
   sectionHeader: {
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   taskHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   priorityDot: { width: 8, height: 8, borderRadius: 4 },
-  taskTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#222' },
+  taskTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#0C1D31' },
   statusBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { fontSize: 11, fontWeight: '600' },
   taskDescription: { fontSize: 14, color: '#666', marginTop: 8, lineHeight: 20 },
@@ -262,9 +262,9 @@ const styles = StyleSheet.create({
   syncInfo: { flex: 1 },
   syncBannerText: { fontSize: 13, fontWeight: '500', color: '#e65100' },
   syncButton: {
-    backgroundColor: '#1a73e8',
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
+    paddingHorizontal: 14,
     paddingVertical: 6,
   },
   syncButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
