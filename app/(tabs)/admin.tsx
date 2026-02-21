@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Alert, ActivityIndicator, Platform, Modal, FlatList, Image,
+  Alert, ActivityIndicator, Platform, Modal, FlatList, Image, ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -244,24 +244,31 @@ export default function AdminScreen() {
 
   return (
     <View style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
-      <View style={styles.tabBar}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.id}
-            style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-            onPress={() => setActiveTab(tab.id)}
-          >
-            <Ionicons
-              name={tab.icon}
-              size={18}
-              color={activeTab === tab.id ? '#25C1AC' : '#999'}
-            />
-            <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <ImageBackground
+        source={require('@/assets/images/topography-texture.png')}
+        style={styles.tabBarWrapper}
+        resizeMode="cover"
+      >
+        <View style={styles.tabBarOverlay} />
+        <View style={styles.tabBar}>
+          {tabs.map((tab) => (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.tab, activeTab === tab.id && styles.tabActive]}
+              onPress={() => setActiveTab(tab.id)}
+            >
+              <Ionicons
+                name={tab.icon}
+                size={18}
+                color={activeTab === tab.id ? '#25C1AC' : 'rgba(255,255,255,0.6)'}
+              />
+              <Text style={[styles.tabText, activeTab === tab.id && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ImageBackground>
 
       <ScrollView contentContainerStyle={styles.content}>
         {activeTab === 'actions' && (
@@ -625,13 +632,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   content: { padding: 20, paddingBottom: 100 },
   centerContent: { justifyContent: 'center', alignItems: 'center', gap: 12 },
+  tabBarWrapper: {
+    overflow: 'hidden',
+  },
+  tabBarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 29, 49, 0.82)',
+  },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   tab: {
     flex: 1,
@@ -642,8 +653,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  tabActive: { backgroundColor: '#E6F9F6' },
-  tabText: { fontSize: 13, fontWeight: '500', color: '#999' },
+  tabActive: { backgroundColor: 'rgba(37, 193, 172, 0.2)' },
+  tabText: { fontSize: 13, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
   tabTextActive: { color: '#25C1AC', fontWeight: '600' },
   pageTitle: { fontSize: 24, fontWeight: '700', color: '#0C1D31' },
   pageSubtitle: { fontSize: 14, color: '#888', marginTop: 2, marginBottom: 20 },

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image, ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,19 +26,28 @@ export default function ProfileScreen() {
       contentContainerStyle={styles.content}
     >
       <View style={styles.profileCard}>
-        <Image
-          source={require('@/assets/images/vrtsync-logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {user?.displayName?.charAt(0)?.toUpperCase() || '?'}
-          </Text>
+        <ImageBackground
+          source={require('@/assets/images/topography-texture.png')}
+          style={styles.textureBanner}
+          resizeMode="cover"
+        >
+          <View style={styles.textureBannerOverlay} />
+        </ImageBackground>
+        <View style={styles.profileCardContent}>
+          <Image
+            source={require('@/assets/images/vrtsync-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user?.displayName?.charAt(0)?.toUpperCase() || '?'}
+            </Text>
+          </View>
+          <Text style={styles.name}>{user?.displayName}</Text>
+          <Text style={styles.role}>{user?.role === 'admin' ? 'Administrator' : 'Contractor'}</Text>
+          <Text style={styles.username}>@{user?.username}</Text>
         </View>
-        <Text style={styles.name}>{user?.displayName}</Text>
-        <Text style={styles.role}>{user?.role === 'admin' ? 'Administrator' : 'Contractor'}</Text>
-        <Text style={styles.username}>@{user?.username}</Text>
       </View>
 
       <View style={styles.section}>
@@ -103,15 +112,28 @@ const styles = StyleSheet.create({
   profileCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
-  logo: { width: 140, height: 40, marginBottom: 16 },
+  textureBanner: {
+    height: 80,
+    width: '100%',
+  },
+  textureBannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 29, 49, 0.75)',
+  },
+  profileCardContent: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    marginTop: -36,
+  },
+  logo: { width: 140, height: 40, marginBottom: 8, marginTop: 44 },
   avatar: {
     width: 72,
     height: 72,
@@ -120,6 +142,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
+    borderWidth: 3,
+    borderColor: '#fff',
   },
   avatarText: { fontSize: 28, fontWeight: '700', color: '#fff' },
   name: { fontSize: 20, fontWeight: '700', color: '#0C1D31' },

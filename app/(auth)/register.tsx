@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Image,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Image, ImageBackground,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -35,101 +37,125 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <ImageBackground
+      source={require('@/assets/images/topography-texture.png')}
+      style={styles.backgroundImage}
+      resizeMode="cover"
     >
-      <View style={styles.inner}>
-        <View style={styles.header}>
-          <Image
-            source={require('@/assets/images/vrtsync-logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-          <Text style={styles.subtitle}>Create Account</Text>
-        </View>
-
-        <View style={styles.form}>
-          <TextInput
-            style={styles.input}
-            placeholder="Display Name"
-            placeholderTextColor="#999"
-            value={displayName}
-            onChangeText={setDisplayName}
-            testID="register-displayname"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            placeholderTextColor="#999"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-            autoCorrect={false}
-            testID="register-username"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            testID="register-password"
-          />
-
-          <View style={styles.roleContainer}>
-            <Text style={styles.roleLabel}>Role</Text>
-            <View style={styles.roleButtons}>
-              <TouchableOpacity
-                style={[styles.roleButton, role === 'contractor' && styles.roleButtonActive]}
-                onPress={() => setRole('contractor')}
-              >
-                <Text style={[styles.roleButtonText, role === 'contractor' && styles.roleButtonTextActive]}>
-                  Contractor
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
-                onPress={() => setRole('admin')}
-              >
-                <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
-                  Admin
-                </Text>
-              </TouchableOpacity>
-            </View>
+      <View style={styles.overlay} />
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={[styles.inner, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
+          <View style={styles.header}>
+            <Image
+              source={require('@/assets/images/vrtsync-logo.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.subtitle}>Create Account</Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleRegister}
-            disabled={loading}
-            testID="register-submit"
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Create Account</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+          <View style={styles.formCard}>
+            <View style={styles.form}>
+              <TextInput
+                style={styles.input}
+                placeholder="Display Name"
+                placeholderTextColor="#999"
+                value={displayName}
+                onChangeText={setDisplayName}
+                testID="register-displayname"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Username"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="register-username"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                testID="register-password"
+              />
 
-        <TouchableOpacity onPress={() => router.back()} testID="go-login">
-          <Text style={styles.linkText}>
-            Already have an account? <Text style={styles.linkBold}>Sign In</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+              <View style={styles.roleContainer}>
+                <Text style={styles.roleLabel}>Role</Text>
+                <View style={styles.roleButtons}>
+                  <TouchableOpacity
+                    style={[styles.roleButton, role === 'contractor' && styles.roleButtonActive]}
+                    onPress={() => setRole('contractor')}
+                  >
+                    <Text style={[styles.roleButtonText, role === 'contractor' && styles.roleButtonTextActive]}>
+                      Contractor
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
+                    onPress={() => setRole('admin')}
+                  >
+                    <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
+                      Admin
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleRegister}
+                disabled={loading}
+                testID="register-submit"
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Create Account</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={() => router.back()} testID="go-login">
+              <Text style={styles.linkText}>
+                Already have an account? <Text style={styles.linkBold}>Sign In</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  backgroundImage: { flex: 1 },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 29, 49, 0.88)',
+  },
+  container: { flex: 1 },
   inner: { flex: 1, justifyContent: 'center', padding: 24 },
   header: { alignItems: 'center', marginBottom: 40 },
-  logo: { width: 180, height: 50, marginBottom: 8 },
-  subtitle: { fontSize: 16, color: '#666', marginTop: 4 },
+  logo: { width: 200, height: 55, marginBottom: 8 },
+  subtitle: { fontSize: 16, color: 'rgba(255,255,255,0.7)', marginTop: 4, fontWeight: '500' },
+  formCard: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 8,
+  },
   form: { gap: 16 },
   input: {
     backgroundColor: '#F5F7FA',
@@ -162,14 +188,14 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
-    shadowColor: '#000',
+    shadowColor: '#25C1AC',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  linkText: { textAlign: 'center', color: '#666', marginTop: 24, fontSize: 14 },
+  linkText: { textAlign: 'center', color: '#666', marginTop: 20, fontSize: 14 },
   linkBold: { color: '#25C1AC', fontWeight: '600' },
 });
