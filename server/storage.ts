@@ -179,6 +179,33 @@ export async function removePushToken(userId: string, token: string): Promise<vo
   await db.delete(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
 }
 
+export async function getCompletedTasksWithDetails(communityId: string) {
+  const completedTasks = await db.select().from(tasks)
+    .where(and(eq(tasks.communityId, communityId), eq(tasks.status, 'completed')))
+    .orderBy(desc(tasks.updatedAt));
+
+  const result = await Promise.all(
+    completedTasks.map(async (task) => {
+      const completions = await getTaskCompletions(task.id);
+      const completionsWithAttachments = await Promise.all(
+        completions.map(async (c) => {
+          const atts = await getAttachmentsByCompletion(c.id);
+          return { ...c, attachments: atts };
+        }),
+      );
+      return {
+        id: task.id,
+        title: task.title,
+        status: task.status,
+        priority: task.priority,
+        address: task.address,
+        completions: completionsWithAttachments,
+      };
+    }),
+  );
+  return result;
+}
+
 export async function isUserMemberOfCommunity(userId: string, communityId: string): Promise<boolean> {
   const [row] = await db.select().from(communityMembers)
     .where(and(eq(communityMembers.userId, userId), eq(communityMembers.communityId, communityId)));

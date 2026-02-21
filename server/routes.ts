@@ -349,6 +349,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/completed-tasks", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string;
+      if (!communityId) {
+        return res.status(400).json({ error: "communityId is required" });
+      }
+      const completedTasks = await storage.getCompletedTasksWithDetails(communityId);
+      res.json(completedTasks);
+    } catch (error) {
+      console.error("Get completed tasks error:", error);
+      res.status(500).json({ error: "Failed to fetch completed tasks" });
+    }
+  });
+
   app.get("/api/contractors", requireAdmin, async (_req: Request, res: Response) => {
     try {
       const contractors = await storage.getAllContractors();

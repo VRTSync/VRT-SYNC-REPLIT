@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Alert, ActivityIndicator, Platform, Modal, FlatList,
+  Alert, ActivityIndicator, Platform, Modal, FlatList, Image,
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest, getQueryFn } from '@/lib/query-client';
+import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 
@@ -27,7 +27,29 @@ type Member = {
   joinedAt: string;
 };
 
-type TabId = 'actions' | 'users' | 'members';
+type CompletionDetail = {
+  id: string;
+  taskId: string;
+  completedBy: string;
+  notes: string | null;
+  employeeSignOffName: string;
+  timeSpentMinutes: number | null;
+  materialsUsed: string | null;
+  followUpNeeded: string | null;
+  completedAt: string;
+  attachments: { id: string; url: string; fileRef: string; createdAt: string }[];
+};
+
+type CompletedTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  address: string | null;
+  completions: CompletionDetail[];
+};
+
+type TabId = 'actions' | 'users' | 'members' | 'reports';
 
 export default function AdminScreen() {
   const { user } = useAuth();
@@ -70,6 +92,15 @@ export default function AdminScreen() {
     queryKey: [`/api/communities/${activeCommunity?.id}/members`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!activeCommunity && user?.role === 'admin',
+  });
+
+  const { data: completedTasks = [] } = useQuery<CompletedTask[]>({
+    queryKey: ['/api/admin/completed-tasks', { communityId: activeCommunity?.id }],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/admin/completed-tasks?communityId=${activeCommunity?.id}`);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'reports',
   });
 
   if (user?.role !== 'admin') {
@@ -204,6 +235,7 @@ export default function AdminScreen() {
     { id: 'actions', label: 'Actions', icon: 'bolt.fill' },
     { id: 'users', label: 'Users', icon: 'person.2' },
     { id: 'members', label: 'Members', icon: 'person.crop.circle.badge.checkmark' },
+    { id: 'reports', label: 'Reports', icon: 'doc.text' },
   ];
 
   const memberUserIds = new Set(members.map((m) => m.userId));
@@ -354,6 +386,74 @@ export default function AdminScreen() {
                 )}
               </>
             )}
+          </>
+        )}
+
+        {activeTab === 'reports' && (
+          <>
+            <Text style={styles.pageTitle}>Completion Reports</Text>
+            <Text style={styles.pageSubtitle}>
+              {activeCommunity?.name || 'Select a community'} — {completedTasks.length} completed task{completedTasks.length !== 1 ? 's' : ''}
+            </Text>
+
+            {completedTasks.length === 0 && (
+              <Text style={styles.emptyText}>No completed tasks yet</Text>
+            )}
+
+            {completedTasks.map((task) => (
+              <View key={task.id} style={styles.reportCard}>
+                <Text style={styles.reportTaskTitle}>{task.title}</Text>
+                {task.address ? <Text style={styles.reportAddress}>{task.address}</Text> : null}
+
+                {task.completions.map((c) => (
+                  <View key={c.id} style={styles.reportCompletion}>
+                    <View style={styles.reportRow}>
+                      <Text style={styles.reportLabel}>Signed off by</Text>
+                      <Text style={styles.reportValue}>{c.employeeSignOffName}</Text>
+                    </View>
+                    <View style={styles.reportRow}>
+                      <Text style={styles.reportLabel}>Date</Text>
+                      <Text style={styles.reportValue}>{new Date(c.completedAt).toLocaleString()}</Text>
+                    </View>
+                    {c.notes ? (
+                      <View style={styles.reportRow}>
+                        <Text style={styles.reportLabel}>Notes</Text>
+                        <Text style={styles.reportValue}>{c.notes}</Text>
+                      </View>
+                    ) : null}
+                    {c.timeSpentMinutes ? (
+                      <View style={styles.reportRow}>
+                        <Text style={styles.reportLabel}>Time</Text>
+                        <Text style={styles.reportValue}>{c.timeSpentMinutes} min</Text>
+                      </View>
+                    ) : null}
+                    {c.materialsUsed ? (
+                      <View style={styles.reportRow}>
+                        <Text style={styles.reportLabel}>Materials</Text>
+                        <Text style={styles.reportValue}>{c.materialsUsed}</Text>
+                      </View>
+                    ) : null}
+                    {c.followUpNeeded ? (
+                      <View style={styles.reportRow}>
+                        <Text style={styles.reportLabel}>Follow-up</Text>
+                        <Text style={styles.reportValue}>{c.followUpNeeded}</Text>
+                      </View>
+                    ) : null}
+                    {c.attachments.length > 0 && (
+                      <View style={styles.reportPhotos}>
+                        {c.attachments.map((a) => (
+                          <Image
+                            key={a.id}
+                            source={{ uri: `${getApiUrl()}${a.url}` }}
+                            style={styles.reportPhoto}
+                          />
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ))}
           </>
         )}
       </ScrollView>
@@ -712,4 +812,28 @@ const styles = StyleSheet.create({
   communityToggleActive: { backgroundColor: '#ffebee' },
   communityToggleText: { fontSize: 13, fontWeight: '600', color: '#4caf50' },
   communityToggleTextActive: { color: '#f44336' },
+  reportCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  reportTaskTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 4 },
+  reportAddress: { fontSize: 13, color: '#888', marginBottom: 8 },
+  reportCompletion: {
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    paddingTop: 10,
+    marginTop: 8,
+  },
+  reportRow: { flexDirection: 'row', marginBottom: 4, gap: 8 },
+  reportLabel: { fontSize: 13, fontWeight: '600', color: '#555', width: 90 },
+  reportValue: { fontSize: 13, color: '#333', flex: 1 },
+  reportPhotos: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  reportPhoto: { width: 64, height: 64, borderRadius: 8 },
 });
