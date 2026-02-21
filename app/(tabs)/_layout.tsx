@@ -17,6 +17,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "map", selected: "map.fill" }} />
         <Label>Map</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="admin">
+        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+        <Label>Admin</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
@@ -73,6 +77,16 @@ function ClassicTabLayout() {
           headerShown: false,
           tabBarIcon: ({ color }) => (
             <SymbolView name="map" tintColor={color} size={24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "Admin",
+          headerShown: false,
+          tabBarIcon: ({ color }) => (
+            <SymbolView name="gearshape" tintColor={color} size={24} />
           ),
         }}
       />

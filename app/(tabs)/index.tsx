@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
+import { useOffline } from '@/client/contexts/OfflineContext';
 
 type Task = {
   id: string;
@@ -46,13 +47,22 @@ export default function TasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
+  const { isOnline, cachedTasks, cacheTasks, pendingCompletions } = useOffline();
   const insets = useSafeAreaInsets();
 
-  const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
+  const { data: serverTasks, isLoading, refetch } = useQuery<Task[]>({
     queryKey: ['/api/tasks', activeCommunity?.id ? `?communityId=${activeCommunity.id}` : ''],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!activeCommunity,
+    enabled: !!activeCommunity && isOnline,
   });
+
+  React.useEffect(() => {
+    if (serverTasks && serverTasks.length > 0) {
+      cacheTasks(serverTasks);
+    }
+  }, [serverTasks]);
+
+  const tasks: Task[] = serverTasks || (isOnline ? [] : cachedTasks);
 
   const activeTasks = tasks.filter((t) => t.status !== 'completed');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
@@ -108,6 +118,14 @@ export default function TasksScreen() {
 
   return (
     <View style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <SymbolView name="wifi.slash" size={14} tintColor="#fff" />
+          <Text style={styles.offlineBannerText}>
+            Offline Mode{pendingCompletions.length > 0 ? ` (${pendingCompletions.length} pending)` : ''}
+          </Text>
+        </View>
+      )}
       <View style={styles.headerBar}>
         <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
         <Text style={styles.taskCount}>
@@ -187,4 +205,13 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#999' },
   emptySubtitle: { fontSize: 14, color: '#bbb', textAlign: 'center', paddingHorizontal: 40 },
+  offlineBanner: {
+    backgroundColor: '#f44336',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+  },
+  offlineBannerText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });

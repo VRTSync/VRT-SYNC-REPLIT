@@ -12,7 +12,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { useOffline } from '@/client/contexts/OfflineContext';
 import { uploadFileToStorage } from '@/client/utils/objectStorageExpo';
+import * as Crypto from 'expo-crypto';
 
 type Task = {
   id: string;
@@ -60,6 +62,7 @@ export default function TaskDetailScreen() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { activeCommunity } = useCommunity();
+  const { isOnline, addPendingCompletion } = useOffline();
   const insets = useSafeAreaInsets();
 
   const [notes, setNotes] = useState('');
@@ -116,6 +119,25 @@ export default function TaskDetailScreen() {
   const handleComplete = async () => {
     if (!task) return;
     setCompleting(true);
+
+    if (!isOnline) {
+      await addPendingCompletion({
+        id: Crypto.randomUUID(),
+        taskId: task.id,
+        version: task.version,
+        notes: notes.trim() || undefined,
+        photoUris: photos,
+        createdAt: new Date().toISOString(),
+      });
+      Alert.alert(
+        'Saved Offline',
+        'Your completion will be synced when you are back online.',
+        [{ text: 'OK', onPress: () => router.back() }],
+      );
+      setCompleting(false);
+      return;
+    }
+
     try {
       const res = await apiRequest('POST', `/api/tasks/${task.id}/complete`, {
         version: task.version,

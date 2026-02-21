@@ -8,6 +8,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
 import { CommunityProvider } from "@/client/contexts/CommunityContext";
+import { OfflineProvider } from "@/client/contexts/OfflineContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -51,7 +52,9 @@ export default function RootLayout() {
           <KeyboardProvider>
             <AuthProvider>
               <CommunityProvider>
-                <AuthNavigator />
+                <OfflineProvider>
+                  <AuthNavigator />
+                </OfflineProvider>
               </CommunityProvider>
             </AuthProvider>
           </KeyboardProvider>
