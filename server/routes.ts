@@ -11,7 +11,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAuthRoutes(app);
 
   app.get("/public-objects/{filePath}", async (req: Request, res: Response) => {
-    const filePath = req.params.filePath;
+    const filePath = req.params.filePath as string;
     const objectStorageService = new ObjectStorageService();
     try {
       const file = await objectStorageService.searchPublicObject(filePath);
@@ -167,9 +167,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const task = await storage.getTaskById(req.params.id as string);
+      const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!task) {
         return res.status(404).json({ error: "Task not found" });
+      }
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
       }
       res.json(task);
     } catch (error) {
@@ -205,6 +208,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
+      const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      if (!task) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
+      }
       const { version, ...data } = req.body;
       if (typeof version !== "number") {
         return res.status(400).json({ error: "version is required" });
@@ -214,9 +224,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const updated = await storage.updateTask(req.params.id as string, version, data);
       if (!updated) {
+        const latest = await storage.getTaskById(req.params.id as string);
         return res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
+          latestTask: latest,
         });
       }
       res.json(updated);
@@ -228,20 +240,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks/:id/complete", requireAuth, async (req: Request, res: Response) => {
     try {
+      const { allowed, task: existingTask } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      if (!existingTask) {
+        return res.status(404).json({ error: "Task not found" });
+      }
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
+      }
+
       const parsed = completeTaskSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
-      const task = await storage.getTaskById(req.params.id as string);
-      if (!task) {
-        return res.status(404).json({ error: "Task not found" });
-      }
-
-      if (task.version !== parsed.data.version) {
+      if (existingTask.version !== parsed.data.version) {
         return res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
+          latestTask: existingTask,
         });
       }
 
@@ -249,9 +265,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "completed",
       });
       if (!updated) {
+        const latest = await storage.getTaskById(req.params.id as string);
         return res.status(409).json({
           error: "Conflict: task was modified by another user.",
           code: "VERSION_CONFLICT",
+          latestTask: latest,
         });
       }
 
@@ -259,6 +277,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taskId: req.params.id as string,
         completedBy: req.session.userId!,
         notes: parsed.data.notes,
+        employeeSignOffName: parsed.data.employeeSignOffName,
+        timeSpentMinutes: parsed.data.timeSpentMinutes,
+        materialsUsed: parsed.data.materialsUsed,
+        followUpNeeded: parsed.data.followUpNeeded,
       });
 
       res.json({ task: updated, completion });
@@ -270,6 +292,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks/:id/attachments", requireAuth, async (req: Request, res: Response) => {
     try {
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
+      }
       const { taskCompletionId, uploadURL } = req.body;
       if (!taskCompletionId || !uploadURL) {
         return res.status(400).json({ error: "taskCompletionId and uploadURL are required" });
@@ -297,6 +323,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/tasks/:id/completions", requireAuth, async (req: Request, res: Response) => {
     try {
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
+      }
       const completions = await storage.getTaskCompletions(req.params.id as string);
       const completionsWithAttachments = await Promise.all(
         completions.map(async (c) => {

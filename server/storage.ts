@@ -169,6 +169,23 @@ export async function removePushToken(userId: string, token: string): Promise<vo
   await db.delete(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
 }
 
+export async function isUserMemberOfCommunity(userId: string, communityId: string): Promise<boolean> {
+  const [row] = await db.select().from(communityMembers)
+    .where(and(eq(communityMembers.userId, userId), eq(communityMembers.communityId, communityId)));
+  return !!row;
+}
+
+export async function canUserAccessTask(userId: string, taskId: string): Promise<{ allowed: boolean; task: Task | undefined }> {
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+  if (!task) return { allowed: false, task: undefined };
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user) return { allowed: false, task };
+  if (user.role === 'admin') return { allowed: true, task };
+  if (task.assignedTo !== userId) return { allowed: false, task };
+  const isMember = await isUserMemberOfCommunity(userId, task.communityId);
+  return { allowed: isMember, task };
+}
+
 export async function getAllUsers(): Promise<User[]> {
   return db.select().from(users).orderBy(users.displayName);
 }
