@@ -1,0 +1,108 @@
+I already have a partially generated mobile contractor portal project, but it needs to be stabilized and reshaped before adding more features.
+
+Please analyze the existing codebase and implement a clean foundational structure for a contractor field app with an admin dashboard.
+
+Goal
+
+Establish a solid core architecture so future features (offline maps, advanced workflows, etc.) can be added without rewrites.
+
+Required Foundation
+Authentication & Roles
+
+User authentication with role-based access
+
+Roles: SUPER_ADMIN, CONTRACTOR, COMMUNITY_ADMIN
+
+Secure session or token handling
+
+Contractors should only access data for assigned communities
+
+Admins can access all communities
+
+Communities & Membership
+
+Communities are a core object
+
+Users can belong to one or more communities
+
+Contractors must be able to switch between assigned communities
+
+All community-scoped data (tasks, maps, etc.) should be filtered by selected community
+
+Task Management (Core Only)
+
+Tasks belong to a community
+
+Tasks can be assigned to contractors
+
+Task list filtered by selected community
+
+Task detail screen
+
+Basic status flow: pending → in progress → completed
+
+No advanced features yet (no recurrence, billing, etc.)
+
+Admin Dashboard
+
+Admin can create tasks
+
+Assign tasks to contractors and communities
+
+View task status
+
+Manage users and community assignments (basic UI)
+
+Data Integrity & Concurrency
+
+Use a real database (not in-memory data)
+
+Include record versioning (optimistic locking) to prevent overwriting concurrent updates
+
+Updates should be patch-based, not full replacements
+
+File Upload Support (Plumbing Only)
+
+Support photo uploads for task completion
+
+Store file references and metadata linked to tasks
+
+Do not build advanced document management yet
+
+Push Notification & Device Setup (Plumbing Only)
+
+Allow mobile devices to register push tokens
+
+Do not implement full notification workflows yet
+
+Mobile Requirements
+
+Mobile-first experience for contractors
+
+Basic navigation: Dashboard, Tasks, Maps (placeholder), Account
+
+Offline capability for viewing cached tasks and completing work (queue sync later)
+
+Do not implement full offline map packs yet
+
+Out of Scope (for now)
+
+Advanced offline map system (MBTiles)
+
+Complex asset/layer hierarchy
+
+Invoices, contracts, reporting
+
+Communication/chat systems
+
+Billing or payments
+
+Third-party integrations beyond storage/auth
+
+Deliverable
+
+Refactor or extend the current project to provide a clean, working foundation that supports:
+
+Login → Select Community → View Tasks → Open Task → Complete Task
+
+Ensure the architecture is modular and ready for future feature slices.
