@@ -2,10 +2,10 @@ import { eq, and, desc, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
-  assets, assetProperties, taskLinks,
+  assets, assetProperties, taskLinks, mapLayers,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
-  type Asset, type AssetProperty, type TaskLink
+  type Asset, type AssetProperty, type TaskLink, type MapLayer
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -335,4 +335,55 @@ export async function setTaskLink(taskId: string, data: {
   await db.delete(taskLinks).where(eq(taskLinks.taskId, taskId));
   const [link] = await db.insert(taskLinks).values({ taskId, ...data }).returning();
   return link;
+}
+
+export async function createMapLayer(data: {
+  communityId: string;
+  layerKey: string;
+  subLayerKey: string;
+  displayName: string;
+  geojsonData?: string;
+}): Promise<MapLayer> {
+  const [layer] = await db.insert(mapLayers).values(data).returning();
+  return layer;
+}
+
+export async function getMapLayersByCommunity(communityId: string, layerKey?: string): Promise<MapLayer[]> {
+  if (layerKey) {
+    return db.select().from(mapLayers)
+      .where(and(eq(mapLayers.communityId, communityId), eq(mapLayers.layerKey, layerKey)))
+      .orderBy(mapLayers.displayName);
+  }
+  return db.select().from(mapLayers)
+    .where(eq(mapLayers.communityId, communityId))
+    .orderBy(mapLayers.layerKey, mapLayers.displayName);
+}
+
+export async function getMapLayerById(id: string): Promise<MapLayer | undefined> {
+  const [layer] = await db.select().from(mapLayers).where(eq(mapLayers.id, id));
+  return layer;
+}
+
+export async function updateMapLayer(id: string, expectedVersion: number, data: Partial<{
+  displayName: string;
+  geojsonData: string;
+}>): Promise<MapLayer | null> {
+  const [updated] = await db.update(mapLayers)
+    .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
+    .where(and(eq(mapLayers.id, id), eq(mapLayers.version, expectedVersion)))
+    .returning();
+  return updated || null;
+}
+
+export async function deleteMapLayer(id: string): Promise<boolean> {
+  const [deleted] = await db.delete(mapLayers).where(eq(mapLayers.id, id)).returning();
+  return !!deleted;
+}
+
+export async function getAssetByFeatureRef(communityId: string, featureRef: string): Promise<(Asset & { properties: AssetProperty[] }) | null> {
+  const [asset] = await db.select().from(assets)
+    .where(and(eq(assets.communityId, communityId), eq(assets.featureRef, featureRef)));
+  if (!asset) return null;
+  const props = await getAssetProperties(asset.id);
+  return { ...asset, properties: props };
 }
