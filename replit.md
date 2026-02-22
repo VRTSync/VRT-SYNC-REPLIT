@@ -61,6 +61,9 @@ Preferred communication style: Simple, everyday language.
 - **Bulk Task Assignment** — POST /api/tasks/bulk/assign accepts taskIds[] and assignedTo for batch reassignment
 - **task_links** — links a task to either an asset (linkType="asset") or GPS pin (linkType="pin")
 - **offline_packs** — per-community downloadable data packs with packVersion, manifestRef, assetIndexRef, geojsonBundleRef, workHistoryRef, mbtilesRef, searchIndexRef, checksum; unique constraint on (communityId, packVersion)
+- **task_schedules** — recurrence schedules linking a template to a community with frequency (weekly/monthly/once), daysOfWeek (comma-separated day indices 0-6), dayOfMonth (1-31), timezone (default America/Denver), startDate, endDate, nextRunAt, assignToUserId, isEnabled, createdBy. Unique constraint prevents duplicate runs via scheduleInstanceKey on tasks table (format: scheduleId:YYYY-MM-DD or scheduleId:YYYY-MM-DD:assetId).
+- **schedule_runs** — logs each scheduler execution with scheduleId, windowStart, windowEnd, createdCount, skippedCount, status (success/failure), errorMessage
+- **Scheduler Engine** — server/scheduler.ts: hourly interval finds enabled schedules where nextRunAt <= now, generates tasks with idempotent instance keys (prevents duplicates), records runs, advances nextRunAt. Supports template targeting (none → 1 task, asset_type/map_layer → 1 per matching asset, specific_asset → 1 task). POST /api/task-schedules/run-now for manual trigger. Admin Schedules page with CRUD modal, enable/disable toggle, run history panel, and Run Now button.
 
 ### Access Control
 - Contractors can only view/complete tasks assigned to them within their communities
