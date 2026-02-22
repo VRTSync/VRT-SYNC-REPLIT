@@ -805,6 +805,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/map-layers/upload-validate", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { communityId, layerKey, subLayerKey, geojsonData } = req.body;
+      if (!communityId || !layerKey || !subLayerKey) {
+        return res.status(400).json({ error: "communityId, layerKey, subLayerKey are required" });
+      }
+
+      const existingLayers = await storage.getMapLayersByCommunity(communityId, layerKey);
+      const matchingLayer = existingLayers.find(l => l.subLayerKey === subLayerKey);
+
+      if (matchingLayer) {
+        const result = await previewSyncFromLayer(communityId, matchingLayer.id, layerKey, subLayerKey, geojsonData || null);
+        return res.json(result);
+      }
+
+      let featureCount = 0;
+      try {
+        const parsed = JSON.parse(geojsonData);
+        featureCount = parsed.features?.length || 0;
+      } catch {}
+
+      res.json({
+        featureCount,
+        wouldCreateCount: featureCount,
+        wouldUpdateCount: 0,
+        wouldArchiveCount: 0,
+        wouldSkipCount: 0,
+        wouldCreateSamples: [],
+        wouldArchiveSamples: [],
+      });
+    } catch (error) {
+      console.error("Upload validate error:", error);
+      res.status(500).json({ error: "Failed to generate preview" });
+    }
+  });
+
   app.post("/api/map-layers/upload", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
     try {
       const { communityId, layerKey, subLayerKey, displayName } = req.body;

@@ -74,10 +74,15 @@ window._renderMapLayers = async function(container, communityId) {
             <td>${s.activeAssetCount ?? '—'}</td>
             <td>${s.archivedAssetCount ?? '—'}</td>
             <td>${s.incompleteAssetCount != null ? (s.incompleteAssetCount > 0 ? `<span class="badge badge-amber">${s.incompleteAssetCount}</span>` : '0') : '—'}</td>
-            <td class="text-right">
-              <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>
-              <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
-              <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>
+            <td class="text-right" style="white-space:nowrap">
+              <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+                <button class="btn btn-xs validate-btn" data-id="${l.id}" style="background:#8e44ad;color:#fff;border:none">Validate</button>
+                <button class="btn btn-xs preview-btn" data-id="${l.id}" style="background:#2980b9;color:#fff;border:none">Preview</button>
+                <button class="btn btn-xs unlinked-btn" data-id="${l.id}" style="background:#e67e22;color:#fff;border:none">Unlinked</button>
+                <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>
+                <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
+                <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>
+              </div>
             </td>
           </tr>`;
         });
@@ -86,6 +91,51 @@ window._renderMapLayers = async function(container, communityId) {
       }
 
       treeEl.innerHTML = html;
+
+      treeEl.querySelectorAll('.validate-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = '...';
+          try {
+            const result = await apiFetch(`/api/map-layers/${btn.dataset.id}/validate`, { method: 'POST' });
+            showValidationModal(result);
+          } catch (err) {
+            showToast('Validation failed: ' + err.message, 'error');
+          }
+          btn.disabled = false;
+          btn.textContent = 'Validate';
+        });
+      });
+
+      treeEl.querySelectorAll('.preview-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = '...';
+          try {
+            const result = await apiFetch(`/api/map-layers/${btn.dataset.id}/sync-preview`, { method: 'POST' });
+            showSyncPreviewModal(result);
+          } catch (err) {
+            showToast('Preview failed: ' + err.message, 'error');
+          }
+          btn.disabled = false;
+          btn.textContent = 'Preview';
+        });
+      });
+
+      treeEl.querySelectorAll('.unlinked-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = '...';
+          try {
+            const features = await apiFetch(`/api/map-layers/${btn.dataset.id}/unlinked-features`);
+            showUnlinkedModal(features, btn.dataset.id);
+          } catch (err) {
+            showToast('Failed to load unlinked features: ' + err.message, 'error');
+          }
+          btn.disabled = false;
+          btn.textContent = 'Unlinked';
+        });
+      });
 
       treeEl.querySelectorAll('.sync-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -129,6 +179,271 @@ window._renderMapLayers = async function(container, communityId) {
     if (format === 'kml') return '<span class="badge" style="background:#e67e22;color:#fff">KML</span>';
     if (format === 'geojson') return '<span class="badge" style="background:#27ae60;color:#fff">GeoJSON</span>';
     return '<span class="badge">—</span>';
+  }
+
+  function renderValidationPanel(result) {
+    const hasErrors = result.errors && result.errors.length > 0;
+    const hasWarnings = result.warnings && result.warnings.length > 0;
+    const statusColor = hasErrors ? '#e74c3c' : hasWarnings ? '#f39c12' : '#27ae60';
+    const statusLabel = hasErrors ? 'Errors Found' : hasWarnings ? 'Warnings' : 'Valid';
+    const statusIcon = hasErrors ? '&#10008;' : hasWarnings ? '&#9888;' : '&#10004;';
+
+    let html = `
+      <div style="border:2px solid ${statusColor};border-radius:8px;padding:16px;margin-top:12px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="color:${statusColor};font-size:18px">${statusIcon}</span>
+          <strong style="color:${statusColor}">${statusLabel}</strong>
+          <span style="margin-left:auto;font-size:13px;color:var(--gray-500)">${result.featureCount} features</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+          <div style="text-align:center;background:var(--gray-50);padding:8px;border-radius:6px">
+            <div style="font-size:18px;font-weight:700">${result.geometryCounts?.points || 0}</div>
+            <div style="font-size:11px;color:var(--gray-500)">Points</div>
+          </div>
+          <div style="text-align:center;background:var(--gray-50);padding:8px;border-radius:6px">
+            <div style="font-size:18px;font-weight:700">${result.geometryCounts?.lines || 0}</div>
+            <div style="font-size:11px;color:var(--gray-500)">Lines</div>
+          </div>
+          <div style="text-align:center;background:var(--gray-50);padding:8px;border-radius:6px">
+            <div style="font-size:18px;font-weight:700">${result.geometryCounts?.polygons || 0}</div>
+            <div style="font-size:11px;color:var(--gray-500)">Polygons</div>
+          </div>
+          <div style="text-align:center;background:var(--gray-50);padding:8px;border-radius:6px">
+            <div style="font-size:18px;font-weight:700">${result.geometryCounts?.other || 0}</div>
+            <div style="font-size:11px;color:var(--gray-500)">Other</div>
+          </div>
+        </div>`;
+
+    if (result.missingIdCount > 0) {
+      html += `<div style="background:#fdf2f2;border-left:3px solid #e74c3c;padding:10px;margin-bottom:8px;border-radius:4px;font-size:13px">
+        <strong style="color:#e74c3c">${result.missingIdCount} feature(s) missing stable ID</strong>
+        ${result.missingIdSamples?.length > 0 ? `<div style="margin-top:6px;font-size:12px;color:#666">Samples: ${result.missingIdSamples.map(s => `Feature #${s.index}`).join(', ')}</div>` : ''}
+      </div>`;
+    }
+
+    if (result.duplicateIdCount > 0) {
+      html += `<div style="background:#fdf2f2;border-left:3px solid #e74c3c;padding:10px;margin-bottom:8px;border-radius:4px;font-size:13px">
+        <strong style="color:#e74c3c">${result.duplicateIdCount} duplicate feature ID(s)</strong>
+        ${result.duplicateIdSamples?.length > 0 ? `<div style="margin-top:6px;font-size:12px;color:#666">IDs: ${result.duplicateIdSamples.map(s => `"${esc(s.featureId)}" (x${s.count})`).join(', ')}</div>` : ''}
+      </div>`;
+    }
+
+    if (result.invalidGeometryCount > 0) {
+      html += `<div style="background:#fef9e7;border-left:3px solid #f39c12;padding:10px;margin-bottom:8px;border-radius:4px;font-size:13px">
+        <strong style="color:#f39c12">${result.invalidGeometryCount} invalid geometry</strong>
+        ${result.invalidGeometrySamples?.length > 0 ? `<div style="margin-top:6px;font-size:12px;color:#666">${result.invalidGeometrySamples.map(s => `#${s.index}: ${s.issue}`).join(', ')}</div>` : ''}
+      </div>`;
+    }
+
+    if (hasErrors) {
+      html += `<div style="margin-top:8px">`;
+      result.errors.forEach(e => {
+        html += `<div style="color:#e74c3c;font-size:12px;margin-bottom:2px">&#10008; ${esc(e)}</div>`;
+      });
+      html += `</div>`;
+    }
+
+    if (hasWarnings) {
+      const warnList = result.warnings.slice(0, 5);
+      html += `<div style="margin-top:8px">`;
+      warnList.forEach(w => {
+        html += `<div style="color:#f39c12;font-size:12px;margin-bottom:2px">&#9888; ${esc(w)}</div>`;
+      });
+      if (result.warnings.length > 5) {
+        html += `<div style="color:#999;font-size:11px">...and ${result.warnings.length - 5} more</div>`;
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
+  }
+
+  function showValidationModal(result) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div class="modal-header">
+          <h2>Validation Report</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          ${renderValidationPanel(result)}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary close-btn">Done</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  function showSyncPreviewModal(result) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:560px">
+        <div class="modal-header">
+          <h2>Sync Preview</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">This preview shows what would happen if you sync now. No changes have been made.</p>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;text-align:center">
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
+              <div style="font-size:24px;font-weight:700;color:#27ae60">${result.wouldCreateCount || 0}</div>
+              <div style="font-size:12px;color:var(--gray-500)">Would Create</div>
+            </div>
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
+              <div style="font-size:24px;font-weight:700;color:#3498db">${result.wouldUpdateCount || 0}</div>
+              <div style="font-size:12px;color:var(--gray-500)">Would Update</div>
+            </div>
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
+              <div style="font-size:24px;font-weight:700;color:#e67e22">${result.wouldArchiveCount || 0}</div>
+              <div style="font-size:12px;color:var(--gray-500)">Would Archive</div>
+            </div>
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
+              <div style="font-size:24px;font-weight:700;color:#95a5a6">${result.wouldSkipCount || 0}</div>
+              <div style="font-size:12px;color:var(--gray-500)">Would Skip</div>
+            </div>
+          </div>
+          ${result.wouldCreateSamples?.length > 0 ? `
+            <div style="margin-top:16px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:var(--navy)">New Assets (sample)</div>
+              <div style="max-height:150px;overflow-y:auto">
+                ${result.wouldCreateSamples.map(s => `
+                  <div style="font-size:12px;padding:4px 8px;background:var(--gray-50);margin-bottom:2px;border-radius:4px">
+                    <span style="color:var(--gray-500);font-family:monospace">${esc(s.featureId)}</span>
+                    <span style="margin-left:8px">${esc(s.label)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+          ${result.wouldArchiveSamples?.length > 0 ? `
+            <div style="margin-top:16px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#e67e22">Would Archive (sample)</div>
+              <div style="max-height:150px;overflow-y:auto">
+                ${result.wouldArchiveSamples.map(s => `
+                  <div style="font-size:12px;padding:4px 8px;background:#fef9e7;margin-bottom:2px;border-radius:4px">
+                    <span style="color:var(--gray-500);font-family:monospace">${esc(s.featureRef)}</span>
+                    <span style="margin-left:8px">${esc(s.label)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+          <p style="margin-top:12px;font-size:12px;color:var(--gray-400)">Total features: ${result.featureCount || 0}</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary close-btn">Done</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  function showUnlinkedModal(features, layerId) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const reasonLabel = (r) => {
+      if (r === 'missing_asset') return '<span class="badge" style="background:#e74c3c;color:#fff">Missing</span>';
+      if (r === 'archived_asset_exists') return '<span class="badge badge-amber">Archived</span>';
+      if (r === 'invalid_id') return '<span class="badge" style="background:#95a5a6;color:#fff">Invalid ID</span>';
+      return '<span class="badge">Unknown</span>';
+    };
+
+    const creatableCount = features.filter(f => f.reason !== 'invalid_id').length;
+
+    overlay.innerHTML = `
+      <div class="modal modal-wide" style="max-width:720px">
+        <div class="modal-header">
+          <h2>Unlinked Features (${features.length})</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          ${features.length === 0 ? '<div class="empty-state" style="padding:24px">All features are linked to active assets.</div>' : `
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:12px">Features in the GeoJSON that do not have a corresponding active asset.</p>
+            ${creatableCount > 0 ? `<button class="btn btn-primary btn-sm" id="create-all-btn" style="margin-bottom:12px">Create All Missing Assets (${creatableCount})</button>` : ''}
+            <div class="table-container" style="max-height:400px;overflow-y:auto">
+              <table>
+                <thead><tr>
+                  <th>Feature ID</th>
+                  <th>Label</th>
+                  <th>Geometry</th>
+                  <th>Status</th>
+                  <th class="text-right">Action</th>
+                </tr></thead>
+                <tbody>
+                  ${features.map(f => `<tr>
+                    <td style="font-family:monospace;font-size:12px">${esc(f.featureId)}</td>
+                    <td>${esc(f.label)}</td>
+                    <td><span class="badge">${esc(f.geometryType || 'none')}</span></td>
+                    <td>${reasonLabel(f.reason)}</td>
+                    <td class="text-right">
+                      ${f.reason !== 'invalid_id' ? `<button class="btn btn-primary btn-xs create-one-btn" data-feature-id="${esc(f.featureId)}">Create</button>` : '<span style="color:#999;font-size:12px">—</span>'}
+                    </td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary close-btn">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.close-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const createAllBtn = overlay.querySelector('#create-all-btn');
+    if (createAllBtn) {
+      createAllBtn.addEventListener('click', async () => {
+        createAllBtn.disabled = true;
+        createAllBtn.textContent = 'Creating...';
+        try {
+          const result = await apiFetch(`/api/map-layers/${layerId}/create-missing-assets`, { method: 'POST' });
+          showToast(`Created ${result.created} asset(s), reactivated ${result.reactivated}`, 'success');
+          overlay.remove();
+          await loadLayers();
+        } catch (err) {
+          showToast('Failed: ' + err.message, 'error');
+          createAllBtn.disabled = false;
+          createAllBtn.textContent = `Create All Missing Assets (${creatableCount})`;
+        }
+      });
+    }
+
+    overlay.querySelectorAll('.create-one-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+          const result = await apiFetch(`/api/map-layers/${layerId}/create-missing-assets`, {
+            method: 'POST',
+            body: { featureIds: [btn.dataset.featureId] },
+          });
+          showToast(`Created ${result.total} asset(s)`, 'success');
+          btn.textContent = 'Done';
+          btn.style.background = '#27ae60';
+        } catch (err) {
+          showToast('Failed: ' + err.message, 'error');
+          btn.disabled = false;
+          btn.textContent = 'Create';
+        }
+      });
+    });
   }
 
   function showSyncReport(result) {
@@ -219,9 +534,12 @@ window._renderMapLayers = async function(container, communityId) {
               <span id="ul-size" style="margin-left:8px;color:var(--gray-500)"></span>
             </div>
           </div>
+          <div id="ul-validation-area"></div>
+          <div id="ul-sync-preview-area"></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary cancel-btn">Cancel</button>
+          <button class="btn btn-secondary" id="ul-preview-sync-btn" style="display:none">Preview Sync</button>
           <button class="btn btn-primary upload-btn" disabled>Upload & Sync</button>
         </div>
       </div>
@@ -229,9 +547,16 @@ window._renderMapLayers = async function(container, communityId) {
     document.body.appendChild(overlay);
 
     let selectedFile = null;
+    let parsedGeojson = null;
+    let validationPassed = false;
 
     const layerKeySelect = overlay.querySelector('#ul-layerKey');
     const subLayerKeySelect = overlay.querySelector('#ul-subLayerKey');
+    const validationArea = overlay.querySelector('#ul-validation-area');
+    const syncPreviewArea = overlay.querySelector('#ul-sync-preview-area');
+    const previewSyncBtn = overlay.querySelector('#ul-preview-sync-btn');
+    const uploadBtn = overlay.querySelector('.upload-btn');
+
     layerKeySelect.addEventListener('change', () => {
       const key = layerKeySelect.value;
       if (key && LAYER_HIERARCHY[key]) {
@@ -242,11 +567,13 @@ window._renderMapLayers = async function(container, communityId) {
         subLayerKeySelect.disabled = true;
         subLayerKeySelect.innerHTML = '<option value="">-- Select layer key first --</option>';
       }
+      runClientValidation();
     });
+
+    subLayerKeySelect.addEventListener('change', () => runClientValidation());
 
     const dropzone = overlay.querySelector('#ul-dropzone');
     const fileInput = overlay.querySelector('#ul-file');
-    const uploadBtn = overlay.querySelector('.upload-btn');
 
     dropzone.addEventListener('click', () => fileInput.click());
     dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--teal)'; });
@@ -270,12 +597,106 @@ window._renderMapLayers = async function(container, communityId) {
         : '<span class="badge" style="background:#27ae60;color:#fff">GeoJSON</span>';
       overlay.querySelector('#ul-size').textContent = formatSize(file.size);
       overlay.querySelector('#ul-droptext').textContent = file.name;
-      uploadBtn.disabled = false;
 
       if (!overlay.querySelector('#ul-name').value) {
         overlay.querySelector('#ul-name').value = file.name.replace(/\.[^.]+$/, '');
       }
+
+      if (!isKml) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            parsedGeojson = JSON.parse(ev.target.result);
+            runClientValidation();
+          } catch {
+            validationArea.innerHTML = `<div style="color:#e74c3c;margin-top:12px;font-size:13px">&#10008; Invalid JSON file</div>`;
+            uploadBtn.disabled = true;
+            validationPassed = false;
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        parsedGeojson = null;
+        validationArea.innerHTML = `<div style="color:var(--gray-500);margin-top:12px;font-size:13px">KML files are validated server-side during upload.</div>`;
+        validationPassed = true;
+        uploadBtn.disabled = false;
+        previewSyncBtn.style.display = 'none';
+      }
     }
+
+    function runClientValidation() {
+      if (!parsedGeojson) return;
+      const layerKey = layerKeySelect.value;
+      const subLayerKey = subLayerKeySelect.value;
+      if (!layerKey || !subLayerKey) {
+        validationArea.innerHTML = '';
+        syncPreviewArea.innerHTML = '';
+        uploadBtn.disabled = true;
+        previewSyncBtn.style.display = 'none';
+        return;
+      }
+
+      const result = clientValidate(parsedGeojson, subLayerKey);
+      validationArea.innerHTML = renderValidationPanel(result);
+
+      if (result.valid) {
+        validationPassed = true;
+        uploadBtn.disabled = false;
+        previewSyncBtn.style.display = 'inline-block';
+      } else {
+        validationPassed = false;
+        uploadBtn.disabled = true;
+        previewSyncBtn.style.display = 'none';
+        syncPreviewArea.innerHTML = '';
+      }
+    }
+
+    previewSyncBtn.addEventListener('click', async () => {
+      if (!parsedGeojson) return;
+      previewSyncBtn.disabled = true;
+      previewSyncBtn.textContent = 'Loading...';
+      try {
+        const resp = await fetch('/api/map-layers/upload-validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            communityId,
+            layerKey: layerKeySelect.value,
+            subLayerKey: subLayerKeySelect.value,
+            geojsonData: JSON.stringify(parsedGeojson),
+          }),
+        });
+        if (resp.ok) {
+          const preview = await resp.json();
+          syncPreviewArea.innerHTML = `
+            <div style="margin-top:12px;border:1px solid var(--gray-200);border-radius:8px;padding:16px">
+              <div style="font-weight:600;margin-bottom:12px;color:var(--navy)">Sync Preview</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
+                <div style="background:var(--gray-50);padding:10px;border-radius:6px">
+                  <div style="font-size:20px;font-weight:700;color:#27ae60">${preview.wouldCreateCount || 0}</div>
+                  <div style="font-size:11px;color:var(--gray-500)">Create</div>
+                </div>
+                <div style="background:var(--gray-50);padding:10px;border-radius:6px">
+                  <div style="font-size:20px;font-weight:700;color:#3498db">${preview.wouldUpdateCount || 0}</div>
+                  <div style="font-size:11px;color:var(--gray-500)">Update</div>
+                </div>
+                <div style="background:var(--gray-50);padding:10px;border-radius:6px">
+                  <div style="font-size:20px;font-weight:700;color:#e67e22">${preview.wouldArchiveCount || 0}</div>
+                  <div style="font-size:11px;color:var(--gray-500)">Archive</div>
+                </div>
+                <div style="background:var(--gray-50);padding:10px;border-radius:6px">
+                  <div style="font-size:20px;font-weight:700;color:#95a5a6">${preview.wouldSkipCount || 0}</div>
+                  <div style="font-size:11px;color:var(--gray-500)">Skip</div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+      } catch {}
+      previewSyncBtn.disabled = false;
+      previewSyncBtn.textContent = 'Preview Sync';
+    });
 
     overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
     overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
@@ -324,6 +745,90 @@ window._renderMapLayers = async function(container, communityId) {
         uploadBtn.textContent = 'Upload & Sync';
       }
     });
+  }
+
+  function clientValidate(geojson, subLayerKey) {
+    const EXPECTED_GEOM = {
+      backflow: ["Point"], controller: ["Point"], zone: ["Polygon", "MultiPolygon"],
+      master_valve: ["Point"], flow_meter: ["Point"], qc_iso_valve: ["Point"],
+      tree: ["Point"], pet_station: ["Point"],
+      landscape_bed: ["Polygon", "MultiPolygon"], bluegrass_area: ["Polygon", "MultiPolygon"],
+      native_area: ["Polygon", "MultiPolygon"], snow_area: ["Polygon", "MultiPolygon"],
+    };
+
+    const result = {
+      featureCount: 0,
+      geometryCounts: { points: 0, lines: 0, polygons: 0, other: 0 },
+      missingIdCount: 0, missingIdSamples: [],
+      duplicateIdCount: 0, duplicateIdSamples: [],
+      invalidGeometryCount: 0, invalidGeometrySamples: [],
+      warnings: [], errors: [], valid: true,
+    };
+
+    let features = [];
+    if (geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
+      features = geojson.features;
+    } else if (geojson.type === 'Feature') {
+      features = [geojson];
+    } else {
+      result.errors.push('Invalid GeoJSON type');
+      result.valid = false;
+      return result;
+    }
+
+    result.featureCount = features.length;
+    const idCounts = {};
+    const expectedTypes = EXPECTED_GEOM[subLayerKey] || null;
+
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      const fid = (f.id != null && String(f.id).trim()) ? String(f.id).trim()
+        : (f.properties?.featureId && String(f.properties.featureId).trim()) ? String(f.properties.featureId).trim()
+        : (f.properties?.id && String(f.properties.id).trim()) ? String(f.properties.id).trim()
+        : null;
+
+      if (!fid) {
+        result.missingIdCount++;
+        if (result.missingIdSamples.length < 10) result.missingIdSamples.push({ index: i, properties: {} });
+      } else {
+        idCounts[fid] = (idCounts[fid] || 0) + 1;
+      }
+
+      const geom = f.geometry;
+      if (!geom || !geom.type) {
+        result.invalidGeometryCount++;
+        result.geometryCounts.other++;
+      } else {
+        if (geom.type === 'Point') result.geometryCounts.points++;
+        else if (geom.type === 'LineString' || geom.type === 'MultiLineString') result.geometryCounts.lines++;
+        else if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') result.geometryCounts.polygons++;
+        else result.geometryCounts.other++;
+
+        if (expectedTypes && !expectedTypes.includes(geom.type)) {
+          if (result.warnings.length < 5) {
+            result.warnings.push(`Feature ${fid || '#' + i}: geometry "${geom.type}" unexpected for ${subLayerKey}`);
+          }
+        }
+      }
+    }
+
+    for (const [id, count] of Object.entries(idCounts)) {
+      if (count > 1) {
+        result.duplicateIdCount++;
+        if (result.duplicateIdSamples.length < 10) result.duplicateIdSamples.push({ featureId: id, count });
+      }
+    }
+
+    if (result.missingIdCount > 0) {
+      result.errors.push(`${result.missingIdCount} feature(s) have no stable ID`);
+      result.valid = false;
+    }
+    if (result.duplicateIdCount > 0) {
+      result.errors.push(`${result.duplicateIdCount} duplicate feature ID(s) found`);
+      result.valid = false;
+    }
+
+    return result;
   }
 
   function showLayerModal(layer = null) {
