@@ -1,0 +1,107 @@
+SLICE 1.3 (PASTE INTO REPLIT): Contractor Dashboard (Unique Home Screen)
+
+Objective
+Create a contractor-first dashboard that feels unique and practical:
+
+Today’s tasks preview + upcoming tasks
+
+Sync health + offline queue status
+
+Quick map jump buttons for common layer groups
+
+Community switch always visible
+
+Scope
+
+New Dashboard tab (or replace current Tasks tab landing if preferred)
+
+Lightweight summary APIs (or reuse existing task endpoints efficiently)
+
+Mobile-first layout, fast load
+
+UI Requirements
+
+Dashboard sections:
+
+1) Header
+
+Active community selector
+
+Online/Offline indicator
+
+Sync status chip:
+
+“All synced” / “Queued (n)” / “Sync error (n)”
+
+2) Today
+
+“Due Today” list (top 5)
+
+Each row: priority, title, status, quick open
+
+Empty state: “No tasks due today”
+
+3) Upcoming
+
+“Next 7 days” list (top 8)
+
+Same format
+
+4) Quick Map Jump
+
+Buttons that jump to Map screen with:
+
+the correct tab selected (Community/Irrigation/Snow/Trees)
+
+a curated set of default layers toggled on
+
+Suggested quick buttons:
+
+Community Areas (bluegrass/native/beds)
+
+Irrigation Key Assets (backflows/controllers)
+
+Trees (all trees)
+
+Snow (all snow layers)
+
+5) Alerts (optional but recommended)
+
+Tasks with follow-up needed
+
+Tasks with sync errors
+
+“New tasks assigned” since last open (if available)
+
+Backend Requirements (minimal)
+
+Add one endpoint OR compute client-side:
+
+Option A (preferred): GET /api/dashboard
+Returns:
+
+dueTodayTasks (assigned to contractor, scoped to active community)
+
+upcomingTasks (next 7 days)
+
+followUpTasks (optional)
+
+offlineQueueCounts (if tracked client-side, no server needed)
+
+Permissions:
+
+contractor only sees their assigned tasks
+
+admin can see all (optional)
+
+Option B: reuse GET /api/tasks?communityId=... and filter client-side with dueDate.
+
+Acceptance Tests
+
+Contractor opens app → dashboard loads in <1s typical.
+
+Due Today and Upcoming populate correctly.
+
+Quick Map Jump sets Map tab + enables expected layers.
+
+Sync status reflects outbox states (queued/syncing/failed).
