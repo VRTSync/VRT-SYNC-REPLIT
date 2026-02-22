@@ -32,7 +32,7 @@ export default function LoginScreen() {
 
   return (
     <ImageBackground
-      source={require('@/assets/images/topography-texture.png')}
+      source={require('@/assets/images/topography-texture-rotated.png')}
       style={styles.backgroundImage}
       resizeMode="repeat"
     >
