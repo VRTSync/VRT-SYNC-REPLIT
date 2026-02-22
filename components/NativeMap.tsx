@@ -67,6 +67,7 @@ export default function NativeMap({
   selectedAsset,
   onDismissAsset,
   onAssetDetail,
+  onAssetHistory,
 }: {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -76,6 +77,7 @@ export default function NativeMap({
   selectedAsset?: AssetInfo | null;
   onDismissAsset?: () => void;
   onAssetDetail?: (assetId: string) => void;
+  onAssetHistory?: (assetId: string) => void;
 }) {
   const mapRef = useRef<MapView>(null);
 
@@ -264,13 +266,22 @@ export default function NativeMap({
             </View>
           )}
 
-          <TouchableOpacity
-            style={styles.assetDetailBtn}
-            onPress={() => onAssetDetail?.(selectedAsset.id)}
-          >
-            <Ionicons name="information-circle-outline" size={18} color="#fff" />
-            <Text style={styles.assetDetailBtnText}>View Full Details</Text>
-          </TouchableOpacity>
+          <View style={styles.assetBtnRow}>
+            <TouchableOpacity
+              style={styles.assetDetailBtn}
+              onPress={() => onAssetDetail?.(selectedAsset.id)}
+            >
+              <Ionicons name="information-circle-outline" size={18} color="#fff" />
+              <Text style={styles.assetDetailBtnText}>Details</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+              onPress={() => onAssetHistory?.(selectedAsset.id)}
+            >
+              <Ionicons name="time-outline" size={18} color="#fff" />
+              <Text style={styles.assetDetailBtnText}>Work History</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
     </View>
@@ -328,7 +339,12 @@ const styles = StyleSheet.create({
   assetPropKey: { fontSize: 13, color: '#666', fontWeight: '500', marginRight: 6 },
   assetPropVal: { fontSize: 13, color: '#333', flex: 1 },
   assetPropMore: { fontSize: 12, color: '#888', fontStyle: 'italic', marginTop: 2 },
+  assetBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   assetDetailBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -336,6 +352,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     gap: 6,
+  },
+  assetHistoryBtn: {
+    backgroundColor: '#0C1D31',
   },
   assetDetailBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });

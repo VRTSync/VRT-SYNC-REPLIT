@@ -329,6 +329,10 @@ export default function MapScreen() {
           setSelectedAsset(null);
           router.push(`/asset/${assetId}`);
         }}
+        onAssetHistory={(assetId: string) => {
+          setSelectedAsset(null);
+          router.push(`/asset/${assetId}/history` as any);
+        }}
       />
     </View>
   );

@@ -109,6 +109,14 @@ export default function AssetDetailScreen() {
             ))}
           </View>
         )}
+
+        <TouchableOpacity
+          style={styles.historyBtn}
+          onPress={() => router.push(`/asset/${id}/history` as any)}
+        >
+          <Ionicons name="time-outline" size={20} color="#fff" />
+          <Text style={styles.historyBtnText}>View Work History</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -159,4 +167,16 @@ const styles = StyleSheet.create({
   },
   detailLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
   detailValue: { fontSize: 14, color: '#333', fontWeight: '400', maxWidth: '60%', textAlign: 'right' },
+  historyBtn: {
+    backgroundColor: '#25C1AC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  historyBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 });

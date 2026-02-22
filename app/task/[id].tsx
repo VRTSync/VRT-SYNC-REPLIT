@@ -385,6 +385,22 @@ export default function TaskDetailScreen() {
                   </Text>
                 </View>
               ) : null}
+              <View style={styles.linkedAssetActions}>
+                <TouchableOpacity
+                  style={styles.linkedAssetBtn}
+                  onPress={() => router.push(`/asset/${taskLink.asset!.id}` as any)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#25C1AC" />
+                  <Text style={styles.linkedAssetBtnText}>Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.linkedAssetBtn}
+                  onPress={() => router.push(`/asset/${taskLink.asset!.id}/history` as any)}
+                >
+                  <Ionicons name="time-outline" size={16} color="#0C1D31" />
+                  <Text style={[styles.linkedAssetBtnText, { color: '#0C1D31' }]}>Work History</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : taskLink.linkType === 'pin' && taskLink.latitude != null && taskLink.longitude != null ? (
             <View style={styles.detailRow}>
@@ -672,5 +688,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0C1D31',
     flex: 1,
+  },
+  linkedAssetActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  linkedAssetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f5f7fa',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  linkedAssetBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#25C1AC',
   },
 });
