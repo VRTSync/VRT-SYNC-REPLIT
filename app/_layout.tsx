@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
@@ -48,21 +49,23 @@ function AuthNavigator() {
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView>
-          <KeyboardProvider>
-            <AuthProvider>
-              <CommunityProvider>
-                <OfflineProvider>
-                  <OfflinePackProvider>
-                    <AuthNavigator />
-                  </OfflinePackProvider>
-                </OfflineProvider>
-              </CommunityProvider>
-            </AuthProvider>
-          </KeyboardProvider>
-        </GestureHandlerRootView>
-      </QueryClientProvider>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <GestureHandlerRootView>
+            <KeyboardProvider>
+              <AuthProvider>
+                <CommunityProvider>
+                  <OfflineProvider>
+                    <OfflinePackProvider>
+                      <AuthNavigator />
+                    </OfflinePackProvider>
+                  </OfflineProvider>
+                </CommunityProvider>
+              </AuthProvider>
+            </KeyboardProvider>
+          </GestureHandlerRootView>
+        </QueryClientProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

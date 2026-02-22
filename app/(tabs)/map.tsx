@@ -236,7 +236,7 @@ export default function MapScreen() {
 
   if (Platform.OS === 'web') {
     return (
-      <View style={[styles.container, { paddingTop: 67 + insets.top }]}>
+      <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
         <View style={styles.categoryBar}>
           {CATEGORY_TABS.map((cat) => (
             <TouchableOpacity
@@ -322,7 +322,7 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.categoryBarFloat}>
+      <View style={[styles.categoryBarFloat, { top: insets.top + 10 }]}>
         {CATEGORY_TABS.map((cat) => (
           <TouchableOpacity
             key={cat.key}
@@ -343,7 +343,7 @@ export default function MapScreen() {
 
       {categoryLayers.length > 0 && (
         <TouchableOpacity
-          style={styles.layerToggleBtn}
+          style={[styles.layerToggleBtn, { top: insets.top + 62 }]}
           onPress={() => setShowLayerPanel(!showLayerPanel)}
         >
           <Ionicons name="layers-outline" size={20} color="#0C1D31" />
@@ -352,7 +352,7 @@ export default function MapScreen() {
       )}
 
       {showLayerPanel && (
-        <View style={styles.layerPanel}>
+        <View style={[styles.layerPanel, { top: insets.top + 62 }]}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
           {categoryLayers.map((layer, idx) => (
             <View key={layer.id} style={styles.layerToggleRow}>
@@ -369,7 +369,7 @@ export default function MapScreen() {
       )}
 
       {useOfflineData && (
-        <View style={styles.offlineBadge}>
+        <View style={[styles.offlineBadge, { top: insets.top + 55 }]}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.offlineBadgeText}>Offline Pack v{localPack?.packVersion}</Text>
         </View>

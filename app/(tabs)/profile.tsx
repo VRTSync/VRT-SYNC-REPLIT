@@ -25,7 +25,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}
+      style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
       contentContainerStyle={styles.content}
     >
       <View style={styles.profileCard}>

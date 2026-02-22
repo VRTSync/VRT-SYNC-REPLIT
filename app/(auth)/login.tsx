@@ -41,7 +41,7 @@ export default function LoginScreen() {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={[styles.inner, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
+        <View style={[styles.inner, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
           <View style={styles.header}>
             <Image
               source={require('@/assets/images/vrtsync-logo.png')}

@@ -150,7 +150,7 @@ export default function TasksScreen() {
   }
 
   return (
-    <View style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
       {!isOnline && (
         <View style={styles.offlineBanner}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />

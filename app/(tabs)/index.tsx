@@ -158,7 +158,7 @@ export default function DashboardScreen() {
   );
 
   return (
-    <View style={[styles.container, Platform.OS === 'web' && { paddingTop: 67 + insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
