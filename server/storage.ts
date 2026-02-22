@@ -97,6 +97,16 @@ export async function getTasksByCommunity(communityId: string): Promise<Task[]> 
     .orderBy(desc(tasks.createdAt));
 }
 
+export async function getTasksDueInRange(from: Date, to: Date): Promise<Task[]> {
+  return db.select().from(tasks)
+    .where(and(
+      gte(tasks.dueDate, from),
+      lt(tasks.dueDate, to),
+      ne(tasks.status, 'completed'),
+      isNotNull(tasks.assignedTo),
+    ));
+}
+
 export async function getTasksForUser(userId: string, communityId?: string): Promise<Task[]> {
   if (communityId) {
     return db.select().from(tasks)
@@ -174,22 +184,34 @@ export async function getAttachmentsByCompletion(taskCompletionId: string): Prom
     .orderBy(desc(attachments.createdAt));
 }
 
-export async function registerPushToken(userId: string, token: string, platform: string): Promise<PushToken> {
+export async function registerPushToken(userId: string, token: string, platform: string, deviceId: string): Promise<PushToken> {
   const existing = await db.select().from(pushTokens)
-    .where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
+    .where(and(eq(pushTokens.userId, userId), eq(pushTokens.deviceId, deviceId)));
   if (existing.length > 0) {
     const [updated] = await db.update(pushTokens)
-      .set({ updatedAt: new Date() })
+      .set({ token, platform, updatedAt: new Date() })
       .where(eq(pushTokens.id, existing[0].id))
       .returning();
     return updated;
   }
-  const [created] = await db.insert(pushTokens).values({ userId, token, platform }).returning();
+  const [created] = await db.insert(pushTokens).values({ userId, token, platform, deviceId }).returning();
   return created;
+}
+
+export async function removePushTokenByDevice(userId: string, deviceId: string): Promise<void> {
+  await db.delete(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.deviceId, deviceId)));
 }
 
 export async function removePushToken(userId: string, token: string): Promise<void> {
   await db.delete(pushTokens).where(and(eq(pushTokens.userId, userId), eq(pushTokens.token, token)));
+}
+
+export async function getTokensForUser(userId: string): Promise<PushToken[]> {
+  return db.select().from(pushTokens).where(eq(pushTokens.userId, userId));
+}
+
+export async function pruneInvalidToken(token: string): Promise<void> {
+  await db.delete(pushTokens).where(eq(pushTokens.token, token));
 }
 
 export async function getCompletedTasksWithDetails(communityId: string) {

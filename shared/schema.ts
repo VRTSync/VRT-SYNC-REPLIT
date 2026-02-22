@@ -91,9 +91,12 @@ export const pushTokens = pgTable("push_tokens", {
   userId: varchar("user_id").notNull().references(() => users.id),
   token: text("token").notNull(),
   platform: text("platform").notNull(),
+  deviceId: text("device_id").notNull().default('unknown'),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("push_tokens_user_device_idx").on(table.userId, table.deviceId),
+]);
 
 export const assetTypeEnum = pgEnum("asset_type", [
   "controller", "backflow", "zone", "tree", "pet_station",
@@ -294,6 +297,7 @@ export const completeTaskSchema = z.object({
 export const registerPushTokenSchema = z.object({
   token: z.string().min(1),
   platform: z.enum(["ios", "android", "web"]),
+  deviceId: z.string().min(1),
 });
 
 export const ASSET_TYPES = [

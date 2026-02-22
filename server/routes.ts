@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./a
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
+import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
@@ -237,6 +238,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdBy: req.session.userId!,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate as any) : undefined,
       });
+
+      if (task.assignedTo) {
+        const community = await storage.getCommunityById(task.communityId);
+        notifyTaskAssigned(task.id, task.title, community?.name || 'Unknown', task.assignedTo).catch(() => {});
+      }
+
       res.status(201).json(task);
     } catch (error) {
       console.error("Create task error:", error);
@@ -260,6 +267,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.dueDate) {
         data.dueDate = new Date(data.dueDate);
       }
+      const previousAssignee = task!.assignedTo;
       const updated = await storage.updateTask(req.params.id as string, version, data);
       if (!updated) {
         const latest = await storage.getTaskById(req.params.id as string);
@@ -269,6 +277,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           latestTask: latest,
         });
       }
+
+      if (updated.assignedTo && updated.assignedTo !== previousAssignee) {
+        const community = await storage.getCommunityById(updated.communityId);
+        notifyTaskAssigned(updated.id, updated.title, community?.name || 'Unknown', updated.assignedTo).catch(() => {});
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Update task error:", error);
@@ -505,6 +519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         req.session.userId!,
         parsed.data.token,
         parsed.data.platform,
+        parsed.data.deviceId,
       );
       res.status(201).json(pushToken);
     } catch (error) {
@@ -515,15 +530,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { token } = req.body;
-      if (!token) {
-        return res.status(400).json({ error: "token is required" });
+      const { token, deviceId } = req.body;
+      if (deviceId) {
+        await storage.removePushTokenByDevice(req.session.userId!, deviceId);
+      } else if (token) {
+        await storage.removePushToken(req.session.userId!, token);
+      } else {
+        return res.status(400).json({ error: "token or deviceId is required" });
       }
-      await storage.removePushToken(req.session.userId!, token);
       res.json({ message: "Push token removed" });
     } catch (error) {
       console.error("Remove push token error:", error);
       res.status(500).json({ error: "Failed to remove push token" });
+    }
+  });
+
+  app.post("/api/push/due-reminders", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      await sendDueReminders();
+      res.json({ message: "Due reminders sent" });
+    } catch (error) {
+      console.error("Due reminders error:", error);
+      res.status(500).json({ error: "Failed to send due reminders" });
     }
   });
 
