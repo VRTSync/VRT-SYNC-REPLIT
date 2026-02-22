@@ -98,7 +98,16 @@ const LAYER_KEY_LABELS: Record<string, string> = {
   community: 'Community', irrigation: 'Irrigation', snow: 'Snow', trees: 'Trees',
 };
 
-type TabId = 'actions' | 'users' | 'members' | 'reports' | 'assets' | 'layers';
+type OfflinePackItem = {
+  id: string;
+  communityId: string;
+  packVersion: number;
+  createdAt: string;
+  updatedAt: string;
+  checksum: string | null;
+};
+
+type TabId = 'actions' | 'users' | 'members' | 'reports' | 'assets' | 'layers' | 'packs';
 
 export default function AdminScreen() {
   const { user } = useAuth();
@@ -145,6 +154,7 @@ export default function AdminScreen() {
   const [layerSubmitting, setLayerSubmitting] = useState(false);
   const [replaceGeoJSON, setReplaceGeoJSON] = useState('');
   const [replacingGeoJSON, setReplacingGeoJSON] = useState(false);
+  const [generatingPack, setGeneratingPack] = useState(false);
 
   const { data: contractors = [] } = useQuery<AppUser[]>({
     queryKey: ['/api/contractors'],
@@ -186,6 +196,15 @@ export default function AdminScreen() {
       return res.json();
     },
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'layers',
+  });
+
+  const { data: offlinePacks = [] } = useQuery<OfflinePackItem[]>({
+    queryKey: ['/api/offline-packs', { communityId: activeCommunity?.id }],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/offline-packs?communityId=${activeCommunity?.id}`);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'packs',
   });
 
   const { data: assetDetail } = useQuery<AssetDetail>({
@@ -445,6 +464,54 @@ export default function AdminScreen() {
     ]);
   };
 
+  const handleGeneratePack = async () => {
+    if (!activeCommunity) {
+      Alert.alert('Error', 'Select a community first');
+      return;
+    }
+    Alert.alert(
+      'Generate Pack',
+      `Generate a new offline pack for "${activeCommunity.name}"? This bundles all map layers, assets, and work history into a downloadable pack for field workers.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Generate',
+          onPress: async () => {
+            setGeneratingPack(true);
+            try {
+              await apiRequest('POST', `/api/communities/${activeCommunity.id}/generate-offline-pack`);
+              queryClient.invalidateQueries({ queryKey: ['/api/offline-packs'] });
+              Alert.alert('Success', 'Offline pack generated successfully');
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to generate offline pack');
+            } finally {
+              setGeneratingPack(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeletePack = async (pack: OfflinePackItem) => {
+    Alert.alert('Delete Pack', `Delete offline pack v${pack.packVersion}? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiRequest('DELETE', `/api/offline-packs/${pack.id}`);
+            queryClient.invalidateQueries({ queryKey: ['/api/offline-packs'] });
+            Alert.alert('Success', 'Pack deleted');
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Failed to delete pack');
+          }
+        },
+      },
+    ]);
+  };
+
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent'];
   const tabs: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { id: 'actions', label: 'Actions', icon: 'flash-outline' },
@@ -453,6 +520,7 @@ export default function AdminScreen() {
     { id: 'reports', label: 'Reports', icon: 'document-text-outline' },
     { id: 'assets', label: 'Assets', icon: 'construct-outline' },
     { id: 'layers', label: 'Layers', icon: 'layers-outline' },
+    { id: 'packs', label: 'Packs', icon: 'download-outline' },
   ];
 
   const memberUserIds = new Set(members.map((m) => m.userId));
@@ -772,6 +840,61 @@ export default function AdminScreen() {
 
             {mapLayersList.length === 0 && (
               <Text style={styles.emptyText}>No map layers in this community</Text>
+            )}
+          </>
+        )}
+
+        {activeTab === 'packs' && (
+          <>
+            <Text style={styles.pageTitle}>Offline Packs</Text>
+            <Text style={styles.pageSubtitle}>{activeCommunity?.name || 'Select a community'}</Text>
+
+            {activeCommunity && (
+              <TouchableOpacity
+                style={[styles.actionCard, { marginBottom: 16, flexDirection: 'row', gap: 10, justifyContent: 'center' }, generatingPack && styles.buttonDisabled]}
+                onPress={handleGeneratePack}
+                disabled={generatingPack}
+              >
+                {generatingPack ? (
+                  <ActivityIndicator color="#25C1AC" />
+                ) : (
+                  <Ionicons name="build-outline" size={22} color="#25C1AC" />
+                )}
+                <Text style={[styles.actionLabel, { fontSize: 15 }]}>
+                  {generatingPack ? 'Generating...' : 'Generate New Pack'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {offlinePacks.length > 0 ? (
+              offlinePacks.map((pack) => (
+                <View key={pack.id} style={styles.assetCard}>
+                  <View style={styles.assetCardHeader}>
+                    <View style={[styles.assetTypeBadge, pack === offlinePacks[0] && { backgroundColor: '#E8F5E9' }]}>
+                      <Text style={[styles.assetTypeBadgeText, pack === offlinePacks[0] && { color: '#4caf50' }]}>
+                        {pack === offlinePacks[0] ? 'Latest' : `v${pack.packVersion}`}
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleDeletePack(pack)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="trash-outline" size={16} color="#f44336" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.assetLabel}>Pack v{pack.packVersion}</Text>
+                  <Text style={styles.assetMeta}>
+                    Created: {new Date(pack.createdAt).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.assetMeta}>
+                    Updated: {new Date(pack.updatedAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                <Ionicons name="cloud-download-outline" size={40} color="#ccc" />
+                <Text style={[styles.emptyText, { textAlign: 'center', marginTop: 8 }]}>
+                  No offline packs generated yet.{'\n'}Generate one so field workers can use the app offline.
+                </Text>
+              </View>
             )}
           </>
         )}
