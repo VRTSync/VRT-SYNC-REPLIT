@@ -4,8 +4,8 @@ import {
   Alert, ActivityIndicator, Platform, Modal, FlatList, Image, ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import StatusBarFill from '@/components/StatusBarFill';
 import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -104,7 +104,6 @@ export default function AdminScreen() {
   const { user } = useAuth();
   const { activeCommunity, communities } = useCommunity();
   const queryClient = useQueryClient();
-  const insets = useSafeAreaInsets();
 
   const [activeTab, setActiveTab] = useState<TabId>('actions');
 
@@ -459,10 +458,11 @@ export default function AdminScreen() {
   const memberUserIds = new Set(members.map((m) => m.userId));
 
   return (
-    <View style={[styles.container, { backgroundColor: '#0C1D31' }]}>
+    <View style={styles.container}>
+      <StatusBarFill />
       <ImageBackground
         source={require('@/assets/images/topography-texture.png')}
-        style={[styles.tabBarWrapper, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
+        style={styles.tabBarWrapper}
         resizeMode="cover"
       >
         <View style={styles.tabBarOverlay} />

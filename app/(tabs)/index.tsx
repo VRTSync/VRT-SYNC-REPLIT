@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl,
-  Platform, ActivityIndicator,
+  ActivityIndicator,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
+import StatusBarFill from '@/components/StatusBarFill';
 
 type Task = {
   id: string;
@@ -71,7 +71,6 @@ export default function DashboardScreen() {
   const { activeCommunity, communities, setActiveCommunity } = useCommunity();
   const { user } = useAuth();
   const { isOnline, pendingCompletions, syncPendingCompletions } = useOffline();
-  const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = useState(false);
   const [showCommunitySwitcher, setShowCommunitySwitcher] = useState(false);
 
@@ -158,12 +157,13 @@ export default function DashboardScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: '#0C1D31' }]}>
+    <View style={styles.container}>
+      <StatusBarFill />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
-        <View style={[styles.header, { paddingTop: (Platform.OS === 'web' ? 67 + insets.top : insets.top) + 16 }]}>
+        <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>
@@ -371,6 +371,7 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 16,
   },
   headerTop: {

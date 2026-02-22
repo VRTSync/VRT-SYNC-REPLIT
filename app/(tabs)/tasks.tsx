@@ -1,11 +1,11 @@
 import React from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Platform,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import StatusBarFill from '@/components/StatusBarFill';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -48,7 +48,6 @@ export default function TasksScreen() {
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
   const { isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions } = useOffline();
-  const insets = useSafeAreaInsets();
   const [syncing, setSyncing] = React.useState(false);
 
   const handleSyncNow = async () => {
@@ -151,7 +150,7 @@ export default function TasksScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.statusBarFill, { height: Platform.OS === 'web' ? 67 + insets.top : insets.top }]} />
+      <StatusBarFill />
       {!isOnline && (
         <View style={styles.offlineBanner}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
@@ -219,7 +218,6 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  statusBarFill: { backgroundColor: '#0C1D31' },
   headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
   communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   taskCount: { fontSize: 14, color: '#888', marginTop: 2 },

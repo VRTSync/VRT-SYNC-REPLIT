@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image, ImageBackground,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ImageBackground,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
+import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 
@@ -13,7 +13,6 @@ export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { communities, activeCommunity, setActiveCommunity } = useCommunity();
   const { localPack, serverPackInfo, isDownloading, downloadProgress, hasUpdate, downloadPack, deletePack, refreshServerInfo } = useOfflinePack();
-  const insets = useSafeAreaInsets();
   const [showCommunities, setShowCommunities] = useState(false);
 
   const handleLogout = () => {
@@ -24,10 +23,12 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === 'web' ? 67 + insets.top : insets.top) + 20 }]}
-    >
+    <View style={styles.outerContainer}>
+      <StatusBarFill />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
       <View style={styles.profileCard}>
         <ImageBackground
           source={require('@/assets/images/topography-texture.png')}
@@ -209,12 +210,14 @@ export default function ProfileScreen() {
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0C1D31' },
-  content: { padding: 20, paddingBottom: 100, backgroundColor: '#f5f7fa' },
+  outerContainer: { flex: 1, backgroundColor: '#f5f7fa' },
+  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  content: { padding: 20, paddingBottom: 100 },
   profileCard: {
     backgroundColor: '#fff',
     borderRadius: 16,

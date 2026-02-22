@@ -5,6 +5,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
+import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
@@ -237,7 +238,7 @@ export default function MapScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
-        <View style={[styles.mapWebStatusBar, { height: Platform.OS === 'web' ? 67 + insets.top : insets.top }]} />
+        <StatusBarFill />
         <View style={styles.categoryBar}>
           {CATEGORY_TABS.map((cat) => (
             <TouchableOpacity
@@ -398,8 +399,7 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0C1D31' },
-  mapWebStatusBar: { backgroundColor: '#0C1D31' },
+  container: { flex: 1, backgroundColor: '#f5f7fa' },
   categoryBar: {
     flexDirection: 'row',
     backgroundColor: '#fff',
