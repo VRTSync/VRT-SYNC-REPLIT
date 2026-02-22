@@ -47,6 +47,29 @@ type Completion = {
   attachments: { id: string; url: string; fileRef: string; createdAt: string }[];
 };
 
+type TaskLinkData = {
+  id: string;
+  taskId: string;
+  linkType: 'asset' | 'pin';
+  assetId: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  asset?: {
+    id: string;
+    assetType: string;
+    label: string;
+    featureRef: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  };
+};
+
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  controller: 'Controller', backflow: 'Backflow', zone: 'Zone', tree: 'Tree',
+  pet_station: 'Pet Station', landscape_bed: 'Landscape Bed',
+  bluegrass_area: 'Bluegrass Area', native_area: 'Native Area', snow_area: 'Snow Area',
+};
+
 const priorityColors: Record<string, string> = {
   low: '#4caf50',
   medium: '#ff9800',
@@ -86,6 +109,12 @@ export default function TaskDetailScreen() {
 
   const { data: completions = [] } = useQuery<Completion[]>({
     queryKey: [`/api/tasks/${id}/completions`],
+    queryFn: getQueryFn({ on401: 'throw' }),
+    enabled: !!id,
+  });
+
+  const { data: taskLink } = useQuery<TaskLinkData | null>({
+    queryKey: [`/api/tasks/${id}/link`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
   });
@@ -326,6 +355,47 @@ export default function TaskDetailScreen() {
           <Text style={styles.detailText}>Version: {task.version}</Text>
         </View>
       </View>
+
+      {taskLink && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>
+            {taskLink.linkType === 'asset' ? 'Linked Asset' : 'Linked Location'}
+          </Text>
+          {taskLink.linkType === 'asset' && taskLink.asset ? (
+            <View>
+              <View style={styles.linkedAssetHeader}>
+                <View style={styles.linkedAssetTypeBadge}>
+                  <Text style={styles.linkedAssetTypeBadgeText}>
+                    {ASSET_TYPE_LABELS[taskLink.asset.assetType] || taskLink.asset.assetType}
+                  </Text>
+                </View>
+                <Text style={styles.linkedAssetLabel}>{taskLink.asset.label}</Text>
+              </View>
+              {taskLink.asset.featureRef ? (
+                <View style={styles.detailRow}>
+                  <Ionicons name="bookmark-outline" size={16} color="#666" />
+                  <Text style={styles.detailText}>Ref: {taskLink.asset.featureRef}</Text>
+                </View>
+              ) : null}
+              {taskLink.asset.latitude != null && taskLink.asset.longitude != null ? (
+                <View style={styles.detailRow}>
+                  <Ionicons name="navigate-outline" size={16} color="#666" />
+                  <Text style={styles.detailText}>
+                    {taskLink.asset.latitude.toFixed(6)}, {taskLink.asset.longitude.toFixed(6)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : taskLink.linkType === 'pin' && taskLink.latitude != null && taskLink.longitude != null ? (
+            <View style={styles.detailRow}>
+              <Ionicons name="pin-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>
+                {taskLink.latitude.toFixed(6)}, {taskLink.longitude.toFixed(6)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      )}
 
       {completions.length > 0 && (
         <View style={styles.card}>
@@ -580,4 +650,27 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   completeButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  linkedAssetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  linkedAssetTypeBadge: {
+    backgroundColor: '#E6F9F6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  linkedAssetTypeBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#25C1AC',
+  },
+  linkedAssetLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0C1D31',
+    flex: 1,
+  },
 });

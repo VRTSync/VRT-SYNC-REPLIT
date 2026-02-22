@@ -49,7 +49,40 @@ type CompletedTask = {
   completions: CompletionDetail[];
 };
 
-type TabId = 'actions' | 'users' | 'members' | 'reports';
+type AssetItem = {
+  id: string;
+  communityId: string;
+  assetType: string;
+  label: string;
+  featureRef: string | null;
+  geometryType: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AssetDetail = AssetItem & {
+  properties: { id: string; key: string; value: string; version: number }[];
+};
+
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  controller: 'Controller',
+  backflow: 'Backflow',
+  zone: 'Zone',
+  tree: 'Tree',
+  pet_station: 'Pet Station',
+  landscape_bed: 'Landscape Bed',
+  bluegrass_area: 'Bluegrass Area',
+  native_area: 'Native Area',
+  snow_area: 'Snow Area',
+};
+
+const ASSET_TYPES = Object.keys(ASSET_TYPE_LABELS);
+const GEOMETRY_TYPES = ['point', 'polygon', 'line'];
+
+type TabId = 'actions' | 'users' | 'members' | 'reports' | 'assets';
 
 export default function AdminScreen() {
   const { user } = useAuth();
@@ -76,6 +109,18 @@ export default function AdminScreen() {
   const [communityDesc, setCommunityDesc] = useState('');
   const [communitySubmitting, setCommunitySubmitting] = useState(false);
 
+  const [showCreateAsset, setShowCreateAsset] = useState(false);
+  const [showAssetDetail, setShowAssetDetail] = useState<AssetItem | null>(null);
+  const [assetType, setAssetType] = useState(ASSET_TYPES[0]);
+  const [assetLabel, setAssetLabel] = useState('');
+  const [assetFeatureRef, setAssetFeatureRef] = useState('');
+  const [assetGeometryType, setAssetGeometryType] = useState('');
+  const [assetLat, setAssetLat] = useState('');
+  const [assetLng, setAssetLng] = useState('');
+  const [assetSubmitting, setAssetSubmitting] = useState(false);
+  const [newPropKey, setNewPropKey] = useState('');
+  const [newPropValue, setNewPropValue] = useState('');
+
   const { data: contractors = [] } = useQuery<AppUser[]>({
     queryKey: ['/api/contractors'],
     queryFn: getQueryFn({ on401: 'throw' }),
@@ -101,6 +146,18 @@ export default function AdminScreen() {
       return res.json();
     },
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'reports',
+  });
+
+  const { data: assets = [] } = useQuery<AssetItem[]>({
+    queryKey: [`/api/communities/${activeCommunity?.id}/assets`],
+    queryFn: getQueryFn({ on401: 'throw' }),
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'assets',
+  });
+
+  const { data: assetDetail } = useQuery<AssetDetail>({
+    queryKey: [`/api/assets/${showAssetDetail?.id}`],
+    queryFn: getQueryFn({ on401: 'throw' }),
+    enabled: !!showAssetDetail,
   });
 
   if (user?.role !== 'admin') {
@@ -232,12 +289,63 @@ export default function AdminScreen() {
     ]);
   };
 
+  const handleCreateAsset = async () => {
+    if (!assetLabel.trim() || !activeCommunity) {
+      Alert.alert('Error', 'Asset label and active community are required');
+      return;
+    }
+    setAssetSubmitting(true);
+    try {
+      await apiRequest('POST', '/api/assets', {
+        communityId: activeCommunity.id,
+        assetType: assetType,
+        label: assetLabel.trim(),
+        featureRef: assetFeatureRef.trim() || undefined,
+        geometryType: assetGeometryType || undefined,
+        latitude: assetLat ? parseFloat(assetLat) : undefined,
+        longitude: assetLng ? parseFloat(assetLng) : undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity.id}/assets`] });
+      setShowCreateAsset(false);
+      setAssetType(ASSET_TYPES[0]);
+      setAssetLabel('');
+      setAssetFeatureRef('');
+      setAssetGeometryType('');
+      setAssetLat('');
+      setAssetLng('');
+      Alert.alert('Success', 'Asset created successfully');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to create asset');
+    } finally {
+      setAssetSubmitting(false);
+    }
+  };
+
+  const handleAddProperty = async () => {
+    if (!showAssetDetail || !newPropKey.trim() || !newPropValue.trim()) {
+      Alert.alert('Error', 'Key and value are required');
+      return;
+    }
+    try {
+      await apiRequest('PUT', `/api/assets/${showAssetDetail.id}/properties`, {
+        properties: [{ key: newPropKey.trim(), value: newPropValue.trim() }],
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/assets/${showAssetDetail.id}`] });
+      setNewPropKey('');
+      setNewPropValue('');
+      Alert.alert('Success', 'Property added');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to add property');
+    }
+  };
+
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent'];
   const tabs: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { id: 'actions', label: 'Actions', icon: 'flash-outline' },
     { id: 'users', label: 'Users', icon: 'people-outline' },
     { id: 'members', label: 'Members', icon: 'person-circle-outline' },
     { id: 'reports', label: 'Reports', icon: 'document-text-outline' },
+    { id: 'assets', label: 'Assets', icon: 'construct-outline' },
   ];
 
   const memberUserIds = new Set(members.map((m) => m.userId));
@@ -465,6 +573,50 @@ export default function AdminScreen() {
             ))}
           </>
         )}
+
+        {activeTab === 'assets' && (
+          <>
+            <Text style={styles.pageTitle}>Assets</Text>
+            <Text style={styles.pageSubtitle}>{activeCommunity?.name || 'Select a community'}</Text>
+
+            <View style={styles.actionGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateAsset(true)}>
+                <Ionicons name="add-circle-outline" size={28} color="#25C1AC" />
+                <Text style={styles.actionLabel}>Create Asset</Text>
+              </TouchableOpacity>
+            </View>
+
+            {assets.length === 0 && (
+              <Text style={styles.emptyText}>No assets in this community</Text>
+            )}
+
+            {assets.map((asset) => (
+              <TouchableOpacity
+                key={asset.id}
+                style={styles.assetCard}
+                onPress={() => setShowAssetDetail(asset)}
+              >
+                <View style={styles.assetCardHeader}>
+                  <View style={styles.assetTypeBadge}>
+                    <Text style={styles.assetTypeBadgeText}>
+                      {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={14} color="#ccc" />
+                </View>
+                <Text style={styles.assetLabel}>{asset.label}</Text>
+                {asset.featureRef ? (
+                  <Text style={styles.assetMeta}>Ref: {asset.featureRef}</Text>
+                ) : null}
+                {asset.latitude != null && asset.longitude != null ? (
+                  <Text style={styles.assetMeta}>
+                    {asset.latitude.toFixed(5)}, {asset.longitude.toFixed(5)}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
       </ScrollView>
 
       <Modal visible={showCreateTask} animationType="slide" presentationStyle="pageSheet">
@@ -621,6 +773,129 @@ export default function AdminScreen() {
                 </View>
               );
             })}
+          </ScrollView>
+        )}
+      </Modal>
+
+      <Modal visible={showCreateAsset} animationType="slide" presentationStyle="pageSheet">
+        <ScrollView style={styles.modalContainer} contentContainerStyle={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowCreateAsset(false)}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Asset</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <Text style={styles.fieldLabel}>Asset Type</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <View style={styles.priorityRow}>
+              {ASSET_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.priorityChip, assetType === t && styles.priorityChipActive]}
+                  onPress={() => setAssetType(t)}
+                >
+                  <Text style={[styles.priorityChipText, assetType === t && styles.priorityChipTextActive]}>
+                    {ASSET_TYPE_LABELS[t]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          <TextInput style={styles.input} placeholder="Label (required)" placeholderTextColor="#999" value={assetLabel} onChangeText={setAssetLabel} />
+          <TextInput style={styles.input} placeholder="Feature Reference (optional)" placeholderTextColor="#999" value={assetFeatureRef} onChangeText={setAssetFeatureRef} />
+
+          <Text style={styles.fieldLabel}>Geometry Type</Text>
+          <View style={styles.priorityRow}>
+            {GEOMETRY_TYPES.map((g) => (
+              <TouchableOpacity
+                key={g}
+                style={[styles.priorityChip, assetGeometryType === g && styles.priorityChipActive]}
+                onPress={() => setAssetGeometryType(assetGeometryType === g ? '' : g)}
+              >
+                <Text style={[styles.priorityChipText, assetGeometryType === g && styles.priorityChipTextActive]}>
+                  {g}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.row}>
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Latitude" placeholderTextColor="#999" value={assetLat} onChangeText={setAssetLat} keyboardType="numeric" />
+            <TextInput style={[styles.input, { flex: 1 }]} placeholder="Longitude" placeholderTextColor="#999" value={assetLng} onChangeText={setAssetLng} keyboardType="numeric" />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.submitButton, assetSubmitting && styles.buttonDisabled]}
+            onPress={handleCreateAsset}
+            disabled={assetSubmitting}
+          >
+            {assetSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Create Asset</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </Modal>
+
+      <Modal visible={!!showAssetDetail} animationType="slide" presentationStyle="pageSheet">
+        {showAssetDetail && (
+          <ScrollView style={styles.modalContainer} contentContainerStyle={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => { setShowAssetDetail(null); setNewPropKey(''); setNewPropValue(''); }}>
+                <Text style={styles.cancelText}>Close</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Asset Details</Text>
+              <View style={{ width: 60 }} />
+            </View>
+
+            <View style={styles.userDetailCard}>
+              <View style={styles.assetTypeBadge}>
+                <Text style={styles.assetTypeBadgeText}>
+                  {ASSET_TYPE_LABELS[showAssetDetail.assetType] || showAssetDetail.assetType}
+                </Text>
+              </View>
+              <Text style={[styles.userDetailName, { marginTop: 12 }]}>{showAssetDetail.label}</Text>
+              {showAssetDetail.featureRef ? (
+                <Text style={styles.userDetailUsername}>Ref: {showAssetDetail.featureRef}</Text>
+              ) : null}
+              {showAssetDetail.latitude != null && showAssetDetail.longitude != null ? (
+                <Text style={styles.userDetailUsername}>
+                  {showAssetDetail.latitude.toFixed(5)}, {showAssetDetail.longitude.toFixed(5)}
+                </Text>
+              ) : null}
+            </View>
+
+            <Text style={styles.sectionTitle}>Properties</Text>
+            {assetDetail?.properties && assetDetail.properties.length > 0 ? (
+              assetDetail.properties.map((prop) => (
+                <View key={prop.id} style={styles.assetPropRow}>
+                  <Text style={styles.assetPropKey}>{prop.key}</Text>
+                  <Text style={styles.assetPropValue}>{prop.value}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>No properties yet</Text>
+            )}
+
+            <View style={styles.addPropRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                placeholder="Key"
+                placeholderTextColor="#999"
+                value={newPropKey}
+                onChangeText={setNewPropKey}
+              />
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                placeholder="Value"
+                placeholderTextColor="#999"
+                value={newPropValue}
+                onChangeText={setNewPropValue}
+              />
+              <TouchableOpacity onPress={handleAddProperty}>
+                <Ionicons name="add-circle" size={32} color="#25C1AC" />
+              </TouchableOpacity>
+            </View>
           </ScrollView>
         )}
       </Modal>
@@ -849,4 +1124,69 @@ const styles = StyleSheet.create({
   reportValue: { fontSize: 13, color: '#333', flex: 1 },
   reportPhotos: { flexDirection: 'row', gap: 8, marginTop: 8 },
   reportPhoto: { width: 64, height: 64, borderRadius: 8 },
+  assetCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  assetCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  assetTypeBadge: {
+    backgroundColor: '#E6F9F6',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  assetTypeBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#25C1AC',
+  },
+  assetLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C1D31',
+    marginBottom: 2,
+  },
+  assetMeta: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  assetPropRow: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 6,
+    gap: 8,
+  },
+  assetPropKey: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0C1D31',
+    minWidth: 80,
+  },
+  assetPropValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
+  addPropRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
 });
