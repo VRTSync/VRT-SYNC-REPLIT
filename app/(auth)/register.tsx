@@ -136,7 +136,7 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  backgroundImage: { flex: 1 },
+  backgroundImage: { flex: 1, backgroundColor: '#0C1D31' },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(12, 29, 49, 0.88)',
