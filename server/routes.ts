@@ -849,6 +849,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/assets/bulk/properties", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { assetIds, key, value, mode } = req.body;
+      if (!Array.isArray(assetIds) || assetIds.length === 0) {
+        return res.status(400).json({ error: "assetIds must be a non-empty array" });
+      }
+      if (!key || typeof key !== "string" || !value || typeof value !== "string") {
+        return res.status(400).json({ error: "key and value are required strings" });
+      }
+      const validMode = mode === "overwrite" ? "overwrite" : "set_if_missing";
+      const result = await storage.bulkUpsertAssetProperty(assetIds, key.trim(), value.trim(), validMode);
+      res.json(result);
+    } catch (error) {
+      console.error("Bulk upsert properties error:", error);
+      res.status(500).json({ error: "Failed to bulk upsert properties" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/assets/incomplete", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const assetType = req.query.assetType as string | undefined;
+      const mapLayerId = req.query.mapLayerId as string | undefined;
+      const missingKey = req.query.missingKey as string | undefined;
+      const results = await storage.getIncompleteAssets(communityId, assetType, mapLayerId, missingKey);
+      res.json(results);
+    } catch (error) {
+      console.error("Get incomplete assets error:", error);
+      res.status(500).json({ error: "Failed to fetch incomplete assets" });
+    }
+  });
+
   app.get("/api/asset-type-templates", requireAuth, async (_req: Request, res: Response) => {
     res.json(ASSET_TYPE_TEMPLATES);
   });

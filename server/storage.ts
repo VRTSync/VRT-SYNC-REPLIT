@@ -340,6 +340,60 @@ export async function upsertAssetProperties(assetId: string, props: { key: strin
   return results;
 }
 
+export async function bulkUpsertAssetProperty(
+  assetIds: string[],
+  key: string,
+  value: string,
+  mode: "set_if_missing" | "overwrite"
+): Promise<{ created: number; updated: number; skipped: number }> {
+  let created = 0, updated = 0, skipped = 0;
+  for (const assetId of assetIds) {
+    const [existing] = await db.select().from(assetProperties)
+      .where(and(eq(assetProperties.assetId, assetId), eq(assetProperties.key, key)));
+    if (existing) {
+      if (mode === "overwrite") {
+        await db.update(assetProperties)
+          .set({ value, version: existing.version + 1, updatedAt: new Date() })
+          .where(eq(assetProperties.id, existing.id));
+        updated++;
+      } else {
+        skipped++;
+      }
+    } else {
+      await db.insert(assetProperties).values({ assetId, key, value }).returning();
+      created++;
+    }
+  }
+  return { created, updated, skipped };
+}
+
+export async function getIncompleteAssets(
+  communityId: string,
+  assetType?: string,
+  mapLayerId?: string,
+  missingKey?: string,
+): Promise<(Asset & { missingRequiredKeys: string[] })[]> {
+  const conditions = [eq(assets.communityId, communityId), eq(assets.isArchived, false)];
+  if (assetType) conditions.push(eq(assets.assetType, assetType as Asset["assetType"]));
+  if (mapLayerId) conditions.push(eq(assets.mapLayerId, mapLayerId));
+
+  const allAssets = await db.select().from(assets)
+    .where(and(...conditions))
+    .orderBy(assets.label);
+
+  const { getMissingRequiredKeys } = await import("./assetSync");
+
+  const results: (Asset & { missingRequiredKeys: string[] })[] = [];
+  for (const asset of allAssets) {
+    const props = await getAssetProperties(asset.id);
+    const missing = getMissingRequiredKeys(asset.assetType, props);
+    if (missing.length === 0) continue;
+    if (missingKey && !missing.includes(missingKey)) continue;
+    results.push({ ...asset, missingRequiredKeys: missing });
+  }
+  return results;
+}
+
 export async function getTaskLink(taskId: string): Promise<(TaskLink & { asset?: Asset }) | null> {
   const [link] = await db.select().from(taskLinks).where(eq(taskLinks.taskId, taskId));
   if (!link) return null;
