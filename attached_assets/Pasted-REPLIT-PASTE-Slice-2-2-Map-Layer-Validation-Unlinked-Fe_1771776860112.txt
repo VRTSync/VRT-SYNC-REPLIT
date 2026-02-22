@@ -1,0 +1,177 @@
+REPLIT PASTE: Slice 2.2 — Map Layer Validation + Unlinked Features + Sync Preview
+
+Implement validation tooling and “build hygiene” workflows in the Admin Web Hub so community setup is fast, safe, and predictable.
+
+Goals
+
+Validate uploaded GeoJSON/KML-derived GeoJSON before saving (feature ID + geometry sanity).
+
+Provide a Sync Preview that shows what would be created/updated/archived before committing.
+
+Provide an Unlinked Features report for a layer (features with no matching asset).
+
+Provide a Duplicate/Collision report (multiple features mapping to same featureId, or featureIds reused).
+
+Provide clear UI surfaces for these tools in the Web Map Layers page.
+
+Backend
+A) Validation utility (shared)
+
+Create a server utility validateLayerGeoJSON(geojson, { layerKey, subLayerKey }) that returns:
+
+featureCount
+
+geometryCounts (points/lines/polygons)
+
+missingIdCount
+
+missingIdSamples (first 10)
+
+duplicateIdCount
+
+duplicateIdSamples (first 10 ids with duplicates)
+
+invalidGeometryCount
+
+invalidGeometrySamples (first 10)
+
+warnings[] and errors[]
+
+Rules:
+
+Every feature must have a stable ID:
+
+feature.id OR properties.featureId
+
+Reject if missingIdCount > 0 (unless admin explicitly chooses “auto-derive IDs”, optional)
+
+Reject if duplicateIdCount > 0
+
+Allow mixed geometry only if appropriate for subLayerKey; otherwise warn (e.g., backflow should be points)
+
+B) Sync Preview endpoint (admin-only)
+
+Add:
+POST /api/map-layers/:id/sync-preview
+Body: optional { geojsonData?: string } (if previewing unsaved edits)
+
+Returns:
+
+featureCount
+
+wouldCreateCount
+
+wouldUpdateCount
+
+wouldArchiveCount
+
+wouldSkipCount (missing IDs, invalid geometry)
+
+wouldCreateSamples (first 10: featureId, derived label)
+
+wouldArchiveSamples (first 10: assetId, label, featureRef)
+
+Implementation:
+
+Compare incoming featureIds vs existing assets for (communityId, mapLayerId)
+
+Determine create/update/archive without mutating DB
+
+This must mirror the real sync logic so preview is trustworthy
+
+C) Unlinked Features endpoint (admin-only)
+
+Add:
+GET /api/map-layers/:id/unlinked-features
+Returns list of features whose featureId does not have a corresponding active asset:
+
+featureId
+
+label (from properties.name/label if available)
+
+geometryType
+
+centroid/latLng (for map jump)
+
+reason (missing asset / archived asset exists / invalid id)
+
+Add action endpoint:
+POST /api/map-layers/:id/create-missing-assets
+Body: { featureIds?: string[] } (optional, default all)
+Creates missing assets for those features (no-ops if already exists).
+Returns counts.
+
+D) Collision report (admin-only)
+
+Add:
+GET /api/map-layers/:id/collisions
+Returns:
+
+duplicate featureIds in GeoJSON
+
+featureIds that match multiple assets (should not happen if unique constraint exists; if it does, report)
+
+Admin Web UI (Map Layers page)
+A) Upload/Edit modal enhancements
+
+Before Save:
+
+Show “Validation Results” panel:
+
+Feature count
+
+Missing IDs (count + sample)
+
+Duplicate IDs
+
+Geometry counts
+
+Disable Save if errors exist
+
+Show a “Preview Sync” button that calls sync-preview and renders:
+
+Would Create / Update / Archive counts
+
+sample lists
+
+After Save:
+
+Show the actual sync report (created/updated/archived/skipped)
+
+B) Layer row actions
+
+On each (layerKey/subLayerKey) row:
+
+Validate
+
+Sync Preview
+
+Unlinked Features
+
+Sync Now (existing)
+
+C) Unlinked Features view
+
+Table listing featureId + label + map jump + status
+
+Button: “Create missing assets (all)” and per-row create
+
+Acceptance Criteria
+
+Upload a KML with a missing featureId → validation blocks save with clear error.
+
+Upload a KML with duplicate IDs → validation blocks save.
+
+Sync Preview correctly reports creates/archives without changing DB.
+
+Unlinked Features list matches reality and “Create missing assets” resolves it.
+
+After syncing, Assets completeness dashboard reflects changes immediately.
+
+Out of Scope
+
+Auto-fix duplicate IDs (just block and explain)
+
+Full GIS editing tools
+
+KML styling validation
