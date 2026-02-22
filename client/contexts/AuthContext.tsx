@@ -4,8 +4,44 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 const PUSH_TOKEN_KEY = 'push_token';
+const DEVICE_ID_KEY = 'device_id';
+const NOTIF_PREFS_KEY = 'notification_preferences';
+
+export type NotificationPreferences = {
+  taskAssigned: boolean;
+  dueReminders: boolean;
+  syncFailure: boolean;
+};
+
+const DEFAULT_PREFS: NotificationPreferences = {
+  taskAssigned: true,
+  dueReminders: true,
+  syncFailure: true,
+};
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences> {
+  try {
+    const json = await AsyncStorage.getItem(NOTIF_PREFS_KEY);
+    if (json) return { ...DEFAULT_PREFS, ...JSON.parse(json) };
+  } catch {}
+  return DEFAULT_PREFS;
+}
+
+export async function setNotificationPreferences(prefs: NotificationPreferences): Promise<void> {
+  await AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(prefs));
+}
+
+async function getOrCreateDeviceId(): Promise<string> {
+  let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = Crypto.randomUUID();
+    await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
+  }
+  return deviceId;
+}
 
 type User = {
   id: string;
@@ -42,6 +78,9 @@ const AuthContext = createContext<AuthContextType | null>(null);
 async function registerPushTokenWithServer() {
   if (Platform.OS === 'web') return;
   try {
+    const prefs = await getNotificationPreferences();
+    if (!prefs.taskAssigned && !prefs.dueReminders) return;
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -53,8 +92,9 @@ async function registerPushTokenWithServer() {
     const tokenData = await Notifications.getExpoPushTokenAsync();
     const token = tokenData.data;
     const platform = Platform.OS as 'ios' | 'android';
+    const deviceId = await getOrCreateDeviceId();
 
-    await apiRequest('POST', '/api/push-tokens', { token, platform });
+    await apiRequest('POST', '/api/push-tokens', { token, platform, deviceId });
     await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
   } catch (e) {
     console.warn('Push token registration failed:', e);
@@ -64,11 +104,9 @@ async function registerPushTokenWithServer() {
 async function unregisterPushToken() {
   if (Platform.OS === 'web') return;
   try {
-    const token = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
-    if (token) {
-      await apiRequest('DELETE', '/api/push-tokens', { token });
-      await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
-    }
+    const deviceId = await getOrCreateDeviceId();
+    await apiRequest('DELETE', '/api/push-tokens', { deviceId });
+    await AsyncStorage.removeItem(PUSH_TOKEN_KEY);
   } catch (e) {
     console.warn('Push token removal failed:', e);
   }
@@ -96,6 +134,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) {
       pushTokenRegistered.current = false;
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const subscription = Notifications.addPushTokenListener((newToken) => {
+      if (user) {
+        registerPushTokenWithServer();
+      }
+    });
+    return () => subscription.remove();
   }, [user]);
 
   const loginMutation = useMutation({

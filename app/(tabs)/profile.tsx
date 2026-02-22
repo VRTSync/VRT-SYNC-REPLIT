@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ImageBackground,
-  ActivityIndicator,
+  ActivityIndicator, Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/client/contexts/AuthContext';
+import { useAuth, getNotificationPreferences, setNotificationPreferences, type NotificationPreferences } from '@/client/contexts/AuthContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
@@ -14,6 +14,23 @@ export default function ProfileScreen() {
   const { communities, activeCommunity, setActiveCommunity } = useCommunity();
   const { localPack, serverPackInfo, isDownloading, downloadProgress, hasUpdate, downloadPack, deletePack, refreshServerInfo } = useOfflinePack();
   const [showCommunities, setShowCommunities] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
+    taskAssigned: true,
+    dueReminders: true,
+    syncFailure: true,
+  });
+
+  useEffect(() => {
+    getNotificationPreferences().then(setNotifPrefs);
+  }, []);
+
+  const togglePref = useCallback((key: keyof NotificationPreferences) => {
+    setNotifPrefs(prev => {
+      const updated = { ...prev, [key]: !prev[key] };
+      setNotificationPreferences(updated);
+      return updated;
+    });
+  }, []);
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -201,6 +218,56 @@ export default function ProfileScreen() {
             {isDownloading && downloadProgress ? (
               <Text style={styles.packProgress}>{downloadProgress}</Text>
             ) : null}
+          </View>
+        </View>
+      )}
+
+      {Platform.OS !== 'web' && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionLeft}>
+              <Ionicons name="notifications-outline" size={20} color="#25C1AC" />
+              <Text style={styles.sectionTitle}>Notifications</Text>
+            </View>
+          </View>
+
+          <View style={styles.notifRow}>
+            <View style={styles.notifInfo}>
+              <Text style={styles.notifLabel}>New task assigned</Text>
+              <Text style={styles.notifDesc}>Get notified when you're assigned a task</Text>
+            </View>
+            <Switch
+              value={notifPrefs.taskAssigned}
+              onValueChange={() => togglePref('taskAssigned')}
+              trackColor={{ false: '#ddd', true: '#25C1AC' }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          <View style={styles.notifRow}>
+            <View style={styles.notifInfo}>
+              <Text style={styles.notifLabel}>Due reminders</Text>
+              <Text style={styles.notifDesc}>Daily reminder for tasks due today</Text>
+            </View>
+            <Switch
+              value={notifPrefs.dueReminders}
+              onValueChange={() => togglePref('dueReminders')}
+              trackColor={{ false: '#ddd', true: '#25C1AC' }}
+              thumbColor="#fff"
+            />
+          </View>
+
+          <View style={styles.notifRow}>
+            <View style={styles.notifInfo}>
+              <Text style={styles.notifLabel}>Sync failure alerts</Text>
+              <Text style={styles.notifDesc}>Alert when a completion fails to sync</Text>
+            </View>
+            <Switch
+              value={notifPrefs.syncFailure}
+              onValueChange={() => togglePref('syncFailure')}
+              trackColor={{ false: '#ddd', true: '#25C1AC' }}
+              thumbColor="#fff"
+            />
           </View>
         </View>
       )}
@@ -401,4 +468,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   logoutText: { fontSize: 16, fontWeight: '600', color: '#f44336' },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  notifInfo: { flex: 1, marginRight: 12 },
+  notifLabel: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
+  notifDesc: { fontSize: 12, color: '#888', marginTop: 2 },
 });

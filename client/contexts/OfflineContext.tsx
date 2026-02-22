@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
-import { useAuth } from './AuthContext';
+import { useAuth, getNotificationPreferences } from './AuthContext';
+import * as Notifications from 'expo-notifications';
 
 const TASKS_CACHE_KEY = 'offline_tasks_cache';
 const PENDING_COMPLETIONS_KEY = 'offline_pending_completions';
@@ -319,6 +320,21 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
     if (synced > 0) {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+    }
+
+    if (failed > 0 && Platform.OS !== 'web') {
+      getNotificationPreferences().then(prefs => {
+        if (prefs.syncFailure) {
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: 'Sync failed',
+              body: `${failed} completion${failed > 1 ? 's' : ''} failed to sync. Tap to review.`,
+              data: { type: 'sync_failed' },
+            },
+            trigger: null,
+          }).catch(() => {});
+        }
+      });
     }
 
     return { synced, failed };
