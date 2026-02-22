@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -95,6 +95,60 @@ export const pushTokens = pgTable("push_tokens", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const assetTypeEnum = pgEnum("asset_type", [
+  "controller", "backflow", "zone", "tree", "pet_station",
+  "landscape_bed", "bluegrass_area", "native_area", "snow_area",
+]);
+
+export const geometryTypeEnum = pgEnum("geometry_type", ["point", "polygon", "line"]);
+
+export const linkTypeEnum = pgEnum("link_type", ["asset", "pin"]);
+
+export const assets = pgTable("assets", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  assetType: assetTypeEnum("asset_type").notNull(),
+  label: text("label").notNull(),
+  featureRef: text("feature_ref"),
+  geometryType: geometryTypeEnum("geometry_type"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("assets_community_type_idx").on(table.communityId, table.assetType),
+  index("assets_community_feature_idx").on(table.communityId, table.featureRef),
+]);
+
+export const assetProperties = pgTable("asset_properties", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  key: text("key").notNull(),
+  value: text("value").notNull(),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("asset_properties_asset_key_idx").on(table.assetId, table.key),
+]);
+
+export const taskLinks = pgTable("task_links", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => tasks.id),
+  linkType: linkTypeEnum("link_type").notNull(),
+  assetId: varchar("asset_id").references(() => assets.id),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
   user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
 }));
@@ -111,6 +165,7 @@ export const usersRelations = relations(users, ({ many }) => ({
 export const communitiesRelations = relations(communities, ({ many }) => ({
   members: many(communityMembers),
   tasks: many(tasks),
+  assets: many(assets),
 }));
 
 export const communityMembersRelations = relations(communityMembers, ({ one }) => ({
@@ -123,6 +178,7 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   assignee: one(users, { fields: [tasks.assignedTo], references: [users.id], relationName: "assignedTasks" }),
   creator: one(users, { fields: [tasks.createdBy], references: [users.id], relationName: "createdTasks" }),
   completions: many(taskCompletions),
+  taskLinks: many(taskLinks),
 }));
 
 export const taskCompletionsRelations = relations(taskCompletions, ({ one, many }) => ({
@@ -134,6 +190,21 @@ export const taskCompletionsRelations = relations(taskCompletions, ({ one, many 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   taskCompletion: one(taskCompletions, { fields: [attachments.taskCompletionId], references: [taskCompletions.id] }),
   uploader: one(users, { fields: [attachments.uploadedBy], references: [users.id] }),
+}));
+
+export const assetsRelations = relations(assets, ({ one, many }) => ({
+  community: one(communities, { fields: [assets.communityId], references: [communities.id] }),
+  properties: many(assetProperties),
+  taskLinks: many(taskLinks),
+}));
+
+export const assetPropertiesRelations = relations(assetProperties, ({ one }) => ({
+  asset: one(assets, { fields: [assetProperties.assetId], references: [assets.id] }),
+}));
+
+export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
+  task: one(tasks, { fields: [taskLinks.taskId], references: [tasks.id] }),
+  asset: one(assets, { fields: [taskLinks.assetId], references: [assets.id] }),
 }));
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -179,6 +250,45 @@ export const registerPushTokenSchema = z.object({
   platform: z.enum(["ios", "android", "web"]),
 });
 
+export const ASSET_TYPES = [
+  "controller", "backflow", "zone", "tree", "pet_station",
+  "landscape_bed", "bluegrass_area", "native_area", "snow_area",
+] as const;
+
+export const insertAssetSchema = z.object({
+  communityId: z.string().min(1),
+  assetType: z.enum(ASSET_TYPES),
+  label: z.string().min(1),
+  featureRef: z.string().optional(),
+  geometryType: z.enum(["point", "polygon", "line"]).optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+});
+
+export const updateAssetSchema = z.object({
+  label: z.string().min(1).optional(),
+  featureRef: z.string().nullable().optional(),
+  geometryType: z.enum(["point", "polygon", "line"]).nullable().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
+  version: z.number(),
+});
+
+export const upsertAssetPropertiesSchema = z.object({
+  properties: z.array(z.object({
+    key: z.string().min(1),
+    value: z.string(),
+  })),
+});
+
+export const setTaskLinkSchema = z.object({
+  linkType: z.enum(["asset", "pin"]),
+  assetId: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  version: z.number(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -187,3 +297,6 @@ export type Task = typeof tasks.$inferSelect;
 export type TaskCompletion = typeof taskCompletions.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
+export type Asset = typeof assets.$inferSelect;
+export type AssetProperty = typeof assetProperties.$inferSelect;
+export type TaskLink = typeof taskLinks.$inferSelect;

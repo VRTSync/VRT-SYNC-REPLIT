@@ -2,8 +2,10 @@ import { eq, and, desc, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
+  assets, assetProperties, taskLinks,
   type User, type InsertUser, type Community, type CommunityMember,
-  type Task, type TaskCompletion, type Attachment, type PushToken
+  type Task, type TaskCompletion, type Attachment, type PushToken,
+  type Asset, type AssetProperty, type TaskLink
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -244,4 +246,93 @@ export async function updateUserRole(userId: string, role: "contractor" | "admin
     .where(eq(users.id, userId))
     .returning();
   return updated || null;
+}
+
+export async function createAsset(data: {
+  communityId: string;
+  assetType: Asset["assetType"];
+  label: string;
+  featureRef?: string;
+  geometryType?: Asset["geometryType"];
+  latitude?: number;
+  longitude?: number;
+}): Promise<Asset> {
+  const [asset] = await db.insert(assets).values(data).returning();
+  return asset;
+}
+
+export async function getAssetById(id: string): Promise<Asset | undefined> {
+  const [asset] = await db.select().from(assets).where(eq(assets.id, id));
+  return asset;
+}
+
+export async function getAssetsByCommunitySorted(communityId: string, assetType?: string): Promise<Asset[]> {
+  if (assetType) {
+    return db.select().from(assets)
+      .where(and(eq(assets.communityId, communityId), eq(assets.assetType, assetType as Asset["assetType"])))
+      .orderBy(assets.label);
+  }
+  return db.select().from(assets)
+    .where(eq(assets.communityId, communityId))
+    .orderBy(assets.label);
+}
+
+export async function updateAsset(id: string, expectedVersion: number, data: Partial<{
+  label: string;
+  featureRef: string | null;
+  geometryType: Asset["geometryType"] | null;
+  latitude: number | null;
+  longitude: number | null;
+}>): Promise<Asset | null> {
+  const [updated] = await db.update(assets)
+    .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
+    .where(and(eq(assets.id, id), eq(assets.version, expectedVersion)))
+    .returning();
+  return updated || null;
+}
+
+export async function getAssetProperties(assetId: string): Promise<AssetProperty[]> {
+  return db.select().from(assetProperties)
+    .where(eq(assetProperties.assetId, assetId))
+    .orderBy(assetProperties.key);
+}
+
+export async function upsertAssetProperties(assetId: string, props: { key: string; value: string }[]): Promise<AssetProperty[]> {
+  const results: AssetProperty[] = [];
+  for (const p of props) {
+    const [existing] = await db.select().from(assetProperties)
+      .where(and(eq(assetProperties.assetId, assetId), eq(assetProperties.key, p.key)));
+    if (existing) {
+      const [updated] = await db.update(assetProperties)
+        .set({ value: p.value, version: existing.version + 1, updatedAt: new Date() })
+        .where(eq(assetProperties.id, existing.id))
+        .returning();
+      results.push(updated);
+    } else {
+      const [created] = await db.insert(assetProperties).values({ assetId, key: p.key, value: p.value }).returning();
+      results.push(created);
+    }
+  }
+  return results;
+}
+
+export async function getTaskLink(taskId: string): Promise<(TaskLink & { asset?: Asset }) | null> {
+  const [link] = await db.select().from(taskLinks).where(eq(taskLinks.taskId, taskId));
+  if (!link) return null;
+  if (link.assetId) {
+    const asset = await getAssetById(link.assetId);
+    return { ...link, asset };
+  }
+  return link;
+}
+
+export async function setTaskLink(taskId: string, data: {
+  linkType: "asset" | "pin";
+  assetId?: string;
+  latitude?: number;
+  longitude?: number;
+}): Promise<TaskLink> {
+  await db.delete(taskLinks).where(eq(taskLinks.taskId, taskId));
+  const [link] = await db.insert(taskLinks).values({ taskId, ...data }).returning();
+  return link;
 }

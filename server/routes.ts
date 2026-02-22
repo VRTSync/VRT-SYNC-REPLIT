@@ -4,7 +4,10 @@ import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./a
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
-import { insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema } from "@shared/schema";
+import {
+  insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
+  insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
+} from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupSession(app);
@@ -502,6 +505,133 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Remove push token error:", error);
       res.status(500).json({ error: "Failed to remove push token" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/assets", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+      const type = req.query.type as string | undefined;
+      const assetList = await storage.getAssetsByCommunitySorted(communityId, type);
+      res.json(assetList);
+    } catch (error) {
+      console.error("Get assets error:", error);
+      res.status(500).json({ error: "Failed to fetch assets" });
+    }
+  });
+
+  app.get("/api/assets/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const asset = await storage.getAssetById(req.params.id as string);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You do not have access to this asset" });
+      }
+      const properties = await storage.getAssetProperties(asset.id);
+      res.json({ ...asset, properties, workHistorySummary: { totalTasks: 0, completedTasks: 0 } });
+    } catch (error) {
+      console.error("Get asset error:", error);
+      res.status(500).json({ error: "Failed to fetch asset" });
+    }
+  });
+
+  app.post("/api/assets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertAssetSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const asset = await storage.createAsset(parsed.data);
+      res.status(201).json(asset);
+    } catch (error) {
+      console.error("Create asset error:", error);
+      res.status(500).json({ error: "Failed to create asset" });
+    }
+  });
+
+  app.patch("/api/assets/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = updateAssetSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const { version, ...data } = parsed.data;
+      const updated = await storage.updateAsset(req.params.id as string, version, data);
+      if (!updated) {
+        const latest = await storage.getAssetById(req.params.id as string);
+        if (!latest) return res.status(404).json({ error: "Asset not found" });
+        return res.status(409).json({
+          error: "Conflict: asset was modified. Please refresh and try again.",
+          code: "VERSION_CONFLICT",
+          latestAsset: latest,
+        });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Update asset error:", error);
+      res.status(500).json({ error: "Failed to update asset" });
+    }
+  });
+
+  app.put("/api/assets/:id/properties", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = upsertAssetPropertiesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const asset = await storage.getAssetById(req.params.id as string);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      const properties = await storage.upsertAssetProperties(asset.id, parsed.data.properties);
+      res.json(properties);
+    } catch (error) {
+      console.error("Upsert properties error:", error);
+      res.status(500).json({ error: "Failed to update properties" });
+    }
+  });
+
+  app.put("/api/tasks/:id/link", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = setTaskLinkSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const task = await storage.getTaskById(req.params.id as string);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (task.version !== parsed.data.version) {
+        return res.status(409).json({
+          error: "Conflict: task was modified. Please refresh and try again.",
+          code: "VERSION_CONFLICT",
+          latestTask: task,
+        });
+      }
+      const { version: _, ...linkData } = parsed.data;
+      const link = await storage.setTaskLink(task.id, linkData);
+      res.json(link);
+    } catch (error) {
+      console.error("Set task link error:", error);
+      res.status(500).json({ error: "Failed to set task link" });
+    }
+  });
+
+  app.get("/api/tasks/:id/link", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (!allowed) return res.status(403).json({ error: "You do not have access to this task" });
+      const link = await storage.getTaskLink(task.id);
+      res.json(link);
+    } catch (error) {
+      console.error("Get task link error:", error);
+      res.status(500).json({ error: "Failed to fetch task link" });
     }
   });
 

@@ -1,0 +1,133 @@
+SLICE 0.5 (PASTE INTO REPLIT): Asset System Foundation (Types + Details + Feature Linking)
+
+Objective
+Introduce first-class Assets so map features can resolve to asset records and support VRT-style Details + Work History, and tasks can link to assets.
+
+Scope
+
+Add assets, asset_properties, task_links
+
+Add endpoints to create/read/update assets and properties
+
+Add task ↔ asset linking endpoint
+
+Minimal UI: Admin create assets + properties; Contractor view linked asset + asset detail
+
+Store asset properties as string key/value
+
+Contractors upload photos only (no invoices)
+
+Data Model Requirements
+assets
+
+id (UUID)
+
+communityId (FK)
+
+assetType (string): controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area
+
+label (string)
+
+featureRef (string nullable)
+
+geometryType (string nullable): point | polygon | line
+
+latitude/longitude (nullable)
+
+version (int default 1)
+
+createdAt/updatedAt
+
+Indexes:
+
+(communityId, assetType)
+
+(communityId, featureRef)
+
+asset_properties
+
+id
+
+assetId (FK)
+
+key (string)
+
+value (string)
+
+version (int default 1)
+
+createdAt/updatedAt
+Constraint:
+
+unique(assetId, key)
+
+task_links
+
+id
+
+taskId (FK)
+
+linkType: asset | pin
+
+assetId (nullable FK)
+
+latitude/longitude (nullable)
+
+createdAt
+Rule:
+
+one primary link per task in V1
+
+API Requirements (permissions enforced server-side)
+Read
+
+GET /api/communities/:communityId/assets?type=
+
+contractor must be community member
+
+GET /api/assets/:id
+
+contractor must be member of asset’s community
+
+returns asset + properties + placeholder workHistorySummary
+
+Admin manage
+
+POST /api/assets (admin only)
+
+PATCH /api/assets/:id (admin only, requires version)
+
+PUT /api/assets/:id/properties (admin only, bulk upsert by key)
+
+Task linking
+
+PUT /api/tasks/:id/link (admin only; requires task version)
+
+GET /api/tasks/:id/link (contractor can read if they can access task)
+
+UI Requirements (minimal)
+Admin tab
+
+Add “Assets” section:
+
+create asset (community, type, label, featureRef optional, geometryType optional)
+
+edit properties (key/value list)
+
+Task edit/create: link task to asset (dropdown filtered by community) OR pin lat/lng
+
+Contractor
+
+Task detail shows “Linked Asset” if present
+
+Tap opens Asset Detail screen (properties list)
+
+Acceptance Tests
+
+Admin creates asset + properties
+
+Contractor can view asset only if in that community
+
+Admin links a task to asset; contractor sees linked asset on task detail
+
+Unauthorized asset/community access returns 403/404
