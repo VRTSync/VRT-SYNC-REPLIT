@@ -68,6 +68,8 @@ export default function NativeMap({
   onDismissAsset,
   onAssetDetail,
   onAssetHistory,
+  targetRegion,
+  onTargetReached,
 }: {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -78,10 +80,24 @@ export default function NativeMap({
   onDismissAsset?: () => void;
   onAssetDetail?: (assetId: string) => void;
   onAssetHistory?: (assetId: string) => void;
+  targetRegion?: { latitude: number; longitude: number; label?: string } | null;
+  onTargetReached?: () => void;
 }) {
   const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
+    if (targetRegion && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: targetRegion.latitude,
+          longitude: targetRegion.longitude,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.005,
+        }, 800);
+        onTargetReached?.();
+      }, 600);
+      return;
+    }
     if (tasks.length > 0 && mapRef.current) {
       const coords = tasks.map((t) => ({
         latitude: t.latitude,
@@ -95,7 +111,7 @@ export default function NativeMap({
         });
       }, 500);
     }
-  }, [tasks.length, userLocation]);
+  }, [tasks.length, userLocation, targetRegion]);
 
   const initialRegion = userLocation
     ? { ...userLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }
@@ -227,6 +243,20 @@ export default function NativeMap({
             </Callout>
           </Marker>
         ))}
+        {targetRegion && (
+          <Marker
+            coordinate={{ latitude: targetRegion.latitude, longitude: targetRegion.longitude }}
+            pinColor="#25C1AC"
+          >
+            {targetRegion.label ? (
+              <Callout>
+                <View style={styles.callout}>
+                  <Text style={styles.calloutTitle}>{targetRegion.label}</Text>
+                </View>
+              </Callout>
+            ) : null}
+          </Marker>
+        )}
       </MapView>
 
       <View style={styles.legend}>

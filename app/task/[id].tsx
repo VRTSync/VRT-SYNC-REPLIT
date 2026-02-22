@@ -231,10 +231,11 @@ export default function TaskDetailScreen() {
       ]);
     } catch (e: any) {
       if (e.message?.includes('409')) {
+        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
         Alert.alert(
           'Update Conflict',
-          'This task was modified by someone else. Please go back and refresh to see the latest version.',
-          [{ text: 'OK', onPress: () => router.back() }],
+          'This task was modified by someone else. The latest version has been loaded — please review and try again.',
+          [{ text: 'OK' }],
         );
       } else {
         Alert.alert('Error', e.message || 'Failed to complete task');

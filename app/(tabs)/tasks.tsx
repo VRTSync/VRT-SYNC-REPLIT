@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -197,9 +197,13 @@ export default function TasksScreen() {
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
         onSelectTask={(result) => router.push(`/task/${result.id}`)}
-        onSelectAsset={(result) => router.push(`/task/${result.id}` as any)}
+        onSelectAsset={(result) => router.push(`/asset/${result.id}` as any)}
         onShowOnMap={(result) => {
-          router.push('/(tabs)/map' as any);
+          if (result.latitude && result.longitude) {
+            router.push({ pathname: '/(tabs)/map', params: { targetLat: String(result.latitude), targetLng: String(result.longitude), targetLabel: result.label } } as any);
+          } else {
+            Alert.alert('No Location', 'This item does not have map coordinates.');
+          }
         }}
       />
 

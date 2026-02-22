@@ -58,7 +58,7 @@ const layerColors = [
 
 export default function MapScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ category?: string }>();
+  const params = useLocalSearchParams<{ category?: string; targetLat?: string; targetLng?: string; targetLabel?: string }>();
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
@@ -71,6 +71,7 @@ export default function MapScreen() {
   const [selectedAsset, setSelectedAsset] = useState<AssetInfo | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
+  const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -118,6 +119,16 @@ export default function MapScreen() {
       setActiveCategory(params.category);
     }
   }, [params.category]);
+
+  useEffect(() => {
+    if (params.targetLat && params.targetLng) {
+      const lat = parseFloat(params.targetLat);
+      const lng = parseFloat(params.targetLng);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setTargetRegion({ latitude: lat, longitude: lng, label: params.targetLabel });
+      }
+    }
+  }, [params.targetLat, params.targetLng, params.targetLabel]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -403,6 +414,8 @@ export default function MapScreen() {
           setSelectedAsset(null);
           router.push(`/asset/${assetId}/history` as any);
         }}
+        targetRegion={targetRegion}
+        onTargetReached={() => setTargetRegion(null)}
       />
     </View>
   );

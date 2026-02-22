@@ -27,7 +27,7 @@ type PendingCompletion = {
   materialsUsed?: string;
   followUpNeeded?: string;
   photos: PhotoState[];
-  state: 'queued' | 'syncing' | 'synced' | 'failed';
+  state: 'queued' | 'syncing' | 'synced' | 'failed' | 'conflict';
   serverCompletionId?: string;
   lastError?: string;
   createdAt: string;
@@ -299,12 +299,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         synced++;
       } catch (e: any) {
         let errorMsg: string;
+        let newState: 'failed' | 'conflict' = 'failed';
         if (e.message?.includes('409')) {
-          errorMsg = 'Version conflict — task was modified. Refresh the task and retry.';
+          errorMsg = 'Version conflict — task was modified by another user. Open the task to get the latest version, then retry.';
+          newState = 'conflict';
         } else {
           errorMsg = e.message || 'Sync failed';
         }
-        updatedList = updateItem(updatedList, i, { state: 'failed', lastError: errorMsg });
+        updatedList = updateItem(updatedList, i, { state: newState, lastError: errorMsg });
         failed++;
       }
 
