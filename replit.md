@@ -48,6 +48,9 @@ Preferred communication style: Simple, everyday language.
 - **task_completions** — completion records with notes, employeeSignOffName (required), timeSpentMinutes, materialsUsed, followUpNeeded
 - **attachments** — file references linked to task completions, with idempotencyKey for retry safety
 - **push_tokens** — for push notification support
+- **assets** — community-scoped physical assets (controllers, backflows, zones, trees, etc.) with optional geolocation, version for optimistic locking. Types: controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area
+- **asset_properties** — key-value custom properties on assets, unique constraint on (asset_id, key) for efficient upsert
+- **task_links** — links a task to either an asset (linkType="asset") or GPS pin (linkType="pin")
 
 ### Access Control
 - Contractors can only view/complete tasks assigned to them within their communities
