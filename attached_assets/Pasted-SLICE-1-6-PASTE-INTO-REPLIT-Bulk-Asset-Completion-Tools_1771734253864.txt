@@ -1,0 +1,130 @@
+SLICE 1.6 (PASTE INTO REPLIT): Bulk Asset Completion Tools (Required Fields Fast Entry)
+
+Objective
+Make it fast for a VRTSync administrator to fill in required asset details after KML/GeoJSON import, without opening every asset one-by-one.
+
+Scope
+
+Add “Incomplete Assets” queue with bulk edit tools
+
+Add asset type–specific “quick entry” views
+
+Add optional default templates per community/layer (for repetitive fields)
+
+Keep the key/value storage model, but streamline entry
+
+Admin UI Requirements
+1) Incomplete Queue View
+
+In Admin → Assets:
+
+Add a dedicated view: “Incomplete”
+
+Filters:
+
+community
+
+assetType
+
+mapLayer
+
+missing key (e.g., “serialNumber”)
+
+List shows:
+
+label
+
+featureRef
+
+missingRequiredKeys
+
+quick open map (optional)
+
+2) Bulk Edit Panel
+
+Allow selecting multiple assets and applying:
+
+Set property key=value across selection
+
+Examples:
+
+Set brand = “Wilkins” for 30 backflows
+
+Set size = “1” for all 1” devices in a cluster
+
+Must support:
+
+overwrite toggle (on/off)
+
+apply only if missing (default on)
+
+3) Inline “Complete Required Fields” Form
+
+For a selected asset (or sequential workflow):
+
+show required keys list
+
+allow entering values quickly
+
+“Save & Next” button to fly through incomplete list
+
+4) Map-assisted editing (optional but valuable)
+
+From asset row:
+
+“View on map” button that opens map screen centered on the feature (centroid) so admin can identify it.
+
+Backend Requirements
+1) Bulk property upsert endpoint
+
+Add admin-only endpoint:
+
+POST /api/assets/bulk/properties
+Body:
+
+assetIds: string[]
+
+key: string
+
+value: string
+
+mode: "set_if_missing" | "overwrite"
+
+Behavior:
+
+upsert property for each asset
+
+respect mode
+
+return counts: updated/created/skipped
+
+2) Incomplete query endpoint
+
+Add admin-only endpoint:
+
+GET /api/communities/:communityId/assets/incomplete?assetType=&mapLayerId=&missingKey=
+Returns:
+
+list of assets with missing keys
+
+include missingRequiredKeys
+
+Ensure it’s efficient (no N+1).
+
+Acceptance Tests
+
+Admin filters to incomplete backflows and bulk sets brand and size:
+
+missing count drops accordingly
+
+“Save & Next” completes 20 assets rapidly
+
+Bulk mode “set_if_missing” does not overwrite existing values
+
+Permissions: contractors cannot access these endpoints
+
+Out of Scope
+
+CSV import/export (can be next slice if needed)
+
+Typed property values (string is fine for now)

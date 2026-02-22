@@ -104,11 +104,11 @@ const styles = StyleSheet.create({
   imageStyle: {
     width: '100%',
     height: '100%',
-    opacity: 0.8,
+    opacity: 0.06,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 29, 49, 0.75)',
+    backgroundColor: 'rgba(12, 29, 49, 0.8)',
   },
   container: { flex: 1 },
   inner: { flex: 1, justifyContent: 'center', padding: 24 },
