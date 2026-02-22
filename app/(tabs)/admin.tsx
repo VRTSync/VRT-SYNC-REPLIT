@@ -82,7 +82,23 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
 const ASSET_TYPES = Object.keys(ASSET_TYPE_LABELS);
 const GEOMETRY_TYPES = ['point', 'polygon', 'line'];
 
-type TabId = 'actions' | 'users' | 'members' | 'reports' | 'assets';
+type MapLayerItem = {
+  id: string;
+  communityId: string;
+  layerKey: string;
+  subLayerKey: string;
+  displayName: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const LAYER_KEYS = ['community', 'irrigation', 'snow', 'trees'];
+const LAYER_KEY_LABELS: Record<string, string> = {
+  community: 'Community', irrigation: 'Irrigation', snow: 'Snow', trees: 'Trees',
+};
+
+type TabId = 'actions' | 'users' | 'members' | 'reports' | 'assets' | 'layers';
 
 export default function AdminScreen() {
   const { user } = useAuth();
@@ -121,6 +137,16 @@ export default function AdminScreen() {
   const [newPropKey, setNewPropKey] = useState('');
   const [newPropValue, setNewPropValue] = useState('');
 
+  const [showCreateLayer, setShowCreateLayer] = useState(false);
+  const [showLayerDetail, setShowLayerDetail] = useState<MapLayerItem | null>(null);
+  const [layerKey, setLayerKey] = useState(LAYER_KEYS[0]);
+  const [layerSubKey, setLayerSubKey] = useState('');
+  const [layerDisplayName, setLayerDisplayName] = useState('');
+  const [layerGeoJSON, setLayerGeoJSON] = useState('');
+  const [layerSubmitting, setLayerSubmitting] = useState(false);
+  const [replaceGeoJSON, setReplaceGeoJSON] = useState('');
+  const [replacingGeoJSON, setReplacingGeoJSON] = useState(false);
+
   const { data: contractors = [] } = useQuery<AppUser[]>({
     queryKey: ['/api/contractors'],
     queryFn: getQueryFn({ on401: 'throw' }),
@@ -152,6 +178,15 @@ export default function AdminScreen() {
     queryKey: [`/api/communities/${activeCommunity?.id}/assets`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'assets',
+  });
+
+  const { data: mapLayersList = [] } = useQuery<MapLayerItem[]>({
+    queryKey: ['/api/map-layers', { communityId: activeCommunity?.id }],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/map-layers?communityId=${activeCommunity?.id}`);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'layers',
   });
 
   const { data: assetDetail } = useQuery<AssetDetail>({
@@ -339,6 +374,78 @@ export default function AdminScreen() {
     }
   };
 
+  const handleCreateLayer = async () => {
+    if (!layerDisplayName.trim() || !layerSubKey.trim() || !activeCommunity) {
+      Alert.alert('Error', 'Display name and sub-layer key are required');
+      return;
+    }
+    setLayerSubmitting(true);
+    try {
+      await apiRequest('POST', '/api/map-layers', {
+        communityId: activeCommunity.id,
+        layerKey: layerKey,
+        subLayerKey: layerSubKey.trim(),
+        displayName: layerDisplayName.trim(),
+        geojsonData: layerGeoJSON.trim() || undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+      setShowCreateLayer(false);
+      setLayerSubKey('');
+      setLayerDisplayName('');
+      setLayerGeoJSON('');
+      setLayerKey(LAYER_KEYS[0]);
+      Alert.alert('Success', 'Map layer created successfully');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to create map layer');
+    } finally {
+      setLayerSubmitting(false);
+    }
+  };
+
+  const handleReplaceGeoJSON = async () => {
+    if (!showLayerDetail) return;
+    if (!replaceGeoJSON.trim()) {
+      Alert.alert('Error', 'GeoJSON data is required');
+      return;
+    }
+    setReplacingGeoJSON(true);
+    try {
+      const res = await apiRequest('PATCH', `/api/map-layers/${showLayerDetail.id}`, {
+        geojsonData: replaceGeoJSON.trim(),
+        version: showLayerDetail.version,
+      });
+      const updated = await res.json();
+      queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+      setShowLayerDetail({ ...showLayerDetail, version: updated.version });
+      setReplaceGeoJSON('');
+      Alert.alert('Success', 'GeoJSON data updated');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update GeoJSON');
+    } finally {
+      setReplacingGeoJSON(false);
+    }
+  };
+
+  const handleDeleteLayer = async (layer: MapLayerItem) => {
+    Alert.alert('Delete Layer', `Delete "${layer.displayName}"? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiRequest('DELETE', `/api/map-layers/${layer.id}`);
+            queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+            if (showLayerDetail?.id === layer.id) setShowLayerDetail(null);
+            Alert.alert('Success', 'Layer deleted');
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Failed to delete layer');
+          }
+        },
+      },
+    ]);
+  };
+
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent'];
   const tabs: { id: TabId; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { id: 'actions', label: 'Actions', icon: 'flash-outline' },
@@ -346,6 +453,7 @@ export default function AdminScreen() {
     { id: 'members', label: 'Members', icon: 'person-circle-outline' },
     { id: 'reports', label: 'Reports', icon: 'document-text-outline' },
     { id: 'assets', label: 'Assets', icon: 'construct-outline' },
+    { id: 'layers', label: 'Layers', icon: 'layers-outline' },
   ];
 
   const memberUserIds = new Set(members.map((m) => m.userId));
@@ -615,6 +723,52 @@ export default function AdminScreen() {
                 ) : null}
               </TouchableOpacity>
             ))}
+          </>
+        )}
+
+        {activeTab === 'layers' && (
+          <>
+            <Text style={styles.pageTitle}>Map Layers</Text>
+            <Text style={styles.pageSubtitle}>{activeCommunity?.name || 'Select a community'}</Text>
+
+            <View style={styles.actionGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateLayer(true)}>
+                <Ionicons name="add-circle-outline" size={28} color="#25C1AC" />
+                <Text style={styles.actionLabel}>Add Layer</Text>
+              </TouchableOpacity>
+            </View>
+
+            {LAYER_KEYS.map((lk) => {
+              const groupLayers = mapLayersList.filter((l) => l.layerKey === lk);
+              if (groupLayers.length === 0) return null;
+              return (
+                <View key={lk} style={{ marginBottom: 16 }}>
+                  <Text style={styles.sectionTitle}>{LAYER_KEY_LABELS[lk]}</Text>
+                  {groupLayers.map((layer) => (
+                    <TouchableOpacity
+                      key={layer.id}
+                      style={styles.assetCard}
+                      onPress={() => { setShowLayerDetail(layer); setReplaceGeoJSON(''); }}
+                    >
+                      <View style={styles.assetCardHeader}>
+                        <View style={styles.assetTypeBadge}>
+                          <Text style={styles.assetTypeBadgeText}>{lk}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => handleDeleteLayer(layer)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          <Ionicons name="trash-outline" size={16} color="#f44336" />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.assetLabel}>{layer.displayName}</Text>
+                      <Text style={styles.assetMeta}>Key: {layer.subLayerKey}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              );
+            })}
+
+            {mapLayersList.length === 0 && (
+              <Text style={styles.emptyText}>No map layers in this community</Text>
+            )}
           </>
         )}
       </ScrollView>
@@ -896,6 +1050,102 @@ export default function AdminScreen() {
                 <Ionicons name="add-circle" size={32} color="#25C1AC" />
               </TouchableOpacity>
             </View>
+          </ScrollView>
+        )}
+      </Modal>
+
+      <Modal visible={showCreateLayer} animationType="slide" presentationStyle="pageSheet">
+        <ScrollView style={styles.modalContainer} contentContainerStyle={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowCreateLayer(false)}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>New Map Layer</Text>
+            <View style={{ width: 60 }} />
+          </View>
+
+          <Text style={styles.fieldLabel}>Category</Text>
+          <View style={styles.priorityRow}>
+            {LAYER_KEYS.map((k) => (
+              <TouchableOpacity
+                key={k}
+                style={[styles.priorityChip, layerKey === k && styles.priorityChipActive]}
+                onPress={() => setLayerKey(k)}
+              >
+                <Text style={[styles.priorityChipText, layerKey === k && styles.priorityChipTextActive]}>
+                  {LAYER_KEY_LABELS[k]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TextInput style={styles.input} placeholder="Sub-layer key (e.g. zones, main)" placeholderTextColor="#999" value={layerSubKey} onChangeText={setLayerSubKey} autoCapitalize="none" />
+          <TextInput style={styles.input} placeholder="Display name" placeholderTextColor="#999" value={layerDisplayName} onChangeText={setLayerDisplayName} />
+          <TextInput
+            style={[styles.input, { minHeight: 120, textAlignVertical: 'top' }]}
+            placeholder="Paste GeoJSON data (optional, can add later)"
+            placeholderTextColor="#999"
+            value={layerGeoJSON}
+            onChangeText={setLayerGeoJSON}
+            multiline
+          />
+
+          <TouchableOpacity
+            style={[styles.submitButton, layerSubmitting && styles.buttonDisabled]}
+            onPress={handleCreateLayer}
+            disabled={layerSubmitting}
+          >
+            {layerSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Create Layer</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      </Modal>
+
+      <Modal visible={!!showLayerDetail} animationType="slide" presentationStyle="pageSheet">
+        {showLayerDetail && (
+          <ScrollView style={styles.modalContainer} contentContainerStyle={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowLayerDetail(null)}>
+                <Text style={styles.cancelText}>Close</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Layer Details</Text>
+              <View style={{ width: 60 }} />
+            </View>
+
+            <View style={styles.userDetailCard}>
+              <View style={styles.assetTypeBadge}>
+                <Text style={styles.assetTypeBadgeText}>
+                  {LAYER_KEY_LABELS[showLayerDetail.layerKey] || showLayerDetail.layerKey}
+                </Text>
+              </View>
+              <Text style={[styles.userDetailName, { marginTop: 12 }]}>{showLayerDetail.displayName}</Text>
+              <Text style={styles.userDetailUsername}>Key: {showLayerDetail.subLayerKey}</Text>
+              <Text style={styles.userDetailUsername}>Version: {showLayerDetail.version}</Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>Replace GeoJSON Data</Text>
+            <TextInput
+              style={[styles.input, { minHeight: 150, textAlignVertical: 'top' }]}
+              placeholder="Paste GeoJSON FeatureCollection here..."
+              placeholderTextColor="#999"
+              value={replaceGeoJSON}
+              onChangeText={setReplaceGeoJSON}
+              multiline
+            />
+
+            <TouchableOpacity
+              style={[styles.submitButton, replacingGeoJSON && styles.buttonDisabled]}
+              onPress={handleReplaceGeoJSON}
+              disabled={replacingGeoJSON}
+            >
+              {replacingGeoJSON ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Update GeoJSON</Text>}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.submitButton, { backgroundColor: '#f44336', marginTop: 12 }]}
+              onPress={() => handleDeleteLayer(showLayerDetail)}
+            >
+              <Text style={styles.submitText}>Delete Layer</Text>
+            </TouchableOpacity>
           </ScrollView>
         )}
       </Modal>
