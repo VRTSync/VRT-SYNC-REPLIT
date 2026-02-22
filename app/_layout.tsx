@@ -9,6 +9,7 @@ import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
 import { CommunityProvider } from "@/client/contexts/CommunityContext";
 import { OfflineProvider } from "@/client/contexts/OfflineContext";
+import { OfflinePackProvider } from "@/client/contexts/OfflinePackContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -53,7 +54,9 @@ export default function RootLayout() {
             <AuthProvider>
               <CommunityProvider>
                 <OfflineProvider>
-                  <AuthNavigator />
+                  <OfflinePackProvider>
+                    <AuthNavigator />
+                  </OfflinePackProvider>
                 </OfflineProvider>
               </CommunityProvider>
             </AuthProvider>

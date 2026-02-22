@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert, Image, ImageBackground,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { communities, activeCommunity, setActiveCommunity } = useCommunity();
+  const { localPack, serverPackInfo, isDownloading, downloadProgress, hasUpdate, downloadPack, deletePack, refreshServerInfo } = useOfflinePack();
   const insets = useSafeAreaInsets();
   const [showCommunities, setShowCommunities] = useState(false);
 
@@ -98,6 +101,109 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {activeCommunity && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionLeft}>
+              <Ionicons name="cloud-download-outline" size={20} color="#25C1AC" />
+              <Text style={styles.sectionTitle}>Offline Map Pack</Text>
+            </View>
+          </View>
+
+          <View style={styles.packContent}>
+            <Text style={styles.packCommunity}>{activeCommunity.name}</Text>
+
+            {!serverPackInfo && !localPack && (
+              <Text style={styles.packStatus}>No offline pack available for this community.</Text>
+            )}
+
+            {serverPackInfo && !localPack && (
+              <View>
+                <Text style={styles.packStatus}>Pack v{serverPackInfo.packVersion} available</Text>
+                <TouchableOpacity
+                  style={styles.packButton}
+                  onPress={downloadPack}
+                  disabled={isDownloading}
+                >
+                  {isDownloading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="download-outline" size={18} color="#fff" />
+                  )}
+                  <Text style={styles.packButtonText}>
+                    {isDownloading ? 'Downloading...' : 'Download Pack'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {localPack && (
+              <View>
+                <View style={styles.packInfoRow}>
+                  <Ionicons name="checkmark-circle" size={16} color="#25C1AC" />
+                  <Text style={styles.packInfoText}>
+                    Downloaded v{localPack.packVersion}
+                  </Text>
+                </View>
+                <Text style={styles.packDate}>
+                  {new Date(localPack.downloadedAt).toLocaleDateString()} at{' '}
+                  {new Date(localPack.downloadedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </Text>
+                {localPack.manifest?.layers && (
+                  <Text style={styles.packLayers}>
+                    {localPack.manifest.layers.length} map layer{localPack.manifest.layers.length !== 1 ? 's' : ''}
+                    {' \u00B7 '}
+                    {Object.keys(localPack.assetIndex || {}).length} asset{Object.keys(localPack.assetIndex || {}).length !== 1 ? 's' : ''}
+                  </Text>
+                )}
+
+                {hasUpdate && (
+                  <View style={styles.updateBanner}>
+                    <Ionicons name="arrow-up-circle-outline" size={16} color="#f39c12" />
+                    <Text style={styles.updateText}>Update available (v{serverPackInfo?.packVersion})</Text>
+                  </View>
+                )}
+
+                <View style={styles.packActions}>
+                  {hasUpdate && (
+                    <TouchableOpacity
+                      style={styles.packButton}
+                      onPress={downloadPack}
+                      disabled={isDownloading}
+                    >
+                      {isDownloading ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Ionicons name="refresh-outline" size={18} color="#fff" />
+                      )}
+                      <Text style={styles.packButtonText}>
+                        {isDownloading ? 'Updating...' : 'Update Pack'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.packDeleteButton}
+                    onPress={() => {
+                      Alert.alert('Delete Pack', 'Remove the offline pack for this community?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Delete', style: 'destructive', onPress: deletePack },
+                      ]);
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#f44336" />
+                    <Text style={styles.packDeleteText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {isDownloading && downloadProgress ? (
+              <Text style={styles.packProgress}>{downloadProgress}</Text>
+            ) : null}
+          </View>
+        </View>
+      )}
+
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="logout-btn">
         <Ionicons name="log-out-outline" size={20} color="#f44336" />
         <Text style={styles.logoutText}>Sign Out</Text>
@@ -182,6 +288,100 @@ const styles = StyleSheet.create({
   communityItemActive: { backgroundColor: '#E6F9F6' },
   communityName: { fontSize: 15, color: '#444' },
   communityNameActive: { color: '#25C1AC', fontWeight: '600' },
+  packContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  packCommunity: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#25C1AC',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  packStatus: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+  },
+  packInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  packInfoText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0C1D31',
+  },
+  packDate: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+    marginLeft: 22,
+  },
+  packLayers: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+    marginLeft: 22,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF8E7',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+  },
+  updateText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#f39c12',
+  },
+  packActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  packButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#25C1AC',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  packButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  packDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#f4434640',
+  },
+  packDeleteText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#f44336',
+  },
+  packProgress: {
+    fontSize: 12,
+    color: '#25C1AC',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
