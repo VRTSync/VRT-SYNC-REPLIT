@@ -34,7 +34,7 @@ export default function LoginScreen() {
     <ImageBackground
       source={require('@/assets/images/topography-texture.png')}
       style={styles.backgroundImage}
-      resizeMode="cover"
+      resizeMode="repeat"
     >
       <View style={styles.overlay} />
       <KeyboardAvoidingView
