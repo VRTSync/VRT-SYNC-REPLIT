@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, ilike, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -747,4 +747,140 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       completedAt: r.completedAt,
     })),
   };
+}
+
+export type SearchResult = {
+  id: string;
+  type: "asset" | "task";
+  label: string;
+  assetType?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: Date | null;
+  communityId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  relevance: number;
+  matchField?: string;
+};
+
+export async function searchAll(
+  query: string,
+  communityIds: string[],
+  types: string[],
+  userId: string,
+  isAdmin: boolean,
+): Promise<SearchResult[]> {
+  const results: SearchResult[] = [];
+  const q = query.trim().toLowerCase();
+  if (!q || communityIds.length === 0) return results;
+  const pattern = `%${q}%`;
+
+  const searchAssets = types.length === 0 || types.includes("asset");
+  const searchTasks = types.length === 0 || types.includes("task");
+
+  if (searchAssets) {
+    const assetRows = await db.select().from(assets)
+      .where(and(
+        inArray(assets.communityId, communityIds),
+        eq(assets.isArchived, false),
+        or(
+          ilike(assets.label, pattern),
+          ilike(assets.featureRef, pattern),
+        ),
+      ))
+      .limit(30);
+
+    for (const a of assetRows) {
+      let relevance = 0;
+      const labelLower = a.label.toLowerCase();
+      if (labelLower === q) relevance = 100;
+      else if (labelLower.startsWith(q)) relevance = 80;
+      else if (labelLower.includes(q)) relevance = 60;
+      else if (a.featureRef?.toLowerCase().includes(q)) relevance = 50;
+      results.push({
+        id: a.id, type: "asset", label: a.label, assetType: a.assetType,
+        communityId: a.communityId, latitude: a.latitude, longitude: a.longitude,
+        relevance, matchField: "label",
+      });
+    }
+
+    const propSearchKeys = ["serialNumber", "name", "zoneNumber", "species", "controllerRef", "brand", "address"];
+    const propMatches = await db.select({
+      assetId: assetProperties.assetId,
+      key: assetProperties.key,
+      value: assetProperties.value,
+    }).from(assetProperties)
+      .innerJoin(assets, eq(assetProperties.assetId, assets.id))
+      .where(and(
+        inArray(assets.communityId, communityIds),
+        eq(assets.isArchived, false),
+        inArray(assetProperties.key, propSearchKeys),
+        ilike(assetProperties.value, pattern),
+      ))
+      .limit(30);
+
+    const alreadyFound = new Set(results.map(r => r.id));
+    const assetIdsFromProps = propMatches
+      .map(p => p.assetId)
+      .filter(id => !alreadyFound.has(id));
+
+    if (assetIdsFromProps.length > 0) {
+      const uniqueIds = [...new Set(assetIdsFromProps)];
+      const propAssets = await db.select().from(assets)
+        .where(inArray(assets.id, uniqueIds));
+
+      for (const a of propAssets) {
+        const matchedProp = propMatches.find(p => p.assetId === a.id);
+        const valLower = matchedProp?.value?.toLowerCase() || '';
+        let relevance = 0;
+        if (valLower === q) relevance = 90;
+        else if (valLower.startsWith(q)) relevance = 70;
+        else relevance = 50;
+        results.push({
+          id: a.id, type: "asset", label: a.label, assetType: a.assetType,
+          communityId: a.communityId, latitude: a.latitude, longitude: a.longitude,
+          relevance, matchField: matchedProp?.key,
+          address: matchedProp?.key === "address" ? matchedProp.value : null,
+        });
+      }
+    }
+  }
+
+  if (searchTasks) {
+    const taskConditions = [
+      inArray(tasks.communityId, communityIds),
+      or(
+        ilike(tasks.title, pattern),
+        ilike(tasks.description, pattern),
+        ilike(tasks.address, pattern),
+      ),
+    ];
+    if (!isAdmin) {
+      taskConditions.push(eq(tasks.assignedTo, userId));
+    }
+
+    const taskRows = await db.select().from(tasks)
+      .where(and(...taskConditions))
+      .limit(30);
+
+    for (const t of taskRows) {
+      let relevance = 0;
+      const titleLower = t.title.toLowerCase();
+      if (titleLower === q) relevance = 100;
+      else if (titleLower.startsWith(q)) relevance = 80;
+      else if (titleLower.includes(q)) relevance = 65;
+      else if (t.address?.toLowerCase().includes(q)) relevance = 55;
+      else if (t.description?.toLowerCase().includes(q)) relevance = 40;
+      results.push({
+        id: t.id, type: "task", label: t.title, status: t.status, priority: t.priority,
+        dueDate: t.dueDate, communityId: t.communityId, latitude: t.latitude,
+        longitude: t.longitude, address: t.address, relevance,
+      });
+    }
+  }
+
+  results.sort((a, b) => b.relevance - a.relevance);
+  return results.slice(0, 30);
 }

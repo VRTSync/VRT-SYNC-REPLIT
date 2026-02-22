@@ -881,6 +881,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/search", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string || '').trim();
+      if (!q) return res.json([]);
+
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const isAdmin = user.role === "admin";
+      let communityIds: string[] = [];
+
+      const communityId = req.query.communityId as string | undefined;
+      if (communityId) {
+        if (!isAdmin) {
+          const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        }
+        communityIds = [communityId];
+      } else {
+        const memberships = await storage.getUserCommunities(user.id);
+        communityIds = memberships.map(m => m.community.id);
+        if (isAdmin) {
+          const allComms = await storage.getCommunities();
+          communityIds = allComms.map(c => c.id);
+        }
+      }
+
+      const typesStr = (req.query.types as string) || '';
+      const types = typesStr ? typesStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+      const results = await storage.searchAll(q, communityIds, types, user.id, isAdmin);
+      res.json(results);
+    } catch (error) {
+      console.error("Search error:", error);
+      res.status(500).json({ error: "Search failed" });
+    }
+  });
+
   app.get("/api/asset-type-templates", requireAuth, async (_req: Request, res: Response) => {
     res.json(ASSET_TYPE_TEMPLATES);
   });
