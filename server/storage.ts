@@ -2,10 +2,10 @@ import { eq, and, desc, ne, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
-  assets, assetProperties, taskLinks, mapLayers,
+  assets, assetProperties, taskLinks, mapLayers, offlinePacks,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
-  type Asset, type AssetProperty, type TaskLink, type MapLayer
+  type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -386,6 +386,128 @@ export async function getAssetByFeatureRef(communityId: string, featureRef: stri
   if (!asset) return null;
   const props = await getAssetProperties(asset.id);
   return { ...asset, properties: props };
+}
+
+export async function createOfflinePack(data: {
+  communityId: string;
+  packVersion?: number;
+  mbtilesRef?: string;
+  manifestRef?: string;
+  geojsonBundleRef?: string;
+  assetIndexRef?: string;
+  checksum?: string;
+}): Promise<OfflinePack> {
+  const [pack] = await db.insert(offlinePacks).values(data).returning();
+  return pack;
+}
+
+export async function getLatestOfflinePack(communityId: string): Promise<OfflinePack | undefined> {
+  const [pack] = await db.select().from(offlinePacks)
+    .where(eq(offlinePacks.communityId, communityId))
+    .orderBy(desc(offlinePacks.packVersion))
+    .limit(1);
+  return pack;
+}
+
+export async function getOfflinePackById(id: string): Promise<OfflinePack | undefined> {
+  const [pack] = await db.select().from(offlinePacks).where(eq(offlinePacks.id, id));
+  return pack;
+}
+
+export async function updateOfflinePack(id: string, data: Partial<{
+  mbtilesRef: string;
+  manifestRef: string;
+  geojsonBundleRef: string;
+  assetIndexRef: string;
+  checksum: string;
+}>): Promise<OfflinePack | null> {
+  const [updated] = await db.update(offlinePacks)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(offlinePacks.id, id))
+    .returning();
+  return updated || null;
+}
+
+export async function generateAssetIndex(communityId: string) {
+  const communityAssets = await db.select().from(assets)
+    .where(eq(assets.communityId, communityId));
+  const allIds = communityAssets.map(a => a.id);
+  let propsMap = new Map<string, { key: string; value: string }[]>();
+  if (allIds.length > 0) {
+    const allProps = await db.select().from(assetProperties)
+      .where(inArray(assetProperties.assetId, allIds));
+    for (const p of allProps) {
+      const list = propsMap.get(p.assetId) || [];
+      list.push({ key: p.key, value: p.value });
+      propsMap.set(p.assetId, list);
+    }
+  }
+  const index: Record<string, {
+    assetId: string;
+    label: string;
+    assetType: string;
+    properties: { key: string; value: string }[];
+  }> = {};
+  for (const a of communityAssets) {
+    if (a.featureRef) {
+      index[a.featureRef] = {
+        assetId: a.id,
+        label: a.label,
+        assetType: a.assetType,
+        properties: propsMap.get(a.id) || [],
+      };
+    }
+  }
+  return index;
+}
+
+export async function generatePackManifest(communityId: string) {
+  const layers = await getMapLayersByCommunity(communityId);
+  const community = await getCommunityById(communityId);
+  return {
+    communityId,
+    communityName: community?.name || '',
+    generatedAt: new Date().toISOString(),
+    layers: layers.map(l => ({
+      id: l.id,
+      layerKey: l.layerKey,
+      subLayerKey: l.subLayerKey,
+      displayName: l.displayName,
+      updatedAt: l.updatedAt,
+    })),
+  };
+}
+
+export async function generateGeojsonBundle(communityId: string) {
+  const layers = await getMapLayersByCommunity(communityId);
+  const bundle: Record<string, any> = {};
+  for (const l of layers) {
+    if (l.geojsonData) {
+      try {
+        bundle[l.id] = JSON.parse(l.geojsonData);
+      } catch {
+        bundle[l.id] = null;
+      }
+    }
+  }
+  return bundle;
+}
+
+export async function generateWorkHistorySnapshot(communityId: string, limit = 5) {
+  const communityAssets = await db.select({ id: assets.id }).from(assets)
+    .where(eq(assets.communityId, communityId));
+  if (communityAssets.length === 0) return {};
+
+  const assetIds = communityAssets.map(a => a.id);
+  const snapshot: Record<string, any[]> = {};
+
+  for (const assetId of assetIds) {
+    const history = await getAssetWorkHistory(assetId);
+    if (history.length > 0) {
+      snapshot[assetId] = history.slice(0, limit);
+    }
+  }
+  return snapshot;
 }
 
 export async function getAssetWorkHistory(assetId: string) {

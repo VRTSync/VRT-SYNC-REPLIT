@@ -7,7 +7,7 @@ import * as storage from "./storage";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
-  insertMapLayerSchema, updateMapLayerSchema,
+  insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -747,6 +747,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get asset by feature error:", error);
       res.status(500).json({ error: "Failed to fetch asset" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/offline-pack", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+      const pack = await storage.getLatestOfflinePack(communityId);
+      if (!pack) return res.json(null);
+      res.json({
+        id: pack.id,
+        communityId: pack.communityId,
+        packVersion: pack.packVersion,
+        updatedAt: pack.updatedAt,
+        checksum: pack.checksum,
+      });
+    } catch (error) {
+      console.error("Get offline pack error:", error);
+      res.status(500).json({ error: "Failed to fetch offline pack" });
+    }
+  });
+
+  app.post("/api/offline-packs", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertOfflinePackSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      const pack = await storage.createOfflinePack(parsed.data);
+      res.status(201).json(pack);
+    } catch (error: any) {
+      if (error?.constraint === "offline_packs_community_version_idx") {
+        return res.status(409).json({ error: "A pack with that version already exists for this community" });
+      }
+      console.error("Create offline pack error:", error);
+      res.status(500).json({ error: "Failed to create offline pack" });
+    }
+  });
+
+  app.post("/api/offline-packs/:id/download-urls", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const pack = await storage.getOfflinePackById(req.params.id as string);
+      if (!pack) return res.status(404).json({ error: "Pack not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, pack.communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+      res.json({
+        mbtilesRef: pack.mbtilesRef,
+        manifestRef: pack.manifestRef,
+        geojsonBundleRef: pack.geojsonBundleRef,
+        assetIndexRef: pack.assetIndexRef,
+      });
+    } catch (error) {
+      console.error("Get download URLs error:", error);
+      res.status(500).json({ error: "Failed to get download URLs" });
+    }
+  });
+
+  app.post("/api/communities/:communityId/generate-offline-pack", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const community = await storage.getCommunityById(communityId);
+      if (!community) return res.status(404).json({ error: "Community not found" });
+
+      const existingPack = await storage.getLatestOfflinePack(communityId);
+      const newVersion = existingPack ? existingPack.packVersion + 1 : 1;
+
+      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot] = await Promise.all([
+        storage.generatePackManifest(communityId),
+        storage.generateAssetIndex(communityId),
+        storage.generateGeojsonBundle(communityId),
+        storage.generateWorkHistorySnapshot(communityId),
+      ]);
+
+      const pack = await storage.createOfflinePack({
+        communityId,
+        packVersion: newVersion,
+      });
+
+      res.status(201).json({
+        pack,
+        manifest,
+        assetIndex,
+        geojsonBundle,
+        workHistorySnapshot,
+      });
+    } catch (error) {
+      console.error("Generate offline pack error:", error);
+      res.status(500).json({ error: "Failed to generate offline pack" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/offline-pack-data", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+
+      const pack = await storage.getLatestOfflinePack(communityId);
+      if (!pack) return res.status(404).json({ error: "No offline pack available for this community" });
+
+      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot] = await Promise.all([
+        storage.generatePackManifest(communityId),
+        storage.generateAssetIndex(communityId),
+        storage.generateGeojsonBundle(communityId),
+        storage.generateWorkHistorySnapshot(communityId),
+      ]);
+
+      res.json({
+        pack: {
+          id: pack.id,
+          communityId: pack.communityId,
+          packVersion: pack.packVersion,
+          updatedAt: pack.updatedAt,
+          checksum: pack.checksum,
+        },
+        manifest,
+        assetIndex,
+        geojsonBundle,
+        workHistorySnapshot,
+      });
+    } catch (error) {
+      console.error("Get offline pack data error:", error);
+      res.status(500).json({ error: "Failed to fetch offline pack data" });
     }
   });
 
