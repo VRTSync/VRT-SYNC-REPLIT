@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { sendDueReminders } from "./pushNotifications";
+import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -320,6 +321,8 @@ function setupErrorHandler(app: express.Application) {
         log("Running daily due reminder check...");
         sendDueReminders().catch(err => console.error("Due reminder error:", err));
       }, TWENTY_FOUR_HOURS);
+
+      startSchedulerInterval(3600000);
     },
   );
 })();
