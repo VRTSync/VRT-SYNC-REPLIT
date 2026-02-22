@@ -150,7 +150,8 @@ export default function TasksScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
+    <View style={styles.container}>
+      <View style={[styles.statusBarFill, { height: Platform.OS === 'web' ? 67 + insets.top : insets.top }]} />
       {!isOnline && (
         <View style={styles.offlineBanner}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
@@ -218,6 +219,7 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
+  statusBarFill: { backgroundColor: '#0C1D31' },
   headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
   communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   taskCount: { fontSize: 14, color: '#888', marginTop: 2 },

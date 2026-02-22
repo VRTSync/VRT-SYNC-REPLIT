@@ -236,7 +236,8 @@ export default function MapScreen() {
 
   if (Platform.OS === 'web') {
     return (
-      <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
+      <View style={styles.container}>
+        <View style={[styles.mapWebStatusBar, { height: Platform.OS === 'web' ? 67 + insets.top : insets.top }]} />
         <View style={styles.categoryBar}>
           {CATEGORY_TABS.map((cat) => (
             <TouchableOpacity
@@ -397,7 +398,8 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  container: { flex: 1, backgroundColor: '#0C1D31' },
+  mapWebStatusBar: { backgroundColor: '#0C1D31' },
   categoryBar: {
     flexDirection: 'row',
     backgroundColor: '#fff',

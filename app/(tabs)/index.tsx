@@ -158,12 +158,12 @@ export default function DashboardScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
+    <View style={[styles.container, { backgroundColor: '#0C1D31' }]}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: (Platform.OS === 'web' ? 67 + insets.top : insets.top) + 16 }]}>
           <View style={styles.headerTop}>
             <View style={{ flex: 1 }}>
               <Text style={styles.greeting}>
@@ -371,7 +371,6 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
-    paddingTop: 16,
     paddingBottom: 16,
   },
   headerTop: {

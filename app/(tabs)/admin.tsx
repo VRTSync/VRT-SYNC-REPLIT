@@ -459,10 +459,10 @@ export default function AdminScreen() {
   const memberUserIds = new Set(members.map((m) => m.userId));
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
+    <View style={[styles.container, { backgroundColor: '#0C1D31' }]}>
       <ImageBackground
         source={require('@/assets/images/topography-texture.png')}
-        style={styles.tabBarWrapper}
+        style={[styles.tabBarWrapper, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
         resizeMode="cover"
       >
         <View style={styles.tabBarOverlay} />

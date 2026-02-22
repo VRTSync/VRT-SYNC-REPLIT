@@ -25,8 +25,8 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
-      contentContainerStyle={styles.content}
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: (Platform.OS === 'web' ? 67 + insets.top : insets.top) + 20 }]}
     >
       <View style={styles.profileCard}>
         <ImageBackground
@@ -213,8 +213,8 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
-  content: { padding: 20, paddingBottom: 100 },
+  container: { flex: 1, backgroundColor: '#0C1D31' },
+  content: { padding: 20, paddingBottom: 100, backgroundColor: '#f5f7fa' },
   profileCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
