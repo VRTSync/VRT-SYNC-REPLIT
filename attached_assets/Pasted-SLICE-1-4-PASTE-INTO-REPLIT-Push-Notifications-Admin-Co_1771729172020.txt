@@ -1,0 +1,176 @@
+SLICE 1.4 (PASTE INTO REPLIT): Push Notifications (Admin → Contractor)
+
+Objective
+Add push notifications to the contractor mobile app with secure token registration and targeted delivery. This is required for true mobile parity.
+
+Scope
+
+Device push token registration + refresh handling
+
+Targeted sends when:
+
+Admin assigns a task to a contractor
+
+Task due reminders (basic daily job)
+
+Sync failure alert (when an outbox item transitions to failed)
+
+Deep links from notification → open Task Detail
+
+Simple per-user notification preferences (toggles)
+
+Backend Requirements
+1) Token registration endpoints (use existing push_tokens table)
+
+Add/confirm:
+
+POST /api/push/register
+
+Auth required
+
+Body: { token: string, platform: "ios"|"android", deviceId: string }
+
+Upsert by (userId, deviceId) so one device has one active token
+
+Prevent duplicates across logins
+
+POST /api/push/unregister
+
+Auth required
+
+Body: { deviceId: string }
+
+Deletes token row for that user+device
+
+Rules:
+
+Contractors can only register/unregister their own tokens
+
+Never expose token lists to client
+
+2) Notification send function
+
+Implement a server utility sendPushToUser(userId, payload) that:
+
+Looks up all tokens for user
+
+Sends to each token
+
+Handles invalid token responses by pruning tokens (optional)
+
+Payload format
+
+title, body
+
+data: { type: "task_assigned"|"task_due"|"sync_failed", taskId?: string, communityId?: string }
+
+3) Trigger: Task assigned
+
+When admin creates a task or updates assignedTo:
+
+If assignedTo changed to a contractor:
+
+Send push:
+
+title: “New task assigned”
+
+body: <task.title> – <community name>
+
+data includes { type:"task_assigned", taskId }
+
+4) Trigger: Due reminders (minimal scheduler)
+
+Implement a simple daily process (server-side):
+
+Finds tasks assigned to each contractor due “today” (local timezone can be simplified to server time for now)
+
+Sends one digest push per contractor:
+
+“Tasks due today: N”
+
+data: { type:"task_due", communityId } (or no deep link)
+
+Implementation options:
+
+Minimal cron-like scheduler in server startup (acceptable MVP)
+
+Or an admin-only endpoint to manually run reminders (fallback)
+
+5) Trigger: Sync failure
+
+When an outbox item becomes failed on the client:
+
+Option A (simplest): client sends a lightweight event to server:
+
+POST /api/push/sync-failed with { taskId, errorSummary }
+
+server sends a push back to same user (or just local notification)
+
+Option B: local notification only (acceptable for MVP)
+
+Pick Option B first (local notification) unless you specifically want server-driven alerts.
+
+Mobile App Requirements (Expo / RN)
+1) Request permission and register token
+
+On first login (or Profile → Notifications):
+
+Ask permission
+
+Get Expo push token
+
+Generate a stable deviceId
+
+Call /api/push/register
+
+On logout:
+
+Call /api/push/unregister
+
+On token refresh:
+
+Re-register
+
+2) Preferences UI (Profile screen)
+
+Toggles saved locally (AsyncStorage is fine):
+
+New task assigned
+
+Due reminders
+
+Sync failure alerts
+
+Respect toggles:
+
+Don’t register or don’t send local notifications if disabled
+
+3) Deep linking
+
+When a push is tapped:
+
+If data includes taskId, navigate to /task/[id]
+
+Also handle “opened app from killed state” behavior.
+
+Acceptance Tests
+
+Contractor logs in on device → token registers server-side once (no duplicates).
+
+Admin assigns task to contractor → contractor receives push → tapping opens task detail.
+
+Token refresh does not create duplicates (upsert works).
+
+Preferences toggles work (turn off “New task assigned” → no notification).
+
+If local sync failure notifications enabled → when outbox item fails, user sees a notification.
+
+Out of Scope
+
+Complex timezone logic per user
+
+Rich notification images
+
+Background fetch for due reminders
+
+Cross-platform notification channels customization (beyond basics)
