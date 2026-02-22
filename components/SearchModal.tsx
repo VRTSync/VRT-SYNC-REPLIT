@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '@/lib/theme';
 import { apiRequest } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { useOffline } from '@/client/contexts/OfflineContext';
+import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 
 type SearchResult = {
   id: string;
@@ -23,6 +25,7 @@ type SearchResult = {
   address?: string | null;
   relevance: number;
   matchField?: string;
+  isOffline?: boolean;
 };
 
 type Props = {
@@ -61,11 +64,14 @@ const priorityColors: Record<string, string> = {
 export default function SearchModal({ visible, onClose, onSelectAsset, onSelectTask, onShowOnMap }: Props) {
   const insets = useSafeAreaInsets();
   const { activeCommunity } = useCommunity();
+  const { isOnline } = useOffline();
+  const { searchOffline, hasSearchIndex } = useOfflinePack();
   const inputRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [usingOffline, setUsingOffline] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -75,6 +81,7 @@ export default function SearchModal({ visible, onClose, onSelectAsset, onSelectT
       setQuery('');
       setResults([]);
       setSearched(false);
+      setUsingOffline(false);
     }
   }, [visible]);
 
@@ -84,8 +91,18 @@ export default function SearchModal({ visible, onClose, onSelectAsset, onSelectT
       setSearched(false);
       return;
     }
-    setLoading(true);
     setSearched(true);
+
+    if (!isOnline && hasSearchIndex) {
+      setUsingOffline(true);
+      setLoading(false);
+      const offlineResults = searchOffline(q);
+      setResults(offlineResults);
+      return;
+    }
+
+    setUsingOffline(false);
+    setLoading(true);
     try {
       const params = new URLSearchParams({ q: q.trim() });
       if (activeCommunity?.id) params.set('communityId', activeCommunity.id);
@@ -93,11 +110,17 @@ export default function SearchModal({ visible, onClose, onSelectAsset, onSelectT
       const data = await res.json();
       setResults(data);
     } catch {
-      setResults([]);
+      if (hasSearchIndex) {
+        setUsingOffline(true);
+        const offlineResults = searchOffline(q);
+        setResults(offlineResults);
+      } else {
+        setResults([]);
+      }
     } finally {
       setLoading(false);
     }
-  }, [activeCommunity?.id]);
+  }, [activeCommunity?.id, isOnline, hasSearchIndex, searchOffline]);
 
   const handleChangeText = (text: string) => {
     setQuery(text);
@@ -130,6 +153,11 @@ export default function SearchModal({ visible, onClose, onSelectAsset, onSelectT
               {(item.assetType || 'asset').replace(/_/g, ' ')}
             </Text>
           </View>
+          {item.isOffline && (
+            <View style={[styles.badge, { backgroundColor: Colors.warning + '20' }]}>
+              <Text style={[styles.badgeText, { color: Colors.warning }]}>offline</Text>
+            </View>
+          )}
           {item.matchField && item.matchField !== 'label' && (
             <Text style={styles.matchHint}>matched: {item.matchField}</Text>
           )}
@@ -217,6 +245,20 @@ export default function SearchModal({ visible, onClose, onSelectAsset, onSelectT
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
+
+        {usingOffline && searched && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={14} color={Colors.warning} />
+            <Text style={styles.offlineBannerText}>Searching offline data</Text>
+          </View>
+        )}
+
+        {!isOnline && !hasSearchIndex && searched && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="warning-outline" size={14} color={Colors.error} />
+            <Text style={styles.offlineBannerText}>No offline search data — download a map pack first</Text>
+          </View>
+        )}
 
         {loading && (
           <View style={styles.centerState}>
@@ -397,5 +439,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: Colors.warning + '10',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.warning + '30',
+  },
+  offlineBannerText: {
+    fontSize: 12,
+    color: Colors.warning,
+    fontWeight: '500',
   },
 });
