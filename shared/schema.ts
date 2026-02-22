@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -8,6 +8,7 @@ export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
+export const exportStatusEnum = pgEnum("export_status", ["queued", "running", "complete", "failed"]);
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -279,6 +280,29 @@ export const scheduleRunItems = pgTable("schedule_run_items", {
   taskId: varchar("task_id").notNull().references(() => tasks.id),
 });
 
+export const exports = pgTable("exports", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  type: text("type").notNull().default("proof_of_work"),
+  status: exportStatusEnum("status").notNull().default("queued"),
+  filters: jsonb("filters"),
+  pdfFileRef: text("pdf_file_ref"),
+  photosZipRef: text("photos_zip_ref"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  errorMessage: text("error_message"),
+}, (table) => [
+  index("exports_community_created_idx").on(table.communityId, table.createdAt),
+]);
+
+export const exportsRelations = relations(exports, ({ one }) => ({
+  community: one(communities, { fields: [exports.communityId], references: [communities.id] }),
+  creator: one(users, { fields: [exports.createdBy], references: [users.id] }),
+}));
+
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
   user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
 }));
@@ -513,3 +537,4 @@ export type TemplateRun = typeof templateRuns.$inferSelect;
 export type TaskSchedule = typeof taskSchedules.$inferSelect;
 export type ScheduleRun = typeof scheduleRuns.$inferSelect;
 export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
+export type Export = typeof exports.$inferSelect;
