@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
+import SearchModal from '@/components/SearchModal';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -49,6 +50,7 @@ export default function TasksScreen() {
   const { user } = useAuth();
   const { isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions } = useOffline();
   const [syncing, setSyncing] = React.useState(false);
+  const [searchVisible, setSearchVisible] = React.useState(false);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -177,11 +179,29 @@ export default function TasksScreen() {
         </View>
       )}
       <View style={styles.headerBar}>
-        <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
-        <Text style={styles.taskCount}>
-          {activeTasks.length} active task{activeTasks.length !== 1 ? 's' : ''}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
+          <Text style={styles.taskCount}>
+            {activeTasks.length} active task{activeTasks.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setSearchVisible(true)}
+          style={styles.searchButton}
+          testID="search-button"
+        >
+          <Ionicons name="search" size={22} color="#0C1D31" />
+        </TouchableOpacity>
       </View>
+      <SearchModal
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        onSelectTask={(result) => router.push(`/task/${result.id}`)}
+        onSelectAsset={(result) => router.push(`/task/${result.id}` as any)}
+        onShowOnMap={(result) => {
+          router.push('/(tabs)/map' as any);
+        }}
+      />
 
       {tasks.length === 0 && !isLoading ? (
         <View style={styles.emptyState}>
@@ -218,7 +238,8 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 },
+  headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
+  searchButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f2f5', alignItems: 'center', justifyContent: 'center' },
   communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   taskCount: { fontSize: 14, color: '#888', marginTop: 2 },
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },

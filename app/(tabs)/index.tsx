@@ -11,6 +11,7 @@ import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import StatusBarFill from '@/components/StatusBarFill';
+import SearchModal from '@/components/SearchModal';
 
 type Task = {
   id: string;
@@ -73,6 +74,7 @@ export default function DashboardScreen() {
   const { isOnline, pendingCompletions, syncPendingCompletions } = useOffline();
   const [syncing, setSyncing] = useState(false);
   const [showCommunitySwitcher, setShowCommunitySwitcher] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
 
   const communityId = activeCommunity?.id;
 
@@ -182,6 +184,13 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.headerRight}>
+              <TouchableOpacity
+                onPress={() => setSearchVisible(true)}
+                style={styles.searchButton}
+                testID="home-search-button"
+              >
+                <Ionicons name="search" size={20} color="#fff" />
+              </TouchableOpacity>
               <View style={[styles.onlineDot, { backgroundColor: isOnline ? '#25C1AC' : '#f44336' }]} />
               <Text style={styles.onlineLabel}>{isOnline ? 'Online' : 'Offline'}</Text>
             </View>
@@ -361,6 +370,15 @@ export default function DashboardScreen() {
           </>
         )}
       </ScrollView>
+      <SearchModal
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        onSelectTask={(result) => router.push(`/task/${result.id}`)}
+        onSelectAsset={(result) => router.push(`/task/${result.id}` as any)}
+        onShowOnMap={(result) => {
+          router.push('/(tabs)/map' as any);
+        }}
+      />
     </View>
   );
 }
@@ -406,6 +424,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginTop: 4,
+  },
+  searchButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
   },
   onlineDot: { width: 8, height: 8, borderRadius: 4 },
   onlineLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
