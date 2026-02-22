@@ -54,7 +54,7 @@ AdminRouter.register('map-layers', async function(container) {
         const featureCount = countFeatures(l);
         return `
           <tr>
-            <td><strong>${esc(l.name)}</strong></td>
+            <td><strong>${esc(l.displayName)}</strong></td>
             <td><span class="badge badge-blue">${esc(l.layerKey || '—')}</span></td>
             <td>${esc(l.subLayerKey || '—')}</td>
             <td>${featureCount}</td>
@@ -63,7 +63,7 @@ AdminRouter.register('map-layers', async function(container) {
             <td class="text-right">
               <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync Assets</button>
               <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
-              <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.name)}">Delete</button>
+              <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>
             </td>
           </tr>
         `;
@@ -130,8 +130,8 @@ AdminRouter.register('map-layers', async function(container) {
         <div class="modal-body">
           <div class="flex gap-4">
             <div class="form-group" style="flex:1">
-              <label>Name</label>
-              <input type="text" class="form-input" id="ml-name" value="${esc(layer?.name || '')}" />
+              <label>Display Name</label>
+              <input type="text" class="form-input" id="ml-name" value="${esc(layer?.displayName || '')}" />
             </div>
             <div class="form-group" style="flex:1">
               <label>Layer Key</label>
@@ -141,10 +141,6 @@ AdminRouter.register('map-layers', async function(container) {
               <label>Sub Layer Key</label>
               <input type="text" class="form-input" id="ml-subLayerKey" value="${esc(layer?.subLayerKey || '')}" placeholder="e.g. backflow" />
             </div>
-          </div>
-          <div class="form-group">
-            <label>Style Color</label>
-            <input type="text" class="form-input" id="ml-styleColor" value="${esc(layer?.styleColor || '#3b82f6')}" placeholder="#hex" style="max-width:160px" />
           </div>
           <div class="form-group">
             <label>GeoJSON Data</label>
@@ -179,29 +175,32 @@ AdminRouter.register('map-layers', async function(container) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
     overlay.querySelector('.save-btn').addEventListener('click', async () => {
-      const name = document.getElementById('ml-name').value.trim();
+      const displayName = document.getElementById('ml-name').value.trim();
       const layerKey = document.getElementById('ml-layerKey').value.trim();
       const subLayerKey = document.getElementById('ml-subLayerKey').value.trim();
-      const styleColor = document.getElementById('ml-styleColor').value.trim();
       const geojsonRaw = document.getElementById('ml-geojson').value.trim();
 
-      if (!name) { showToast('Name is required', 'error'); return; }
+      if (!displayName) { showToast('Name is required', 'error'); return; }
+      if (!layerKey) { showToast('Layer Key is required', 'error'); return; }
+      if (!subLayerKey) { showToast('Sub Layer Key is required', 'error'); return; }
 
-      let geojsonData = null;
+      let geojsonData = undefined;
       if (geojsonRaw) {
         try {
-          geojsonData = JSON.parse(geojsonRaw);
+          JSON.parse(geojsonRaw);
+          geojsonData = geojsonRaw;
         } catch {
           showToast('Invalid JSON in GeoJSON field', 'error');
           return;
         }
       }
 
-      const body = { name, communityId, layerKey: layerKey || null, subLayerKey: subLayerKey || null, styleColor: styleColor || null };
+      const body = { displayName, communityId, layerKey, subLayerKey };
       if (geojsonData) body.geojsonData = geojsonData;
 
       try {
         if (isEdit) {
+          body.version = layer.version;
           await apiFetch(`/api/map-layers/${layer.id}`, { method: 'PATCH', body });
           showToast('Layer updated', 'success');
         } else {

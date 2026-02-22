@@ -64,12 +64,10 @@ AdminRouter.register('assets', async function(container) {
     typeSelect.appendChild(opt);
   });
 
-  document.getElementById('filter-type').addEventListener('change', loadAssets);
+  document.getElementById('filter-type').addEventListener('change', () => { updateMissingKeyOptions(); loadAssets(); });
   document.getElementById('filter-status').addEventListener('change', loadAssets);
   document.getElementById('filter-incomplete').addEventListener('change', loadAssets);
   document.getElementById('filter-missing-key').addEventListener('change', loadAssets);
-
-  document.getElementById('filter-type').addEventListener('change', updateMissingKeyOptions);
 
   document.getElementById('select-all').addEventListener('change', (e) => {
     if (e.target.checked) {
@@ -83,18 +81,23 @@ AdminRouter.register('assets', async function(container) {
 
   await loadAssets();
 
+  function getRequiredKeys(type) {
+    const tmpl = templates[type];
+    if (!tmpl) return [];
+    return tmpl.requiredKeys || [];
+  }
+
   function updateMissingKeyOptions() {
     const type = document.getElementById('filter-type').value;
     const sel = document.getElementById('filter-missing-key');
     sel.innerHTML = '<option value="">Any missing key</option>';
-    if (type && templates[type]) {
-      templates[type].forEach(k => {
-        const opt = document.createElement('option');
-        opt.value = k;
-        opt.textContent = k;
-        sel.appendChild(opt);
-      });
-    }
+    const keys = getRequiredKeys(type);
+    keys.forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k;
+      sel.appendChild(opt);
+    });
   }
 
   async function loadAssets() {
@@ -118,10 +121,14 @@ AdminRouter.register('assets', async function(container) {
       } else {
         let url = `/api/communities/${communityId}/assets?`;
         if (filterType) url += `type=${filterType}&`;
-        if (filterStatus === 'archived') url += `archived=true&`;
-        else if (filterStatus === 'all') url += `includeArchived=true&`;
+        if (filterStatus === 'all') url += `includeArchived=true&`;
+        else if (filterStatus === 'archived') url += `includeArchived=true&`;
         const data = await apiFetch(url);
-        allAssets = data.map(a => ({
+        let filtered = data;
+        if (filterStatus === 'archived') {
+          filtered = data.filter(a => a.isArchived);
+        }
+        allAssets = filtered.map(a => ({
           ...a,
           missingKeys: getMissingKeys(a),
         }));
@@ -134,7 +141,7 @@ AdminRouter.register('assets', async function(container) {
   }
 
   function getMissingKeys(asset) {
-    const required = templates[asset.assetType] || [];
+    const required = getRequiredKeys(asset.assetType);
     const propKeys = (asset.properties || []).map(p => p.key);
     return required.filter(k => !propKeys.includes(k));
   }
@@ -193,7 +200,7 @@ AdminRouter.register('assets', async function(container) {
     const keySelect = document.getElementById('bulk-key');
     const firstAsset = allAssets.find(a => selectedIds.has(a.id));
     const type = firstAsset?.assetType;
-    const keys = type && templates[type] ? templates[type] : [];
+    const keys = getRequiredKeys(type);
     keys.forEach(k => {
       const opt = document.createElement('option');
       opt.value = k;
