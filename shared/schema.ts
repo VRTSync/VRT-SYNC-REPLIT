@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -115,15 +115,21 @@ export const assets = pgTable("assets", {
   assetType: assetTypeEnum("asset_type").notNull(),
   label: text("label").notNull(),
   featureRef: text("feature_ref"),
+  mapLayerId: varchar("map_layer_id").references(() => mapLayers.id),
   geometryType: geometryTypeEnum("geometry_type"),
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  archivedAt: timestamp("archived_at"),
+  sourceUpdatedAt: timestamp("source_updated_at"),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("assets_community_type_idx").on(table.communityId, table.assetType),
   index("assets_community_feature_idx").on(table.communityId, table.featureRef),
+  index("assets_community_type_archived_idx").on(table.communityId, table.assetType, table.isArchived),
+  uniqueIndex("assets_community_layer_feature_idx").on(table.communityId, table.mapLayerId, table.featureRef),
 ]);
 
 export const assetProperties = pgTable("asset_properties", {
@@ -239,6 +245,7 @@ export const attachmentsRelations = relations(attachments, ({ one }) => ({
 
 export const assetsRelations = relations(assets, ({ one, many }) => ({
   community: one(communities, { fields: [assets.communityId], references: [communities.id] }),
+  mapLayer: one(mapLayers, { fields: [assets.mapLayerId], references: [mapLayers.id] }),
   properties: many(assetProperties),
   taskLinks: many(taskLinks),
 }));
@@ -252,8 +259,9 @@ export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
   asset: one(assets, { fields: [taskLinks.assetId], references: [assets.id] }),
 }));
 
-export const mapLayersRelations = relations(mapLayers, ({ one }) => ({
+export const mapLayersRelations = relations(mapLayers, ({ one, many }) => ({
   community: one(communities, { fields: [mapLayers.communityId], references: [communities.id] }),
+  assets: many(assets),
 }));
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -310,6 +318,7 @@ export const insertAssetSchema = z.object({
   assetType: z.enum(ASSET_TYPES),
   label: z.string().min(1),
   featureRef: z.string().optional(),
+  mapLayerId: z.string().optional(),
   geometryType: z.enum(["point", "polygon", "line"]).optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
