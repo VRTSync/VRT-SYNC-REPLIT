@@ -1,0 +1,94 @@
+SLICE 1.8 (PASTE INTO REPLIT): Offline Search (Local Index When Offline)
+
+Objective
+Make search work fully offline using the downloaded offline pack data.
+
+Scope
+	•	Offline pack now includes searchIndex.json
+	•	App downloads and stores it locally alongside MBTiles and GeoJSON
+	•	Search modal automatically uses:
+	•	API when online
+	•	Local index when offline
+
+⸻
+
+Backend Requirements
+
+1) Offline pack supports search index
+	•	Add searchIndexRef to offline_packs (if missing)
+	•	Include it in the pack manifest
+	•	Update /api/offline-packs/:id/download-urls to return a signed URL/ref for searchIndex.json
+
+2) Index content requirements
+
+searchIndex.json includes:
+
+assets[]
+	•	id
+	•	assetType
+	•	label
+	•	featureRef
+	•	isArchived
+	•	lat/lng (or centroid)
+	•	props subset (serialNumber, species, brand, zoneNumber, size, controllerRef, etc.)
+
+tasks[]
+	•	id
+	•	title
+	•	status
+	•	priority
+	•	dueDate
+	•	address
+	•	lat/lng
+	•	linked asset label/type optional
+
+Permissions:
+	•	Contractor pack should only include communities they belong to.
+	•	Task list may include only assigned tasks (recommended).
+
+⸻
+
+Mobile Requirements
+
+1) Download/store index
+
+On pack download/update:
+	•	download searchIndex.json
+	•	store in filesystem
+	•	save local path in AsyncStorage per communityId
+
+2) Offline search behavior
+
+In SearchModal:
+	•	Detect offline state
+	•	If offline and local index exists for active community:
+	•	search locally (case-insensitive)
+	•	rank: exact > prefix > substring
+	•	group Assets/Tasks
+	•	hide archived by default
+	•	If offline and no index:
+	•	show “Offline search not available (download offline pack)”
+
+3) Navigation
+	•	Tap asset → open Asset Detail:
+	•	if online: normal API
+	•	if offline: show minimal cached snapshot (label/type/props from index) + “Offline snapshot” badge
+	•	Show on Map:
+	•	must work offline using lat/lng (or featureRef highlight if implemented)
+	•	Tap task:
+	•	if offline: show minimal snapshot (title/status/address) or “requires connection” but map jump should still work if coords exist
+
+⸻
+
+Acceptance Tests
+	1.	Download pack → airplane mode → search “Backflow 3” → returns asset results
+	2.	Search serial number → returns asset
+	3.	Search task title → returns task
+	4.	“Show on Map” works offline for results with coordinates
+	5.	Archived assets hidden by default
+
+⸻
+
+Out of Scope
+	•	Offline fuzzy libraries
+	•	Multi-community offline global index
