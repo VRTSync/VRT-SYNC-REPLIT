@@ -40,6 +40,7 @@ export default function RegisterScreen() {
     <ImageBackground
       source={require('@/assets/images/topography-texture-rotated.png')}
       style={styles.backgroundImage}
+      imageStyle={styles.imageStyle}
       resizeMode="repeat"
     >
       <View style={styles.overlay} />
@@ -137,6 +138,10 @@ export default function RegisterScreen() {
 
 const styles = StyleSheet.create({
   backgroundImage: { flex: 1, backgroundColor: '#0C1D31' },
+  imageStyle: {
+    width: 200,
+    height: 200,
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(12, 29, 49, 0.88)',
