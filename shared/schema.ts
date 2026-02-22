@@ -168,6 +168,7 @@ export const offlinePacks = pgTable("offline_packs", {
   manifestRef: text("manifest_ref"),
   geojsonBundleRef: text("geojson_bundle_ref"),
   assetIndexRef: text("asset_index_ref"),
+  searchIndexRef: text("search_index_ref"),
   checksum: text("checksum"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -977,6 +977,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         manifestRef: pack.manifestRef,
         geojsonBundleRef: pack.geojsonBundleRef,
         assetIndexRef: pack.assetIndexRef,
+        searchIndexRef: pack.searchIndexRef,
       });
     } catch (error) {
       console.error("Get download URLs error:", error);
@@ -1016,11 +1017,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const existingPack = await storage.getLatestOfflinePack(communityId);
       const newVersion = existingPack ? existingPack.packVersion + 1 : 1;
 
-      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot] = await Promise.all([
+      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot, searchIndex] = await Promise.all([
         storage.generatePackManifest(communityId),
         storage.generateAssetIndex(communityId),
         storage.generateGeojsonBundle(communityId),
         storage.generateWorkHistorySnapshot(communityId),
+        storage.generateSearchIndex(communityId),
       ]);
 
       const pack = await storage.createOfflinePack({
@@ -1034,6 +1036,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assetIndex,
         geojsonBundle,
         workHistorySnapshot,
+        searchIndex,
       });
     } catch (error) {
       console.error("Generate offline pack error:", error);
@@ -1054,11 +1057,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pack = await storage.getLatestOfflinePack(communityId);
       if (!pack) return res.status(404).json({ error: "No offline pack available for this community" });
 
-      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot] = await Promise.all([
+      const isAdmin = user.role === 'admin';
+      const [manifest, assetIndex, geojsonBundle, workHistorySnapshot, searchIndex] = await Promise.all([
         storage.generatePackManifest(communityId),
         storage.generateAssetIndex(communityId),
         storage.generateGeojsonBundle(communityId),
         storage.generateWorkHistorySnapshot(communityId),
+        storage.generateSearchIndex(communityId, user.id, isAdmin),
       ]);
 
       res.json({
@@ -1073,6 +1078,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         assetIndex,
         geojsonBundle,
         workHistorySnapshot,
+        searchIndex,
       });
     } catch (error) {
       console.error("Get offline pack data error:", error);

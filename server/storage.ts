@@ -497,6 +497,7 @@ export async function updateOfflinePack(id: string, data: Partial<{
   manifestRef: string;
   geojsonBundleRef: string;
   assetIndexRef: string;
+  searchIndexRef: string;
   checksum: string;
 }>): Promise<OfflinePack | null> {
   const [updated] = await db.update(offlinePacks)
@@ -597,6 +598,88 @@ export async function generateWorkHistorySnapshot(communityId: string, limit = 5
     }
   }
   return snapshot;
+}
+
+export async function generateSearchIndex(communityId: string, userId?: string, isAdmin = true) {
+  const communityAssets = await db.select().from(assets)
+    .where(and(eq(assets.communityId, communityId)));
+  const allIds = communityAssets.map(a => a.id);
+  let propsMap = new Map<string, Record<string, string>>();
+  if (allIds.length > 0) {
+    const allProps = await db.select().from(assetProperties)
+      .where(inArray(assetProperties.assetId, allIds));
+    for (const p of allProps) {
+      const map = propsMap.get(p.assetId) || {};
+      map[p.key] = p.value;
+      propsMap.set(p.assetId, map);
+    }
+  }
+
+  const searchAssets = communityAssets.map(a => {
+    const props = propsMap.get(a.id) || {};
+    return {
+      id: a.id,
+      assetType: a.assetType,
+      label: a.label,
+      featureRef: a.featureRef,
+      isArchived: a.isArchived,
+      latitude: a.latitude,
+      longitude: a.longitude,
+      props: {
+        ...(props.serialNumber ? { serialNumber: props.serialNumber } : {}),
+        ...(props.species ? { species: props.species } : {}),
+        ...(props.brand ? { brand: props.brand } : {}),
+        ...(props.zoneNumber ? { zoneNumber: props.zoneNumber } : {}),
+        ...(props.size ? { size: props.size } : {}),
+        ...(props.controllerRef ? { controllerRef: props.controllerRef } : {}),
+        ...(props.name ? { name: props.name } : {}),
+        ...(props.address ? { address: props.address } : {}),
+      },
+    };
+  });
+
+  const taskConditions: any[] = [eq(tasks.communityId, communityId)];
+  if (!isAdmin && userId) {
+    taskConditions.push(eq(tasks.assignedTo, userId));
+  }
+  const communityTasks = await db.select().from(tasks)
+    .where(and(...taskConditions));
+
+  const taskLinksAll = communityTasks.length > 0
+    ? await db.select({
+        taskId: taskLinks.taskId,
+        assetId: taskLinks.assetId,
+      }).from(taskLinks)
+        .where(and(
+          inArray(taskLinks.taskId, communityTasks.map(t => t.id)),
+          eq(taskLinks.linkType, 'asset'),
+        ))
+    : [];
+  const taskLinkMap = new Map<string, string>();
+  for (const tl of taskLinksAll) {
+    if (tl.assetId) taskLinkMap.set(tl.taskId, tl.assetId);
+  }
+
+  const searchTasks = communityTasks.map(t => {
+    const linkedAssetId = taskLinkMap.get(t.id);
+    const linkedAsset = linkedAssetId
+      ? communityAssets.find(a => a.id === linkedAssetId)
+      : undefined;
+    return {
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      dueDate: t.dueDate?.toISOString() || null,
+      address: t.address,
+      latitude: t.latitude,
+      longitude: t.longitude,
+      linkedAssetLabel: linkedAsset?.label || null,
+      linkedAssetType: linkedAsset?.assetType || null,
+    };
+  });
+
+  return { assets: searchAssets, tasks: searchTasks };
 }
 
 export async function getAssetWorkHistory(assetId: string) {
