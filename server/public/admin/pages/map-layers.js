@@ -12,6 +12,7 @@ window._renderMapLayers = async function(container, communityId) {
     <div class="page-header" style="margin-top:16px">
       <h2 style="font-size:16px">Map Layers</h2>
       <div class="flex gap-2">
+        <button class="btn btn-sm" id="upload-irrigation-btn" style="background:#0C1D31;color:#fff;border:none">🌊 Upload Irrigation KML</button>
         <button class="btn btn-primary btn-sm" id="upload-layer-btn">Upload File</button>
         <button class="btn btn-secondary btn-sm" id="add-layer-btn">+ Manual Entry</button>
       </div>
@@ -21,6 +22,7 @@ window._renderMapLayers = async function(container, communityId) {
 
   document.getElementById('upload-layer-btn').addEventListener('click', () => showUploadModal());
   document.getElementById('add-layer-btn').addEventListener('click', () => showLayerModal());
+  document.getElementById('upload-irrigation-btn').addEventListener('click', () => showIrrigationUploadModal());
   await loadLayers();
 
   async function loadLayers() {
@@ -953,6 +955,130 @@ window._renderMapLayers = async function(container, communityId) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function showIrrigationUploadModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div class="modal-header">
+          <h2>Upload Irrigation Controllers &amp; Zones KML</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">
+            Upload a KML file with the standard Controller/Zones folder structure.
+            This will automatically create both <strong>Controller</strong> and <strong>Zone</strong> layers,
+            extract parent/child relationships, and parse controller colors from the KML styles.
+          </p>
+          <div class="form-group">
+            <label>Display Name (optional)</label>
+            <input type="text" class="form-input" id="irr-name" placeholder="e.g. Miramonte Controllers" />
+          </div>
+          <div class="form-group">
+            <label>KML File</label>
+            <div id="irr-dropzone" style="border:2px dashed var(--gray-300);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s">
+              <div style="font-size:28px;margin-bottom:8px;color:var(--gray-400)">🌊</div>
+              <div id="irr-droptext" style="color:var(--gray-500)">Drop your irrigation KML file here or click to browse</div>
+              <div style="font-size:12px;color:var(--gray-400);margin-top:4px">Supports .kml files with Controllers &amp; Zones structure</div>
+              <input type="file" id="irr-file" accept=".kml" style="display:none" />
+            </div>
+          </div>
+          <div id="irr-result" style="display:none"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary cancel-btn">Cancel</button>
+          <button class="btn btn-primary upload-irr-btn" disabled>Upload &amp; Sync</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let selectedFile = null;
+
+    const dropzone = overlay.querySelector('#irr-dropzone');
+    const fileInput = overlay.querySelector('#irr-file');
+    const uploadBtn = overlay.querySelector('.upload-irr-btn');
+    const resultArea = overlay.querySelector('#irr-result');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--teal)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--gray-300)'; });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--gray-300)';
+      if (e.dataTransfer.files[0]) handleIrrFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleIrrFile(fileInput.files[0]); });
+
+    function handleIrrFile(file) {
+      if (!file.name.toLowerCase().endsWith('.kml')) {
+        showToast('Only .kml files are supported', 'error');
+        return;
+      }
+      selectedFile = file;
+      overlay.querySelector('#irr-droptext').textContent = file.name + ' (' + formatBytes(file.size) + ')';
+      uploadBtn.disabled = false;
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading...';
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('communityId', communityId);
+      const displayName = overlay.querySelector('#irr-name').value.trim();
+      if (displayName) formData.append('displayName', displayName);
+
+      try {
+        const res = await fetch('/api/map-layers/upload-irrigation', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+        let html = '<div style="background:var(--gray-50);padding:12px;border-radius:8px;margin-top:12px">';
+        html += '<div style="font-weight:600;color:var(--navy);margin-bottom:8px">Import Complete</div>';
+        html += '<div style="font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
+        html += '<div>Controllers found:</div><div><strong>' + data.controllerCount + '</strong></div>';
+        html += '<div>Zones found:</div><div><strong>' + data.zoneCount + '</strong></div>';
+        html += '<div>Controllers created:</div><div><strong>' + data.syncResult.controllersCreated + '</strong></div>';
+        html += '<div>Controllers updated:</div><div><strong>' + data.syncResult.controllersUpdated + '</strong></div>';
+        html += '<div>Zones created:</div><div><strong>' + data.syncResult.zonesCreated + '</strong></div>';
+        html += '<div>Zones updated:</div><div><strong>' + data.syncResult.zonesUpdated + '</strong></div>';
+        html += '<div>Properties set:</div><div><strong>' + data.syncResult.propertiesSet + '</strong></div>';
+        html += '</div>';
+
+        if (data.warnings && data.warnings.length > 0) {
+          html += '<div style="margin-top:12px;padding:8px;background:#fff3cd;border-radius:4px;font-size:12px">';
+          html += '<div style="font-weight:600;color:#856404;margin-bottom:4px">Warnings:</div>';
+          data.warnings.forEach(w => { html += '<div style="color:#856404">• ' + esc(w) + '</div>'; });
+          html += '</div>';
+        }
+
+        html += '</div>';
+        resultArea.innerHTML = html;
+        resultArea.style.display = 'block';
+
+        uploadBtn.textContent = 'Done';
+        showToast('Irrigation data imported successfully', 'success');
+        await loadLayers();
+      } catch (err) {
+        showToast(err.message, 'error');
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload & Sync';
+      }
+    });
+
+    overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   }
 
   function esc(str) {

@@ -37,6 +37,27 @@ type AssetInfo = {
   properties: { key: string; value: string }[];
 };
 
+type ControllerInfo = {
+  id: string;
+  label: string;
+  featureRef: string | null;
+  controllerKey: string;
+  controllerColor: string;
+  latitude: number | null;
+  longitude: number | null;
+  zoneCount: number;
+  zones: {
+    id: string;
+    label: string;
+    featureRef: string | null;
+    zoneNumber: number | null;
+    zoneType: string | null;
+    zoneLabelShort: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }[];
+};
+
 const CATEGORY_TABS = [
   { key: 'community', label: 'Community', icon: 'business-outline' as const },
   { key: 'irrigation', label: 'Irrigation', icon: 'water-outline' as const },
@@ -72,6 +93,7 @@ export default function MapScreen() {
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
   const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
+  const [enabledControllers, setEnabledControllers] = useState<Set<string>>(new Set());
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -86,6 +108,21 @@ export default function MapScreen() {
     },
     enabled: !!activeCommunity,
   });
+
+  const { data: controllers = [] } = useQuery<ControllerInfo[]>({
+    queryKey: ['/api/communities', communityId, 'controllers'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/communities/${communityId}/controllers`);
+      return res.json();
+    },
+    enabled: !!communityId && activeCategory === 'irrigation',
+  });
+
+  React.useEffect(() => {
+    if (controllers.length > 0 && enabledControllers.size === 0) {
+      setEnabledControllers(new Set(controllers.map(c => c.featureRef || c.id)));
+    }
+  }, [controllers.length]);
 
   const { data: onlineLayers = [] } = useQuery<MapLayerMeta[]>({
     queryKey: ['/api/map-layers', { communityId }],
@@ -236,16 +273,47 @@ export default function MapScreen() {
     }
   }, [communityId, useOfflineData, resolveFeatureToAsset]);
 
-  const activeLayers = categoryLayers
-    .filter((l) => enabledLayerIds.has(l.id))
-    .map((l, idx) => ({
-      id: l.id,
-      layerKey: l.layerKey,
-      subLayerKey: l.subLayerKey,
-      displayName: l.displayName,
-      geojson: loadedGeoJSON[l.id] || null,
-      color: layerColors[idx % layerColors.length],
-    }));
+  const controllerColorMap = React.useMemo(() => {
+    const map = new Map<string, string>();
+    controllers.forEach(c => {
+      if (c.featureRef) map.set(c.featureRef, c.controllerColor);
+    });
+    return map;
+  }, [controllers]);
+
+  const activeLayers = React.useMemo(() => {
+    return categoryLayers
+      .filter((l) => enabledLayerIds.has(l.id))
+      .map((l, idx) => {
+        let geojson = loadedGeoJSON[l.id] || null;
+
+        if (activeCategory === 'irrigation' && controllers.length > 0 && geojson) {
+          if (l.subLayerKey === 'zone') {
+            const filteredFeatures = (geojson.features || []).filter((f: any) => {
+              const ctrlRef = f.properties?.controllerFeatureRef;
+              return ctrlRef && enabledControllers.has(ctrlRef);
+            });
+            geojson = { ...geojson, features: filteredFeatures };
+          } else if (l.subLayerKey === 'controller') {
+            const filteredFeatures = (geojson.features || []).filter((f: any) => {
+              const fRef = f.properties?.featureId || f.id;
+              return fRef && enabledControllers.has(fRef);
+            });
+            geojson = { ...geojson, features: filteredFeatures };
+          }
+        }
+
+        return {
+          id: l.id,
+          layerKey: l.layerKey,
+          subLayerKey: l.subLayerKey,
+          displayName: l.displayName,
+          geojson,
+          color: layerColors[idx % layerColors.length],
+          controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
+        };
+      });
+  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, enabledControllers, controllerColorMap]);
 
   if (Platform.OS === 'web') {
     return (
@@ -283,6 +351,52 @@ export default function MapScreen() {
                 />
               </View>
             ))}
+            {activeCategory === 'irrigation' && controllers.length > 0 && (
+              <>
+                <View style={styles.controllerSectionDivider} />
+                <View style={styles.controllerSectionHeader}>
+                  <Text style={styles.layerPanelTitle}>Controllers</Text>
+                  <TouchableOpacity onPress={() => {
+                    const allRefs = controllers.map(c => c.featureRef || c.id);
+                    if (enabledControllers.size === allRefs.length) {
+                      setEnabledControllers(new Set());
+                    } else {
+                      setEnabledControllers(new Set(allRefs));
+                    }
+                  }}>
+                    <Text style={styles.selectAllText}>
+                      {enabledControllers.size === controllers.length ? 'None' : 'All'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {controllers.map((ctrl) => {
+                  const ref = ctrl.featureRef || ctrl.id;
+                  return (
+                    <TouchableOpacity
+                      key={ctrl.id}
+                      style={styles.controllerRow}
+                      onPress={() => {
+                        setEnabledControllers(prev => {
+                          const next = new Set(prev);
+                          if (next.has(ref)) next.delete(ref);
+                          else next.add(ref);
+                          return next;
+                        });
+                      }}
+                    >
+                      <View style={[styles.controllerColorDot, { backgroundColor: ctrl.controllerColor }]} />
+                      <Text style={[styles.controllerLabel, !enabledControllers.has(ref) && styles.controllerLabelDisabled]} numberOfLines={1}>
+                        {ctrl.label}
+                      </Text>
+                      <Text style={styles.controllerZoneCount}>{ctrl.zoneCount}</Text>
+                      <View style={[styles.controllerCheck, enabledControllers.has(ref) && styles.controllerCheckActive]}>
+                        {enabledControllers.has(ref) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
           </View>
         )}
 
@@ -366,7 +480,7 @@ export default function MapScreen() {
       )}
 
       {showLayerPanel && (
-        <View style={[styles.layerPanel, { top: insets.top + 62 }]}>
+        <ScrollView style={[styles.layerPanel, { top: insets.top + 62, maxHeight: 400 }]} bounces={false}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
           {categoryLayers.map((layer, idx) => (
             <View key={layer.id} style={styles.layerToggleRow}>
@@ -379,7 +493,54 @@ export default function MapScreen() {
               />
             </View>
           ))}
-        </View>
+
+          {activeCategory === 'irrigation' && controllers.length > 0 && (
+            <>
+              <View style={styles.controllerSectionDivider} />
+              <View style={styles.controllerSectionHeader}>
+                <Text style={styles.layerPanelTitle}>Controllers</Text>
+                <TouchableOpacity onPress={() => {
+                  const allRefs = controllers.map(c => c.featureRef || c.id);
+                  if (enabledControllers.size === allRefs.length) {
+                    setEnabledControllers(new Set());
+                  } else {
+                    setEnabledControllers(new Set(allRefs));
+                  }
+                }}>
+                  <Text style={styles.selectAllText}>
+                    {enabledControllers.size === controllers.length ? 'None' : 'All'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {controllers.map((ctrl) => {
+                const ref = ctrl.featureRef || ctrl.id;
+                return (
+                  <TouchableOpacity
+                    key={ctrl.id}
+                    style={styles.controllerRow}
+                    onPress={() => {
+                      setEnabledControllers(prev => {
+                        const next = new Set(prev);
+                        if (next.has(ref)) next.delete(ref);
+                        else next.add(ref);
+                        return next;
+                      });
+                    }}
+                  >
+                    <View style={[styles.controllerColorDot, { backgroundColor: ctrl.controllerColor }]} />
+                    <Text style={[styles.controllerLabel, !enabledControllers.has(ref) && styles.controllerLabelDisabled]} numberOfLines={1}>
+                      {ctrl.label}
+                    </Text>
+                    <Text style={styles.controllerZoneCount}>{ctrl.zoneCount}</Text>
+                    <View style={[styles.controllerCheck, enabledControllers.has(ref) && styles.controllerCheckActive]}>
+                      {enabledControllers.has(ref) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+        </ScrollView>
       )}
 
       {useOfflineData && (
@@ -587,5 +748,63 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#f44336',
     fontWeight: '500',
+  },
+  controllerSectionDivider: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 8,
+  },
+  controllerSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  selectAllText: {
+    fontSize: 12,
+    color: '#25C1AC',
+    fontWeight: '600',
+  },
+  controllerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    gap: 8,
+  },
+  controllerColorDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  controllerLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
+  },
+  controllerLabelDisabled: {
+    color: '#bbb',
+  },
+  controllerZoneCount: {
+    fontSize: 11,
+    color: '#999',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  controllerCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#ddd',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controllerCheckActive: {
+    backgroundColor: '#25C1AC',
+    borderColor: '#25C1AC',
   },
 });

@@ -14,6 +14,7 @@ type Task = {
 
 type GeoJSONFeature = {
   type: 'Feature';
+  id?: string;
   properties: Record<string, any>;
   geometry: {
     type: string;
@@ -28,6 +29,7 @@ type LayerData = {
   displayName: string;
   geojson: any;
   color: string;
+  controllerColorMap?: Map<string, string>;
 };
 
 type AssetInfo = {
@@ -135,7 +137,22 @@ export default function NativeMap({
         const key = `${layer.id}-${fIdx}`;
         const geom = feature.geometry;
         if (!geom) return;
-        const featureRef = feature.properties?.featureRef || feature.properties?.id || feature.properties?.name;
+        const featureRef = feature.properties?.featureRef || feature.properties?.featureId || feature.properties?.id || feature.properties?.name;
+
+        let featureColor = color;
+        if (layer.controllerColorMap) {
+          if (layer.subLayerKey === 'controller') {
+            const ctrlColor = layer.controllerColorMap.get(feature.properties?.featureId || feature.id);
+            if (ctrlColor) featureColor = ctrlColor;
+          } else if (layer.subLayerKey === 'zone') {
+            const ctrlRef = feature.properties?.controllerFeatureRef;
+            if (ctrlRef) {
+              const ctrlColor = layer.controllerColorMap.get(ctrlRef);
+              if (ctrlColor) featureColor = ctrlColor;
+            }
+          }
+        }
+        const featureFillColor = featureColor + '40';
 
         if (geom.type === 'Polygon') {
           const outerRing = parseRing(geom.coordinates[0]);
@@ -143,8 +160,8 @@ export default function NativeMap({
             <Polygon
               key={key}
               coordinates={outerRing}
-              fillColor={fillColor}
-              strokeColor={color}
+              fillColor={featureFillColor}
+              strokeColor={featureColor}
               strokeWidth={2}
               tappable={!!featureRef && !!onFeatureTap}
               onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
@@ -157,8 +174,8 @@ export default function NativeMap({
               <Polygon
                 key={`${key}-${pIdx}`}
                 coordinates={outerRing}
-                fillColor={fillColor}
-                strokeColor={color}
+                fillColor={featureFillColor}
+                strokeColor={featureColor}
                 strokeWidth={2}
                 tappable={!!featureRef && !!onFeatureTap}
                 onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
@@ -170,7 +187,7 @@ export default function NativeMap({
             <Polyline
               key={key}
               coordinates={parseRing(geom.coordinates)}
-              strokeColor={color}
+              strokeColor={featureColor}
               strokeWidth={3}
               tappable={!!featureRef && !!onFeatureTap}
               onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
@@ -182,7 +199,7 @@ export default function NativeMap({
               <Polyline
                 key={`${key}-${lIdx}`}
                 coordinates={parseRing(line)}
-                strokeColor={color}
+                strokeColor={featureColor}
                 strokeWidth={3}
                 tappable={!!featureRef && !!onFeatureTap}
                 onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
@@ -195,7 +212,7 @@ export default function NativeMap({
             <Marker
               key={key}
               coordinate={coord}
-              pinColor={color}
+              pinColor={featureColor}
               onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
             >
               <Callout>
