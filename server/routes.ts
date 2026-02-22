@@ -1061,6 +1061,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const parseResult = parseIrrigationKml(fileContent);
 
+      if (parseResult.controllers.length === 0) {
+        return res.status(400).json({
+          error: "No controller/zone data found in this KML file. Make sure the file contains controller folders with zone placemarks.",
+          warnings: parseResult.warnings,
+        });
+      }
+
       const controllerDisplayName = displayName || "Controllers";
       const zoneDisplayName = (displayName ? displayName.replace(/controller/i, "Zone").replace(/Controller/i, "Zone") : "Zones");
 
