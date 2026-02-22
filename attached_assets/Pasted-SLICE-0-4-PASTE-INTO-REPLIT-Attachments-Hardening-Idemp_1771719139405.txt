@@ -1,0 +1,131 @@
+SLICE 0.4 (PASTE INTO REPLIT): Attachments Hardening + Idempotency (No duplicates, retry-safe)
+
+Objective
+Make photo uploads and attachment records reliable under offline sync and retries so they can safely power Work History and audit trails. Contractors upload photos only (operational proof), not invoices.
+
+Scope
+
+Ensure attachment creation is idempotent (no duplicates on retry)
+
+Ensure attachment records always link to a completion record
+
+Ensure offline sync can retry uploads safely
+
+Add minimal endpoints to list attachments for a completion
+
+Required Behaviors
+1) Add idempotency to attachments
+
+Change the attachments data model to support retry-safe creation:
+
+Add idempotencyKey to attachments (string, required)
+
+Add unique constraint to prevent duplicates:
+
+Unique: (taskCompletionId, idempotencyKey)
+
+Definition
+An idempotencyKey must be stable across retries for the same file. It can be generated client-side as:
+
+taskCompletionId + ":" + localUri + ":" + createdAt
+or (better)
+
+taskCompletionId + ":" + fileHash
+
+2) Standardize upload + record creation flow
+
+For any completion with photos, the sync flow must be:
+
+Create completion record first (already exists)
+
+For each photo:
+
+Upload file to object storage (signed URL or existing upload helper)
+
+Create attachment metadata record via API including:
+
+taskCompletionId
+
+fileRef (storage key/path)
+
+url (public or resolvable URL/path)
+
+uploadedBy (userId)
+
+idempotencyKey
+
+3) Idempotent “create attachment” API behavior
+
+Add or modify endpoint (admin/contractor allowed only when they can access the task completion):
+
+POST /api/task-completions/:id/attachments
+Body: { fileRef, url, idempotencyKey }
+
+Behavior:
+
+If (taskCompletionId, idempotencyKey) already exists:
+
+Return the existing attachment record (200 OK)
+
+Do not create a duplicate
+
+Otherwise:
+
+Create the attachment record (201)
+
+4) Attachments listing endpoint
+
+Add:
+
+GET /api/task-completions/:id/attachments
+Returns all attachment records for that completion.
+
+5) Offline upload retry behavior
+
+Outbox queue must track photo upload state per photo:
+
+pendingUpload | uploaded | failed
+
+retries: at least 3 attempts
+
+lastError stored for failed items
+
+If upload succeeds but metadata creation fails, retry should:
+
+re-call metadata endpoint with same idempotencyKey
+
+NOT upload a second time unnecessarily (optional optimization)
+
+6) Permissions
+
+Contractors can create/list attachments for completions tied to tasks they have access to.
+
+Admin can access all.
+
+Acceptance Tests
+
+Offline completion with 2 photos:
+
+reconnect → uploads happen → attachments appear once each
+
+Force upload failure:
+
+item shows failed → retry works → no duplicates
+
+Force metadata creation failure:
+
+retry creates metadata successfully → no duplicates
+
+Repeat sync run:
+
+does not create duplicate attachments for the same completion photos
+
+Out of Scope
+
+Invoice uploads (contractors do not upload invoices)
+
+Thumbnail generation
+
+Non-photo documents
+
+Bulk document library
