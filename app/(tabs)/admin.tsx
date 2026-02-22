@@ -55,9 +55,13 @@ type AssetItem = {
   assetType: string;
   label: string;
   featureRef: string | null;
+  mapLayerId: string | null;
   geometryType: string | null;
   latitude: number | null;
   longitude: number | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  sourceUpdatedAt: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +69,15 @@ type AssetItem = {
 
 type AssetDetail = AssetItem & {
   properties: { id: string; key: string; value: string; version: number }[];
+  missingRequiredKeys: string[];
+};
+
+type CompletenessData = {
+  total: number;
+  active: number;
+  archived: number;
+  missingRequired: number;
+  missingRequiredAssets: { id: string; label: string; assetType: string; missingKeys: string[] }[];
 };
 
 const ASSET_TYPE_LABELS: Record<string, string> = {
@@ -156,6 +169,10 @@ export default function AdminScreen() {
   const [replacingGeoJSON, setReplacingGeoJSON] = useState(false);
   const [generatingPack, setGeneratingPack] = useState(false);
 
+  const [assetFilterType, setAssetFilterType] = useState<string | ''>('');
+  const [showArchivedAssets, setShowArchivedAssets] = useState(false);
+  const [syncingLayer, setSyncingLayer] = useState<string | null>(null);
+
   const { data: contractors = [] } = useQuery<AppUser[]>({
     queryKey: ['/api/contractors'],
     queryFn: getQueryFn({ on401: 'throw' }),
@@ -183,9 +200,32 @@ export default function AdminScreen() {
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'reports',
   });
 
+  const assetsQueryUrl = `/api/communities/${activeCommunity?.id}/assets?${assetFilterType ? `type=${assetFilterType}&` : ''}${showArchivedAssets ? 'includeArchived=true' : ''}`;
   const { data: assets = [] } = useQuery<AssetItem[]>({
-    queryKey: [`/api/communities/${activeCommunity?.id}/assets`],
-    queryFn: getQueryFn({ on401: 'throw' }),
+    queryKey: [assetsQueryUrl],
+    queryFn: async () => {
+      const res = await apiRequest('GET', assetsQueryUrl);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'assets',
+  });
+
+  const { data: completeness } = useQuery<CompletenessData>({
+    queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`, { type: assetFilterType }],
+    queryFn: async () => {
+      const url = `/api/communities/${activeCommunity?.id}/assets/completeness${assetFilterType ? `?type=${assetFilterType}` : ''}`;
+      const res = await apiRequest('GET', url);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'assets',
+  });
+
+  const { data: assetsTabLayers = [] } = useQuery<MapLayerItem[]>({
+    queryKey: ['/api/map-layers', { communityId: activeCommunity?.id, forAssets: true }],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/map-layers?communityId=${activeCommunity?.id}`);
+      return res.json();
+    },
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'assets',
   });
 
@@ -407,6 +447,8 @@ export default function AdminScreen() {
         geojsonData: layerGeoJSON.trim() || undefined,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+      queryClient.invalidateQueries({ queryKey: [assetsQueryUrl] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`] });
       setShowCreateLayer(false);
       setLayerSubKey('');
       setLayerDisplayName('');
@@ -434,9 +476,14 @@ export default function AdminScreen() {
       });
       const updated = await res.json();
       queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+      queryClient.invalidateQueries({ queryKey: [assetsQueryUrl] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`] });
       setShowLayerDetail({ ...showLayerDetail, version: updated.version });
       setReplaceGeoJSON('');
-      Alert.alert('Success', 'GeoJSON data updated');
+      const syncMsg = updated.syncResult
+        ? `\nAssets synced: ${updated.syncResult.created} created, ${updated.syncResult.updated} updated, ${updated.syncResult.archived} archived`
+        : '';
+      Alert.alert('Success', `GeoJSON data updated${syncMsg}`);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update GeoJSON');
     } finally {
@@ -510,6 +557,27 @@ export default function AdminScreen() {
         },
       },
     ]);
+  };
+
+  const handleSyncLayerAssets = async (layerId: string) => {
+    setSyncingLayer(layerId);
+    try {
+      const res = await apiRequest('POST', `/api/map-layers/${layerId}/sync-assets`);
+      const result = await res.json();
+      queryClient.invalidateQueries({ queryKey: [assetsQueryUrl] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`] });
+      Alert.alert('Sync Complete', `Created: ${result.created}, Updated: ${result.updated}, Archived: ${result.archived}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to sync assets');
+    } finally {
+      setSyncingLayer(null);
+    }
+  };
+
+  const missingKeysForAsset = (assetId: string): string[] => {
+    if (!completeness?.missingRequiredAssets) return [];
+    const found = completeness.missingRequiredAssets.find(a => a.id === assetId);
+    return found?.missingKeys || [];
   };
 
   const priorities: Array<'low' | 'medium' | 'high' | 'urgent'> = ['low', 'medium', 'high', 'urgent'];
@@ -759,42 +827,145 @@ export default function AdminScreen() {
             <Text style={styles.pageTitle}>Assets</Text>
             <Text style={styles.pageSubtitle}>{activeCommunity?.name || 'Select a community'}</Text>
 
-            <View style={styles.actionGrid}>
-              <TouchableOpacity style={styles.actionCard} onPress={() => setShowCreateAsset(true)}>
-                <Ionicons name="add-circle-outline" size={28} color="#25C1AC" />
-                <Text style={styles.actionLabel}>Create Asset</Text>
+            {completeness && (
+              <View style={[styles.section, { marginBottom: 16 }]}>
+                <View style={styles.statRow}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statNumber}>{completeness.active}</Text>
+                    <Text style={styles.statLabel}>Active</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, completeness.missingRequired > 0 ? { color: '#ff9800' } : {}]}>
+                      {completeness.missingRequired}
+                    </Text>
+                    <Text style={styles.statLabel}>Incomplete</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={[styles.statNumber, { color: '#999' }]}>{completeness.archived}</Text>
+                    <Text style={styles.statLabel}>Archived</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, maxHeight: 40 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[styles.priorityChip, !assetFilterType && styles.priorityChipActive]}
+                  onPress={() => setAssetFilterType('')}
+                >
+                  <Text style={[styles.priorityChipText, !assetFilterType && styles.priorityChipTextActive]}>All</Text>
+                </TouchableOpacity>
+                {ASSET_TYPES.map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.priorityChip, assetFilterType === t && styles.priorityChipActive]}
+                    onPress={() => setAssetFilterType(assetFilterType === t ? '' : t)}
+                  >
+                    <Text style={[styles.priorityChipText, assetFilterType === t && styles.priorityChipTextActive]}>
+                      {ASSET_TYPE_LABELS[t]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                onPress={() => setShowArchivedAssets(!showArchivedAssets)}
+              >
+                <Ionicons name={showArchivedAssets ? "checkbox" : "square-outline"} size={20} color="#888" />
+                <Text style={{ fontSize: 13, color: '#888' }}>Show archived</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, opacity: 0.7 }}
+                onPress={() => setShowCreateAsset(true)}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#25C1AC" />
+                <Text style={{ fontSize: 13, color: '#25C1AC', fontWeight: '600' }}>Manual</Text>
               </TouchableOpacity>
             </View>
 
-            {assets.length === 0 && (
-              <Text style={styles.emptyText}>No assets in this community</Text>
+            {assetsTabLayers.length > 0 && (
+              <View style={[styles.section, { marginBottom: 16 }]}>
+                <Text style={[styles.sectionTitle, { marginBottom: 8 }]}>Sync from Map Layers</Text>
+                {assetsTabLayers.map((layer) => (
+                  <View key={layer.id} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: '#0C1D31' }}>{layer.displayName}</Text>
+                      <Text style={{ fontSize: 11, color: '#888' }}>{layer.layerKey}/{layer.subLayerKey}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#E6F9F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 }}
+                      onPress={() => handleSyncLayerAssets(layer.id)}
+                      disabled={syncingLayer === layer.id}
+                    >
+                      {syncingLayer === layer.id ? (
+                        <ActivityIndicator size="small" color="#25C1AC" />
+                      ) : (
+                        <Ionicons name="sync-outline" size={14} color="#25C1AC" />
+                      )}
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#25C1AC' }}>Sync</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
             )}
 
-            {assets.map((asset) => (
-              <TouchableOpacity
-                key={asset.id}
-                style={styles.assetCard}
-                onPress={() => setShowAssetDetail(asset)}
-              >
-                <View style={styles.assetCardHeader}>
-                  <View style={styles.assetTypeBadge}>
-                    <Text style={styles.assetTypeBadgeText}>
-                      {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
-                    </Text>
+            {assets.length === 0 && (
+              <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                <Ionicons name="construct-outline" size={40} color="#ccc" />
+                <Text style={[styles.emptyText, { textAlign: 'center', marginTop: 8 }]}>
+                  No assets found.{'\n'}Import a map layer with GeoJSON to auto-create assets.
+                </Text>
+              </View>
+            )}
+
+            {assets.map((asset) => {
+              const missing = missingKeysForAsset(asset.id);
+              const isComplete = missing.length === 0;
+              return (
+                <TouchableOpacity
+                  key={asset.id}
+                  style={[styles.assetCard, asset.isArchived && { opacity: 0.55 }]}
+                  onPress={() => setShowAssetDetail(asset)}
+                >
+                  <View style={styles.assetCardHeader}>
+                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                      <View style={[styles.assetTypeBadge, asset.isArchived && { backgroundColor: '#f5f5f5' }]}>
+                        <Text style={[styles.assetTypeBadgeText, asset.isArchived && { color: '#999' }]}>
+                          {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
+                        </Text>
+                      </View>
+                      {asset.isArchived ? (
+                        <View style={{ backgroundColor: '#fff3e0', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#ff9800' }}>Archived</Text>
+                        </View>
+                      ) : !isComplete ? (
+                        <View style={{ backgroundColor: '#fff3e0', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: '#ff9800' }}>
+                            {missing.length} missing
+                          </Text>
+                        </View>
+                      ) : (
+                        <Ionicons name="checkmark-circle" size={16} color="#4caf50" />
+                      )}
+                    </View>
+                    <Ionicons name="chevron-forward" size={14} color="#ccc" />
                   </View>
-                  <Ionicons name="chevron-forward" size={14} color="#ccc" />
-                </View>
-                <Text style={styles.assetLabel}>{asset.label}</Text>
-                {asset.featureRef ? (
-                  <Text style={styles.assetMeta}>Ref: {asset.featureRef}</Text>
-                ) : null}
-                {asset.latitude != null && asset.longitude != null ? (
-                  <Text style={styles.assetMeta}>
-                    {asset.latitude.toFixed(5)}, {asset.longitude.toFixed(5)}
-                  </Text>
-                ) : null}
-              </TouchableOpacity>
-            ))}
+                  <Text style={styles.assetLabel}>{asset.label}</Text>
+                  {asset.featureRef ? (
+                    <Text style={styles.assetMeta}>Ref: {asset.featureRef}</Text>
+                  ) : null}
+                  {asset.latitude != null && asset.longitude != null ? (
+                    <Text style={styles.assetMeta}>
+                      {asset.latitude.toFixed(5)}, {asset.longitude.toFixed(5)}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
           </>
         )}
 
@@ -1130,10 +1301,17 @@ export default function AdminScreen() {
             </View>
 
             <View style={styles.userDetailCard}>
-              <View style={styles.assetTypeBadge}>
-                <Text style={styles.assetTypeBadgeText}>
-                  {ASSET_TYPE_LABELS[showAssetDetail.assetType] || showAssetDetail.assetType}
-                </Text>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <View style={[styles.assetTypeBadge, showAssetDetail.isArchived && { backgroundColor: '#f5f5f5' }]}>
+                  <Text style={[styles.assetTypeBadgeText, showAssetDetail.isArchived && { color: '#999' }]}>
+                    {ASSET_TYPE_LABELS[showAssetDetail.assetType] || showAssetDetail.assetType}
+                  </Text>
+                </View>
+                {showAssetDetail.isArchived && (
+                  <View style={{ backgroundColor: '#fff3e0', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 10, fontWeight: '600', color: '#ff9800' }}>Archived</Text>
+                  </View>
+                )}
               </View>
               <Text style={[styles.userDetailName, { marginTop: 12 }]}>{showAssetDetail.label}</Text>
               {showAssetDetail.featureRef ? (
@@ -1144,7 +1322,29 @@ export default function AdminScreen() {
                   {showAssetDetail.latitude.toFixed(5)}, {showAssetDetail.longitude.toFixed(5)}
                 </Text>
               ) : null}
+              {showAssetDetail.mapLayerId ? (
+                <Text style={[styles.userDetailUsername, { marginTop: 4 }]}>
+                  Source: Map Layer
+                </Text>
+              ) : null}
             </View>
+
+            {assetDetail?.missingRequiredKeys && assetDetail.missingRequiredKeys.length > 0 && (
+              <View style={[styles.section, { marginBottom: 16, borderLeftWidth: 3, borderLeftColor: '#ff9800' }]}>
+                <Text style={[styles.sectionTitle, { color: '#ff9800', marginBottom: 8 }]}>Required Fields</Text>
+                {assetDetail.missingRequiredKeys.map((key) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}
+                    onPress={() => { setNewPropKey(key); }}
+                  >
+                    <Ionicons name="alert-circle-outline" size={16} color="#ff9800" />
+                    <Text style={{ fontSize: 14, color: '#ff9800', fontWeight: '500' }}>{key}</Text>
+                    <Text style={{ fontSize: 12, color: '#ccc', marginLeft: 'auto' }}>Tap to fill</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             <Text style={styles.sectionTitle}>Properties</Text>
             {assetDetail?.properties && assetDetail.properties.length > 0 ? (

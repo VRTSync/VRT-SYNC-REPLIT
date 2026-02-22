@@ -406,7 +406,7 @@ export async function deleteMapLayer(id: string): Promise<boolean> {
 
 export async function getAssetByFeatureRef(communityId: string, featureRef: string): Promise<(Asset & { properties: AssetProperty[] }) | null> {
   const [asset] = await db.select().from(assets)
-    .where(and(eq(assets.communityId, communityId), eq(assets.featureRef, featureRef)));
+    .where(and(eq(assets.communityId, communityId), eq(assets.featureRef, featureRef), eq(assets.isArchived, false)));
   if (!asset) return null;
   const props = await getAssetProperties(asset.id);
   return { ...asset, properties: props };
@@ -465,7 +465,7 @@ export async function deleteOfflinePack(id: string): Promise<boolean> {
 
 export async function generateAssetIndex(communityId: string) {
   const communityAssets = await db.select().from(assets)
-    .where(eq(assets.communityId, communityId));
+    .where(and(eq(assets.communityId, communityId), eq(assets.isArchived, false)));
   const allIds = communityAssets.map(a => a.id);
   let propsMap = new Map<string, { key: string; value: string }[]>();
   if (allIds.length > 0) {
