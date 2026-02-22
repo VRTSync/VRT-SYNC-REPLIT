@@ -80,6 +80,10 @@ type CompletenessData = {
   missingRequiredAssets: { id: string; label: string; assetType: string; missingKeys: string[] }[];
 };
 
+type IncompleteAsset = AssetItem & {
+  missingRequiredKeys: string[];
+};
+
 const ASSET_TYPE_LABELS: Record<string, string> = {
   controller: 'Controller',
   backflow: 'Backflow',
@@ -173,6 +177,19 @@ export default function AdminScreen() {
   const [showArchivedAssets, setShowArchivedAssets] = useState(false);
   const [syncingLayer, setSyncingLayer] = useState<string | null>(null);
 
+  const [showIncompleteQueue, setShowIncompleteQueue] = useState(false);
+  const [incFilterType, setIncFilterType] = useState<string>('');
+  const [incFilterLayer, setIncFilterLayer] = useState<string>('');
+  const [incFilterKey, setIncFilterKey] = useState<string>('');
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [bulkKey, setBulkKey] = useState('');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkMode, setBulkMode] = useState<'set_if_missing' | 'overwrite'>('set_if_missing');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const [saveNextIndex, setSaveNextIndex] = useState<number | null>(null);
+  const [saveNextValues, setSaveNextValues] = useState<Record<string, string>>({});
+  const [saveNextSubmitting, setSaveNextSubmitting] = useState(false);
+
   const { data: contractors = [] } = useQuery<AppUser[]>({
     queryKey: ['/api/contractors'],
     queryFn: getQueryFn({ on401: 'throw' }),
@@ -245,6 +262,16 @@ export default function AdminScreen() {
       return res.json();
     },
     enabled: !!activeCommunity && user?.role === 'admin' && activeTab === 'packs',
+  });
+
+  const incompleteQueryUrl = `/api/communities/${activeCommunity?.id}/assets/incomplete?${incFilterType ? `assetType=${incFilterType}&` : ''}${incFilterLayer ? `mapLayerId=${incFilterLayer}&` : ''}${incFilterKey ? `missingKey=${incFilterKey}` : ''}`;
+  const { data: incompleteAssets = [], refetch: refetchIncomplete } = useQuery<IncompleteAsset[]>({
+    queryKey: [incompleteQueryUrl],
+    queryFn: async () => {
+      const res = await apiRequest('GET', incompleteQueryUrl);
+      return res.json();
+    },
+    enabled: !!activeCommunity && user?.role === 'admin' && showIncompleteQueue,
   });
 
   const { data: assetDetail } = useQuery<AssetDetail>({
@@ -574,6 +601,84 @@ export default function AdminScreen() {
     }
   };
 
+  const handleBulkApply = async () => {
+    if (selectedAssetIds.size === 0 || !bulkKey.trim() || !bulkValue.trim()) {
+      Alert.alert('Error', 'Select assets and enter a key/value pair');
+      return;
+    }
+    setBulkSubmitting(true);
+    try {
+      const res = await apiRequest('POST', '/api/assets/bulk/properties', {
+        assetIds: Array.from(selectedAssetIds),
+        key: bulkKey.trim(),
+        value: bulkValue.trim(),
+        mode: bulkMode,
+      });
+      const result = await res.json();
+      queryClient.invalidateQueries({ queryKey: [incompleteQueryUrl] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`] });
+      setSelectedAssetIds(new Set());
+      setBulkKey('');
+      setBulkValue('');
+      Alert.alert('Done', `Created: ${result.created}, Updated: ${result.updated}, Skipped: ${result.skipped}`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to apply bulk properties');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
+
+  const handleSaveNext = async () => {
+    if (saveNextIndex == null || !incompleteAssets[saveNextIndex]) return;
+    const asset = incompleteAssets[saveNextIndex];
+    const propsToSave = Object.entries(saveNextValues)
+      .filter(([_, v]) => v.trim())
+      .map(([key, value]) => ({ key, value: value.trim() }));
+    if (propsToSave.length === 0) {
+      Alert.alert('Error', 'Enter at least one value');
+      return;
+    }
+    setSaveNextSubmitting(true);
+    try {
+      await apiRequest('PUT', `/api/assets/${asset.id}/properties`, { properties: propsToSave });
+      queryClient.invalidateQueries({ queryKey: [incompleteQueryUrl] });
+      queryClient.invalidateQueries({ queryKey: [`/api/communities/${activeCommunity?.id}/assets/completeness`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/assets/${asset.id}`] });
+      const nextIdx = saveNextIndex + 1;
+      if (nextIdx < incompleteAssets.length) {
+        setSaveNextIndex(nextIdx);
+        setSaveNextValues({});
+      } else {
+        setSaveNextIndex(null);
+        setSaveNextValues({});
+        Alert.alert('All Done', 'No more incomplete assets in this queue!');
+        refetchIncomplete();
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save properties');
+    } finally {
+      setSaveNextSubmitting(false);
+    }
+  };
+
+  const toggleSelectAsset = (id: string) => {
+    setSelectedAssetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllIncomplete = () => {
+    if (selectedAssetIds.size === incompleteAssets.length) {
+      setSelectedAssetIds(new Set());
+    } else {
+      setSelectedAssetIds(new Set(incompleteAssets.map(a => a.id)));
+    }
+  };
+
+  const allMissingKeys = Array.from(new Set(incompleteAssets.flatMap(a => a.missingRequiredKeys)));
+
   const missingKeysForAsset = (assetId: string): string[] => {
     if (!completeness?.missingRequiredAssets) return [];
     const found = completeness.missingRequiredAssets.find(a => a.id === assetId);
@@ -834,12 +939,26 @@ export default function AdminScreen() {
                     <Text style={styles.statNumber}>{completeness.active}</Text>
                     <Text style={styles.statLabel}>Active</Text>
                   </View>
-                  <View style={styles.statItem}>
+                  <TouchableOpacity
+                    style={styles.statItem}
+                    onPress={() => {
+                      if (completeness.missingRequired > 0) {
+                        setIncFilterType(assetFilterType);
+                        setIncFilterLayer('');
+                        setIncFilterKey('');
+                        setSelectedAssetIds(new Set());
+                        setSaveNextIndex(null);
+                        setShowIncompleteQueue(true);
+                      }
+                    }}
+                  >
                     <Text style={[styles.statNumber, completeness.missingRequired > 0 ? { color: '#ff9800' } : {}]}>
                       {completeness.missingRequired}
                     </Text>
-                    <Text style={styles.statLabel}>Incomplete</Text>
-                  </View>
+                    <Text style={[styles.statLabel, completeness.missingRequired > 0 ? { color: '#ff9800', fontWeight: '600' } : {}]}>
+                      Incomplete {completeness.missingRequired > 0 ? '\u203A' : ''}
+                    </Text>
+                  </TouchableOpacity>
                   <View style={styles.statItem}>
                     <Text style={[styles.statNumber, { color: '#999' }]}>{completeness.archived}</Text>
                     <Text style={styles.statLabel}>Archived</Text>
@@ -1475,6 +1594,300 @@ export default function AdminScreen() {
             </TouchableOpacity>
           </ScrollView>
         )}
+      </Modal>
+
+      <Modal visible={showIncompleteQueue} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modalContainer}>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => { setShowIncompleteQueue(false); setSaveNextIndex(null); }}>
+                <Text style={styles.cancelText}>Close</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Incomplete Assets</Text>
+              <View style={{ width: 60 }} />
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, maxHeight: 40 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TouchableOpacity
+                  style={[styles.priorityChip, { paddingHorizontal: 10 }, !incFilterType && styles.priorityChipActive]}
+                  onPress={() => setIncFilterType('')}
+                >
+                  <Text style={[styles.priorityChipText, !incFilterType && styles.priorityChipTextActive]}>All Types</Text>
+                </TouchableOpacity>
+                {ASSET_TYPES.filter(t => {
+                  const tpl = { backflow: true, controller: true, zone: true, tree: true } as Record<string, boolean>;
+                  return tpl[t];
+                }).map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.priorityChip, { paddingHorizontal: 10 }, incFilterType === t && styles.priorityChipActive]}
+                    onPress={() => setIncFilterType(incFilterType === t ? '' : t)}
+                  >
+                    <Text style={[styles.priorityChipText, incFilterType === t && styles.priorityChipTextActive]}>
+                      {ASSET_TYPE_LABELS[t]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {assetsTabLayers.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12, maxHeight: 40 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.priorityChip, { paddingHorizontal: 10 }, !incFilterLayer && styles.priorityChipActive]}
+                    onPress={() => setIncFilterLayer('')}
+                  >
+                    <Text style={[styles.priorityChipText, !incFilterLayer && styles.priorityChipTextActive]}>All Layers</Text>
+                  </TouchableOpacity>
+                  {assetsTabLayers.map(l => (
+                    <TouchableOpacity
+                      key={l.id}
+                      style={[styles.priorityChip, { paddingHorizontal: 10 }, incFilterLayer === l.id && styles.priorityChipActive]}
+                      onPress={() => setIncFilterLayer(incFilterLayer === l.id ? '' : l.id)}
+                    >
+                      <Text style={[styles.priorityChipText, incFilterLayer === l.id && styles.priorityChipTextActive]}>
+                        {l.displayName}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            {allMissingKeys.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16, maxHeight: 40 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.priorityChip, { paddingHorizontal: 10 }, !incFilterKey && styles.priorityChipActive]}
+                    onPress={() => setIncFilterKey('')}
+                  >
+                    <Text style={[styles.priorityChipText, !incFilterKey && styles.priorityChipTextActive]}>All Keys</Text>
+                  </TouchableOpacity>
+                  {allMissingKeys.map(k => (
+                    <TouchableOpacity
+                      key={k}
+                      style={[styles.priorityChip, { paddingHorizontal: 10 }, incFilterKey === k && styles.priorityChipActive]}
+                      onPress={() => setIncFilterKey(incFilterKey === k ? '' : k)}
+                    >
+                      <Text style={[styles.priorityChipText, incFilterKey === k && styles.priorityChipTextActive]}>
+                        {k}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+
+            <Text style={{ fontSize: 13, color: '#888', marginBottom: 12 }}>
+              {incompleteAssets.length} asset{incompleteAssets.length !== 1 ? 's' : ''} with missing required fields
+            </Text>
+
+            {saveNextIndex != null && incompleteAssets[saveNextIndex] ? (
+              <View style={[styles.section, { marginBottom: 16, borderLeftWidth: 3, borderLeftColor: '#25C1AC' }]}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <Text style={styles.sectionTitle}>
+                    {saveNextIndex + 1} of {incompleteAssets.length}
+                  </Text>
+                  <TouchableOpacity onPress={() => { setSaveNextIndex(null); setSaveNextValues({}); }}>
+                    <Text style={{ fontSize: 13, color: '#888' }}>Exit Queue</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                  <View style={styles.assetTypeBadge}>
+                    <Text style={styles.assetTypeBadgeText}>
+                      {ASSET_TYPE_LABELS[incompleteAssets[saveNextIndex].assetType] || incompleteAssets[saveNextIndex].assetType}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0C1D31', flex: 1 }} numberOfLines={1}>
+                    {incompleteAssets[saveNextIndex].label}
+                  </Text>
+                </View>
+
+                {incompleteAssets[saveNextIndex].featureRef && (
+                  <Text style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>Ref: {incompleteAssets[saveNextIndex].featureRef}</Text>
+                )}
+
+                {incompleteAssets[saveNextIndex].missingRequiredKeys.map(key => (
+                  <View key={key} style={{ marginBottom: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#ff9800', marginBottom: 4 }}>
+                      {key} *
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { marginBottom: 0 }]}
+                      placeholder={`Enter ${key}...`}
+                      placeholderTextColor="#ccc"
+                      value={saveNextValues[key] || ''}
+                      onChangeText={(v) => setSaveNextValues(prev => ({ ...prev, [key]: v }))}
+                    />
+                  </View>
+                ))}
+
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                  {saveNextIndex > 0 && (
+                    <TouchableOpacity
+                      style={[styles.submitButton, { flex: 1, backgroundColor: '#f0f0f0' }]}
+                      onPress={() => { setSaveNextIndex(saveNextIndex - 1); setSaveNextValues({}); }}
+                    >
+                      <Text style={[styles.submitText, { color: '#666' }]}>Back</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.submitButton, { flex: 2 }, saveNextSubmitting && styles.buttonDisabled]}
+                    onPress={handleSaveNext}
+                    disabled={saveNextSubmitting}
+                  >
+                    {saveNextSubmitting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.submitText}>
+                        {saveNextIndex < incompleteAssets.length - 1 ? 'Save & Next' : 'Save & Finish'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  {saveNextIndex < incompleteAssets.length - 1 && (
+                    <TouchableOpacity
+                      style={[styles.submitButton, { flex: 1, backgroundColor: '#f0f0f0' }]}
+                      onPress={() => { setSaveNextIndex(saveNextIndex + 1); setSaveNextValues({}); }}
+                    >
+                      <Text style={[styles.submitText, { color: '#666' }]}>Skip</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.submitButton, { flex: 1, marginTop: 0 }, incompleteAssets.length === 0 && styles.buttonDisabled]}
+                    onPress={() => { setSaveNextIndex(0); setSaveNextValues({}); }}
+                    disabled={incompleteAssets.length === 0}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="play" size={16} color="#fff" />
+                      <Text style={styles.submitText}>Save & Next</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                    onPress={selectAllIncomplete}
+                  >
+                    <Ionicons
+                      name={selectedAssetIds.size === incompleteAssets.length && incompleteAssets.length > 0 ? "checkbox" : "square-outline"}
+                      size={20}
+                      color="#25C1AC"
+                    />
+                    <Text style={{ fontSize: 13, color: '#25C1AC', fontWeight: '600' }}>
+                      {selectedAssetIds.size > 0 ? `${selectedAssetIds.size} selected` : 'Select All'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {incompleteAssets.map((asset) => (
+                  <TouchableOpacity
+                    key={asset.id}
+                    style={[styles.assetCard, selectedAssetIds.has(asset.id) && { borderWidth: 2, borderColor: '#25C1AC' }]}
+                    onPress={() => toggleSelectAsset(asset.id)}
+                  >
+                    <View style={styles.assetCardHeader}>
+                      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                        <Ionicons
+                          name={selectedAssetIds.has(asset.id) ? "checkbox" : "square-outline"}
+                          size={18}
+                          color={selectedAssetIds.has(asset.id) ? "#25C1AC" : "#ccc"}
+                        />
+                        <View style={styles.assetTypeBadge}>
+                          <Text style={styles.assetTypeBadgeText}>
+                            {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={{ backgroundColor: '#fff3e0', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '600', color: '#ff9800' }}>
+                          {asset.missingRequiredKeys.length} missing
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.assetLabel}>{asset.label}</Text>
+                    <Text style={[styles.assetMeta, { color: '#ff9800' }]}>
+                      Missing: {asset.missingRequiredKeys.join(', ')}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {selectedAssetIds.size > 0 && (
+                  <View style={[styles.section, { marginTop: 16, borderLeftWidth: 3, borderLeftColor: '#25C1AC' }]}>
+                    <Text style={styles.sectionTitle}>Bulk Set Property</Text>
+                    <Text style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+                      Apply the same value to {selectedAssetIds.size} selected asset{selectedAssetIds.size > 1 ? 's' : ''}
+                    </Text>
+
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Property key (e.g. brand)"
+                      placeholderTextColor="#999"
+                      value={bulkKey}
+                      onChangeText={setBulkKey}
+                      autoCapitalize="none"
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Value"
+                      placeholderTextColor="#999"
+                      value={bulkValue}
+                      onChangeText={setBulkValue}
+                    />
+
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                      <TouchableOpacity
+                        style={[styles.priorityChip, bulkMode === 'set_if_missing' && styles.priorityChipActive]}
+                        onPress={() => setBulkMode('set_if_missing')}
+                      >
+                        <Text style={[styles.priorityChipText, bulkMode === 'set_if_missing' && styles.priorityChipTextActive]}>
+                          Only if missing
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.priorityChip, bulkMode === 'overwrite' && styles.priorityChipActive]}
+                        onPress={() => setBulkMode('overwrite')}
+                      >
+                        <Text style={[styles.priorityChipText, bulkMode === 'overwrite' && styles.priorityChipTextActive]}>
+                          Overwrite
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.submitButton, { marginTop: 0 }, bulkSubmitting && styles.buttonDisabled]}
+                      onPress={handleBulkApply}
+                      disabled={bulkSubmitting}
+                    >
+                      {bulkSubmitting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.submitText}>Apply to {selectedAssetIds.size} Assets</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {incompleteAssets.length === 0 && (
+                  <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                    <Ionicons name="checkmark-circle" size={40} color="#4caf50" />
+                    <Text style={[styles.emptyText, { textAlign: 'center', marginTop: 8, color: '#4caf50' }]}>
+                      All assets are complete!
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+          </ScrollView>
+        </View>
       </Modal>
     </View>
   );
