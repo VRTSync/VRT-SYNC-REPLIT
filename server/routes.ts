@@ -545,6 +545,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/assets/:id/history", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const asset = await storage.getAssetById(req.params.id as string);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You do not have access to this asset's history" });
+      }
+      const history = await storage.getAssetWorkHistory(asset.id);
+      res.json(history);
+    } catch (error) {
+      console.error("Get asset history error:", error);
+      res.status(500).json({ error: "Failed to fetch asset history" });
+    }
+  });
+
   app.post("/api/assets", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertAssetSchema.safeParse(req.body);

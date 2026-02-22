@@ -1,4 +1,4 @@
-import { eq, and, desc, ne } from "drizzle-orm";
+import { eq, and, desc, ne, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -386,4 +386,71 @@ export async function getAssetByFeatureRef(communityId: string, featureRef: stri
   if (!asset) return null;
   const props = await getAssetProperties(asset.id);
   return { ...asset, properties: props };
+}
+
+export async function getAssetWorkHistory(assetId: string) {
+  const linkedTasks = await db.select({ taskId: taskLinks.taskId })
+    .from(taskLinks)
+    .where(and(eq(taskLinks.assetId, assetId), eq(taskLinks.linkType, 'asset')));
+
+  if (linkedTasks.length === 0) return [];
+
+  const taskIds = linkedTasks.map(t => t.taskId);
+
+  const completionRows = await db.select({
+    id: taskCompletions.id,
+    taskId: taskCompletions.taskId,
+    completedBy: taskCompletions.completedBy,
+    notes: taskCompletions.notes,
+    employeeSignOffName: taskCompletions.employeeSignOffName,
+    timeSpentMinutes: taskCompletions.timeSpentMinutes,
+    materialsUsed: taskCompletions.materialsUsed,
+    followUpNeeded: taskCompletions.followUpNeeded,
+    completedAt: taskCompletions.completedAt,
+    taskTitle: tasks.title,
+    userDisplayName: users.displayName,
+  })
+    .from(taskCompletions)
+    .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
+    .innerJoin(users, eq(taskCompletions.completedBy, users.id))
+    .where(inArray(taskCompletions.taskId, taskIds))
+    .orderBy(desc(taskCompletions.completedAt));
+
+  if (completionRows.length === 0) return [];
+
+  const completionIds = completionRows.map(c => c.id);
+  const allAttachments = await db.select({
+    id: attachments.id,
+    url: attachments.url,
+    taskCompletionId: attachments.taskCompletionId,
+  })
+    .from(attachments)
+    .where(inArray(attachments.taskCompletionId, completionIds));
+
+  const attachmentMap = new Map<string, { id: string; url: string }[]>();
+  for (const a of allAttachments) {
+    const list = attachmentMap.get(a.taskCompletionId) || [];
+    list.push({ id: a.id, url: a.url });
+    attachmentMap.set(a.taskCompletionId, list);
+  }
+
+  return completionRows.map(c => ({
+    id: c.id,
+    type: 'task_completion' as const,
+    completedAt: c.completedAt,
+    completedBy: {
+      id: c.completedBy,
+      displayName: c.userDisplayName,
+    },
+    employeeSignOffName: c.employeeSignOffName,
+    notes: c.notes,
+    timeSpentMinutes: c.timeSpentMinutes,
+    materialsUsed: c.materialsUsed,
+    followUpNeeded: c.followUpNeeded,
+    task: {
+      id: c.taskId,
+      title: c.taskTitle,
+    },
+    attachments: attachmentMap.get(c.id) || [],
+  }));
 }
