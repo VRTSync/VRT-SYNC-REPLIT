@@ -6,6 +6,8 @@ import { z } from "zod";
 export const userRoleEnum = pgEnum("user_role", ["contractor", "admin"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
+export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
+export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -54,9 +56,12 @@ export const tasks = pgTable("tasks", {
   createdBy: varchar("created_by").notNull().references(() => users.id),
   dueDate: timestamp("due_date"),
   version: integer("version").notNull().default(1),
+  scheduleInstanceKey: varchar("schedule_instance_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("tasks_schedule_instance_key_idx").on(table.scheduleInstanceKey),
+]);
 
 export const taskCompletions = pgTable("task_completions", {
   id: varchar("id")
@@ -230,6 +235,48 @@ export const templateRuns = pgTable("template_runs", {
   runAt: timestamp("run_at").defaultNow().notNull(),
   taskCountCreated: integer("task_count_created").notNull().default(0),
   assignmentUserId: varchar("assignment_user_id").references(() => users.id),
+});
+
+export const taskSchedules = pgTable("task_schedules", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  templateId: varchar("template_id").notNull().references(() => taskTemplates.id),
+  frequency: scheduleFrequencyEnum("frequency").notNull().default("weekly"),
+  daysOfWeek: text("days_of_week"),
+  dayOfMonth: integer("day_of_month"),
+  timezone: text("timezone").notNull().default("America/Denver"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  nextRunAt: timestamp("next_run_at"),
+  assignToUserId: varchar("assign_to_user_id").references(() => users.id),
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const scheduleRuns = pgTable("schedule_runs", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => taskSchedules.id),
+  runAt: timestamp("run_at").defaultNow().notNull(),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  createdCount: integer("created_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  status: scheduleRunStatusEnum("status").notNull().default("success"),
+  errorMessage: text("error_message"),
+});
+
+export const scheduleRunItems = pgTable("schedule_run_items", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => scheduleRuns.id),
+  taskId: varchar("task_id").notNull().references(() => tasks.id),
 });
 
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
@@ -435,6 +482,19 @@ export const generateFromTemplateSchema = z.object({
   includeArchivedAssets: z.boolean().default(false),
 });
 
+export const insertTaskScheduleSchema = z.object({
+  communityId: z.string().min(1),
+  templateId: z.string().min(1),
+  frequency: z.enum(["weekly", "monthly", "once"]).default("weekly"),
+  daysOfWeek: z.string().nullable().optional(),
+  dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+  timezone: z.string().default("America/Denver"),
+  startDate: z.string().min(1),
+  endDate: z.string().nullable().optional(),
+  assignToUserId: z.string().nullable().optional(),
+  isEnabled: z.boolean().default(true),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -450,3 +510,6 @@ export type MapLayer = typeof mapLayers.$inferSelect;
 export type OfflinePack = typeof offlinePacks.$inferSelect;
 export type TaskTemplate = typeof taskTemplates.$inferSelect;
 export type TemplateRun = typeof templateRuns.$inferSelect;
+export type TaskSchedule = typeof taskSchedules.$inferSelect;
+export type ScheduleRun = typeof scheduleRuns.$inferSelect;
+export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
