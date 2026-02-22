@@ -38,7 +38,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
         setActiveCommunityId(savedId);
       } else if (defaultCommunityId) {
         setActiveCommunityId(defaultCommunityId);
-        AsyncStorage.setItem(ACTIVE_COMMUNITY_KEY, defaultCommunityId);
+        AsyncStorage.setItem(ACTIVE_COMMUNITY_KEY, String(defaultCommunityId));
       }
       setInitialized(true);
     });
@@ -47,8 +47,9 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
   const activeCommunity = bootstrapCommunities.find((c) => c.id === activeCommunityId) ?? bootstrapCommunities[0] ?? null;
 
   const setActiveCommunity = useCallback((c: Community) => {
+    if (!c?.id) return;
     setActiveCommunityId(c.id);
-    AsyncStorage.setItem(ACTIVE_COMMUNITY_KEY, c.id);
+    AsyncStorage.setItem(ACTIVE_COMMUNITY_KEY, String(c.id));
   }, []);
 
   return (
