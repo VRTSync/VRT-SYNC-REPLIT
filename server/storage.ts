@@ -467,6 +467,17 @@ export async function getAssetProperties(assetId: string): Promise<AssetProperty
     .orderBy(assetProperties.key);
 }
 
+export async function getAssetPropertiesBulk(assetIds: string[]): Promise<{ assetId: string; key: string; value: string }[]> {
+  if (assetIds.length === 0) return [];
+  const rows = await db.select({
+    assetId: assetProperties.assetId,
+    key: assetProperties.key,
+    value: assetProperties.value,
+  }).from(assetProperties)
+    .where(inArray(assetProperties.assetId, assetIds));
+  return rows;
+}
+
 export async function upsertAssetProperties(assetId: string, props: { key: string; value: string }[]): Promise<AssetProperty[]> {
   const results: AssetProperty[] = [];
   for (const p of props) {

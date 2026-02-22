@@ -185,6 +185,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/communities/:id/controllers", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const communityId = req.params.id as string;
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+
+      const controllerAssets = await storage.getAssetsByCommunitySorted(communityId, "controller");
+      const zoneAssets = await storage.getAssetsByCommunitySorted(communityId, "zone");
+
+      const controllerIds = controllerAssets.map(a => a.id);
+      const zoneIds = zoneAssets.map(a => a.id);
+      const allIds = [...controllerIds, ...zoneIds];
+
+      let allProps: { assetId: string; key: string; value: string }[] = [];
+      if (allIds.length > 0) {
+        allProps = await storage.getAssetPropertiesBulk(allIds);
+      }
+
+      const propsMap = new Map<string, Record<string, string>>();
+      for (const p of allProps) {
+        if (!propsMap.has(p.assetId)) propsMap.set(p.assetId, {});
+        propsMap.get(p.assetId)![p.key] = p.value;
+      }
+
+      const zonesByController = new Map<string, typeof zoneAssets>();
+      for (const zone of zoneAssets) {
+        if (zone.isArchived) continue;
+        const zProps = propsMap.get(zone.id) || {};
+        const ctrlRef = zProps.controllerFeatureRef;
+        if (ctrlRef) {
+          if (!zonesByController.has(ctrlRef)) zonesByController.set(ctrlRef, []);
+          zonesByController.get(ctrlRef)!.push(zone);
+        }
+      }
+
+      const result = controllerAssets
+        .filter(c => !c.isArchived)
+        .map(c => {
+          const cProps = propsMap.get(c.id) || {};
+          const zones = zonesByController.get(c.featureRef || "") || [];
+          return {
+            id: c.id,
+            label: c.label,
+            featureRef: c.featureRef,
+            controllerKey: cProps.controllerKey || "",
+            controllerColor: cProps.controllerColor || "#999999",
+            latitude: c.latitude,
+            longitude: c.longitude,
+            zoneCount: zones.length,
+            zones: zones.map(z => {
+              const zProps = propsMap.get(z.id) || {};
+              return {
+                id: z.id,
+                label: z.label,
+                featureRef: z.featureRef,
+                zoneNumber: zProps.zoneNumber ? parseInt(zProps.zoneNumber) : null,
+                zoneType: zProps.zoneType || null,
+                zoneLabelShort: zProps.zoneLabelShort || null,
+                latitude: z.latitude,
+                longitude: z.longitude,
+              };
+            }).sort((a, b) => (a.zoneNumber || 999) - (b.zoneNumber || 999)),
+          };
+        })
+        .sort((a, b) => a.controllerKey.localeCompare(b.controllerKey));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Get controllers error:", error);
+      res.status(500).json({ error: "Failed to fetch controllers" });
+    }
+  });
+
   app.get("/api/dashboard", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
