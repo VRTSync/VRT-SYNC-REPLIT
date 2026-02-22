@@ -1,0 +1,215 @@
+SLICE 1.0 (PASTE INTO REPLIT): Map Viewer Core (Online) + Layer Toggles + Tap Popup → Asset Detail
+
+Objective
+Implement VRT-style map behavior (online-first): community selection → layer toggles → render overlays → tap feature → popup → open Asset Detail / Work History entry points.
+
+Scope
+
+Add map layer infrastructure (DB tables + endpoints)
+
+Support uploading/adding GeoJSON overlays per community + layer key + sublayer key
+
+Map screen renders selected overlays for the active community
+
+Tap feature resolves featureId → assets.featureRef → shows popup
+
+Popup includes buttons:
+
+Details (opens Asset Detail)
+
+Work History (route stub for now; full feed in Slice 1.1)
+
+Data Model
+1) map_layers table
+
+Fields:
+
+id (UUID)
+
+communityId (FK → communities.id, not null)
+
+layerKey (string): community | irrigation | snow | trees
+
+subLayerKey (string): e.g. bluegrass_area | native_area | landscape_bed | pet_station | backflow | controller | zone | snow_area | tree
+
+displayName (string)
+
+geojsonRef (string) — storage key/path or DB ref to GeoJSON content
+
+version (int default 1)
+
+updatedAt, createdAt
+
+Indexes:
+
+(communityId, layerKey)
+
+(communityId, layerKey, subLayerKey) unique
+
+2) GeoJSON storage approach (online-first)
+
+Choose one:
+
+Store GeoJSON in object storage and save path in geojsonRef (preferred)
+OR
+
+Store GeoJSON in DB (ok for MVP small files)
+
+Requirement:
+
+GeoJSON features must include a stable featureId field that matches assets.featureRef.
+
+Backend Endpoints (permissions enforced)
+List layers for a community
+
+GET /api/communities/:communityId/map-layers
+Returns metadata list:
+
+id, layerKey, subLayerKey, displayName, version, updatedAt
+
+Contractor access:
+
+must be a member of the community
+
+Get GeoJSON for a layer
+
+GET /api/map-layers/:id/geojson
+Returns GeoJSON FeatureCollection
+
+Contractor access:
+
+must be a member of the layer’s community
+
+Admin: create/update layers
+
+POST /api/map-layers (admin only)
+Body:
+
+communityId, layerKey, subLayerKey, displayName, geojson (or upload ref)
+
+Should upsert by (communityId, layerKey, subLayerKey)
+
+PATCH /api/map-layers/:id (admin only)
+Requires version for optimistic locking
+Allows updating displayName and geojsonRef/content
+
+(Optional) Admin helper endpoint:
+
+POST /api/map-layers/:id/geojson to upload/replace geojson content/ref
+
+Map Screen UI Requirements (app/(tabs)/map.tsx)
+1) VRT-like structure
+
+Top: community selector (use existing CommunityContext)
+
+Tabs or segmented control for:
+
+Community
+
+Irrigation
+
+Snow
+
+Trees
+
+Layer toggle list changes based on selected tab:
+
+Show available map_layers from API for that community + tab (layerKey)
+
+2) Rendering
+
+Render each enabled layer’s GeoJSON overlay on the native map component
+
+Support basic styling differences by layer type (keep simple; don’t over-design)
+
+Must be mobile optimized
+
+3) Tap behavior → Popup
+
+When a user taps a feature:
+
+Read its featureId
+
+Look up corresponding asset by featureRef:
+
+add endpoint: GET /api/assets/by-feature?communityId=...&featureRef=...
+
+OR fetch assets list once and map in memory (ok for small counts, but endpoint is cleaner)
+
+If found:
+
+Show popup card with:
+
+assetType badge
+
+label
+
+optional key details (just 2–3 properties max in popup)
+
+buttons:
+
+Details (navigate to Asset Detail screen)
+
+Work History (navigate to Asset History screen stub)
+
+If not found:
+
+Show popup with “Unlinked map feature” + option to copy featureRef (admin use later)
+
+4) Navigation targets
+
+Details button → existing Asset Detail screen (from Slice 0.5)
+
+Work History button → placeholder screen for now: “Work History coming in Slice 1.1”
+
+Admin UI Requirements
+
+Add “Map Layers” sub-tab in admin:
+
+list map_layers by community + tab
+
+add new layer:
+
+layerKey
+
+subLayerKey
+
+displayName
+
+upload/paste GeoJSON (or choose stored ref)
+
+replace layer GeoJSON
+
+show layer updatedAt/version
+
+Acceptance Tests
+
+Admin adds a GeoJSON layer for a community under Community tab (e.g., bluegrass_area).
+
+Contractor opens map:
+
+selects community
+
+sees layer toggle list for that tab
+
+enables layer → overlay renders
+
+Contractor taps a feature with a featureId that matches an asset.featureRef:
+
+popup shows correct asset label/type
+
+Details opens asset detail
+
+Tapping an unlinked feature shows “Unlinked map feature” message (no crash)
+
+Contractors cannot access layers/geojson for communities they are not assigned to (403/404)
+
+Out of Scope
+
+KML conversion pipeline (you can upload GeoJSON for now; conversion later slice)
+
+Offline MBTiles
+
+Full work history feed (Slice 1.1)
+
+Styling parity polish (we’ll refine after core behavior works)
