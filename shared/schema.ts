@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -78,9 +78,11 @@ export const attachments = pgTable("attachments", {
   fileRef: text("file_ref").notNull(),
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
-  idempotencyKey: varchar("idempotency_key"),
+  idempotencyKey: varchar("idempotency_key").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("attachments_completion_idempotency_idx").on(table.taskCompletionId, table.idempotencyKey),
+]);
 
 export const pushTokens = pgTable("push_tokens", {
   id: varchar("id")

@@ -313,15 +313,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You do not have access to this task" });
       }
       const { taskCompletionId, uploadURL, idempotencyKey } = req.body;
-      if (!taskCompletionId || !uploadURL) {
-        return res.status(400).json({ error: "taskCompletionId and uploadURL are required" });
+      if (!taskCompletionId || !uploadURL || !idempotencyKey) {
+        return res.status(400).json({ error: "taskCompletionId, uploadURL, and idempotencyKey are required" });
       }
 
-      if (idempotencyKey) {
-        const existing = await storage.getAttachmentByIdempotencyKey(idempotencyKey);
-        if (existing) {
-          return res.status(200).json(existing);
-        }
+      const existing = await storage.getAttachmentByIdempotencyKey(taskCompletionId, idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing);
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -335,13 +333,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileRef: objectPath,
         url: objectPath,
         uploadedBy: req.session.userId!,
-        idempotencyKey: idempotencyKey || undefined,
+        idempotencyKey,
       });
 
       res.status(201).json(attachment);
     } catch (error) {
       console.error("Create attachment error:", error);
       res.status(500).json({ error: "Failed to create attachment" });
+    }
+  });
+
+  app.post("/api/task-completions/:id/attachments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const completionId = req.params.id as string;
+      const completion = await storage.getCompletionById(completionId);
+      if (!completion) {
+        return res.status(404).json({ error: "Completion not found" });
+      }
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, completion.taskId);
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task completion" });
+      }
+      const { fileRef, url, idempotencyKey } = req.body;
+      if (!fileRef || !url || !idempotencyKey) {
+        return res.status(400).json({ error: "fileRef, url, and idempotencyKey are required" });
+      }
+
+      const existing = await storage.getAttachmentByIdempotencyKey(completionId, idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+
+      const attachment = await storage.createAttachment({
+        taskCompletionId: completionId,
+        fileRef,
+        url,
+        uploadedBy: req.session.userId!,
+        idempotencyKey,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error("Create attachment (completion) error:", error);
+      res.status(500).json({ error: "Failed to create attachment" });
+    }
+  });
+
+  app.get("/api/task-completions/:id/attachments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const completionId = req.params.id as string;
+      const completion = await storage.getCompletionById(completionId);
+      if (!completion) {
+        return res.status(404).json({ error: "Completion not found" });
+      }
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, completion.taskId);
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task completion" });
+      }
+      const atts = await storage.getAttachmentsByCompletion(completionId);
+      res.json(atts);
+    } catch (error) {
+      console.error("List attachments error:", error);
+      res.status(500).json({ error: "Failed to fetch attachments" });
     }
   });
 
