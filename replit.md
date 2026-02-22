@@ -22,6 +22,7 @@ Preferred communication style: Simple, everyday language.
   - `routes.ts` — All API route definitions
   - `auth.ts` — Session-based authentication with express-session + connect-pg-simple
   - `storage.ts` — Database access layer (Drizzle ORM queries)
+  - `assetSync.ts` — Auto-sync engine: creates/updates/archives assets from GeoJSON map layers
   - `db.ts` — PostgreSQL connection pool setup
   - `objectStorage.ts` / `objectAcl.ts` — Google Cloud Storage integration with ACL policies
 - **`shared/`** — Shared code between client and server
@@ -48,8 +49,9 @@ Preferred communication style: Simple, everyday language.
 - **task_completions** — completion records with notes, employeeSignOffName (required), timeSpentMinutes, materialsUsed, followUpNeeded
 - **attachments** — file references linked to task completions, with idempotencyKey for retry safety
 - **push_tokens** — for push notification support
-- **assets** — community-scoped physical assets (controllers, backflows, zones, trees, etc.) with optional geolocation, version for optimistic locking. Types: controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area
+- **assets** — community-scoped physical assets (controllers, backflows, zones, trees, etc.) with optional geolocation, version for optimistic locking. Types: controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area. Fields: mapLayerId (source layer), isArchived/archivedAt (archival from sync), sourceUpdatedAt. Unique constraint on (communityId, mapLayerId, featureRef)
 - **asset_properties** — key-value custom properties on assets, unique constraint on (asset_id, key) for efficient upsert
+- **Asset Auto-Sync** — Map layers are source of truth for assets. GeoJSON features auto-create/update assets on layer create/update. Removed features get archived (not deleted). Asset type templates define required fields per type (e.g., backflow requires brand/serialNumber/size). Completeness endpoint tracks missing required fields. SubLayerKey mapping: irrigation/backflow→backflow, trees/tree→tree, etc.
 - **task_links** — links a task to either an asset (linkType="asset") or GPS pin (linkType="pin")
 - **offline_packs** — per-community downloadable data packs with packVersion, manifestRef, assetIndexRef, geojsonBundleRef, workHistoryRef, mbtilesRef, checksum; unique constraint on (communityId, packVersion)
 
