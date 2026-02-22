@@ -46,7 +46,7 @@ Preferred communication style: Simple, everyday language.
 ### Data Model (PostgreSQL + Drizzle ORM)
 - **users** — id, username, password (hashed), displayName, role (contractor/admin)
 - **communities** — id, name, description; core organizational unit
-- **community_members** — many-to-many between users and communities
+- **community_members** — many-to-many between users and communities, unique constraint on (communityId, userId)
 - **tasks** — belong to a community, have status (pending/in_progress/completed), priority (low/medium/high/urgent), optional geolocation, assignee, version for optimistic concurrency
 - **task_completions** — completion records with notes, employeeSignOffName (required), timeSpentMinutes, materialsUsed, followUpNeeded
 - **attachments** — file references linked to task completions, with idempotencyKey for retry safety
@@ -64,6 +64,7 @@ Preferred communication style: Simple, everyday language.
 - Admins bypass all access restrictions
 - `canUserAccessTask` and `isUserMemberOfCommunity` helpers enforce security on all task endpoints
 - 403 returned for unauthorized access; 409 for version conflicts (optimistic locking)
+- **Community Membership Management** — POST /api/admin/users creates contractor/admin users. POST /api/communities/:id/members accepts { userIds: string[] } for bulk member addition with { added, skipped } response. GET /api/users/:id/communities returns a user's community memberships. Admin web hub has Users page (create user modal, community badges per user, role toggle) and Members tab on community detail (multi-select add modal with search/filter, remove buttons, joined date).
 - **Show on Map** — SearchModal "Show on Map" button passes targetLat/targetLng/targetLabel params to Map tab; NativeMap animates camera to target region and shows a teal pin. Alert shown if item has no coordinates.
 - **409 Conflict UX** — Task detail auto-refreshes on 409 conflict (invalidates query, shows dialog). Offline queue uses 'conflict' state for version conflicts (separate from generic 'failed') with descriptive error message.
 
