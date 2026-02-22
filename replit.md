@@ -62,6 +62,8 @@ Preferred communication style: Simple, everyday language.
 - Admins bypass all access restrictions
 - `canUserAccessTask` and `isUserMemberOfCommunity` helpers enforce security on all task endpoints
 - 403 returned for unauthorized access; 409 for version conflicts (optimistic locking)
+- **Show on Map** — SearchModal "Show on Map" button passes targetLat/targetLng/targetLabel params to Map tab; NativeMap animates camera to target region and shows a teal pin. Alert shown if item has no coordinates.
+- **409 Conflict UX** — Task detail auto-refreshes on 409 conflict (invalidates query, shows dialog). Offline queue uses 'conflict' state for version conflicts (separate from generic 'failed') with descriptive error message.
 
 ### Frontend Architecture
 - **Expo SDK 54** with Expo Router v6 (file-based routing with typed routes)
