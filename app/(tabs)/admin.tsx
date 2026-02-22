@@ -466,7 +466,11 @@ export default function AdminScreen() {
         resizeMode="cover"
       >
         <View style={styles.tabBarOverlay} />
-        <View style={styles.tabBar}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabBar}
+        >
           {tabs.map((tab) => (
             <TouchableOpacity
               key={tab.id}
@@ -483,7 +487,7 @@ export default function AdminScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </ImageBackground>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -1170,12 +1174,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   tab: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: 10,
   },
   tabActive: { backgroundColor: 'rgba(37, 193, 172, 0.2)' },
