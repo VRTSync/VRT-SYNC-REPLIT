@@ -7,6 +7,7 @@ import * as storage from "./storage";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
+  insertMapLayerSchema, updateMapLayerSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -632,6 +633,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get task link error:", error);
       res.status(500).json({ error: "Failed to fetch task link" });
+    }
+  });
+
+  app.get("/api/map-layers", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string;
+      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const layerKey = req.query.layerKey as string | undefined;
+      const layers = await storage.getMapLayersByCommunity(communityId, layerKey);
+      const result = layers.map(({ geojsonData, ...rest }) => rest);
+      res.json(result);
+    } catch (error) {
+      console.error("Get map layers error:", error);
+      res.status(500).json({ error: "Failed to fetch map layers" });
+    }
+  });
+
+  app.get("/api/map-layers/:id/geojson", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, layer.communityId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      if (!layer.geojsonData) return res.json(null);
+      res.setHeader("Content-Type", "application/json");
+      res.send(layer.geojsonData);
+    } catch (error) {
+      console.error("Get geojson error:", error);
+      res.status(500).json({ error: "Failed to fetch GeoJSON" });
+    }
+  });
+
+  app.post("/api/map-layers", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertMapLayerSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      const layer = await storage.createMapLayer(parsed.data);
+      const { geojsonData, ...rest } = layer;
+      res.status(201).json(rest);
+    } catch (error: any) {
+      if (error?.constraint === "map_layers_community_layer_sub_idx") {
+        return res.status(409).json({ error: "A layer with that key combination already exists" });
+      }
+      console.error("Create map layer error:", error);
+      res.status(500).json({ error: "Failed to create map layer" });
+    }
+  });
+
+  app.patch("/api/map-layers/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = updateMapLayerSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      const { version, ...data } = parsed.data;
+      const updated = await storage.updateMapLayer(req.params.id as string, version, data);
+      if (!updated) {
+        const existing = await storage.getMapLayerById(req.params.id as string);
+        if (!existing) return res.status(404).json({ error: "Layer not found" });
+        return res.status(409).json({
+          error: "Conflict: layer was modified. Please refresh and try again.",
+          code: "VERSION_CONFLICT",
+          latestLayer: { ...existing, geojsonData: undefined },
+        });
+      }
+      const { geojsonData, ...rest } = updated;
+      res.json(rest);
+    } catch (error) {
+      console.error("Update map layer error:", error);
+      res.status(500).json({ error: "Failed to update map layer" });
+    }
+  });
+
+  app.delete("/api/map-layers/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteMapLayer(req.params.id as string);
+      if (!deleted) return res.status(404).json({ error: "Layer not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete map layer error:", error);
+      res.status(500).json({ error: "Failed to delete map layer" });
+    }
+  });
+
+  app.get("/api/assets/by-feature", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string;
+      const featureRef = req.query.featureRef as string;
+      if (!communityId || !featureRef) return res.status(400).json({ error: "communityId and featureRef are required" });
+      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
+      res.json(asset);
+    } catch (error) {
+      console.error("Get asset by feature error:", error);
+      res.status(500).json({ error: "Failed to fetch asset" });
     }
   });
 
