@@ -102,8 +102,8 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   backgroundImage: { flex: 1, backgroundColor: '#0C1D31' },
   imageStyle: {
-    width: 200,
-    height: 200,
+    width: '100%',
+    height: '100%',
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
