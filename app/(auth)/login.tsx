@@ -100,14 +100,15 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  backgroundImage: { flex: 1, backgroundColor: '#0C1D31' },
+  backgroundImage: { flex: 1, backgroundColor: '#06101c' },
   imageStyle: {
     width: '100%',
     height: '100%',
+    opacity: 0.4,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 29, 49, 0.88)',
+    backgroundColor: 'rgba(12, 29, 49, 0.75)',
   },
   container: { flex: 1 },
   inner: { flex: 1, justifyContent: 'center', padding: 24 },
