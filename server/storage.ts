@@ -3,10 +3,12 @@ import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
+  taskSchedules, scheduleRuns, scheduleRunItems,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
-  type TaskTemplate, type TemplateRun
+  type TaskTemplate, type TemplateRun,
+  type TaskSchedule, type ScheduleRun, type ScheduleRunItem
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1225,4 +1227,126 @@ export async function bulkAssignTasks(taskIds: string[], assignedTo: string): Pr
     .set({ assignedTo, updatedAt: new Date() })
     .where(inArray(tasks.id, taskIds));
   return taskIds.length;
+}
+
+// --- Task Schedules ---
+
+export async function getTaskSchedules(communityId?: string): Promise<TaskSchedule[]> {
+  const conditions = communityId ? [eq(taskSchedules.communityId, communityId)] : [];
+  return db.select().from(taskSchedules)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(taskSchedules.createdAt));
+}
+
+export async function getTaskScheduleById(id: string): Promise<TaskSchedule | undefined> {
+  const [schedule] = await db.select().from(taskSchedules).where(eq(taskSchedules.id, id));
+  return schedule;
+}
+
+export async function createTaskSchedule(data: {
+  communityId: string;
+  templateId: string;
+  frequency: "weekly" | "monthly" | "once";
+  daysOfWeek?: string | null;
+  dayOfMonth?: number | null;
+  timezone: string;
+  startDate: Date;
+  endDate?: Date | null;
+  nextRunAt?: Date | null;
+  assignToUserId?: string | null;
+  isEnabled: boolean;
+  createdBy: string;
+}): Promise<TaskSchedule> {
+  const [schedule] = await db.insert(taskSchedules).values(data).returning();
+  return schedule;
+}
+
+export async function updateTaskSchedule(id: string, data: Partial<{
+  frequency: "weekly" | "monthly" | "once";
+  daysOfWeek: string | null;
+  dayOfMonth: number | null;
+  timezone: string;
+  startDate: Date;
+  endDate: Date | null;
+  nextRunAt: Date | null;
+  assignToUserId: string | null;
+  isEnabled: boolean;
+}>): Promise<TaskSchedule | undefined> {
+  const [updated] = await db.update(taskSchedules)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(taskSchedules.id, id))
+    .returning();
+  return updated;
+}
+
+export async function deleteTaskSchedule(id: string): Promise<void> {
+  await db.delete(scheduleRunItems).where(
+    inArray(scheduleRunItems.runId,
+      db.select({ id: scheduleRuns.id }).from(scheduleRuns).where(eq(scheduleRuns.scheduleId, id))
+    )
+  );
+  await db.delete(scheduleRuns).where(eq(scheduleRuns.scheduleId, id));
+  await db.delete(taskSchedules).where(eq(taskSchedules.id, id));
+}
+
+export async function getEnabledDueSchedules(): Promise<TaskSchedule[]> {
+  return db.select().from(taskSchedules)
+    .where(and(
+      eq(taskSchedules.isEnabled, true),
+      lte(taskSchedules.nextRunAt, new Date()),
+    ))
+    .orderBy(asc(taskSchedules.nextRunAt));
+}
+
+export async function getScheduleRuns(scheduleId: string, limit = 20): Promise<ScheduleRun[]> {
+  return db.select().from(scheduleRuns)
+    .where(eq(scheduleRuns.scheduleId, scheduleId))
+    .orderBy(desc(scheduleRuns.runAt))
+    .limit(limit);
+}
+
+export async function createScheduleRun(data: {
+  scheduleId: string;
+  windowStart: Date;
+  windowEnd: Date;
+  createdCount: number;
+  skippedCount: number;
+  status: "success" | "failure";
+  errorMessage?: string | null;
+}): Promise<ScheduleRun> {
+  const [run] = await db.insert(scheduleRuns).values(data).returning();
+  return run;
+}
+
+export async function createScheduleRunItem(runId: string, taskId: string): Promise<void> {
+  await db.insert(scheduleRunItems).values({ runId, taskId });
+}
+
+export async function taskExistsWithInstanceKey(key: string): Promise<boolean> {
+  const [row] = await db.select({ id: tasks.id }).from(tasks)
+    .where(eq(tasks.scheduleInstanceKey, key))
+    .limit(1);
+  return !!row;
+}
+
+export async function createTaskWithInstanceKey(data: {
+  communityId: string;
+  title: string;
+  description?: string;
+  priority?: "low" | "medium" | "high" | "urgent";
+  latitude?: number;
+  longitude?: number;
+  assignedTo?: string;
+  createdBy: string;
+  dueDate?: Date;
+  scheduleInstanceKey: string;
+}): Promise<Task> {
+  const [task] = await db.insert(tasks).values(data).returning();
+  return task;
+}
+
+export async function updateScheduleNextRunAt(id: string, nextRunAt: Date | null): Promise<void> {
+  await db.update(taskSchedules)
+    .set({ nextRunAt, updatedAt: new Date() })
+    .where(eq(taskSchedules.id, id));
 }
