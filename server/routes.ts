@@ -738,8 +738,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.query.communityId as string;
       if (!communityId) return res.status(400).json({ error: "communityId is required" });
-      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
-      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (user?.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
       const layerKey = req.query.layerKey as string | undefined;
       const layers = await storage.getMapLayersByCommunity(communityId, layerKey);
       const result = layers.map(({ geojsonData, ...rest }) => rest);
@@ -754,8 +757,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
       if (!layer) return res.status(404).json({ error: "Layer not found" });
-      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, layer.communityId);
-      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (reqUser?.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, layer.communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
       if (!layer.geojsonData) return res.json(null);
       res.setHeader("Content-Type", "application/json");
       res.send(layer.geojsonData);
