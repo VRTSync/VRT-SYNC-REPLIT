@@ -51,6 +51,7 @@ Preferred communication style: Simple, everyday language.
 - **assets** — community-scoped physical assets (controllers, backflows, zones, trees, etc.) with optional geolocation, version for optimistic locking. Types: controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area
 - **asset_properties** — key-value custom properties on assets, unique constraint on (asset_id, key) for efficient upsert
 - **task_links** — links a task to either an asset (linkType="asset") or GPS pin (linkType="pin")
+- **offline_packs** — per-community downloadable data packs with packVersion, manifestRef, assetIndexRef, geojsonBundleRef, workHistoryRef, mbtilesRef, checksum; unique constraint on (communityId, packVersion)
 
 ### Access Control
 - Contractors can only view/complete tasks assigned to them within their communities
@@ -63,6 +64,7 @@ Preferred communication style: Simple, everyday language.
 - **React Query (@tanstack/react-query)** for server state management and data fetching
 - **Context Providers**: AuthContext (user session), CommunityContext (active community selection with AsyncStorage persistence), OfflineContext (task caching and pending completion sync)
 - **Offline Support**: Tasks are cached to AsyncStorage; completions can be queued offline and synced when connectivity returns
+- **Offline Map Packs**: OfflinePackContext manages downloadable per-community packs containing GeoJSON layers, asset index, and work history snapshots stored in AsyncStorage. Map screen and asset history fall back to offline pack data when connectivity is lost. Pack UI on Profile screen shows download/update/delete controls.
 - **Maps**: react-native-maps for native platforms, dynamically imported; web shows a placeholder
 - **Platform**: Targets iOS, Android, and web; uses platform-specific conditionals throughout
 
