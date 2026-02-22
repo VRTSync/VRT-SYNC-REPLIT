@@ -149,6 +149,23 @@ export const taskLinks = pgTable("task_links", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const offlinePacks = pgTable("offline_packs", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  packVersion: integer("pack_version").notNull().default(1),
+  mbtilesRef: text("mbtiles_ref"),
+  manifestRef: text("manifest_ref"),
+  geojsonBundleRef: text("geojson_bundle_ref"),
+  assetIndexRef: text("asset_index_ref"),
+  checksum: text("checksum"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("offline_packs_community_version_idx").on(table.communityId, table.packVersion),
+]);
+
 export const LAYER_KEYS = ["community", "irrigation", "snow", "trees"] as const;
 
 export const mapLayers = pgTable("map_layers", {
@@ -181,11 +198,16 @@ export const usersRelations = relations(users, ({ many }) => ({
   pushTokens: many(pushTokens),
 }));
 
+export const offlinePacksRelations = relations(offlinePacks, ({ one }) => ({
+  community: one(communities, { fields: [offlinePacks.communityId], references: [communities.id] }),
+}));
+
 export const communitiesRelations = relations(communities, ({ many }) => ({
   members: many(communityMembers),
   tasks: many(tasks),
   assets: many(assets),
   mapLayers: many(mapLayers),
+  offlinePacks: many(offlinePacks),
 }));
 
 export const communityMembersRelations = relations(communityMembers, ({ one }) => ({
@@ -327,6 +349,16 @@ export const updateMapLayerSchema = z.object({
   version: z.number(),
 });
 
+export const insertOfflinePackSchema = z.object({
+  communityId: z.string().min(1),
+  packVersion: z.number().int().positive().optional(),
+  mbtilesRef: z.string().optional(),
+  manifestRef: z.string().optional(),
+  geojsonBundleRef: z.string().optional(),
+  assetIndexRef: z.string().optional(),
+  checksum: z.string().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -339,3 +371,4 @@ export type Asset = typeof assets.$inferSelect;
 export type AssetProperty = typeof assetProperties.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
 export type MapLayer = typeof mapLayers.$inferSelect;
+export type OfflinePack = typeof offlinePacks.$inferSelect;
