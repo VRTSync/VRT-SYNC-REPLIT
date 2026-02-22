@@ -8,6 +8,13 @@ import { useAuth } from './AuthContext';
 const TASKS_CACHE_KEY = 'offline_tasks_cache';
 const PENDING_COMPLETIONS_KEY = 'offline_pending_completions';
 
+type PhotoState = {
+  uri: string;
+  uploadState: 'pendingUpload' | 'uploaded' | 'failed';
+  uploadURL?: string;
+  lastError?: string;
+};
+
 type PendingCompletion = {
   id: string;
   taskId: string;
@@ -18,10 +25,15 @@ type PendingCompletion = {
   timeSpentMinutes?: number;
   materialsUsed?: string;
   followUpNeeded?: string;
-  photoUris: string[];
+  photos: PhotoState[];
   state: 'queued' | 'syncing' | 'synced' | 'failed';
+  serverCompletionId?: string;
   lastError?: string;
   createdAt: string;
+};
+
+type PendingCompletionInput = Omit<PendingCompletion, 'state' | 'photos' | 'serverCompletionId'> & {
+  photoUris: string[];
 };
 
 type OfflineContextType = {
@@ -29,7 +41,7 @@ type OfflineContextType = {
   cachedTasks: any[];
   pendingCompletions: PendingCompletion[];
   cacheTasks: (tasks: any[]) => Promise<void>;
-  addPendingCompletion: (completion: Omit<PendingCompletion, 'state'>) => Promise<void>;
+  addPendingCompletion: (completion: PendingCompletionInput) => Promise<void>;
   syncPendingCompletions: () => Promise<{ synced: number; failed: number }>;
   retryCompletion: (completionId: string) => Promise<void>;
   dismissCompletion: (completionId: string) => Promise<void>;
@@ -39,12 +51,7 @@ type OfflineContextType = {
 
 const OfflineContext = createContext<OfflineContextType | null>(null);
 
-async function uploadPhotoAndAttach(
-  taskId: string,
-  completionId: string,
-  photoUri: string,
-  idempotencyKey: string,
-): Promise<void> {
+async function uploadFileToStorage(photoUri: string): Promise<string> {
   const apiUrl = getApiUrl();
 
   const presignRes = await fetch(`${apiUrl}/api/objects/upload`, {
@@ -74,6 +81,15 @@ async function uploadPhotoAndAttach(
     if (!uploadRes.ok) throw new Error('Photo upload failed');
   }
 
+  return uploadURL;
+}
+
+async function createAttachmentRecord(
+  taskId: string,
+  completionId: string,
+  uploadURL: string,
+  idempotencyKey: string,
+): Promise<void> {
   await apiRequest('POST', `/api/tasks/${taskId}/attachments`, {
     taskCompletionId: completionId,
     uploadURL,
@@ -148,6 +164,12 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(list));
   };
 
+  const updateItem = (list: PendingCompletion[], index: number, patch: Partial<PendingCompletion>): PendingCompletion[] => {
+    const copy = [...list];
+    copy[index] = { ...copy[index], ...patch };
+    return copy;
+  };
+
   const cacheTasks = useCallback(async (tasks: any[]) => {
     try {
       await AsyncStorage.setItem(TASKS_CACHE_KEY, JSON.stringify(tasks));
@@ -157,9 +179,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const addPendingCompletion = useCallback(async (completion: Omit<PendingCompletion, 'state'>) => {
-    const withState: PendingCompletion = { ...completion, state: 'queued' };
-    const updated = [...pendingRef.current, withState];
+  const addPendingCompletion = useCallback(async (input: PendingCompletionInput) => {
+    const { photoUris, ...rest } = input;
+    const completion: PendingCompletion = {
+      ...rest,
+      photos: photoUris.map(uri => ({ uri, uploadState: 'pendingUpload' as const })),
+      state: 'queued',
+    };
+    const updated = [...pendingRef.current, completion];
     await persistQueue(updated);
     setPendingCompletions(updated);
     pendingRef.current = updated;
@@ -175,54 +202,99 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     syncingRef.current = true;
     let synced = 0;
     let failed = 0;
-    const updatedList = [...currentQueue];
+    let updatedList = [...currentQueue];
 
     for (let i = 0; i < updatedList.length; i++) {
       const completion = updatedList[i];
       if (completion.state !== 'queued' && completion.state !== 'failed') continue;
 
-      updatedList[i] = { ...completion, state: 'syncing', lastError: undefined };
+      updatedList = updateItem(updatedList, i, { state: 'syncing', lastError: undefined });
       setPendingCompletions([...updatedList]);
       pendingRef.current = [...updatedList];
 
       try {
-        const res = await apiRequest('POST', `/api/tasks/${completion.taskId}/complete`, {
-          version: completion.version,
-          notes: completion.notes,
-          employeeSignOffName: completion.employeeSignOffName,
-          timeSpentMinutes: completion.timeSpentMinutes,
-          materialsUsed: completion.materialsUsed,
-          followUpNeeded: completion.followUpNeeded,
-        });
-        const { completion: serverCompletion } = await res.json();
+        let serverCompletionId = completion.serverCompletionId;
 
-        if (completion.photoUris.length > 0 && serverCompletion?.id) {
-          let photoFailures = 0;
-          for (const photoUri of completion.photoUris) {
-            const idempotencyKey = `${completion.id}-photo-${completion.photoUris.indexOf(photoUri)}`;
-            let uploaded = false;
-            for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
+        if (!serverCompletionId) {
+          const res = await apiRequest('POST', `/api/tasks/${completion.taskId}/complete`, {
+            version: completion.version,
+            notes: completion.notes,
+            employeeSignOffName: completion.employeeSignOffName,
+            timeSpentMinutes: completion.timeSpentMinutes,
+            materialsUsed: completion.materialsUsed,
+            followUpNeeded: completion.followUpNeeded,
+          });
+          const { completion: serverCompletion } = await res.json();
+          serverCompletionId = serverCompletion?.id;
+          updatedList = updateItem(updatedList, i, { serverCompletionId });
+          await persistQueue(updatedList);
+        }
+
+        if (completion.photos.length > 0 && serverCompletionId) {
+          const updatedPhotos = [...updatedList[i].photos];
+          let allUploaded = true;
+
+          for (let p = 0; p < updatedPhotos.length; p++) {
+            const photo = updatedPhotos[p];
+            const idempotencyKey = `${completion.id}-photo-${p}`;
+
+            if (photo.uploadState === 'uploaded') continue;
+
+            let uploadURL = photo.uploadURL;
+
+            if (!uploadURL) {
+              let fileUploaded = false;
+              for (let attempt = 0; attempt < 3 && !fileUploaded; attempt++) {
+                try {
+                  uploadURL = await uploadFileToStorage(photo.uri);
+                  fileUploaded = true;
+                } catch (err: any) {
+                  if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                  if (!fileUploaded && attempt === 2) {
+                    updatedPhotos[p] = { ...photo, uploadState: 'failed', lastError: err.message || 'Upload failed' };
+                    allUploaded = false;
+                  }
+                }
+              }
+              if (!fileUploaded) continue;
+            }
+
+            let metadataCreated = false;
+            for (let attempt = 0; attempt < 3 && !metadataCreated; attempt++) {
               try {
-                await uploadPhotoAndAttach(
-                  completion.taskId,
-                  serverCompletion.id,
-                  photoUri,
-                  idempotencyKey,
-                );
-                uploaded = true;
-              } catch (uploadErr) {
-                console.warn(`Photo upload attempt ${attempt + 1} failed:`, uploadErr);
+                await createAttachmentRecord(completion.taskId, serverCompletionId!, uploadURL!, idempotencyKey);
+                metadataCreated = true;
+              } catch (err: any) {
                 if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                if (!metadataCreated && attempt === 2) {
+                  updatedPhotos[p] = { ...photo, uploadState: 'failed', uploadURL, lastError: err.message || 'Metadata failed' };
+                  allUploaded = false;
+                }
               }
             }
-            if (!uploaded) photoFailures++;
+
+            if (metadataCreated) {
+              updatedPhotos[p] = { ...photo, uploadState: 'uploaded', uploadURL, lastError: undefined };
+            }
           }
-          if (photoFailures > 0) {
-            console.warn(`${photoFailures} photo(s) failed to upload for completion ${completion.id}`);
+
+          updatedList = updateItem(updatedList, i, { photos: updatedPhotos });
+          await persistQueue(updatedList);
+
+          if (!allUploaded) {
+            const failedCount = updatedPhotos.filter(ph => ph.uploadState === 'failed').length;
+            updatedList = updateItem(updatedList, i, {
+              state: 'failed',
+              lastError: `${failedCount} photo(s) failed to upload`,
+            });
+            setPendingCompletions([...updatedList]);
+            pendingRef.current = [...updatedList];
+            failed++;
+            continue;
           }
         }
 
-        updatedList[i] = { ...completion, state: 'synced' };
+        updatedList = updateItem(updatedList, i, { state: 'synced' });
         synced++;
       } catch (e: any) {
         let errorMsg: string;
@@ -231,9 +303,12 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         } else {
           errorMsg = e.message || 'Sync failed';
         }
-        updatedList[i] = { ...completion, state: 'failed', lastError: errorMsg };
+        updatedList = updateItem(updatedList, i, { state: 'failed', lastError: errorMsg });
         failed++;
       }
+
+      setPendingCompletions([...updatedList]);
+      pendingRef.current = [...updatedList];
     }
 
     const remaining = updatedList.filter(c => c.state !== 'synced');
@@ -251,7 +326,12 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
   const retryCompletion = useCallback(async (completionId: string) => {
     const updated = pendingRef.current.map(c =>
-      c.id === completionId ? { ...c, state: 'queued' as const, lastError: undefined } : c
+      c.id === completionId ? {
+        ...c,
+        state: 'queued' as const,
+        lastError: undefined,
+        photos: c.photos.map(p => p.uploadState === 'failed' ? { ...p, uploadState: 'pendingUpload' as const, lastError: undefined } : p),
+      } : c
     );
     await persistQueue(updated);
     setPendingCompletions(updated);
