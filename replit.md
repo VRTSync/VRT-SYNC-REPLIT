@@ -23,6 +23,8 @@ Preferred communication style: Simple, everyday language.
   - `auth.ts` — Session-based authentication with express-session + connect-pg-simple
   - `storage.ts` — Database access layer (Drizzle ORM queries)
   - `assetSync.ts` — Auto-sync engine: creates/updates/archives assets from GeoJSON map layers
+  - `kmlConverter.ts` — KML→GeoJSON converter with stable feature ID extraction (ExtendedData, sha1 hash)
+  - `layerKeys.ts` — Canonical layer hierarchy dictionary and validation (community/irrigation/snow/trees)
   - `db.ts` — PostgreSQL connection pool setup
   - `objectStorage.ts` / `objectAcl.ts` — Google Cloud Storage integration with ACL policies
 - **`shared/`** — Shared code between client and server
