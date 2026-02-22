@@ -149,6 +149,25 @@ export const taskLinks = pgTable("task_links", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const LAYER_KEYS = ["community", "irrigation", "snow", "trees"] as const;
+
+export const mapLayers = pgTable("map_layers", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  layerKey: text("layer_key").notNull(),
+  subLayerKey: text("sub_layer_key").notNull(),
+  displayName: text("display_name").notNull(),
+  geojsonData: text("geojson_data"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("map_layers_community_layer_idx").on(table.communityId, table.layerKey),
+  uniqueIndex("map_layers_community_layer_sub_idx").on(table.communityId, table.layerKey, table.subLayerKey),
+]);
+
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
   user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
 }));
@@ -166,6 +185,7 @@ export const communitiesRelations = relations(communities, ({ many }) => ({
   members: many(communityMembers),
   tasks: many(tasks),
   assets: many(assets),
+  mapLayers: many(mapLayers),
 }));
 
 export const communityMembersRelations = relations(communityMembers, ({ one }) => ({
@@ -205,6 +225,10 @@ export const assetPropertiesRelations = relations(assetProperties, ({ one }) => 
 export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
   task: one(tasks, { fields: [taskLinks.taskId], references: [tasks.id] }),
   asset: one(assets, { fields: [taskLinks.assetId], references: [assets.id] }),
+}));
+
+export const mapLayersRelations = relations(mapLayers, ({ one }) => ({
+  community: one(communities, { fields: [mapLayers.communityId], references: [communities.id] }),
 }));
 
 export const insertUserSchema = createInsertSchema(users).pick({
@@ -289,6 +313,20 @@ export const setTaskLinkSchema = z.object({
   version: z.number(),
 });
 
+export const insertMapLayerSchema = z.object({
+  communityId: z.string().min(1),
+  layerKey: z.string().min(1),
+  subLayerKey: z.string().min(1),
+  displayName: z.string().min(1),
+  geojsonData: z.string().optional(),
+});
+
+export const updateMapLayerSchema = z.object({
+  displayName: z.string().min(1).optional(),
+  geojsonData: z.string().optional(),
+  version: z.number(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -300,3 +338,4 @@ export type PushToken = typeof pushTokens.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type AssetProperty = typeof assetProperties.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
+export type MapLayer = typeof mapLayers.$inferSelect;
