@@ -10,6 +10,10 @@ function NativeTabLayout() {
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
+        <Icon sf={{ default: "house", selected: "house.fill" }} />
+        <Label>Home</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="tasks">
         <Icon sf={{ default: "checklist", selected: "checklist" }} />
         <Label>Tasks</Label>
       </NativeTabs.Trigger>
@@ -62,6 +66,16 @@ function ClassicTabLayout() {
     >
       <Tabs.Screen
         name="index"
+        options={{
+          title: "Home",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="tasks"
         options={{
           title: "Tasks",
           headerShown: false,

@@ -153,6 +153,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/dashboard", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const communityId = req.query.communityId as string;
+      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+      const data = await storage.getDashboardData(user.id, communityId, user.role === "admin");
+      res.json(data);
+    } catch (error) {
+      console.error("Dashboard error:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
   app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);

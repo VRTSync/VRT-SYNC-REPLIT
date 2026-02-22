@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
@@ -57,13 +57,14 @@ const layerColors = [
 
 export default function MapScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ category?: string }>();
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
   const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [NativeMapComponent, setNativeMapComponent] = useState<React.ComponentType<any> | null>(null);
-  const [activeCategory, setActiveCategory] = useState('community');
+  const [activeCategory, setActiveCategory] = useState(params.category || 'community');
   const [enabledLayerIds, setEnabledLayerIds] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetInfo | null>(null);
@@ -109,6 +110,12 @@ export default function MapScreen() {
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
   const categoryLayers = allLayers.filter((l) => l.layerKey === activeCategory);
   const geoTasks = tasks.filter((t) => t.latitude != null && t.longitude != null && t.status !== 'completed');
+
+  useEffect(() => {
+    if (params.category && CATEGORY_TABS.some(c => c.key === params.category)) {
+      setActiveCategory(params.category);
+    }
+  }, [params.category]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {

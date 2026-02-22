@@ -1,4 +1,4 @@
-import { eq, and, desc, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -575,4 +575,87 @@ export async function getAssetWorkHistory(assetId: string) {
     },
     attachments: attachmentMap.get(c.id) || [],
   }));
+}
+
+export async function getDashboardData(userId: string, communityId: string, isAdmin: boolean) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const weekEnd = new Date(todayStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const baseConditions = isAdmin
+    ? [eq(tasks.communityId, communityId), ne(tasks.status, "completed")]
+    : [eq(tasks.communityId, communityId), eq(tasks.assignedTo, userId), ne(tasks.status, "completed")];
+
+  const dueTodayTasks = await db.select().from(tasks)
+    .where(and(
+      ...baseConditions,
+      gte(tasks.dueDate, todayStart),
+      lt(tasks.dueDate, todayEnd),
+    ))
+    .orderBy(asc(tasks.dueDate))
+    .limit(5);
+
+  const upcomingTasks = await db.select().from(tasks)
+    .where(and(
+      ...baseConditions,
+      gte(tasks.dueDate, todayEnd),
+      lte(tasks.dueDate, weekEnd),
+    ))
+    .orderBy(asc(tasks.dueDate))
+    .limit(8);
+
+  const followUpResults = await db
+    .select({
+      id: taskCompletions.id,
+      taskId: taskCompletions.taskId,
+      followUpNeeded: taskCompletions.followUpNeeded,
+      completedAt: taskCompletions.completedAt,
+      taskTitle: tasks.title,
+      taskPriority: tasks.priority,
+    })
+    .from(taskCompletions)
+    .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
+    .where(and(
+      eq(tasks.communityId, communityId),
+      isNotNull(taskCompletions.followUpNeeded),
+      ne(taskCompletions.followUpNeeded, ''),
+      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+    ))
+    .orderBy(desc(taskCompletions.completedAt))
+    .limit(5);
+
+  const noDueDateTasks = await db.select().from(tasks)
+    .where(and(
+      ...baseConditions,
+      ...[isAdmin ? undefined : eq(tasks.assignedTo, userId)].filter(Boolean) as any[],
+    ))
+    .orderBy(desc(tasks.priority), desc(tasks.createdAt))
+    .limit(10);
+
+  const overdueTasks = noDueDateTasks.length === 0
+    ? await db.select().from(tasks)
+        .where(and(
+          ...baseConditions,
+          lt(tasks.dueDate, todayStart),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(5)
+    : [];
+
+  return {
+    dueTodayTasks,
+    upcomingTasks,
+    overdueTasks,
+    followUpTasks: followUpResults.map(r => ({
+      id: r.id,
+      taskId: r.taskId,
+      taskTitle: r.taskTitle,
+      taskPriority: r.taskPriority,
+      followUpNeeded: r.followUpNeeded,
+      completedAt: r.completedAt,
+    })),
+  };
 }
