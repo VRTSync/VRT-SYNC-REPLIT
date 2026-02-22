@@ -193,7 +193,7 @@ export default function DashboardScreen() {
                 <TouchableOpacity
                   key={c.id}
                   style={[styles.communityOption, c.id === activeCommunity?.id && styles.communityOptionActive]}
-                  onPress={() => { setActiveCommunity(c.id); setShowCommunitySwitcher(false); }}
+                  onPress={() => { setActiveCommunity(c); setShowCommunitySwitcher(false); }}
                 >
                   <Text style={[styles.communityOptionText, c.id === activeCommunity?.id && styles.communityOptionTextActive]}>
                     {c.name}
