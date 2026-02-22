@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, ilike, or, sql } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, ilike, or, sql, count } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -39,6 +39,11 @@ export async function getCommunities(): Promise<Community[]> {
 export async function getCommunityById(id: string): Promise<Community | undefined> {
   const [community] = await db.select().from(communities).where(eq(communities.id, id));
   return community;
+}
+
+export async function updateCommunity(id: string, data: { name?: string; description?: string | null }): Promise<Community | undefined> {
+  const [updated] = await db.update(communities).set(data).where(eq(communities.id, id)).returning();
+  return updated;
 }
 
 export async function addCommunityMember(communityId: string, userId: string): Promise<CommunityMember> {
@@ -268,6 +273,80 @@ export async function updateUserRole(userId: string, role: "contractor" | "admin
     .where(eq(users.id, userId))
     .returning();
   return updated || null;
+}
+
+export async function getAdminSummary(communityId?: string) {
+  const communityFilter = communityId ? eq(communities.id, communityId) : undefined;
+  const assetCommunityFilter = communityId ? eq(assets.communityId, communityId) : undefined;
+  const taskCommunityFilter = communityId ? eq(tasks.communityId, communityId) : undefined;
+  const layerCommunityFilter = communityId ? eq(mapLayers.communityId, communityId) : undefined;
+
+  const [commRes] = await db.select({ count: count() }).from(communities).where(communityFilter);
+  const [activeRes] = await db.select({ count: count() }).from(assets).where(
+    assetCommunityFilter ? and(assetCommunityFilter, eq(assets.isArchived, false)) : eq(assets.isArchived, false)
+  );
+  const [archivedRes] = await db.select({ count: count() }).from(assets).where(
+    assetCommunityFilter ? and(assetCommunityFilter, eq(assets.isArchived, true)) : eq(assets.isArchived, true)
+  );
+  const [taskRes] = await db.select({ count: count() }).from(tasks).where(taskCommunityFilter);
+  const [pendingRes] = await db.select({ count: count() }).from(tasks).where(
+    taskCommunityFilter ? and(taskCommunityFilter, eq(tasks.status, 'pending')) : eq(tasks.status, 'pending')
+  );
+  const [completedRes] = await db.select({ count: count() }).from(tasks).where(
+    taskCommunityFilter ? and(taskCommunityFilter, eq(tasks.status, 'completed')) : eq(tasks.status, 'completed')
+  );
+  const [layerRes] = await db.select({ count: count() }).from(mapLayers).where(layerCommunityFilter);
+
+  let incompleteAssetsCount = 0;
+  const layerStats: { layerId: string; activeAssets: number; archivedAssets: number }[] = [];
+
+  if (communityId) {
+    const allActiveAssets = await db.select().from(assets).where(
+      and(eq(assets.communityId, communityId), eq(assets.isArchived, false))
+    );
+    const allProps = allActiveAssets.length > 0
+      ? await db.select().from(assetProperties).where(inArray(assetProperties.assetId, allActiveAssets.map(a => a.id)))
+      : [];
+    const propsByAsset = new Map<string, string[]>();
+    allProps.forEach(p => {
+      const existing = propsByAsset.get(p.assetId) || [];
+      existing.push(p.key);
+      propsByAsset.set(p.assetId, existing);
+    });
+
+    const { ASSET_TYPE_TEMPLATES } = await import("./assetSync");
+    for (const asset of allActiveAssets) {
+      const template = ASSET_TYPE_TEMPLATES[asset.assetType as keyof typeof ASSET_TYPE_TEMPLATES];
+      const required = template?.requiredKeys || [];
+      const propKeys = propsByAsset.get(asset.id) || [];
+      if (required.some((k: string) => !propKeys.includes(k))) {
+        incompleteAssetsCount++;
+      }
+    }
+
+    const communityLayers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, communityId));
+    for (const layer of communityLayers) {
+      const [active] = await db.select({ count: count() }).from(assets).where(
+        and(eq(assets.mapLayerId, layer.id), eq(assets.isArchived, false))
+      );
+      const [archived] = await db.select({ count: count() }).from(assets).where(
+        and(eq(assets.mapLayerId, layer.id), eq(assets.isArchived, true))
+      );
+      layerStats.push({ layerId: layer.id, activeAssets: active.count, archivedAssets: archived.count });
+    }
+  }
+
+  return {
+    communitiesCount: commRes.count,
+    activeAssetsCount: activeRes.count,
+    archivedAssetsCount: archivedRes.count,
+    incompleteAssetsCount,
+    tasksCount: taskRes.count,
+    pendingTasksCount: pendingRes.count,
+    completedTasksCount: completedRes.count,
+    mapLayersCount: layerRes.count,
+    layerStats,
+  };
 }
 
 export async function createAsset(data: {

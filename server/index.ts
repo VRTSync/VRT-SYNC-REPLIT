@@ -205,6 +205,73 @@ function configureExpoAndLanding(app: express.Application) {
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 
+function configureAdminHub(app: express.Application) {
+  app.use("/admin-static", express.static(path.resolve(process.cwd(), "server", "public", "admin")));
+
+  const adminShellPath = path.resolve(process.cwd(), "server", "templates", "admin-shell.html");
+  const adminShell = fs.readFileSync(adminShellPath, "utf-8");
+
+  app.get("/web/admin/login", (_req: Request, res: Response) => {
+    const loginHtml = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>VRTSync Admin Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#0C1D31;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff}
+.login-box{background:#fff;border-radius:12px;padding:40px;width:100%;max-width:400px;color:#1f2937}
+.login-box h1{font-size:22px;margin-bottom:8px;color:#0C1D31}
+.login-box p{font-size:14px;color:#6b7280;margin-bottom:24px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#374151}
+.form-group input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit}
+.form-group input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.1)}
+.btn{width:100%;padding:10px;background:#25C1AC;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:#1da393}
+.error{color:#ef4444;font-size:13px;margin-bottom:12px;display:none}
+</style></head><body>
+<div class="login-box">
+<h1>VRTSync Admin</h1>
+<p>Sign in to access the admin hub</p>
+<div class="error" id="login-error"></div>
+<div class="form-group"><label>Username</label><input type="text" id="username" autofocus /></div>
+<div class="form-group"><label>Password</label><input type="password" id="password" /></div>
+<button class="btn" id="login-btn">Sign In</button>
+</div>
+<script>
+document.getElementById('login-btn').addEventListener('click',doLogin);
+document.getElementById('password').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+async function doLogin(){
+  const u=document.getElementById('username').value.trim();
+  const p=document.getElementById('password').value;
+  const err=document.getElementById('login-error');
+  err.style.display='none';
+  if(!u||!p){err.textContent='Enter username and password';err.style.display='block';return}
+  try{
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:u,password:p})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));err.textContent=d.message||'Login failed';err.style.display='block';return}
+    const me=await fetch('/api/auth/me',{credentials:'same-origin'}).then(r=>r.json());
+    if(me.user?.role!=='admin'){err.textContent='Admin access required';err.style.display='block';await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'});return}
+    window.location.href='/web/admin/dashboard';
+  }catch(e){err.textContent='Network error';err.style.display='block'}
+}
+</script></body></html>`;
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(loginHtml);
+  });
+
+  app.get("/web/admin", (_req: Request, res: Response) => {
+    res.redirect("/web/admin/dashboard");
+  });
+
+  app.get(/^\/web\/admin\/(?!login).*$/, (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(adminShell);
+  });
+
+  log("Admin hub configured at /web/admin/*");
+}
+
 function setupErrorHandler(app: express.Application) {
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     const error = err as {
@@ -232,6 +299,7 @@ function setupErrorHandler(app: express.Application) {
   setupRequestLogging(app);
 
   configureExpoAndLanding(app);
+  configureAdminHub(app);
 
   const server = await registerRoutes(app);
 

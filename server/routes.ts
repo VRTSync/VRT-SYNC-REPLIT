@@ -114,6 +114,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/communities/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, description } = req.body;
+      const id = req.params.id as string;
+      const community = await storage.updateCommunity(id, { name, description });
+      if (!community) {
+        return res.status(404).json({ error: "Community not found" });
+      }
+      res.json(community);
+    } catch (error) {
+      console.error("Update community error:", error);
+      res.status(500).json({ error: "Failed to update community" });
+    }
+  });
+
   app.get("/api/communities/:id/members", requireAuth, async (req: Request, res: Response) => {
     try {
       const members = await storage.getCommunityMembers(req.params.id as string);
@@ -452,6 +467,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get completions error:", error);
       res.status(500).json({ error: "Failed to fetch completions" });
+    }
+  });
+
+  app.get("/api/admin/summary", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string | undefined;
+      const summary = await storage.getAdminSummary(communityId);
+      res.json(summary);
+    } catch (error) {
+      console.error("Admin summary error:", error);
+      res.status(500).json({ error: "Failed to fetch admin summary" });
     }
   });
 
