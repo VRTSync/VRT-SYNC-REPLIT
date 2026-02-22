@@ -6,7 +6,8 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
 import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
-import { syncAssetsFromLayer, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES } from "./assetSync";
+import { syncAssetsFromLayer, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry } from "./assetSync";
+import { validateLayerGeoJSON } from "./layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "./layerKeys";
 import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "./kmlConverter";
 import {
@@ -947,6 +948,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Sync assets from layer error:", error);
       res.status(500).json({ error: "Failed to sync assets" });
+    }
+  });
+
+  app.post("/api/map-layers/:id/validate", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer.geojsonData) return res.json({ featureCount: 0, geometryCounts: { points: 0, lines: 0, polygons: 0, other: 0 }, missingIdCount: 0, missingIdSamples: [], duplicateIdCount: 0, duplicateIdSamples: [], invalidGeometryCount: 0, invalidGeometrySamples: [], warnings: [], errors: ["No GeoJSON data in this layer"], valid: false });
+      const geojson = JSON.parse(layer.geojsonData);
+      const result = validateLayerGeoJSON(geojson, { layerKey: layer.layerKey, subLayerKey: layer.subLayerKey });
+      res.json(result);
+    } catch (error) {
+      console.error("Validate layer error:", error);
+      res.status(500).json({ error: "Failed to validate layer" });
+    }
+  });
+
+  app.post("/api/map-layers/:id/sync-preview", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      const geojsonData = req.body?.geojsonData || layer.geojsonData;
+      const result = await previewSyncFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, geojsonData);
+      res.json(result);
+    } catch (error) {
+      console.error("Sync preview error:", error);
+      res.status(500).json({ error: "Failed to generate sync preview" });
+    }
+  });
+
+  app.get("/api/map-layers/:id/unlinked-features", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
+      const unlinked = getUnlinkedFeatures(layer.geojsonData, existingAssets);
+      res.json(unlinked);
+    } catch (error) {
+      console.error("Unlinked features error:", error);
+      res.status(500).json({ error: "Failed to fetch unlinked features" });
+    }
+  });
+
+  app.post("/api/map-layers/:id/create-missing-assets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+
+      const assetType = resolveAssetType(layer.layerKey, layer.subLayerKey);
+      if (!assetType) return res.status(400).json({ error: "Cannot resolve asset type for this layer" });
+
+      const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
+      const unlinked = getUnlinkedFeatures(layer.geojsonData, existingAssets);
+
+      const requestedIds = req.body?.featureIds as string[] | undefined;
+      const toCreate = requestedIds
+        ? unlinked.filter(u => requestedIds.includes(u.featureId) && u.reason !== "invalid_id")
+        : unlinked.filter(u => u.reason !== "invalid_id");
+
+      let created = 0;
+      let reactivated = 0;
+
+      for (const item of toCreate) {
+        if (item.reason === "archived_asset_exists") {
+          const existing = existingAssets.find(a => a.featureRef === item.featureId && a.isArchived);
+          if (existing) {
+            await storage.updateAssetArchived(existing.id, false);
+            reactivated++;
+            continue;
+          }
+        }
+
+        let features: any[] = [];
+        try {
+          const parsed = JSON.parse(layer.geojsonData!);
+          features = parsed.features || [];
+        } catch {}
+
+        const feature = features.find((f: any, i: number) => {
+          const fId = extractFeatureId(f, i);
+          return fId === item.featureId;
+        });
+
+        if (feature) {
+          const label = extractLabel(feature, assetType, 0);
+          const { geometryType, lat, lng } = resolveGeometry(feature);
+          await storage.createAssetFromFeature({
+            communityId: layer.communityId,
+            assetType: assetType as any,
+            label,
+            featureRef: item.featureId,
+            mapLayerId: layer.id,
+            geometryType,
+            latitude: lat,
+            longitude: lng,
+          });
+          created++;
+        }
+      }
+
+      res.json({ created, reactivated, total: created + reactivated });
+    } catch (error) {
+      console.error("Create missing assets error:", error);
+      res.status(500).json({ error: "Failed to create missing assets" });
+    }
+  });
+
+  app.get("/api/map-layers/:id/collisions", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
+      const collisions = getGeoJsonCollisions(layer.geojsonData, existingAssets);
+      res.json(collisions);
+    } catch (error) {
+      console.error("Collisions error:", error);
+      res.status(500).json({ error: "Failed to fetch collisions" });
     }
   });
 

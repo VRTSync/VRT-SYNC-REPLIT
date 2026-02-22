@@ -367,6 +367,43 @@ export async function getAssetById(id: string): Promise<Asset | undefined> {
   return asset;
 }
 
+export async function getAssetsByMapLayer(communityId: string, mapLayerId: string): Promise<Asset[]> {
+  return db.select().from(assets).where(
+    and(eq(assets.communityId, communityId), eq(assets.mapLayerId, mapLayerId))
+  );
+}
+
+export async function updateAssetArchived(id: string, isArchived: boolean): Promise<void> {
+  await db.update(assets)
+    .set({ isArchived, archivedAt: isArchived ? new Date() : null, updatedAt: new Date() })
+    .where(eq(assets.id, id));
+}
+
+export async function createAssetFromFeature(data: {
+  communityId: string;
+  assetType: Asset["assetType"];
+  label: string;
+  featureRef: string;
+  mapLayerId: string;
+  geometryType: "point" | "polygon" | "line" | null;
+  latitude: number | null;
+  longitude: number | null;
+}): Promise<Asset> {
+  const [asset] = await db.insert(assets).values({
+    communityId: data.communityId,
+    assetType: data.assetType,
+    label: data.label,
+    featureRef: data.featureRef,
+    mapLayerId: data.mapLayerId,
+    geometryType: data.geometryType,
+    latitude: data.latitude,
+    longitude: data.longitude,
+    isArchived: false,
+    sourceUpdatedAt: new Date(),
+  }).returning();
+  return asset;
+}
+
 export async function getAssetsByCommunitySorted(communityId: string, assetType?: string, includeArchived?: boolean): Promise<Asset[]> {
   const conditions = [eq(assets.communityId, communityId)];
   if (assetType) {
