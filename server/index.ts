@@ -219,25 +219,38 @@ function configureAdminHub(app: express.Application) {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:#0C1D31;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff}
-.login-box{background:#fff;border-radius:12px;padding:40px;width:100%;max-width:400px;color:#1f2937}
-.login-box h1{font-size:22px;margin-bottom:8px;color:#0C1D31}
-.login-box p{font-size:14px;color:#6b7280;margin-bottom:24px}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#06101c 0%,#0C1D31 40%,#132a45 100%);display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 30% 20%,rgba(37,193,172,0.08) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(37,193,172,0.05) 0%,transparent 50%);pointer-events:none}
+.login-wrapper{position:relative;z-index:1;width:100%;max-width:420px;padding:20px}
+.brand{text-align:center;margin-bottom:32px}
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;background:linear-gradient(135deg,#25C1AC,#1da393);border-radius:14px;font-size:24px;font-weight:800;color:#fff;margin-bottom:16px;box-shadow:0 4px 16px rgba(37,193,172,0.35);letter-spacing:-1px}
+.brand h1{font-size:28px;font-weight:700;letter-spacing:0.5px;margin-bottom:4px}
+.brand p{font-size:12px;color:rgba(37,193,172,0.6);text-transform:uppercase;letter-spacing:2px;font-weight:600}
+.login-box{background:rgba(255,255,255,0.97);border-radius:20px;padding:36px;color:#1f2937;box-shadow:0 20px 60px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.05)}
+.login-box h2{font-size:18px;margin-bottom:4px;color:#0C1D31;font-weight:700}
+.login-box .subtitle{font-size:14px;color:#6b7280;margin-bottom:24px}
 .form-group{margin-bottom:16px}
-.form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:4px;color:#374151}
-.form-group input{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit}
-.form-group input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.1)}
-.btn{width:100%;padding:10px;background:#25C1AC;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
-.btn:hover{background:#1da393}
-.error{color:#ef4444;font-size:13px;margin-bottom:12px;display:none}
+.form-group label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
+.form-group input{width:100%;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#f9fafb;transition:all 0.2s}
+.form-group input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.15);background:#fff}
+.btn{width:100%;padding:12px;background:linear-gradient(135deg,#25C1AC,#1da393);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s;box-shadow:0 2px 8px rgba(37,193,172,0.3);margin-top:8px}
+.btn:hover{background:linear-gradient(135deg,#1da393,#189985);box-shadow:0 4px 16px rgba(37,193,172,0.4);transform:translateY(-1px)}
+.error{color:#ef4444;font-size:13px;margin-bottom:12px;display:none;background:rgba(239,68,68,0.08);padding:8px 12px;border-radius:8px}
 </style></head><body>
+<div class="login-wrapper">
+<div class="brand">
+<div class="brand-logo">V</div>
+<h1>VRTSync</h1>
+<p>Admin Hub</p>
+</div>
 <div class="login-box">
-<h1>VRTSync Admin</h1>
-<p>Sign in to access the admin hub</p>
+<h2>Welcome back</h2>
+<p class="subtitle">Sign in to manage your field operations</p>
 <div class="error" id="login-error"></div>
-<div class="form-group"><label>Username</label><input type="text" id="username" autofocus /></div>
-<div class="form-group"><label>Password</label><input type="password" id="password" /></div>
+<div class="form-group"><label>Username</label><input type="text" id="username" autofocus placeholder="Enter your username" /></div>
+<div class="form-group"><label>Password</label><input type="password" id="password" placeholder="Enter your password" /></div>
 <button class="btn" id="login-btn">Sign In</button>
+</div>
 </div>
 <script>
 document.getElementById('login-btn').addEventListener('click',doLogin);
