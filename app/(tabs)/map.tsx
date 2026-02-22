@@ -74,6 +74,7 @@ export default function MapScreen() {
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
+  const offlineNoPack = !isOnline && !localPack;
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
@@ -377,6 +378,15 @@ export default function MapScreen() {
         </View>
       )}
 
+      {offlineNoPack && (
+        <View style={[styles.offlineNoPackBanner, { top: insets.top + 55 }]}>
+          <Ionicons name="cloud-offline-outline" size={18} color="#f44336" />
+          <Text style={styles.offlineNoPackText}>
+            Offline map pack not downloaded for this community.
+          </Text>
+        </View>
+      )}
+
       <NativeMapComponent
         tasks={mappedTasks}
         userLocation={userLocation}
@@ -539,5 +549,30 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#fff',
+  },
+  offlineNoPackBanner: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#f44336',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  offlineNoPackText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#f44336',
+    fontWeight: '500',
   },
 });

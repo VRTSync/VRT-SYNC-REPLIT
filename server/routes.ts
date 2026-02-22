@@ -857,6 +857,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/offline-packs", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string;
+      if (!communityId) return res.status(400).json({ error: "communityId query parameter is required" });
+      const packs = await storage.listOfflinePacks(communityId);
+      res.json(packs);
+    } catch (error) {
+      console.error("List offline packs error:", error);
+      res.status(500).json({ error: "Failed to list offline packs" });
+    }
+  });
+
+  app.delete("/api/offline-packs/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteOfflinePack(req.params.id as string);
+      if (!deleted) return res.status(404).json({ error: "Pack not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete offline pack error:", error);
+      res.status(500).json({ error: "Failed to delete offline pack" });
+    }
+  });
+
   app.post("/api/communities/:communityId/generate-offline-pack", requireAdmin, async (req: Request, res: Response) => {
     try {
       const communityId = req.params.communityId as string;

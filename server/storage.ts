@@ -450,6 +450,17 @@ export async function updateOfflinePack(id: string, data: Partial<{
   return updated || null;
 }
 
+export async function listOfflinePacks(communityId: string): Promise<OfflinePack[]> {
+  return db.select().from(offlinePacks)
+    .where(eq(offlinePacks.communityId, communityId))
+    .orderBy(desc(offlinePacks.packVersion));
+}
+
+export async function deleteOfflinePack(id: string): Promise<boolean> {
+  const [deleted] = await db.delete(offlinePacks).where(eq(offlinePacks.id, id)).returning();
+  return !!deleted;
+}
+
 export async function generateAssetIndex(communityId: string) {
   const communityAssets = await db.select().from(assets)
     .where(eq(assets.communityId, communityId));
