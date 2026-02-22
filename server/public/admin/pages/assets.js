@@ -1,19 +1,13 @@
-AdminRouter.register('assets', async function(container) {
+window._renderAssets = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
-  const communityId = AdminState.getActiveCommunityId();
-
-  if (!communityId) {
-    container.innerHTML = '<div class="empty-state"><p>Select a community from the top bar to manage assets.</p></div>';
-    return;
-  }
 
   let allAssets = [];
   let selectedIds = new Set();
   let templates = {};
 
   container.innerHTML = `
-    <div class="page-header">
-      <h1>Assets</h1>
+    <div class="page-header" style="margin-top:16px">
+      <h2 style="font-size:16px">Assets</h2>
     </div>
     <div class="filters-bar" id="asset-filters">
       <select class="form-select" id="filter-type">
@@ -239,4 +233,4 @@ AdminRouter.register('assets', async function(container) {
     div.textContent = str || '';
     return div.innerHTML;
   }
-});
+};

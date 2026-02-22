@@ -1,6 +1,8 @@
 AdminRouter.register('dashboard', async function(container) {
   const { apiFetch } = AdminAPI;
-  const communityId = AdminState.getActiveCommunityId();
+
+  const breadcrumb = document.getElementById('breadcrumb-area');
+  if (breadcrumb) breadcrumb.innerHTML = '';
 
   container.innerHTML = `
     <div class="page-header"><h1>Dashboard</h1></div>
@@ -10,8 +12,7 @@ AdminRouter.register('dashboard', async function(container) {
   `;
 
   try {
-    const qs = communityId ? `?communityId=${communityId}` : '';
-    const summary = await apiFetch('/api/admin/summary' + qs);
+    const summary = await apiFetch('/api/admin/summary');
     const grid = document.getElementById('dash-stats');
     grid.innerHTML = `
       <div class="stat-card blue">
@@ -48,6 +49,6 @@ AdminRouter.register('dashboard', async function(container) {
       </div>
     `;
   } catch (err) {
-    container.innerHTML = `<div class="empty-state"><p>Failed to load dashboard: ${err.message}</p></div>`;
+    container.innerHTML = `<div class="empty-state"><p>Failed to load dashboard</p></div>`;
   }
 });

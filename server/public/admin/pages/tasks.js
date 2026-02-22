@@ -1,16 +1,10 @@
-AdminRouter.register('tasks', async function(container) {
+window._renderTasks = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
-  const communityId = AdminState.getActiveCommunityId();
-
-  if (!communityId) {
-    container.innerHTML = '<div class="empty-state"><p>Select a community from the top bar to manage tasks.</p></div>';
-    return;
-  }
 
   container.innerHTML = `
-    <div class="page-header">
-      <h1>Tasks</h1>
-      <button class="btn btn-primary" id="add-task-btn">+ New Task</button>
+    <div class="page-header" style="margin-top:16px">
+      <h2 style="font-size:16px">Tasks</h2>
+      <button class="btn btn-primary btn-sm" id="add-task-btn">+ New Task</button>
     </div>
     <div class="filters-bar">
       <select class="form-select" id="task-status-filter">
@@ -257,4 +251,4 @@ AdminRouter.register('tasks', async function(container) {
     div.textContent = str || '';
     return div.innerHTML;
   }
-});
+};

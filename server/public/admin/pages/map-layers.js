@@ -1,6 +1,5 @@
-AdminRouter.register('map-layers', async function(container) {
+window._renderMapLayers = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
-  const communityId = AdminState.getActiveCommunityId();
 
   const LAYER_HIERARCHY = {
     community: ["bluegrass_area", "native_area", "landscape_bed", "pet_station"],
@@ -9,17 +8,12 @@ AdminRouter.register('map-layers', async function(container) {
     trees: ["tree"],
   };
 
-  if (!communityId) {
-    container.innerHTML = '<div class="empty-state"><p>Select a community from the top bar to manage map layers.</p></div>';
-    return;
-  }
-
   container.innerHTML = `
-    <div class="page-header">
-      <h1>Map Layers</h1>
+    <div class="page-header" style="margin-top:16px">
+      <h2 style="font-size:16px">Map Layers</h2>
       <div class="flex gap-2">
-        <button class="btn btn-primary" id="upload-layer-btn">Upload File</button>
-        <button class="btn btn-secondary" id="add-layer-btn">+ Manual Entry</button>
+        <button class="btn btn-primary btn-sm" id="upload-layer-btn">Upload File</button>
+        <button class="btn btn-secondary btn-sm" id="add-layer-btn">+ Manual Entry</button>
       </div>
     </div>
     <div id="layer-tree"></div>
@@ -55,8 +49,8 @@ AdminRouter.register('map-layers', async function(container) {
       let html = '';
       for (const [layerKey, groupLayers] of Object.entries(grouped)) {
         html += `<div class="layer-group" style="margin-bottom:24px">`;
-        html += `<h3 style="text-transform:capitalize;margin-bottom:12px;color:var(--text-primary)">
-          <span style="display:inline-block;width:8px;height:8px;background:var(--accent-primary);border-radius:50%;margin-right:8px"></span>
+        html += `<h3 style="text-transform:capitalize;margin-bottom:12px;color:var(--navy);font-size:14px;font-weight:600">
+          <span style="display:inline-block;width:8px;height:8px;background:var(--teal);border-radius:50%;margin-right:8px"></span>
           ${esc(layerKey)}
         </h3>`;
         html += `<div class="table-container"><table><thead><tr>
@@ -79,7 +73,7 @@ AdminRouter.register('map-layers', async function(container) {
             <td>${s.featureCount ?? '—'}</td>
             <td>${s.activeAssetCount ?? '—'}</td>
             <td>${s.archivedAssetCount ?? '—'}</td>
-            <td>${s.incompleteAssetCount != null ? (s.incompleteAssetCount > 0 ? `<span class="badge badge-warning">${s.incompleteAssetCount}</span>` : '0') : '—'}</td>
+            <td>${s.incompleteAssetCount != null ? (s.incompleteAssetCount > 0 ? `<span class="badge badge-amber">${s.incompleteAssetCount}</span>` : '0') : '—'}</td>
             <td class="text-right">
               <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>
               <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
@@ -148,24 +142,24 @@ AdminRouter.register('map-layers', async function(container) {
         </div>
         <div class="modal-body">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:center">
-            <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px">
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
               <div style="font-size:24px;font-weight:700;color:#27ae60">${result.created || 0}</div>
-              <div style="font-size:12px;color:var(--text-muted)">Created</div>
+              <div style="font-size:12px;color:var(--gray-500)">Created</div>
             </div>
-            <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px">
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
               <div style="font-size:24px;font-weight:700;color:#3498db">${result.updated || 0}</div>
-              <div style="font-size:12px;color:var(--text-muted)">Updated</div>
+              <div style="font-size:12px;color:var(--gray-500)">Updated</div>
             </div>
-            <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px">
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
               <div style="font-size:24px;font-weight:700;color:#e67e22">${result.archived || 0}</div>
-              <div style="font-size:12px;color:var(--text-muted)">Archived</div>
+              <div style="font-size:12px;color:var(--gray-500)">Archived</div>
             </div>
-            <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px">
+            <div style="background:var(--gray-50);padding:16px;border-radius:8px">
               <div style="font-size:24px;font-weight:700;color:#95a5a6">${result.skippedMissingId || 0}</div>
-              <div style="font-size:12px;color:var(--text-muted)">Skipped (no ID)</div>
+              <div style="font-size:12px;color:var(--gray-500)">Skipped (no ID)</div>
             </div>
           </div>
-          <p style="margin-top:16px;font-size:13px;color:var(--text-muted)">Total features processed: ${result.featureCount || result.total || 0}</p>
+          <p style="margin-top:16px;font-size:13px;color:var(--gray-500)">Total features processed: ${result.featureCount || result.total || 0}</p>
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary close-btn">Done</button>
@@ -211,18 +205,18 @@ AdminRouter.register('map-layers', async function(container) {
           </div>
           <div class="form-group">
             <label>File (.kml or .geojson / .json)</label>
-            <div id="ul-dropzone" style="border:2px dashed var(--border-primary);border-radius:8px;padding:40px;text-align:center;cursor:pointer;transition:border-color 0.2s">
-              <div style="font-size:32px;margin-bottom:8px">📁</div>
-              <div id="ul-droptext">Drop a file here or click to browse</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Supports .kml, .geojson, .json — max 50 MB</div>
+            <div id="ul-dropzone" style="border:2px dashed var(--gray-300);border-radius:8px;padding:40px;text-align:center;cursor:pointer;transition:border-color 0.2s">
+              <div style="font-size:28px;margin-bottom:8px;color:var(--gray-400)">&#128193;</div>
+              <div id="ul-droptext" style="color:var(--gray-500)">Drop a file here or click to browse</div>
+              <div style="font-size:12px;color:var(--gray-400);margin-top:4px">Supports .kml, .geojson, .json — max 50 MB</div>
               <input type="file" id="ul-file" accept=".kml,.geojson,.json" style="display:none" />
             </div>
           </div>
           <div id="ul-preview" style="display:none;margin-top:12px">
-            <div style="background:var(--bg-tertiary);padding:12px;border-radius:8px;font-size:13px">
+            <div style="background:var(--gray-50);padding:12px;border-radius:8px;font-size:13px">
               <strong id="ul-filename"></strong>
               <span id="ul-format-badge" style="margin-left:8px"></span>
-              <span id="ul-size" style="margin-left:8px;color:var(--text-muted)"></span>
+              <span id="ul-size" style="margin-left:8px;color:var(--gray-500)"></span>
             </div>
           </div>
         </div>
@@ -255,11 +249,11 @@ AdminRouter.register('map-layers', async function(container) {
     const uploadBtn = overlay.querySelector('.upload-btn');
 
     dropzone.addEventListener('click', () => fileInput.click());
-    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent-primary)'; });
-    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--border-primary)'; });
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--teal)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--gray-300)'; });
     dropzone.addEventListener('drop', (e) => {
       e.preventDefault();
-      dropzone.style.borderColor = 'var(--border-primary)';
+      dropzone.style.borderColor = 'var(--gray-300)';
       if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
     });
     fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
@@ -268,7 +262,6 @@ AdminRouter.register('map-layers', async function(container) {
       selectedFile = file;
       const ext = file.name.split('.').pop().toLowerCase();
       const isKml = ext === 'kml';
-      const format = isKml ? 'KML' : 'GeoJSON';
 
       overlay.querySelector('#ul-preview').style.display = 'block';
       overlay.querySelector('#ul-filename').textContent = file.name;
@@ -321,8 +314,8 @@ AdminRouter.register('map-layers', async function(container) {
         const result = await resp.json();
         overlay.remove();
         showToast(`Layer created with ${result.featureCount} features`, 'success');
-        if (result.syncReport) {
-          showSyncReport(result.syncReport);
+        if (result.syncResult) {
+          showSyncReport(result.syncResult);
         }
         await loadLayers();
       } catch (err) {
@@ -344,11 +337,9 @@ AdminRouter.register('map-layers', async function(container) {
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="flex gap-4">
-            <div class="form-group" style="flex:1">
-              <label>Display Name</label>
-              <input type="text" class="form-input" id="ml-name" value="${esc(layer?.displayName || '')}" />
-            </div>
+          <div class="form-group">
+            <label>Display Name</label>
+            <input type="text" class="form-input" id="ml-name" value="${esc(layer?.displayName || '')}" />
           </div>
           <div class="flex gap-4">
             <div class="form-group" style="flex:1">
@@ -402,7 +393,7 @@ AdminRouter.register('map-layers', async function(container) {
       if (file) {
         const reader = new FileReader();
         reader.onload = (ev) => {
-          document.getElementById('ml-geojson').value = ev.target.result;
+          overlay.querySelector('#ml-geojson').value = ev.target.result;
         };
         reader.readAsText(file);
       }
@@ -413,10 +404,10 @@ AdminRouter.register('map-layers', async function(container) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
     overlay.querySelector('.save-btn').addEventListener('click', async () => {
-      const displayName = document.getElementById('ml-name').value.trim();
+      const displayName = overlay.querySelector('#ml-name').value.trim();
       const layerKey = layerKeySelect.value;
       const subLayerKey = subLayerKeySelect.value;
-      const geojsonRaw = document.getElementById('ml-geojson').value.trim();
+      const geojsonRaw = overlay.querySelector('#ml-geojson').value.trim();
 
       if (!displayName) { showToast('Name is required', 'error'); return; }
       if (!layerKey) { showToast('Layer Key is required', 'error'); return; }
@@ -464,4 +455,4 @@ AdminRouter.register('map-layers', async function(container) {
     div.textContent = str || '';
     return div.innerHTML;
   }
-});
+};

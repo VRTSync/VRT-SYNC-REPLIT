@@ -4,17 +4,7 @@
   let currentUser = null;
   let communities = [];
 
-  function getActiveCommunityId() {
-    return localStorage.getItem('admin_community_id') || '';
-  }
-
-  function setActiveCommunityId(id) {
-    localStorage.setItem('admin_community_id', id);
-  }
-
   window.AdminState = {
-    getActiveCommunityId,
-    setActiveCommunityId,
     getCommunities: () => communities,
     getUser: () => currentUser,
     refreshCommunities,
@@ -42,11 +32,10 @@
       });
 
       await refreshCommunities();
-      setupCommunitySelector();
 
       AdminRouter.init();
-      const route = AdminRouter.getRouteFromPath();
-      AdminRouter.navigate(route, false);
+      const parsed = AdminRouter.parseRoute();
+      AdminRouter.navigate(parsed.route, false, parsed.params);
     } catch (err) {
       console.error('Bootstrap failed:', err);
     }
@@ -55,32 +44,9 @@
   async function refreshCommunities() {
     try {
       communities = await apiFetch('/api/communities');
-      populateCommunitySelector();
     } catch (err) {
       console.error('Failed to load communities:', err);
     }
-  }
-
-  function populateCommunitySelector() {
-    const sel = document.getElementById('community-selector');
-    const activeId = getActiveCommunityId();
-    sel.innerHTML = '<option value="">All communities</option>';
-    communities.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.id;
-      opt.textContent = c.name;
-      if (c.id === activeId) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  }
-
-  function setupCommunitySelector() {
-    const sel = document.getElementById('community-selector');
-    sel.addEventListener('change', () => {
-      setActiveCommunityId(sel.value);
-      const route = AdminRouter.getCurrentRoute() || AdminRouter.getRouteFromPath();
-      AdminRouter.navigate(route, false);
-    });
   }
 
   bootstrap();
