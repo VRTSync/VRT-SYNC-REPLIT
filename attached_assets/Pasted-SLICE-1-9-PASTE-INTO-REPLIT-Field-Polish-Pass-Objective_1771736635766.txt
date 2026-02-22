@@ -1,0 +1,91 @@
+SLICE 1.9 (PASTE INTO REPLIT): Field Polish Pass
+
+Objective
+Do a final high-impact polish pass so the contractor app feels finished and reliable in the field.
+
+Scope
+	1.	Global safe-area/header fix (your top bars behind native controls)
+	2.	Archived asset rules enforced everywhere contractor-facing
+	3.	“Show on Map” reliability improvements (centering + highlighting)
+	4.	Version conflict (409) UX that’s understandable and recoverable
+	5.	Offline badge + missing-pack warning consistency
+
+⸻
+
+1) Global Safe Area Fix
+
+Problem: header/top bars overlap the status bar/notch.
+
+Requirements:
+	•	Wrap root layout in SafeAreaProvider
+	•	Ensure all major route layouts respect safe area:
+	•	app/_layout.tsx
+	•	app/(tabs)/_layout.tsx
+	•	app/(auth)/_layout.tsx
+	•	any stack layout for task/asset screens
+	•	Use a single consistent pattern:
+	•	SafeAreaView edges={['top']} around screen containers
+	•	OR paddingTop: insets.top in your shared header container
+	•	Verify screens: Dashboard, Tasks, Map, Task Detail, Asset Detail, Work History, Admin (web not required)
+
+⸻
+
+2) Archived Rules (Contractor-facing)
+
+Requirements:
+	•	Contractors never see archived assets by default:
+	•	Map popup resolver must ignore archived assets
+	•	/api/communities/:id/assets for contractors defaults to active only
+	•	Search results for contractors must exclude archived
+	•	Admin can toggle includeArchived as today
+
+Add explicit tests for:
+	•	contractor cannot open /api/assets/:id if archived AND not referenced by an active feature (choose one rule, recommended: allow read history only if admin; contractors shouldn’t need archived)
+
+⸻
+
+3) Show on Map Reliability
+
+Requirements:
+	•	Any “Show on Map” action must:
+	•	set active community correctly
+	•	switch to Map tab
+	•	center camera on target coords with a reasonable zoom
+	•	if featureRef exists, highlight feature or show popup when possible
+	•	If no coordinates exist:
+	•	show a message: “No map location available for this item.”
+
+⸻
+
+4) 409 Version Conflict UX (Optimistic Locking)
+
+Requirements:
+When API returns 409 VERSION_CONFLICT:
+	•	Show a clear message:
+	•	“This item was updated elsewhere. Refresh to get the latest version.”
+	•	Provide actions:
+	•	Refresh
+	•	Retry (optional if safe)
+	•	Ensure offline completion queue doesn’t get stuck forever on conflicts:
+	•	mark as “needs review” state with guidance
+
+⸻
+
+5) Offline Indicators Consistency
+
+Requirements:
+	•	Offline badge appears on:
+	•	offline search results
+	•	cached asset/task snapshot screens
+	•	If offline and no offline pack for active community:
+	•	show a clear warning banner on Map + Search:
+	•	“Offline pack not downloaded for this community.”
+
+⸻
+
+Acceptance Tests
+	1.	On iOS notch and Android, headers do not overlap system UI.
+	2.	Contractor cannot see archived assets in map popups or search.
+	3.	Show on Map always navigates correctly and centers.
+	4.	Force 409 conflict → user sees clear recovery flow.
+	5.	Offline without pack shows warning; offline with pack works.
