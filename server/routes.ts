@@ -1,16 +1,21 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
+import multer from "multer";
 import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
 import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
 import { syncAssetsFromLayer, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES } from "./assetSync";
+import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "./layerKeys";
+import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "./kmlConverter";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
   insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
 } from "@shared/schema";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 export async function registerRoutes(app: Express): Promise<Server> {
   setupSession(app);
@@ -760,23 +765,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/layer-hierarchy", requireAuth, async (_req: Request, res: Response) => {
+    res.json(CANONICAL_LAYER_HIERARCHY);
+  });
+
   app.post("/api/map-layers", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertMapLayerSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+      const keyValidation = validateLayerKeys(parsed.data.layerKey, parsed.data.subLayerKey);
+      if (!keyValidation.valid) return res.status(400).json({ error: keyValidation.error });
+
       const layer = await storage.createMapLayer(parsed.data);
       let syncResult = null;
+      let featureCount = 0;
       if (layer.geojsonData) {
+        try {
+          const geo = JSON.parse(layer.geojsonData);
+          featureCount = geo.features?.length || 0;
+        } catch {}
         syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
       }
       const { geojsonData, ...rest } = layer;
-      res.status(201).json({ ...rest, syncResult });
+      res.status(201).json({ ...rest, featureCount, syncResult });
     } catch (error: any) {
       if (error?.constraint === "map_layers_community_layer_sub_idx") {
         return res.status(409).json({ error: "A layer with that key combination already exists" });
       }
       console.error("Create map layer error:", error);
       res.status(500).json({ error: "Failed to create map layer" });
+    }
+  });
+
+  app.post("/api/map-layers/upload", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const { communityId, layerKey, subLayerKey, displayName } = req.body;
+      if (!communityId || !layerKey || !subLayerKey || !displayName) {
+        return res.status(400).json({ error: "communityId, layerKey, subLayerKey, and displayName are required" });
+      }
+
+      const keyValidation = validateLayerKeys(layerKey, subLayerKey);
+      if (!keyValidation.valid) return res.status(400).json({ error: keyValidation.error });
+
+      let geojsonData: string;
+      let sourceFormat: "kml" | "geojson" = "geojson";
+
+      if (req.file) {
+        const fileContent = req.file.buffer.toString("utf-8");
+        const fileName = (req.file.originalname || "").toLowerCase();
+
+        if (fileName.endsWith(".kml")) {
+          sourceFormat = "kml";
+          const result = convertKmlToGeojson(fileContent);
+          geojsonData = JSON.stringify(result.geojson);
+        } else {
+          sourceFormat = "geojson";
+          const result = normalizeGeojsonFeatureIds(fileContent);
+          geojsonData = JSON.stringify(result.geojson);
+        }
+      } else if (req.body.geojsonData) {
+        const raw = req.body.geojsonData;
+        const result = normalizeGeojsonFeatureIds(raw);
+        geojsonData = JSON.stringify(result.geojson);
+      } else {
+        return res.status(400).json({ error: "No file or GeoJSON data provided" });
+      }
+
+      const featureCount = JSON.parse(geojsonData).features?.length || 0;
+
+      const existingLayer = req.body.layerId ? await storage.getMapLayerById(req.body.layerId) : null;
+
+      if (existingLayer) {
+        const version = parseInt(req.body.version || "1", 10);
+        const updated = await storage.updateMapLayer(existingLayer.id, version, {
+          displayName,
+          sourceFormat,
+          geojsonData,
+        });
+        if (!updated) {
+          return res.status(409).json({
+            error: "Conflict: layer was modified. Please refresh and try again.",
+            code: "VERSION_CONFLICT",
+          });
+        }
+        const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData);
+        const { geojsonData: _, ...rest } = updated;
+        return res.json({ ...rest, featureCount, syncResult });
+      } else {
+        const layer = await storage.createMapLayer({
+          communityId,
+          layerKey,
+          subLayerKey,
+          displayName,
+          sourceFormat,
+          geojsonData,
+        });
+        const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+        const { geojsonData: _, ...rest } = layer;
+        return res.status(201).json({ ...rest, featureCount, syncResult });
+      }
+    } catch (error: any) {
+      if (error?.constraint === "map_layers_community_layer_sub_idx") {
+        return res.status(409).json({ error: "A layer with that key combination already exists for this community" });
+      }
+      console.error("Map layer upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to process upload" });
     }
   });
 
@@ -796,11 +890,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       let syncResult = null;
+      let featureCount = 0;
       if (parsed.data.geojsonData) {
+        try {
+          const geo = JSON.parse(updated.geojsonData || "{}");
+          featureCount = geo.features?.length || 0;
+        } catch {}
         syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData);
       }
       const { geojsonData, ...rest } = updated;
-      res.json({ ...rest, syncResult });
+      res.json({ ...rest, featureCount, syncResult });
     } catch (error) {
       console.error("Update map layer error:", error);
       res.status(500).json({ error: "Failed to update map layer" });
@@ -842,6 +941,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Sync assets from layer error:", error);
       res.status(500).json({ error: "Failed to sync assets" });
+    }
+  });
+
+  app.get("/api/map-layers/:id/summary", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+
+      let featureCount = 0;
+      if (layer.geojsonData) {
+        try {
+          const geo = JSON.parse(layer.geojsonData);
+          featureCount = geo.features?.length || 0;
+        } catch {}
+      }
+
+      const summary = await storage.getMapLayerSummary(layer.id, layer.communityId);
+      res.json({
+        featureCount,
+        sourceFormat: layer.sourceFormat,
+        ...summary,
+      });
+    } catch (error) {
+      console.error("Map layer summary error:", error);
+      res.status(500).json({ error: "Failed to fetch layer summary" });
     }
   });
 

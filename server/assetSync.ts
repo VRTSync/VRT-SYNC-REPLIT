@@ -48,11 +48,20 @@ export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
   "irrigation/backflow": "backflow",
   "irrigation/controller": "controller",
   "irrigation/zone": "zone",
+  "irrigation/master_valve": "master_valve",
+  "irrigation/flow_meter": "flow_meter",
+  "irrigation/qc_iso_valve": "qc_iso_valve",
   "trees/tree": "tree",
   "community/pet_station": "pet_station",
   "community/landscape_bed": "landscape_bed",
   "community/bluegrass_area": "bluegrass_area",
   "community/native_area": "native_area",
+  "snow/plow": "plow",
+  "snow/atv": "atv",
+  "snow/hand_shovel": "hand_shovel",
+  "snow/ice_melt": "ice_melt",
+  "snow/slicer": "slicer",
+  "snow/storage_area": "storage_area",
   "snow/snow_area": "snow_area",
 };
 
@@ -126,6 +135,7 @@ export interface SyncResult {
   created: number;
   updated: number;
   archived: number;
+  skippedMissingId: number;
   total: number;
 }
 
@@ -138,7 +148,7 @@ export async function syncAssetsFromLayer(
 ): Promise<SyncResult> {
   const assetType = resolveAssetType(layerKey, subLayerKey);
   if (!assetType) {
-    return { created: 0, updated: 0, archived: 0, total: 0 };
+    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
   }
 
   let features: any[] = [];
@@ -151,7 +161,7 @@ export async function syncAssetsFromLayer(
         features = [parsed];
       }
     } catch {
-      return { created: 0, updated: 0, archived: 0, total: 0 };
+      return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
     }
   }
 
@@ -243,7 +253,7 @@ export async function syncAssetsFromLayer(
     }
   }
 
-  return { created, updated, archived, total: features.length };
+  return { created, updated, archived, skippedMissingId: 0, total: features.length };
 }
 
 export function getMissingRequiredKeys(assetType: string, properties: { key: string; value: string }[]): string[] {

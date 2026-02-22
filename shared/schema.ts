@@ -186,6 +186,7 @@ export const mapLayers = pgTable("map_layers", {
   layerKey: text("layer_key").notNull(),
   subLayerKey: text("sub_layer_key").notNull(),
   displayName: text("display_name").notNull(),
+  sourceFormat: text("source_format").notNull().default("geojson"),
   geojsonData: text("geojson_data"),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -354,11 +355,13 @@ export const insertMapLayerSchema = z.object({
   layerKey: z.string().min(1),
   subLayerKey: z.string().min(1),
   displayName: z.string().min(1),
+  sourceFormat: z.enum(["geojson", "kml"]).default("geojson"),
   geojsonData: z.string().optional(),
 });
 
 export const updateMapLayerSchema = z.object({
   displayName: z.string().min(1).optional(),
+  sourceFormat: z.enum(["geojson", "kml"]).optional(),
   geojsonData: z.string().optional(),
   version: z.number(),
 });

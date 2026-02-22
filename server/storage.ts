@@ -499,6 +499,7 @@ export async function createMapLayer(data: {
   layerKey: string;
   subLayerKey: string;
   displayName: string;
+  sourceFormat?: string;
   geojsonData?: string;
 }): Promise<MapLayer> {
   const [layer] = await db.insert(mapLayers).values(data).returning();
@@ -523,6 +524,7 @@ export async function getMapLayerById(id: string): Promise<MapLayer | undefined>
 
 export async function updateMapLayer(id: string, expectedVersion: number, data: Partial<{
   displayName: string;
+  sourceFormat: string;
   geojsonData: string;
 }>): Promise<MapLayer | null> {
   const [updated] = await db.update(mapLayers)
@@ -530,6 +532,37 @@ export async function updateMapLayer(id: string, expectedVersion: number, data: 
     .where(and(eq(mapLayers.id, id), eq(mapLayers.version, expectedVersion)))
     .returning();
   return updated || null;
+}
+
+export async function getMapLayerSummary(mapLayerId: string, communityId: string): Promise<{
+  activeAssetCount: number;
+  archivedAssetCount: number;
+  incompleteAssetCount: number;
+}> {
+  const allLayerAssets = await db.select().from(assets)
+    .where(and(eq(assets.communityId, communityId), eq(assets.mapLayerId, mapLayerId)));
+  
+  const active = allLayerAssets.filter(a => !a.isArchived);
+  const archived = allLayerAssets.filter(a => a.isArchived);
+  
+  let incompleteCount = 0;
+  const { ASSET_TYPE_TEMPLATES } = await import("./assetSync");
+  for (const asset of active) {
+    const template = ASSET_TYPE_TEMPLATES[asset.assetType];
+    if (template && template.requiredKeys.length > 0) {
+      const props = await db.select().from(assetProperties)
+        .where(eq(assetProperties.assetId, asset.id));
+      const propKeys = new Set(props.map(p => p.key));
+      const missing = template.requiredKeys.filter(k => !propKeys.has(k));
+      if (missing.length > 0) incompleteCount++;
+    }
+  }
+  
+  return {
+    activeAssetCount: active.length,
+    archivedAssetCount: archived.length,
+    incompleteAssetCount: incompleteCount,
+  };
 }
 
 export async function deleteMapLayer(id: string): Promise<boolean> {
