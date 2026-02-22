@@ -85,43 +85,58 @@ export default function TasksScreen() {
   const activeTasks = tasks.filter((t) => t.status !== 'completed');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
 
-  const renderTask = ({ item }: { item: Task }) => (
-    <TouchableOpacity
-      style={styles.taskCard}
-      onPress={() => router.push(`/task/${item.id}`)}
-      activeOpacity={0.7}
-      testID={`task-${item.id}`}
-    >
-      <View style={styles.taskHeader}>
-        <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
-        <Text style={styles.taskTitle} numberOfLines={1}>{item.title}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] + '20' }]}>
-          <Text style={[styles.statusText, { color: statusColors[item.status] }]}>
-            {statusLabels[item.status]}
-          </Text>
+  const renderTask = ({ item }: { item: Task }) => {
+    const pending = pendingCompletions.find(c => c.taskId === item.id && c.state !== 'synced');
+    return (
+      <TouchableOpacity
+        style={styles.taskCard}
+        onPress={() => router.push(`/task/${item.id}`)}
+        activeOpacity={0.7}
+        testID={`task-${item.id}`}
+      >
+        <View style={styles.taskHeader}>
+          <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
+          <Text style={styles.taskTitle} numberOfLines={1}>{item.title}</Text>
+          {pending ? (
+            <View style={[styles.statusBadge, {
+              backgroundColor: pending.state === 'failed' ? '#ffebee' : '#fff3e0',
+            }]}>
+              <Text style={[styles.statusText, {
+                color: pending.state === 'failed' ? '#c62828' : '#e65100',
+              }]}>
+                {pending.state === 'failed' ? 'Sync Error' : pending.state === 'syncing' ? 'Syncing' : 'Queued'}
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] + '20' }]}>
+              <Text style={[styles.statusText, { color: statusColors[item.status] }]}>
+                {statusLabels[item.status]}
+              </Text>
+            </View>
+          )}
         </View>
-      </View>
-      {item.description ? (
-        <Text style={styles.taskDescription} numberOfLines={2}>{item.description}</Text>
-      ) : null}
-      <View style={styles.taskFooter}>
-        {item.address ? (
-          <View style={styles.taskMeta}>
-            <Ionicons name="location-outline" size={12} color="#999" />
-            <Text style={styles.metaText} numberOfLines={1}>{item.address}</Text>
-          </View>
+        {item.description ? (
+          <Text style={styles.taskDescription} numberOfLines={2}>{item.description}</Text>
         ) : null}
-        {item.dueDate ? (
-          <View style={styles.taskMeta}>
-            <Ionicons name="calendar-outline" size={12} color="#999" />
-            <Text style={styles.metaText}>
-              {new Date(item.dueDate).toLocaleDateString()}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.taskFooter}>
+          {item.address ? (
+            <View style={styles.taskMeta}>
+              <Ionicons name="location-outline" size={12} color="#999" />
+              <Text style={styles.metaText} numberOfLines={1}>{item.address}</Text>
+            </View>
+          ) : null}
+          {item.dueDate ? (
+            <View style={styles.taskMeta}>
+              <Ionicons name="calendar-outline" size={12} color="#999" />
+              <Text style={styles.metaText}>
+                {new Date(item.dueDate).toLocaleDateString()}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const sections = [
     ...(activeTasks.length > 0 ? [{ title: 'Active Tasks', data: activeTasks }] : []),

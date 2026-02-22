@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/query-client';
+import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { useAuth } from './AuthContext';
 
 const TASKS_CACHE_KEY = 'offline_tasks_cache';
@@ -13,13 +14,14 @@ type PendingCompletion = {
   version: number;
   notes?: string;
   employeeSignOffName: string;
+  completedAt: string;
   timeSpentMinutes?: number;
   materialsUsed?: string;
   followUpNeeded?: string;
   photoUris: string[];
-  createdAt: string;
   state: 'queued' | 'syncing' | 'synced' | 'failed';
-  errorMessage?: string;
+  lastError?: string;
+  createdAt: string;
 };
 
 type OfflineContextType = {
@@ -29,10 +31,55 @@ type OfflineContextType = {
   cacheTasks: (tasks: any[]) => Promise<void>;
   addPendingCompletion: (completion: Omit<PendingCompletion, 'state'>) => Promise<void>;
   syncPendingCompletions: () => Promise<{ synced: number; failed: number }>;
+  retryCompletion: (completionId: string) => Promise<void>;
+  dismissCompletion: (completionId: string) => Promise<void>;
+  getCompletionForTask: (taskId: string) => PendingCompletion | undefined;
   clearCache: () => Promise<void>;
 };
 
 const OfflineContext = createContext<OfflineContextType | null>(null);
+
+async function uploadPhotoAndAttach(
+  taskId: string,
+  completionId: string,
+  photoUri: string,
+  idempotencyKey: string,
+): Promise<void> {
+  const apiUrl = getApiUrl();
+
+  const presignRes = await fetch(`${apiUrl}/api/objects/upload`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!presignRes.ok) throw new Error('Failed to get upload URL');
+  const { uploadURL } = await presignRes.json();
+
+  if (Platform.OS === 'web') {
+    const blob = await fetch(photoUri).then(r => r.blob());
+    const uploadRes = await fetch(uploadURL, {
+      method: 'PUT',
+      body: blob,
+      headers: { 'Content-Type': blob.type || 'image/jpeg' },
+    });
+    if (!uploadRes.ok) throw new Error('Photo upload failed');
+  } else {
+    const { File } = await import('expo-file-system');
+    const { fetch: expoFetch } = await import('expo/fetch');
+    const file = new File(photoUri);
+    const uploadRes = await expoFetch(uploadURL, {
+      method: 'PUT',
+      body: file as any,
+      headers: { 'Content-Type': 'image/jpeg' },
+    });
+    if (!uploadRes.ok) throw new Error('Photo upload failed');
+  }
+
+  await apiRequest('POST', `/api/tasks/${taskId}/attachments`, {
+    taskCompletionId: completionId,
+    uploadURL,
+    idempotencyKey,
+  });
+}
 
 export function OfflineProvider({ children }: { children: ReactNode }) {
   const [isOnline, setIsOnline] = useState(true);
@@ -41,6 +88,11 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const syncingRef = useRef(false);
+  const pendingRef = useRef(pendingCompletions);
+
+  useEffect(() => {
+    pendingRef.current = pendingCompletions;
+  }, [pendingCompletions]);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -64,8 +116,11 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (isOnline && pendingCompletions.length > 0 && user) {
-      syncPendingCompletions();
+    if (isOnline && user) {
+      const hasWork = pendingRef.current.some(c => c.state === 'queued' || c.state === 'failed');
+      if (hasWork) {
+        syncPendingCompletions();
+      }
     }
   }, [isOnline, user]);
 
@@ -76,10 +131,21 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         AsyncStorage.getItem(PENDING_COMPLETIONS_KEY),
       ]);
       if (tasksJson) setCachedTasks(JSON.parse(tasksJson));
-      if (completionsJson) setPendingCompletions(JSON.parse(completionsJson));
+      if (completionsJson) {
+        const loaded = JSON.parse(completionsJson);
+        const resetSyncing = loaded.map((c: PendingCompletion) =>
+          c.state === 'syncing' ? { ...c, state: 'queued' as const } : c
+        );
+        setPendingCompletions(resetSyncing);
+        pendingRef.current = resetSyncing;
+      }
     } catch (e) {
       console.error('Failed to load offline cache:', e);
     }
+  };
+
+  const persistQueue = async (list: PendingCompletion[]) => {
+    await AsyncStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(list));
   };
 
   const cacheTasks = useCallback(async (tasks: any[]) => {
@@ -93,34 +159,34 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
   const addPendingCompletion = useCallback(async (completion: Omit<PendingCompletion, 'state'>) => {
     const withState: PendingCompletion = { ...completion, state: 'queued' };
-    const updated = [...pendingCompletions, withState];
-    await AsyncStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(updated));
+    const updated = [...pendingRef.current, withState];
+    await persistQueue(updated);
     setPendingCompletions(updated);
-  }, [pendingCompletions]);
+    pendingRef.current = updated;
+  }, []);
 
   const syncPendingCompletions = useCallback(async () => {
-    if (syncingRef.current) {
-      return { synced: 0, failed: 0 };
-    }
-    const toSync = pendingCompletions.filter(c => c.state === 'queued' || c.state === 'failed');
-    if (toSync.length === 0) {
-      return { synced: 0, failed: 0 };
-    }
-    syncingRef.current = true;
+    if (syncingRef.current) return { synced: 0, failed: 0 };
 
+    const currentQueue = [...pendingRef.current];
+    const toSync = currentQueue.filter(c => c.state === 'queued' || c.state === 'failed');
+    if (toSync.length === 0) return { synced: 0, failed: 0 };
+
+    syncingRef.current = true;
     let synced = 0;
     let failed = 0;
-    const updatedList = [...pendingCompletions];
+    const updatedList = [...currentQueue];
 
     for (let i = 0; i < updatedList.length; i++) {
       const completion = updatedList[i];
       if (completion.state !== 'queued' && completion.state !== 'failed') continue;
 
-      updatedList[i] = { ...completion, state: 'syncing' };
+      updatedList[i] = { ...completion, state: 'syncing', lastError: undefined };
       setPendingCompletions([...updatedList]);
+      pendingRef.current = [...updatedList];
 
       try {
-        await apiRequest('POST', `/api/tasks/${completion.taskId}/complete`, {
+        const res = await apiRequest('POST', `/api/tasks/${completion.taskId}/complete`, {
           version: completion.version,
           notes: completion.notes,
           employeeSignOffName: completion.employeeSignOffName,
@@ -128,20 +194,52 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
           materialsUsed: completion.materialsUsed,
           followUpNeeded: completion.followUpNeeded,
         });
+        const { completion: serverCompletion } = await res.json();
+
+        if (completion.photoUris.length > 0 && serverCompletion?.id) {
+          let photoFailures = 0;
+          for (const photoUri of completion.photoUris) {
+            const idempotencyKey = `${completion.id}-photo-${completion.photoUris.indexOf(photoUri)}`;
+            let uploaded = false;
+            for (let attempt = 0; attempt < 3 && !uploaded; attempt++) {
+              try {
+                await uploadPhotoAndAttach(
+                  completion.taskId,
+                  serverCompletion.id,
+                  photoUri,
+                  idempotencyKey,
+                );
+                uploaded = true;
+              } catch (uploadErr) {
+                console.warn(`Photo upload attempt ${attempt + 1} failed:`, uploadErr);
+                if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+              }
+            }
+            if (!uploaded) photoFailures++;
+          }
+          if (photoFailures > 0) {
+            console.warn(`${photoFailures} photo(s) failed to upload for completion ${completion.id}`);
+          }
+        }
+
         updatedList[i] = { ...completion, state: 'synced' };
         synced++;
       } catch (e: any) {
-        const errorMsg = e.message?.includes('409')
-          ? 'Version conflict — task was modified by another user'
-          : (e.message || 'Sync failed');
-        updatedList[i] = { ...completion, state: 'failed', errorMessage: errorMsg };
+        let errorMsg: string;
+        if (e.message?.includes('409')) {
+          errorMsg = 'Version conflict — task was modified. Refresh the task and retry.';
+        } else {
+          errorMsg = e.message || 'Sync failed';
+        }
+        updatedList[i] = { ...completion, state: 'failed', lastError: errorMsg };
         failed++;
       }
     }
 
     const remaining = updatedList.filter(c => c.state !== 'synced');
-    await AsyncStorage.setItem(PENDING_COMPLETIONS_KEY, JSON.stringify(remaining));
+    await persistQueue(remaining);
     setPendingCompletions(remaining);
+    pendingRef.current = remaining;
     syncingRef.current = false;
 
     if (synced > 0) {
@@ -149,7 +247,28 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     }
 
     return { synced, failed };
-  }, [pendingCompletions, queryClient]);
+  }, [queryClient]);
+
+  const retryCompletion = useCallback(async (completionId: string) => {
+    const updated = pendingRef.current.map(c =>
+      c.id === completionId ? { ...c, state: 'queued' as const, lastError: undefined } : c
+    );
+    await persistQueue(updated);
+    setPendingCompletions(updated);
+    pendingRef.current = updated;
+    syncPendingCompletions();
+  }, [syncPendingCompletions]);
+
+  const dismissCompletion = useCallback(async (completionId: string) => {
+    const updated = pendingRef.current.filter(c => c.id !== completionId);
+    await persistQueue(updated);
+    setPendingCompletions(updated);
+    pendingRef.current = updated;
+  }, []);
+
+  const getCompletionForTask = useCallback((taskId: string) => {
+    return pendingRef.current.find(c => c.taskId === taskId && c.state !== 'synced');
+  }, [pendingCompletions]);
 
   const clearCache = useCallback(async () => {
     await Promise.all([
@@ -158,6 +277,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     ]);
     setCachedTasks([]);
     setPendingCompletions([]);
+    pendingRef.current = [];
   }, []);
 
   return (
@@ -169,6 +289,9 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         cacheTasks,
         addPendingCompletion,
         syncPendingCompletions,
+        retryCompletion,
+        dismissCompletion,
+        getCompletionForTask,
         clearCache,
       }}
     >

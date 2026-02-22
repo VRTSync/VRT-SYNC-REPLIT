@@ -66,7 +66,7 @@ export default function TaskDetailScreen() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { activeCommunity } = useCommunity();
-  const { isOnline, addPendingCompletion } = useOffline();
+  const { isOnline, addPendingCompletion, getCompletionForTask, retryCompletion, dismissCompletion, syncPendingCompletions, pendingCompletions } = useOffline();
   const insets = useSafeAreaInsets();
 
   const [notes, setNotes] = useState('');
@@ -148,6 +148,7 @@ export default function TaskDetailScreen() {
         version: task.version,
         notes: notes.trim() || undefined,
         employeeSignOffName: signOffName.trim(),
+        completedAt: new Date().toISOString(),
         timeSpentMinutes: timeSpent ? parseInt(timeSpent, 10) : undefined,
         materialsUsed: materialsUsed.trim() || undefined,
         followUpNeeded: followUpNeeded.trim() || undefined,
@@ -223,19 +224,75 @@ export default function TaskDetailScreen() {
     );
   }
 
+  const pendingForTask = pendingCompletions.find(c => c.taskId === id && c.state !== 'synced');
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Stack.Screen
         options={{
           title: task.title,
           headerRight: () =>
-            task.status !== 'completed' ? (
+            task.status !== 'completed' && !pendingForTask ? (
               <TouchableOpacity onPress={() => setShowCompleteForm(true)}>
                 <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
               </TouchableOpacity>
             ) : null,
         }}
       />
+
+      {pendingForTask && (
+        <View style={[styles.offlineBanner, {
+          backgroundColor: pendingForTask.state === 'failed' ? '#ffebee' : pendingForTask.state === 'syncing' ? '#e3f2fd' : '#fff3e0',
+          borderColor: pendingForTask.state === 'failed' ? '#ef9a9a' : pendingForTask.state === 'syncing' ? '#90caf9' : '#ffcc80',
+        }]}>
+          <View style={styles.offlineBannerContent}>
+            <Ionicons
+              name={pendingForTask.state === 'failed' ? 'warning-outline' : pendingForTask.state === 'syncing' ? 'sync-outline' : 'time-outline'}
+              size={18}
+              color={pendingForTask.state === 'failed' ? '#c62828' : pendingForTask.state === 'syncing' ? '#1565c0' : '#e65100'}
+            />
+            <View style={styles.offlineBannerText}>
+              <Text style={[styles.offlineBannerTitle, {
+                color: pendingForTask.state === 'failed' ? '#c62828' : pendingForTask.state === 'syncing' ? '#1565c0' : '#e65100',
+              }]}>
+                {pendingForTask.state === 'failed' ? 'Sync Failed' : pendingForTask.state === 'syncing' ? 'Syncing...' : 'Completion Queued'}
+              </Text>
+              {pendingForTask.lastError ? (
+                <Text style={styles.offlineBannerError}>{pendingForTask.lastError}</Text>
+              ) : (
+                <Text style={styles.offlineBannerSub}>
+                  {pendingForTask.state === 'queued' ? 'Will sync when online' : 'Uploading to server...'}
+                </Text>
+              )}
+            </View>
+          </View>
+          {pendingForTask.state === 'failed' && (
+            <View style={styles.offlineBannerActions}>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => retryCompletion(pendingForTask.id)}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dismissButton}
+                onPress={() => {
+                  Alert.alert(
+                    'Discard Completion',
+                    'This will remove the queued completion. You can re-complete the task later.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Discard', style: 'destructive', onPress: () => dismissCompletion(pendingForTask.id) },
+                    ],
+                  );
+                }}
+              >
+                <Text style={styles.dismissButtonText}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
 
       <View style={styles.card}>
         <View style={styles.titleRow}>
@@ -299,7 +356,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {showCompleteForm && task.status !== 'completed' && (
+      {showCompleteForm && task.status !== 'completed' && !pendingForTask && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Complete Task</Text>
 
@@ -396,7 +453,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {!showCompleteForm && task.status !== 'completed' && (
+      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && (
         <TouchableOpacity
           style={styles.completeButton}
           onPress={() => setShowCompleteForm(true)}
@@ -478,6 +535,42 @@ const styles = StyleSheet.create({
   photoItem: { marginRight: 8, position: 'relative' },
   photoThumb: { width: 80, height: 80, borderRadius: 10 },
   removePhoto: { position: 'absolute', top: -6, right: -6 },
+  offlineBanner: {
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  offlineBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  offlineBannerText: { flex: 1 },
+  offlineBannerTitle: { fontSize: 14, fontWeight: '700' },
+  offlineBannerSub: { fontSize: 13, color: '#777', marginTop: 2 },
+  offlineBannerError: { fontSize: 12, color: '#c62828', marginTop: 2 },
+  offlineBannerActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+    justifyContent: 'flex-end',
+  },
+  retryButton: {
+    backgroundColor: '#25C1AC',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  retryButtonText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  dismissButton: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  dismissButtonText: { color: '#888', fontSize: 13, fontWeight: '500' },
   completeButton: {
     backgroundColor: '#25C1AC',
     borderRadius: 999,
