@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   imageStyle: {
     width: '100%',
     height: '100%',
-    opacity: 0.06,
+    opacity: 0.35,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
