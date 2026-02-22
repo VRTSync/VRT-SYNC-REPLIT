@@ -322,6 +322,7 @@ tbody tr:hover { background: var(--gray-50); }
 .badge-green { background: var(--green-light); color: #059669; }
 .badge-blue { background: var(--blue-light); color: #2563eb; }
 .badge-gray { background: var(--gray-100); color: var(--gray-600); }
+.badge-outline { background: transparent; border: 1px solid var(--border); color: var(--gray-600); }
 
 /* Forms */
 .form-group {

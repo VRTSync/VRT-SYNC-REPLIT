@@ -159,13 +159,7 @@ AdminRouter.register('community-detail', async function(container, params) {
       el.innerHTML = `
         <div class="page-header" style="margin-top:16px">
           <h2 style="font-size:16px">Members (${members.length})</h2>
-          <div class="flex gap-2">
-            <select class="form-select" id="add-member-select" style="min-width:200px">
-              <option value="">Add a user...</option>
-              ${nonMembers.map(u => `<option value="${u.id}">${esc(u.displayName || u.username)} (${u.role})</option>`).join('')}
-            </select>
-            <button class="btn btn-primary btn-sm" id="add-member-btn">Add</button>
-          </div>
+          <button class="btn btn-primary btn-sm" id="open-add-members-btn">+ Add Members</button>
         </div>
         <div class="table-container">
           <table>
@@ -173,16 +167,18 @@ AdminRouter.register('community-detail', async function(container, params) {
               <th>Name</th>
               <th>Username</th>
               <th>Role</th>
+              <th>Joined</th>
               <th class="text-right">Actions</th>
             </tr></thead>
             <tbody id="members-tbody">
-              ${members.length === 0 ? '<tr><td colspan="4" class="empty-state">No members yet</td></tr>' :
+              ${members.length === 0 ? '<tr><td colspan="5" class="empty-state">No members yet</td></tr>' :
                 members.map(m => {
                   const u = allUsers.find(u => u.id === m.userId);
                   return `<tr>
-                    <td><strong>${esc(u?.displayName || '—')}</strong></td>
-                    <td class="text-muted">${esc(u?.username || m.userId)}</td>
-                    <td><span class="badge ${u?.role === 'admin' ? 'badge-blue' : 'badge-teal'}">${esc(u?.role || '—')}</span></td>
+                    <td><strong>${esc(u?.displayName || m.displayName || '—')}</strong></td>
+                    <td class="text-muted">${esc(u?.username || m.username || m.userId)}</td>
+                    <td><span class="badge ${(u?.role || m.role) === 'admin' ? 'badge-blue' : 'badge-teal'}">${esc(u?.role || m.role || '—')}</span></td>
+                    <td class="text-sm text-muted">${m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : '—'}</td>
                     <td class="text-right">
                       <button class="btn btn-danger btn-xs remove-member-btn" data-user-id="${m.userId}">Remove</button>
                     </td>
@@ -191,14 +187,90 @@ AdminRouter.register('community-detail', async function(container, params) {
             </tbody>
           </table>
         </div>
+        <div class="modal-overlay" id="add-members-modal" style="display:none">
+          <div class="modal" style="max-width:500px">
+            <div class="modal-header">
+              <h3>Add Members</h3>
+              <button class="modal-close" id="add-members-close">&times;</button>
+            </div>
+            <div class="modal-body">
+              <input class="form-input" id="member-search" placeholder="Search users..." style="margin-bottom:12px" />
+              ${nonMembers.length === 0
+                ? '<p class="text-muted text-sm">All users are already members of this community.</p>'
+                : `<div id="member-checklist" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px">
+                    ${nonMembers.map(u => `
+                      <label style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer;border-bottom:1px solid var(--border-light, #f0f0f0)" class="member-option" data-name="${esc((u.displayName || u.username).toLowerCase())}">
+                        <input type="checkbox" value="${u.id}" class="member-checkbox" />
+                        <span><strong>${esc(u.displayName || u.username)}</strong> <span class="text-muted text-sm">${esc(u.username)}</span></span>
+                        <span class="badge ${u.role === 'admin' ? 'badge-blue' : 'badge-teal'}" style="margin-left:auto">${esc(u.role)}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                  <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                    <span class="text-sm text-muted"><span id="selected-count">0</span> selected</span>
+                    <button class="btn btn-secondary btn-xs" id="select-all-btn">Select All</button>
+                  </div>`
+              }
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" id="add-members-cancel">Cancel</button>
+              <button class="btn btn-primary" id="add-members-submit" ${nonMembers.length === 0 ? 'disabled' : ''}>Add Selected</button>
+            </div>
+          </div>
+        </div>
       `;
 
-      document.getElementById('add-member-btn').addEventListener('click', async () => {
-        const userId = document.getElementById('add-member-select').value;
-        if (!userId) { showToast('Select a user to add', 'error'); return; }
+      document.getElementById('open-add-members-btn').addEventListener('click', () => {
+        document.getElementById('add-members-modal').style.display = 'flex';
+        const searchInput = document.getElementById('member-search');
+        if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+        updateSelectedCount();
+      });
+
+      const closeAddModal = () => { document.getElementById('add-members-modal').style.display = 'none'; };
+      document.getElementById('add-members-close').addEventListener('click', closeAddModal);
+      document.getElementById('add-members-cancel').addEventListener('click', closeAddModal);
+
+      function updateSelectedCount() {
+        const cnt = el.querySelectorAll('.member-checkbox:checked').length;
+        const countEl = document.getElementById('selected-count');
+        if (countEl) countEl.textContent = cnt;
+      }
+
+      el.querySelectorAll('.member-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateSelectedCount);
+      });
+
+      const searchInput = document.getElementById('member-search');
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          const q = searchInput.value.toLowerCase();
+          el.querySelectorAll('.member-option').forEach(opt => {
+            opt.style.display = opt.dataset.name.includes(q) ? '' : 'none';
+          });
+        });
+      }
+
+      const selectAllBtn = document.getElementById('select-all-btn');
+      if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', () => {
+          const boxes = el.querySelectorAll('.member-checkbox');
+          const allChecked = Array.from(boxes).every(b => b.checked);
+          boxes.forEach(b => { b.checked = !allChecked; });
+          updateSelectedCount();
+        });
+      }
+
+      document.getElementById('add-members-submit').addEventListener('click', async () => {
+        const selected = Array.from(el.querySelectorAll('.member-checkbox:checked')).map(cb => cb.value);
+        if (selected.length === 0) { showToast('Select at least one user', 'error'); return; }
         try {
-          await apiFetch(`/api/communities/${communityId}/members`, { method: 'POST', body: { userId } });
-          showToast('Member added', 'success');
+          const result = await apiFetch(`/api/communities/${communityId}/members`, {
+            method: 'POST',
+            body: { userIds: selected },
+          });
+          showToast(`Added ${result.added} member(s)${result.skipped ? `, ${result.skipped} already existed` : ''}`, 'success');
+          closeAddModal();
           await renderMembers(el);
         } catch (err) {
           showToast(err.message, 'error');
@@ -207,7 +279,7 @@ AdminRouter.register('community-detail', async function(container, params) {
 
       el.querySelectorAll('.remove-member-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
-          if (!confirm('Remove this member?')) return;
+          if (!confirm('Remove this member from the community?')) return;
           try {
             await apiFetch(`/api/communities/${communityId}/members/${btn.dataset.userId}`, { method: 'DELETE' });
             showToast('Member removed', 'success');
