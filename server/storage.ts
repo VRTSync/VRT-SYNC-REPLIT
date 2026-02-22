@@ -288,14 +288,16 @@ export async function getAssetById(id: string): Promise<Asset | undefined> {
   return asset;
 }
 
-export async function getAssetsByCommunitySorted(communityId: string, assetType?: string): Promise<Asset[]> {
+export async function getAssetsByCommunitySorted(communityId: string, assetType?: string, includeArchived?: boolean): Promise<Asset[]> {
+  const conditions = [eq(assets.communityId, communityId)];
   if (assetType) {
-    return db.select().from(assets)
-      .where(and(eq(assets.communityId, communityId), eq(assets.assetType, assetType as Asset["assetType"])))
-      .orderBy(assets.label);
+    conditions.push(eq(assets.assetType, assetType as Asset["assetType"]));
+  }
+  if (!includeArchived) {
+    conditions.push(eq(assets.isArchived, false));
   }
   return db.select().from(assets)
-    .where(eq(assets.communityId, communityId))
+    .where(and(...conditions))
     .orderBy(assets.label);
 }
 

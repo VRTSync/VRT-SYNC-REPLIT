@@ -5,6 +5,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
 import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
+import { syncAssetsFromLayer, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES } from "./assetSync";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
@@ -565,7 +566,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
       }
       const type = req.query.type as string | undefined;
-      const assetList = await storage.getAssetsByCommunitySorted(communityId, type);
+      const includeArchived = req.query.includeArchived === "true";
+      const assetList = await storage.getAssetsByCommunitySorted(communityId, type, includeArchived);
       res.json(assetList);
     } catch (error) {
       console.error("Get assets error:", error);
@@ -584,7 +586,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!isMember) return res.status(403).json({ error: "You do not have access to this asset" });
       }
       const properties = await storage.getAssetProperties(asset.id);
-      res.json({ ...asset, properties, workHistorySummary: { totalTasks: 0, completedTasks: 0 } });
+      const missingRequiredKeys = getMissingRequiredKeys(asset.assetType, properties);
+      res.json({ ...asset, properties, missingRequiredKeys, workHistorySummary: { totalTasks: 0, completedTasks: 0 } });
     } catch (error) {
       console.error("Get asset error:", error);
       res.status(500).json({ error: "Failed to fetch asset" });
@@ -736,8 +739,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsed = insertMapLayerSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const layer = await storage.createMapLayer(parsed.data);
+      let syncResult = null;
+      if (layer.geojsonData) {
+        syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+      }
       const { geojsonData, ...rest } = layer;
-      res.status(201).json(rest);
+      res.status(201).json({ ...rest, syncResult });
     } catch (error: any) {
       if (error?.constraint === "map_layers_community_layer_sub_idx") {
         return res.status(409).json({ error: "A layer with that key combination already exists" });
@@ -762,8 +769,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           latestLayer: { ...existing, geojsonData: undefined },
         });
       }
+      let syncResult = null;
+      if (parsed.data.geojsonData) {
+        syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData);
+      }
       const { geojsonData, ...rest } = updated;
-      res.json(rest);
+      res.json({ ...rest, syncResult });
     } catch (error) {
       console.error("Update map layer error:", error);
       res.status(500).json({ error: "Failed to update map layer" });
@@ -794,6 +805,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Get asset by feature error:", error);
       res.status(500).json({ error: "Failed to fetch asset" });
     }
+  });
+
+  app.post("/api/map-layers/:id/sync-assets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const layer = await storage.getMapLayerById(req.params.id as string);
+      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      const result = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+      res.json(result);
+    } catch (error) {
+      console.error("Sync assets from layer error:", error);
+      res.status(500).json({ error: "Failed to sync assets" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/assets/completeness", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.params.communityId as string;
+      const type = req.query.type as string | undefined;
+      const allAssets = await storage.getAssetsByCommunitySorted(communityId, type, true);
+      const active = allAssets.filter(a => !a.isArchived);
+      const archived = allAssets.filter(a => a.isArchived);
+
+      const missingRequired: { id: string; label: string; assetType: string; missingKeys: string[] }[] = [];
+      for (const asset of active) {
+        const props = await storage.getAssetProperties(asset.id);
+        const missing = getMissingRequiredKeys(asset.assetType, props);
+        if (missing.length > 0) {
+          missingRequired.push({ id: asset.id, label: asset.label, assetType: asset.assetType, missingKeys: missing });
+        }
+      }
+
+      res.json({
+        total: allAssets.length,
+        active: active.length,
+        archived: archived.length,
+        missingRequired: missingRequired.length,
+        missingRequiredAssets: missingRequired,
+      });
+    } catch (error) {
+      console.error("Get asset completeness error:", error);
+      res.status(500).json({ error: "Failed to fetch asset completeness" });
+    }
+  });
+
+  app.get("/api/asset-type-templates", requireAuth, async (_req: Request, res: Response) => {
+    res.json(ASSET_TYPE_TEMPLATES);
   });
 
   app.get("/api/communities/:communityId/offline-pack", requireAuth, async (req: Request, res: Response) => {
