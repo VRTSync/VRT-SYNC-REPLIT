@@ -12,11 +12,11 @@ export const ASSET_TYPE_TEMPLATES: Record<string, {
   },
   controller: {
     requiredKeys: ["brand"],
-    optionalKeys: ["installDate", "seasonalAdjustment"],
+    optionalKeys: ["installDate", "seasonalAdjustment", "controllerKey", "controllerColor"],
   },
   zone: {
     requiredKeys: ["zoneNumber", "runTime"],
-    optionalKeys: ["controllerRef"],
+    optionalKeys: ["controllerFeatureRef", "controllerLabel", "zoneType", "zoneLabelShort"],
   },
   tree: {
     requiredKeys: ["species"],
@@ -493,4 +493,211 @@ export function getGeoJsonCollisions(
   }
 
   return { duplicateFeatureIds, multiAssetFeatureIds };
+}
+
+export interface IrrigationSyncResult {
+  controllersCreated: number;
+  controllersUpdated: number;
+  zonesCreated: number;
+  zonesUpdated: number;
+  propertiesSet: number;
+}
+
+export async function syncIrrigationAssets(
+  communityId: string,
+  controllerMapLayerId: string,
+  zoneMapLayerId: string,
+  controllers: Array<{
+    name: string;
+    featureRef: string;
+    lat: number | null;
+    lng: number | null;
+    controllerKey: string;
+    controllerColor: string;
+    zones: Array<{
+      name: string;
+      featureRef: string;
+      lat: number | null;
+      lng: number | null;
+      controllerFeatureRef: string;
+      controllerLabel: string;
+      zoneNumber: number | null;
+      zoneType: string | null;
+      zoneLabelShort: string | null;
+    }>;
+  }>,
+): Promise<IrrigationSyncResult> {
+  let controllersCreated = 0;
+  let controllersUpdated = 0;
+  let zonesCreated = 0;
+  let zonesUpdated = 0;
+  let propertiesSet = 0;
+
+  const controllerFeatureRefs: string[] = [];
+  const zoneFeatureRefs: string[] = [];
+
+  for (const ctrl of controllers) {
+    controllerFeatureRefs.push(ctrl.featureRef);
+
+    const [existing] = await db.select().from(assets).where(
+      and(
+        eq(assets.communityId, communityId),
+        eq(assets.mapLayerId, controllerMapLayerId),
+        eq(assets.featureRef, ctrl.featureRef),
+      )
+    );
+
+    let assetId: string;
+
+    if (existing) {
+      await db.update(assets)
+        .set({
+          label: ctrl.name,
+          geometryType: "point",
+          latitude: ctrl.lat,
+          longitude: ctrl.lng,
+          isArchived: false,
+          archivedAt: null,
+          sourceUpdatedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(assets.id, existing.id));
+      assetId = existing.id;
+      controllersUpdated++;
+    } else {
+      const [inserted] = await db.insert(assets).values({
+        communityId,
+        assetType: "controller" as Asset["assetType"],
+        label: ctrl.name,
+        featureRef: ctrl.featureRef,
+        mapLayerId: controllerMapLayerId,
+        geometryType: "point",
+        latitude: ctrl.lat,
+        longitude: ctrl.lng,
+        isArchived: false,
+        sourceUpdatedAt: new Date(),
+      }).returning();
+      assetId = inserted.id;
+      controllersCreated++;
+    }
+
+    const controllerProps: Record<string, string> = {
+      controllerKey: ctrl.controllerKey,
+      controllerColor: ctrl.controllerColor,
+    };
+
+    for (const [key, value] of Object.entries(controllerProps)) {
+      if (value) {
+        await db.insert(assetProperties)
+          .values({ assetId, key, value })
+          .onConflictDoUpdate({
+            target: [assetProperties.assetId, assetProperties.key],
+            set: { value, updatedAt: new Date() },
+          });
+        propertiesSet++;
+      }
+    }
+
+    for (const zone of ctrl.zones) {
+      zoneFeatureRefs.push(zone.featureRef);
+
+      const [existingZone] = await db.select().from(assets).where(
+        and(
+          eq(assets.communityId, communityId),
+          eq(assets.mapLayerId, zoneMapLayerId),
+          eq(assets.featureRef, zone.featureRef),
+        )
+      );
+
+      let zoneAssetId: string;
+
+      if (existingZone) {
+        await db.update(assets)
+          .set({
+            label: zone.name,
+            geometryType: "point",
+            latitude: zone.lat,
+            longitude: zone.lng,
+            isArchived: false,
+            archivedAt: null,
+            sourceUpdatedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(assets.id, existingZone.id));
+        zoneAssetId = existingZone.id;
+        zonesUpdated++;
+      } else {
+        const [insertedZone] = await db.insert(assets).values({
+          communityId,
+          assetType: "zone" as Asset["assetType"],
+          label: zone.name,
+          featureRef: zone.featureRef,
+          mapLayerId: zoneMapLayerId,
+          geometryType: "point",
+          latitude: zone.lat,
+          longitude: zone.lng,
+          isArchived: false,
+          sourceUpdatedAt: new Date(),
+        }).returning();
+        zoneAssetId = insertedZone.id;
+        zonesCreated++;
+      }
+
+      const zoneProps: Record<string, string | null> = {
+        controllerFeatureRef: zone.controllerFeatureRef,
+        controllerLabel: zone.controllerLabel,
+        zoneNumber: zone.zoneNumber != null ? String(zone.zoneNumber) : null,
+        zoneType: zone.zoneType,
+        zoneLabelShort: zone.zoneLabelShort,
+      };
+
+      for (const [key, value] of Object.entries(zoneProps)) {
+        if (value != null) {
+          await db.insert(assetProperties)
+            .values({ assetId: zoneAssetId, key, value })
+            .onConflictDoUpdate({
+              target: [assetProperties.assetId, assetProperties.key],
+              set: { value, updatedAt: new Date() },
+            });
+          propertiesSet++;
+        }
+      }
+    }
+  }
+
+  if (controllerFeatureRefs.length > 0) {
+    const toArchive = await db.select().from(assets).where(
+      and(
+        eq(assets.communityId, communityId),
+        eq(assets.mapLayerId, controllerMapLayerId),
+        eq(assets.isArchived, false),
+        notInArray(assets.featureRef, controllerFeatureRefs),
+        isNotNull(assets.featureRef),
+      )
+    );
+    for (const a of toArchive) {
+      await db.update(assets)
+        .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
+        .where(eq(assets.id, a.id));
+    }
+  }
+
+  if (zoneFeatureRefs.length > 0) {
+    const toArchive = await db.select().from(assets).where(
+      and(
+        eq(assets.communityId, communityId),
+        eq(assets.mapLayerId, zoneMapLayerId),
+        eq(assets.isArchived, false),
+        notInArray(assets.featureRef, zoneFeatureRefs),
+        isNotNull(assets.featureRef),
+      )
+    );
+    for (const a of toArchive) {
+      await db.update(assets)
+        .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
+        .where(eq(assets.id, a.id));
+    }
+  }
+
+  return { controllersCreated, controllersUpdated, zonesCreated, zonesUpdated, propertiesSet };
 }

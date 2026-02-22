@@ -7,7 +7,8 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
 import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
-import { syncAssetsFromLayer, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry } from "./assetSync";
+import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry } from "./assetSync";
+import { parseIrrigationKml } from "./kmlIrrigationParser";
 import { validateLayerGeoJSON } from "./layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "./layerKeys";
 import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "./kmlConverter";
@@ -960,6 +961,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Map layer upload error:", error);
       res.status(500).json({ error: error.message || "Failed to process upload" });
+    }
+  });
+
+  app.post("/api/map-layers/upload-irrigation", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const { communityId, displayName } = req.body;
+      if (!communityId) {
+        return res.status(400).json({ error: "communityId is required" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "KML file is required" });
+      }
+
+      const fileContent = req.file.buffer.toString("utf-8");
+      const fileName = (req.file.originalname || "").toLowerCase();
+
+      if (!fileName.endsWith(".kml")) {
+        return res.status(400).json({ error: "Only KML files are supported for irrigation controller+zone upload" });
+      }
+
+      const parseResult = parseIrrigationKml(fileContent);
+
+      const controllerDisplayName = displayName || "Controllers";
+      const zoneDisplayName = (displayName ? displayName.replace(/controller/i, "Zone").replace(/Controller/i, "Zone") : "Zones");
+
+      const existingLayers = await storage.getMapLayersByCommunity(communityId, "irrigation");
+      let controllerLayer = existingLayers.find(l => l.subLayerKey === "controller");
+      let zoneLayer = existingLayers.find(l => l.subLayerKey === "zone");
+
+      const controllerGeojsonStr = JSON.stringify(parseResult.controllerGeojson);
+      const zoneGeojsonStr = JSON.stringify(parseResult.zoneGeojson);
+
+      if (controllerLayer) {
+        const updated = await storage.updateMapLayer(controllerLayer.id, controllerLayer.version, {
+          displayName: controllerDisplayName,
+          sourceFormat: "kml",
+          geojsonData: controllerGeojsonStr,
+        });
+        if (updated) controllerLayer = updated;
+      } else {
+        controllerLayer = await storage.createMapLayer({
+          communityId,
+          layerKey: "irrigation",
+          subLayerKey: "controller",
+          displayName: controllerDisplayName,
+          sourceFormat: "kml",
+          geojsonData: controllerGeojsonStr,
+        });
+      }
+
+      if (zoneLayer) {
+        const updated = await storage.updateMapLayer(zoneLayer.id, zoneLayer.version, {
+          displayName: zoneDisplayName.includes("Zone") ? zoneDisplayName : "Zones",
+          sourceFormat: "kml",
+          geojsonData: zoneGeojsonStr,
+        });
+        if (updated) zoneLayer = updated;
+      } else {
+        zoneLayer = await storage.createMapLayer({
+          communityId,
+          layerKey: "irrigation",
+          subLayerKey: "zone",
+          displayName: "Zones",
+          sourceFormat: "kml",
+          geojsonData: zoneGeojsonStr,
+        });
+      }
+
+      const syncResult = await syncIrrigationAssets(
+        communityId,
+        controllerLayer.id,
+        zoneLayer.id,
+        parseResult.controllers,
+      );
+
+      res.json({
+        controllerLayerId: controllerLayer.id,
+        zoneLayerId: zoneLayer.id,
+        controllerCount: parseResult.controllers.length,
+        zoneCount: parseResult.controllers.reduce((sum, c) => sum + c.zones.length, 0),
+        syncResult,
+        warnings: parseResult.warnings,
+      });
+    } catch (error: any) {
+      console.error("Irrigation upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to process irrigation KML" });
     }
   });
 
