@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { useOffline } from '@/client/contexts/OfflineContext';
+import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 
 type Task = {
   id: string;
@@ -56,6 +58,8 @@ const layerColors = [
 export default function MapScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
+  const { isOnline } = useOffline();
+  const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
   const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [NativeMapComponent, setNativeMapComponent] = useState<React.ComponentType<any> | null>(null);
@@ -67,6 +71,7 @@ export default function MapScreen() {
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
 
   const communityId = activeCommunity?.id;
+  const useOfflineData = !isOnline && !!localPack;
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
@@ -78,15 +83,30 @@ export default function MapScreen() {
     enabled: !!activeCommunity,
   });
 
-  const { data: allLayers = [] } = useQuery<MapLayerMeta[]>({
+  const { data: onlineLayers = [] } = useQuery<MapLayerMeta[]>({
     queryKey: ['/api/map-layers', { communityId }],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/map-layers?communityId=${communityId}`);
       return res.json();
     },
-    enabled: !!communityId,
+    enabled: !!communityId && !useOfflineData,
   });
 
+  const offlineLayers: MapLayerMeta[] = React.useMemo(() => {
+    if (!useOfflineData) return [];
+    const manifest = getOfflineManifest();
+    if (!manifest?.layers) return [];
+    return manifest.layers.map((l) => ({
+      id: l.id,
+      communityId: communityId || '',
+      layerKey: l.layerKey,
+      subLayerKey: l.subLayerKey,
+      displayName: l.displayName,
+      version: 0,
+    }));
+  }, [useOfflineData, localPack]);
+
+  const allLayers = useOfflineData ? offlineLayers : onlineLayers;
   const categoryLayers = allLayers.filter((l) => l.layerKey === activeCategory);
   const geoTasks = tasks.filter((t) => t.latitude != null && t.longitude != null && t.status !== 'completed');
 
@@ -126,6 +146,15 @@ export default function MapScreen() {
 
   const fetchGeoJSON = useCallback(async (layerId: string) => {
     if (loadedGeoJSON[layerId] || loadingGeoJSON.has(layerId)) return;
+
+    if (useOfflineData) {
+      const offlineData = getOfflineGeoJSON(layerId);
+      if (offlineData) {
+        setLoadedGeoJSON((prev) => ({ ...prev, [layerId]: offlineData }));
+      }
+      return;
+    }
+
     setLoadingGeoJSON((prev) => new Set(prev).add(layerId));
     try {
       const res = await apiRequest('GET', `/api/map-layers/${layerId}/geojson`);
@@ -142,7 +171,7 @@ export default function MapScreen() {
         return next;
       });
     }
-  }, [loadedGeoJSON, loadingGeoJSON]);
+  }, [loadedGeoJSON, loadingGeoJSON, useOfflineData, getOfflineGeoJSON]);
 
   useEffect(() => {
     enabledLayerIds.forEach((id) => {
@@ -161,6 +190,21 @@ export default function MapScreen() {
 
   const handleFeatureTap = useCallback(async (featureRef: string, _layerKey: string) => {
     if (!communityId) return;
+
+    if (useOfflineData) {
+      const entry = resolveFeatureToAsset(featureRef);
+      if (entry) {
+        setSelectedAsset({
+          id: entry.assetId,
+          assetType: entry.assetType,
+          label: entry.label,
+          featureRef,
+          properties: entry.properties,
+        });
+      }
+      return;
+    }
+
     try {
       const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
       const asset = await res.json();
@@ -170,7 +214,7 @@ export default function MapScreen() {
     } catch (err) {
       console.error('Feature tap error:', err);
     }
-  }, [communityId]);
+  }, [communityId, useOfflineData, resolveFeatureToAsset]);
 
   const activeLayers = categoryLayers
     .filter((l) => enabledLayerIds.has(l.id))
@@ -314,6 +358,13 @@ export default function MapScreen() {
               />
             </View>
           ))}
+        </View>
+      )}
+
+      {useOfflineData && (
+        <View style={styles.offlineBadge}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
+          <Text style={styles.offlineBadgeText}>Offline Pack v{localPack?.packVersion}</Text>
         </View>
       )}
 
@@ -462,4 +513,22 @@ const styles = StyleSheet.create({
   priorityDot: { width: 10, height: 10, borderRadius: 5 },
   taskListItemTitle: { fontSize: 15, fontWeight: '500', color: '#0C1D31' },
   taskListItemAddr: { fontSize: 12, color: '#888', marginTop: 2 },
+  offlineBadge: {
+    position: 'absolute',
+    top: 105,
+    left: 12,
+    zIndex: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f39c12',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  offlineBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#fff',
+  },
 });

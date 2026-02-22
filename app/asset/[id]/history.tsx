@@ -8,6 +8,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getQueryFn } from '@/lib/query-client';
+import { useOffline } from '@/client/contexts/OfflineContext';
+import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 
 type HistoryEntry = {
   id: string;
@@ -52,18 +54,38 @@ export default function AssetHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [fullScreenPhoto, setFullScreenPhoto] = useState<string | null>(null);
+  const { isOnline } = useOffline();
+  const { localPack, getOfflineWorkHistory, resolveFeatureToAsset } = useOfflinePack();
+  const useOfflineData = !isOnline && !!localPack;
 
   const { data: asset } = useQuery<AssetInfo>({
     queryKey: [`/api/assets/${id}`],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id,
+    enabled: !!id && !useOfflineData,
   });
 
-  const { data: history = [], isLoading } = useQuery<HistoryEntry[]>({
+  const { data: onlineHistory = [], isLoading } = useQuery<HistoryEntry[]>({
     queryKey: [`/api/assets/${id}/history`],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id,
+    enabled: !!id && !useOfflineData,
   });
+
+  const offlineHistory = React.useMemo(() => {
+    if (!useOfflineData || !id) return [];
+    return (getOfflineWorkHistory(id as string) || []) as HistoryEntry[];
+  }, [useOfflineData, id, localPack]);
+
+  const history = useOfflineData ? offlineHistory : onlineHistory;
+
+  const offlineAssetInfo = React.useMemo(() => {
+    if (!useOfflineData || !id) return null;
+    const assetIndex = localPack?.assetIndex || {};
+    const entry = Object.values(assetIndex).find((e: any) => e.assetId === id);
+    if (!entry) return null;
+    return { id: entry.assetId, label: entry.label, assetType: entry.assetType } as AssetInfo;
+  }, [useOfflineData, id, localPack]);
+
+  const displayAsset = useOfflineData ? offlineAssetInfo : asset;
 
   const renderEntry = ({ item }: { item: HistoryEntry }) => (
     <View style={styles.entryCard}>
@@ -142,10 +164,13 @@ export default function AssetHistoryScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle} numberOfLines={1}>Work History</Text>
-          {asset && (
+          {displayAsset && (
             <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {asset.label} · {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
+              {displayAsset.label} · {ASSET_TYPE_LABELS[displayAsset.assetType] || displayAsset.assetType}
             </Text>
+          )}
+          {useOfflineData && (
+            <Text style={styles.offlineTag}>Offline snapshot</Text>
           )}
         </View>
       </View>
@@ -213,6 +238,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
   headerSubtitle: { fontSize: 13, color: '#25C1AC', marginTop: 2, fontWeight: '500' },
+  offlineTag: { fontSize: 11, color: '#f39c12', marginTop: 2, fontWeight: '500' },
   listContent: { padding: 16, paddingBottom: 40 },
   entryCard: {
     backgroundColor: '#fff',
