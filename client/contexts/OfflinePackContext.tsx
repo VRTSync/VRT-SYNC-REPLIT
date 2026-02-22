@@ -7,6 +7,35 @@ import { useOffline } from './OfflineContext';
 
 const PACK_META_KEY = 'offline_pack_meta';
 
+type SearchIndexAsset = {
+  id: string;
+  assetType: string;
+  label: string;
+  featureRef: string | null;
+  isArchived: boolean;
+  latitude: number | null;
+  longitude: number | null;
+  props: Record<string, string>;
+};
+
+type SearchIndexTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  linkedAssetLabel: string | null;
+  linkedAssetType: string | null;
+};
+
+type SearchIndex = {
+  assets: SearchIndexAsset[];
+  tasks: SearchIndexTask[];
+};
+
 type PackMeta = {
   communityId: string;
   packId: string;
@@ -16,6 +45,7 @@ type PackMeta = {
   assetIndex: Record<string, AssetIndexEntry>;
   geojsonBundle: Record<string, any>;
   workHistorySnapshot: Record<string, any[]>;
+  searchIndex?: SearchIndex;
 };
 
 type PackManifest = {
@@ -46,6 +76,24 @@ type ServerPackInfo = {
   checksum: string | null;
 } | null;
 
+type OfflineSearchResult = {
+  id: string;
+  type: 'asset' | 'task';
+  label: string;
+  assetType?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: string | null;
+  communityId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  relevance: number;
+  matchField?: string;
+  isOffline: boolean;
+  offlineSnapshot?: SearchIndexAsset | SearchIndexTask;
+};
+
 type OfflinePackContextType = {
   localPack: PackMeta | null;
   serverPackInfo: ServerPackInfo;
@@ -59,6 +107,8 @@ type OfflinePackContextType = {
   getOfflineManifest: () => PackManifest | null;
   resolveFeatureToAsset: (featureRef: string) => AssetIndexEntry | null;
   getOfflineWorkHistory: (assetId: string) => any[] | null;
+  searchOffline: (query: string) => OfflineSearchResult[];
+  hasSearchIndex: boolean;
 };
 
 const OfflinePackContext = createContext<OfflinePackContextType | null>(null);
@@ -136,6 +186,7 @@ export function OfflinePackProvider({ children }: { children: ReactNode }) {
         assetIndex: data.assetIndex,
         geojsonBundle: data.geojsonBundle,
         workHistorySnapshot: data.workHistorySnapshot || {},
+        searchIndex: data.searchIndex || undefined,
       };
 
       const updated = { ...allPacks, [communityId]: packMeta };
@@ -177,6 +228,74 @@ export function OfflinePackProvider({ children }: { children: ReactNode }) {
     return localPack.workHistorySnapshot[assetId] || null;
   }, [localPack]);
 
+  const hasSearchIndex = !!(localPack?.searchIndex);
+
+  const searchOffline = useCallback((query: string): OfflineSearchResult[] => {
+    if (!localPack?.searchIndex || !communityId) return [];
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+
+    const results: OfflineSearchResult[] = [];
+    const { assets: indexAssets, tasks: indexTasks } = localPack.searchIndex;
+
+    for (const a of indexAssets) {
+      if (a.isArchived) continue;
+      let relevance = 0;
+      let matchField: string | undefined;
+      const labelLower = a.label.toLowerCase();
+      const refLower = (a.featureRef || '').toLowerCase();
+
+      if (labelLower === q) { relevance = 100; matchField = 'label'; }
+      else if (labelLower.startsWith(q)) { relevance = 80; matchField = 'label'; }
+      else if (labelLower.includes(q)) { relevance = 60; matchField = 'label'; }
+      else if (refLower.includes(q)) { relevance = 50; matchField = 'featureRef'; }
+      else {
+        for (const [key, val] of Object.entries(a.props)) {
+          if (val.toLowerCase().includes(q)) {
+            const valLower = val.toLowerCase();
+            if (valLower === q) relevance = 90;
+            else if (valLower.startsWith(q)) relevance = 70;
+            else relevance = 50;
+            matchField = key;
+            break;
+          }
+        }
+      }
+
+      if (relevance > 0) {
+        results.push({
+          id: a.id, type: 'asset', label: a.label, assetType: a.assetType,
+          communityId, latitude: a.latitude, longitude: a.longitude,
+          relevance, matchField, isOffline: true, offlineSnapshot: a,
+          address: a.props.address || null,
+        });
+      }
+    }
+
+    for (const t of indexTasks) {
+      let relevance = 0;
+      const titleLower = t.title.toLowerCase();
+      const addrLower = (t.address || '').toLowerCase();
+
+      if (titleLower === q) relevance = 100;
+      else if (titleLower.startsWith(q)) relevance = 80;
+      else if (titleLower.includes(q)) relevance = 65;
+      else if (addrLower.includes(q)) relevance = 55;
+
+      if (relevance > 0) {
+        results.push({
+          id: t.id, type: 'task', label: t.title, status: t.status,
+          priority: t.priority, dueDate: t.dueDate, communityId,
+          latitude: t.latitude, longitude: t.longitude, address: t.address,
+          relevance, isOffline: true, offlineSnapshot: t,
+        });
+      }
+    }
+
+    results.sort((a, b) => b.relevance - a.relevance);
+    return results.slice(0, 30);
+  }, [localPack, communityId]);
+
   return (
     <OfflinePackContext.Provider
       value={{
@@ -192,6 +311,8 @@ export function OfflinePackProvider({ children }: { children: ReactNode }) {
         getOfflineManifest,
         resolveFeatureToAsset,
         getOfflineWorkHistory,
+        searchOffline,
+        hasSearchIndex,
       }}
     >
       {children}
