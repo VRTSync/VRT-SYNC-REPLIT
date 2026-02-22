@@ -275,6 +275,33 @@ export async function updateUserRole(userId: string, role: "contractor" | "admin
   return updated || null;
 }
 
+export async function addCommunityMembers(communityId: string, userIds: string[]): Promise<{ added: number; skipped: number }> {
+  let added = 0;
+  let skipped = 0;
+  for (const userId of userIds) {
+    try {
+      await db.insert(communityMembers).values({ communityId, userId });
+      added++;
+    } catch (err: any) {
+      if (err?.code === '23505' || err?.message?.includes('duplicate')) {
+        skipped++;
+      } else {
+        throw err;
+      }
+    }
+  }
+  return { added, skipped };
+}
+
+export async function getUserCommunitiesList(userId: string): Promise<Community[]> {
+  const rows = await db.select({ community: communities })
+    .from(communityMembers)
+    .innerJoin(communities, eq(communityMembers.communityId, communities.id))
+    .where(eq(communityMembers.userId, userId))
+    .orderBy(communities.name);
+  return rows.map(r => r.community);
+}
+
 export async function getAdminSummary(communityId?: string) {
   const communityFilter = communityId ? eq(communities.id, communityId) : undefined;
   const assetCommunityFilter = communityId ? eq(assets.communityId, communityId) : undefined;

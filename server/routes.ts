@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
+import bcrypt from "bcryptjs";
 import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
@@ -154,12 +155,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/communities/:id/members", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { userId } = req.body;
-      if (!userId) {
-        return res.status(400).json({ error: "userId is required" });
+      const { userId, userIds } = req.body;
+      const ids: string[] = userIds || (userId ? [userId] : []);
+      if (ids.length === 0) {
+        return res.status(400).json({ error: "userId or userIds[] is required" });
       }
-      const member = await storage.addCommunityMember(req.params.id as string, userId);
-      res.status(201).json(member);
+      const result = await storage.addCommunityMembers(req.params.id as string, ids);
+      res.status(201).json(result);
     } catch (error) {
       console.error("Add member error:", error);
       res.status(500).json({ error: "Failed to add member" });
@@ -539,6 +541,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Update role error:", error);
       res.status(500).json({ error: "Failed to update role" });
+    }
+  });
+
+  app.post("/api/admin/users", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { username, password, displayName, role } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "username and password are required" });
+      }
+      if (role && role !== "contractor" && role !== "admin") {
+        return res.status(400).json({ error: "role must be contractor or admin" });
+      }
+      const existing = await storage.getUserByUsername(username);
+      if (existing) {
+        return res.status(409).json({ error: "Username already taken" });
+      }
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        displayName: displayName || username,
+        role: role || "contractor",
+      });
+      const { password: _, ...safeUser } = user;
+      res.status(201).json(safeUser);
+    } catch (error) {
+      console.error("Create user error:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.get("/api/users/:id/communities", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const comms = await storage.getUserCommunitiesList(req.params.id as string);
+      res.json(comms);
+    } catch (error) {
+      console.error("Get user communities error:", error);
+      res.status(500).json({ error: "Failed to fetch user communities" });
     }
   });
 
