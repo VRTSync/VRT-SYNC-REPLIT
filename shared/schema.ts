@@ -108,6 +108,7 @@ export const assetTypeEnum = pgEnum("asset_type", [
 export const geometryTypeEnum = pgEnum("geometry_type", ["point", "polygon", "line"]);
 
 export const linkTypeEnum = pgEnum("link_type", ["asset", "pin"]);
+export const templateTargetTypeEnum = pgEnum("template_target_type", ["none", "asset_type", "map_layer", "specific_asset"]);
 
 export const assets = pgTable("assets", {
   id: varchar("id")
@@ -197,6 +198,39 @@ export const mapLayers = pgTable("map_layers", {
   index("map_layers_community_layer_idx").on(table.communityId, table.layerKey),
   uniqueIndex("map_layers_community_layer_sub_idx").on(table.communityId, table.layerKey, table.subLayerKey),
 ]);
+
+export const taskTemplates = pgTable("task_templates", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  priority: taskPriorityEnum("priority").notNull().default("medium"),
+  defaultStatus: taskStatusEnum("default_status").notNull().default("pending"),
+  dueDaysOffset: integer("due_days_offset"),
+  targetType: templateTargetTypeEnum("target_type").notNull().default("none"),
+  targetAssetType: text("target_asset_type"),
+  targetMapLayerId: varchar("target_map_layer_id").references(() => mapLayers.id),
+  targetAssetId: varchar("target_asset_id").references(() => assets.id),
+  requireSignOffName: boolean("require_sign_off_name").notNull().default(true),
+  allowPhotos: boolean("allow_photos").notNull().default(true),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const templateRuns = pgTable("template_runs", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => taskTemplates.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  runAt: timestamp("run_at").defaultNow().notNull(),
+  taskCountCreated: integer("task_count_created").notNull().default(0),
+  assignmentUserId: varchar("assignment_user_id").references(() => users.id),
+});
 
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
   user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
@@ -378,6 +412,29 @@ export const insertOfflinePackSchema = z.object({
   checksum: z.string().optional(),
 });
 
+export const insertTaskTemplateSchema = z.object({
+  name: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
+  defaultStatus: z.enum(["pending", "in_progress", "completed"]).default("pending"),
+  dueDaysOffset: z.number().int().nullable().optional(),
+  targetType: z.enum(["none", "asset_type", "map_layer", "specific_asset"]).default("none"),
+  targetAssetType: z.string().nullable().optional(),
+  targetMapLayerId: z.string().nullable().optional(),
+  targetAssetId: z.string().nullable().optional(),
+  requireSignOffName: z.boolean().default(true),
+  allowPhotos: z.boolean().default(true),
+});
+
+export const generateFromTemplateSchema = z.object({
+  communityId: z.string().min(1),
+  dueDate: z.string().optional(),
+  assignToUserId: z.string().optional(),
+  limit: z.number().int().positive().optional(),
+  includeArchivedAssets: z.boolean().default(false),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -391,3 +448,5 @@ export type AssetProperty = typeof assetProperties.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
 export type MapLayer = typeof mapLayers.$inferSelect;
 export type OfflinePack = typeof offlinePacks.$inferSelect;
+export type TaskTemplate = typeof taskTemplates.$inferSelect;
+export type TemplateRun = typeof templateRuns.$inferSelect;

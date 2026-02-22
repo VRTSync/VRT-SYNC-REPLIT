@@ -2,10 +2,11 @@ import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, ilike, or, sq
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
-  assets, assetProperties, taskLinks, mapLayers, offlinePacks,
+  assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
-  type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack
+  type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
+  type TaskTemplate, type TemplateRun
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1142,4 +1143,86 @@ export async function searchAll(
 
   results.sort((a, b) => b.relevance - a.relevance);
   return results.slice(0, 30);
+}
+
+export async function getTaskTemplates(): Promise<TaskTemplate[]> {
+  return db.select().from(taskTemplates).orderBy(desc(taskTemplates.createdAt));
+}
+
+export async function getTaskTemplateById(id: string): Promise<TaskTemplate | undefined> {
+  const [t] = await db.select().from(taskTemplates).where(eq(taskTemplates.id, id));
+  return t;
+}
+
+export async function createTaskTemplate(data: Omit<TaskTemplate, 'id' | 'createdAt' | 'updatedAt'>): Promise<TaskTemplate> {
+  const [t] = await db.insert(taskTemplates).values(data).returning();
+  return t;
+}
+
+export async function updateTaskTemplate(id: string, data: Partial<Omit<TaskTemplate, 'id' | 'createdAt' | 'createdBy'>>): Promise<TaskTemplate | null> {
+  const [t] = await db.update(taskTemplates)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(taskTemplates.id, id))
+    .returning();
+  return t || null;
+}
+
+export async function deleteTaskTemplate(id: string): Promise<void> {
+  await db.delete(taskTemplates).where(eq(taskTemplates.id, id));
+}
+
+export async function getTargetAssets(
+  communityId: string,
+  targetType: string,
+  targetAssetType?: string | null,
+  targetMapLayerId?: string | null,
+  targetAssetId?: string | null,
+  includeArchived = false,
+  limit?: number,
+): Promise<Asset[]> {
+  const conditions = [eq(assets.communityId, communityId)];
+  if (!includeArchived) {
+    conditions.push(eq(assets.isArchived, false));
+  }
+
+  if (targetType === 'asset_type' && targetAssetType) {
+    conditions.push(eq(assets.assetType, targetAssetType as any));
+  } else if (targetType === 'map_layer' && targetMapLayerId) {
+    conditions.push(eq(assets.mapLayerId, targetMapLayerId));
+  } else if (targetType === 'specific_asset' && targetAssetId) {
+    conditions.push(eq(assets.id, targetAssetId));
+  } else {
+    return [];
+  }
+
+  let query = db.select().from(assets).where(and(...conditions)).orderBy(assets.label);
+  if (limit) {
+    query = query.limit(limit) as any;
+  }
+  return query;
+}
+
+export async function createTemplateRun(data: {
+  templateId: string;
+  communityId: string;
+  createdBy: string;
+  taskCountCreated: number;
+  assignmentUserId?: string | null;
+}): Promise<TemplateRun> {
+  const [run] = await db.insert(templateRuns).values(data).returning();
+  return run;
+}
+
+export async function getTemplateRuns(templateId?: string): Promise<TemplateRun[]> {
+  const conditions = templateId ? [eq(templateRuns.templateId, templateId)] : [];
+  return db.select().from(templateRuns)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(templateRuns.runAt));
+}
+
+export async function bulkAssignTasks(taskIds: string[], assignedTo: string): Promise<number> {
+  const result = await db.update(tasks)
+    .set({ assignedTo, updatedAt: new Date() })
+    .where(inArray(tasks.id, taskIds));
+  return taskIds.length;
 }
