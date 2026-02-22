@@ -34,7 +34,9 @@ export const communityMembers = pgTable("community_members", {
   communityId: varchar("community_id").notNull().references(() => communities.id),
   userId: varchar("user_id").notNull().references(() => users.id),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
-});
+}, (table) => [
+  uniqueIndex("community_members_community_user_idx").on(table.communityId, table.userId),
+]);
 
 export const tasks = pgTable("tasks", {
   id: varchar("id")
