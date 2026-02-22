@@ -1,0 +1,206 @@
+REPLIT PASTE: Slice 2.5 — Recurrence Scheduler (Season Service Automation)
+
+Implement a recurring scheduling system so task templates can generate tasks automatically on schedules (weekly/monthly/date-ranges) per community.
+
+Goals
+
+Admin can create a Schedule that ties:
+
+communityId
+
+taskTemplateId
+
+recurrence rule (weekly/monthly/once)
+
+active date range (start/end)
+
+System runs a scheduler job daily (or hourly) that:
+
+checks schedules
+
+generates tasks due today/this week based on rule
+
+avoids duplicates (idempotent)
+
+Admin can view schedule runs and what was generated.
+
+Backend
+A) New tables
+1) task_schedules
+
+Fields:
+
+id (UUID)
+
+communityId (FK)
+
+templateId (FK)
+
+rrule (text) // iCal RRULE string or simplified rule JSON
+
+timezone (text default "America/Denver")
+
+startDate (date)
+
+endDate (date nullable)
+
+nextRunAt (timestamp) // computed
+
+isEnabled (bool default true)
+
+createdBy
+
+createdAt/updatedAt
+
+Constraints:
+
+Prevent duplicate schedule definitions for same (communityId, templateId, rrule, startDate)
+
+2) schedule_runs
+
+Tracks each scheduler execution per schedule.
+Fields:
+
+id
+
+scheduleId
+
+runAt
+
+windowStart/windowEnd (dates)
+
+createdCount
+
+skippedCount
+
+status (success/failure)
+
+errorMessage (nullable)
+
+3) schedule_run_items (optional)
+
+runId
+
+taskId
+
+B) Idempotency rule (critical)
+
+When generating tasks via schedules, ensure you never generate duplicates.
+
+Approach:
+
+Create a deterministic scheduleInstanceKey for each schedule occurrence, e.g.:
+
+${scheduleId}:${YYYY-MM-DD}
+Store it on tasks:
+
+add column scheduleInstanceKey on tasks (nullable)
+
+unique index on (scheduleInstanceKey, communityId) OR unique(scheduleInstanceKey)
+
+If a task already exists with that key, skip generation.
+
+C) Scheduler runner
+
+Add a job that runs at least daily (hourly is fine):
+
+Find enabled schedules with nextRunAt <= now
+
+For each schedule occurrence window:
+
+generate tasks using the template generate logic
+
+attach scheduleInstanceKey
+
+record schedule_runs row
+
+update nextRunAt
+
+If Replit can’t do cron reliably, implement:
+
+“run-on-request” endpoint + server startup interval
+
+OR manual “Run scheduler now” button in web UI (still useful)
+
+D) Endpoints (admin-only)
+
+GET /api/task-schedules?communityId=
+
+POST /api/task-schedules
+
+PATCH /api/task-schedules/:id
+
+DELETE /api/task-schedules/:id
+
+POST /api/task-schedules/run-now (runs due schedules immediately, returns run report)
+
+GET /api/task-schedules/:id/runs (history)
+
+Web Hub UI
+A) New “Schedules” page
+
+Route:
+
+/web/admin/schedules
+
+Features:
+
+Table: schedules for active community
+
+Create schedule modal:
+
+template selector
+
+frequency: weekly / monthly / once
+
+for weekly: choose days of week
+
+for monthly: choose day-of-month
+
+start/end dates
+
+timezone (default Denver)
+
+enabled toggle
+
+Show nextRunAt
+
+B) Run history
+
+Click schedule → shows last 20 runs:
+
+date/time
+
+created/skipped
+
+status
+
+C) Run now button
+
+Runs scheduler immediately for due schedules
+
+Shows summary
+
+Acceptance Criteria
+
+Create weekly schedule for a template (e.g., mowing) in a community.
+
+Run scheduler now:
+
+creates tasks with today’s scheduleInstanceKey
+
+running again does NOT create duplicates
+
+Disable schedule stops generation
+
+Run history shows created/skipped counts
+
+Contractor sees tasks generated
+
+Out of Scope
+
+Complex RRULE UI (stick to weekly/monthly/once)
+
+Per-asset staggered schedules (future)
+
+Notifications on generation (future)
