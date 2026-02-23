@@ -34,6 +34,7 @@
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "connect-pg-simple": "^10.0.0",
+    "csv-parse": "^6.1.0",
     "drizzle-orm": "^0.39.3",
     "drizzle-zod": "^0.7.0",
     "expo": "~54.0.27",

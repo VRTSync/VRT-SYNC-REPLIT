@@ -1804,6 +1804,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // CSV Task Import
+  app.post("/api/tasks/import-csv", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const { parse } = await import("csv-parse/sync");
+      const communityId = req.body.communityId;
+      const mode = req.body.mode || "preview"; // "preview" or "commit"
+
+      if (!communityId) {
+        return res.status(400).json({ error: "communityId is required" });
+      }
+
+      const community = await storage.getCommunityById(communityId);
+      if (!community) {
+        return res.status(404).json({ error: "Community not found" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: "CSV file is required" });
+      }
+
+      const csvContent = req.file.buffer.toString("utf-8");
+      const records = parse(csvContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+      });
+
+      if (records.length === 0) {
+        return res.status(400).json({ error: "CSV file is empty" });
+      }
+
+      const priorityMap: Record<string, string> = {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "urgent": "urgent",
+        "critical": "urgent",
+        "core": "high",
+        "ongoing": "medium",
+      };
+
+      const rows: any[] = [];
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
+        const title = r["Ticket Title"] || r["Title"] || r["title"] || "";
+        const ticketType = r["Ticket Type"] || r["Type"] || r["ticket_type"] || "";
+        const rawPriority = (r["Priority"] || r["priority"] || "medium").toLowerCase();
+        const priority = priorityMap[rawPriority] || "medium";
+        const description = r["Description"] || r["description"] || "";
+        const frequency = r["Frequency"] || r["frequency"] || "";
+        const totalVisits = parseInt(r["Total Visits"] || r["total_visits"] || "1", 10) || 1;
+        const address = r["Address"] || r["address"] || "";
+        const lat = parseFloat(r["Latitude"] || r["latitude"] || r["lat"] || "");
+        const lng = parseFloat(r["Longitude"] || r["longitude"] || r["lng"] || "");
+
+        // Parse dates - handle M/D/YYYY format
+        const rawStart = r["Start Date"] || r["start_date"] || r["startDate"] || "";
+        const rawEnd = r["End Date"] || r["Due Date"] || r["end_date"] || r["dueDate"] || r["due_date"] || "";
+
+        let startDate: Date | null = null;
+        let dueDate: Date | null = null;
+
+        if (rawStart) {
+          const d = new Date(rawStart);
+          if (!isNaN(d.getTime())) startDate = d;
+        }
+        if (rawEnd) {
+          const d = new Date(rawEnd);
+          if (!isNaN(d.getTime())) dueDate = d;
+        }
+
+        const errors: string[] = [];
+        if (!title) errors.push("Title is required");
+
+        rows.push({
+          row: i + 1,
+          title,
+          ticketType,
+          priority,
+          description,
+          frequency,
+          totalVisits,
+          address: address || null,
+          latitude: isNaN(lat) ? null : lat,
+          longitude: isNaN(lng) ? null : lng,
+          startDate: startDate?.toISOString() || null,
+          dueDate: dueDate?.toISOString() || null,
+          errors,
+          valid: errors.length === 0,
+        });
+      }
+
+      const validRows = rows.filter(r => r.valid);
+      const invalidRows = rows.filter(r => !r.valid);
+
+      if (mode === "preview") {
+        return res.json({
+          mode: "preview",
+          totalRows: rows.length,
+          validCount: validRows.length,
+          invalidCount: invalidRows.length,
+          rows,
+        });
+      }
+
+      // Commit mode - create tasks
+      const created: any[] = [];
+      const skipped: any[] = [];
+
+      for (const row of rows) {
+        if (!row.valid) {
+          skipped.push({ row: row.row, title: row.title, reason: row.errors.join(", ") });
+          continue;
+        }
+        try {
+          const task = await storage.createTask({
+            communityId,
+            title: row.title,
+            description: row.description || undefined,
+            priority: row.priority as any,
+            address: row.address || undefined,
+            latitude: row.latitude ?? undefined,
+            longitude: row.longitude ?? undefined,
+            createdBy: req.session.userId!,
+            startDate: row.startDate ? new Date(row.startDate) : undefined,
+            dueDate: row.dueDate ? new Date(row.dueDate) : undefined,
+            ticketType: row.ticketType || undefined,
+          });
+          created.push({ row: row.row, id: task.id, title: task.title });
+        } catch (err: any) {
+          skipped.push({ row: row.row, title: row.title, reason: err.message });
+        }
+      }
+
+      res.json({
+        mode: "commit",
+        createdCount: created.length,
+        skippedCount: skipped.length,
+        created,
+        skipped,
+      });
+    } catch (error: any) {
+      console.error("CSV import error:", error);
+      res.status(500).json({ error: error.message || "Failed to import CSV" });
+    }
+  });
+
   // Task Schedules CRUD
   app.get("/api/task-schedules", requireAdmin, async (req: Request, res: Response) => {
     try {
