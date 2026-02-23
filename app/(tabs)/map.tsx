@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -120,7 +120,7 @@ export default function MapScreen() {
 
   React.useEffect(() => {
     if (controllers.length > 0 && enabledControllers.size === 0) {
-      setEnabledControllers(new Set(controllers.map(c => c.featureRef || c.id)));
+      setEnabledControllers(new Set());
     }
   }, [controllers.length]);
 
@@ -190,15 +190,7 @@ export default function MapScreen() {
   }, []);
 
   useEffect(() => {
-    if (categoryLayers.length > 0) {
-      setEnabledLayerIds((prev) => {
-        const next = new Set(prev);
-        categoryLayers.forEach((l) => {
-          if (!next.has(l.id)) next.add(l.id);
-        });
-        return next;
-      });
-    }
+    // no-op: layers start disabled, user opts in via the panel
   }, [categoryLayers.length, activeCategory]);
 
   const fetchGeoJSON = useCallback(async (layerId: string) => {
@@ -439,14 +431,36 @@ export default function MapScreen() {
     );
   }
 
-  const mappedTasks = geoTasks.map((t) => ({
+  const mappedTasks = useMemo(() => geoTasks.map((t) => ({
     id: t.id,
     title: t.title,
     priority: t.priority,
     latitude: t.latitude!,
     longitude: t.longitude!,
     address: t.address,
-  }));
+  })), [geoTasks]);
+
+  const handleTaskPress = useCallback((taskId: string) => {
+    router.push(`/task/${taskId}`);
+  }, [router]);
+
+  const handleDismissAsset = useCallback(() => {
+    setSelectedAsset(null);
+  }, []);
+
+  const handleAssetDetail = useCallback((assetId: string) => {
+    setSelectedAsset(null);
+    router.push(`/asset/${assetId}`);
+  }, [router]);
+
+  const handleAssetHistory = useCallback((assetId: string) => {
+    setSelectedAsset(null);
+    router.push(`/asset/${assetId}/history` as any);
+  }, [router]);
+
+  const handleTargetReached = useCallback(() => {
+    setTargetRegion(null);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -562,21 +576,15 @@ export default function MapScreen() {
       <NativeMapComponent
         tasks={mappedTasks}
         userLocation={userLocation}
-        onTaskPress={(taskId: string) => router.push(`/task/${taskId}`)}
+        onTaskPress={handleTaskPress}
         layers={activeLayers}
         onFeatureTap={handleFeatureTap}
         selectedAsset={selectedAsset}
-        onDismissAsset={() => setSelectedAsset(null)}
-        onAssetDetail={(assetId: string) => {
-          setSelectedAsset(null);
-          router.push(`/asset/${assetId}`);
-        }}
-        onAssetHistory={(assetId: string) => {
-          setSelectedAsset(null);
-          router.push(`/asset/${assetId}/history` as any);
-        }}
+        onDismissAsset={handleDismissAsset}
+        onAssetDetail={handleAssetDetail}
+        onAssetHistory={handleAssetHistory}
         targetRegion={targetRegion}
-        onTargetReached={() => setTargetRegion(null)}
+        onTargetReached={handleTargetReached}
       />
     </View>
   );

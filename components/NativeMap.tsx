@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
-import MapView, { Marker, Callout, Polygon, Polyline } from 'react-native-maps';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import MapView, { Marker, Callout, Polygon, Polyline, Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
 type Task = {
@@ -52,6 +52,9 @@ const layerColors = [
   '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
 ];
 
+const REGION_BUFFER = 1.5;
+const MAX_VISIBLE_FEATURES = 200;
+
 function parseGeoJSONCoords(coords: number[]): { latitude: number; longitude: number } {
   return { latitude: coords[1], longitude: coords[0] };
 }
@@ -60,19 +63,53 @@ function parseRing(ring: number[][]): { latitude: number; longitude: number }[] 
   return ring.map(parseGeoJSONCoords);
 }
 
-export default function NativeMap({
-  tasks,
-  userLocation,
-  onTaskPress,
-  layers = [],
-  onFeatureTap,
-  selectedAsset,
-  onDismissAsset,
-  onAssetDetail,
-  onAssetHistory,
-  targetRegion,
-  onTargetReached,
-}: {
+function isPointInRegion(lat: number, lng: number, region: Region | null): boolean {
+  if (!region) return true;
+  const latDelta = region.latitudeDelta * REGION_BUFFER;
+  const lngDelta = region.longitudeDelta * REGION_BUFFER;
+  return (
+    lat >= region.latitude - latDelta &&
+    lat <= region.latitude + latDelta &&
+    lng >= region.longitude - lngDelta &&
+    lng <= region.longitude + lngDelta
+  );
+}
+
+function getFeatureCentroid(geom: any): { lat: number; lng: number } | null {
+  if (!geom) return null;
+  if (geom.type === 'Point') {
+    return { lat: geom.coordinates[1], lng: geom.coordinates[0] };
+  }
+  if (geom.type === 'Polygon' && geom.coordinates?.[0]?.length > 0) {
+    const ring = geom.coordinates[0];
+    let sumLat = 0, sumLng = 0;
+    for (const c of ring) { sumLng += c[0]; sumLat += c[1]; }
+    return { lat: sumLat / ring.length, lng: sumLng / ring.length };
+  }
+  if (geom.type === 'MultiPolygon' && geom.coordinates?.[0]?.[0]?.length > 0) {
+    const ring = geom.coordinates[0][0];
+    let sumLat = 0, sumLng = 0;
+    for (const c of ring) { sumLng += c[0]; sumLat += c[1]; }
+    return { lat: sumLat / ring.length, lng: sumLng / ring.length };
+  }
+  if (geom.type === 'LineString' && geom.coordinates?.length > 0) {
+    const mid = geom.coordinates[Math.floor(geom.coordinates.length / 2)];
+    return { lat: mid[1], lng: mid[0] };
+  }
+  if (geom.type === 'MultiLineString' && geom.coordinates?.[0]?.length > 0) {
+    const mid = geom.coordinates[0][Math.floor(geom.coordinates[0].length / 2)];
+    return { lat: mid[1], lng: mid[0] };
+  }
+  return null;
+}
+
+const ASSET_TYPE_LABELS: Record<string, string> = {
+  controller: 'Controller', backflow: 'Backflow', zone: 'Zone', tree: 'Tree',
+  pet_station: 'Pet Station', landscape_bed: 'Landscape Bed', bluegrass_area: 'Bluegrass Area',
+  native_area: 'Native Area', snow_area: 'Snow Area',
+};
+
+type NativeMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
   onTaskPress: (id: string) => void;
@@ -84,8 +121,27 @@ export default function NativeMap({
   onAssetHistory?: (assetId: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
   onTargetReached?: () => void;
-}) {
+};
+
+function NativeMap({
+  tasks,
+  userLocation,
+  onTaskPress,
+  layers = [],
+  onFeatureTap,
+  selectedAsset,
+  onDismissAsset,
+  onAssetDetail,
+  onAssetHistory,
+  targetRegion,
+  onTargetReached,
+}: NativeMapProps) {
   const mapRef = useRef<MapView>(null);
+  const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
+
+  const handleRegionChange = useCallback((region: Region) => {
+    setVisibleRegion(region);
+  }, []);
 
   useEffect(() => {
     if (targetRegion && mapRef.current) {
@@ -119,13 +175,14 @@ export default function NativeMap({
     ? { ...userLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : { latitude: 39.8283, longitude: -98.5795, latitudeDelta: 30, longitudeDelta: 30 };
 
-  const renderGeoJSONFeatures = useCallback(() => {
+  const geoJSONElements = useMemo(() => {
     const elements: React.ReactNode[] = [];
+    let featureCount = 0;
 
-    layers.forEach((layer, layerIndex) => {
-      if (!layer.geojson) return;
+    for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
+      const layer = layers[layerIndex];
+      if (!layer.geojson) continue;
       const color = layer.color || layerColors[layerIndex % layerColors.length];
-      const fillColor = color + '40';
 
       const features: GeoJSONFeature[] = layer.geojson.type === 'FeatureCollection'
         ? layer.geojson.features || []
@@ -133,10 +190,19 @@ export default function NativeMap({
           ? [layer.geojson]
           : [];
 
-      features.forEach((feature, fIdx) => {
-        const key = `${layer.id}-${fIdx}`;
+      for (let fIdx = 0; fIdx < features.length; fIdx++) {
+        if (featureCount >= MAX_VISIBLE_FEATURES) break;
+
+        const feature = features[fIdx];
         const geom = feature.geometry;
-        if (!geom) return;
+        if (!geom) continue;
+
+        const centroid = getFeatureCentroid(geom);
+        if (centroid && !isPointInRegion(centroid.lat, centroid.lng, visibleRegion)) {
+          continue;
+        }
+
+        const key = `${layer.id}-${fIdx}`;
         const featureRef = feature.properties?.featureRef || feature.properties?.featureId || feature.properties?.id || feature.properties?.name;
 
         let featureColor = color;
@@ -213,27 +279,19 @@ export default function NativeMap({
               key={key}
               coordinate={coord}
               pinColor={featureColor}
+              tracksViewChanges={false}
               onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
-            >
-              <Callout>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>{feature.properties?.name || featureRef || 'Feature'}</Text>
-                </View>
-              </Callout>
-            </Marker>
+            />
           );
         }
-      });
-    });
+
+        featureCount++;
+      }
+      if (featureCount >= MAX_VISIBLE_FEATURES) break;
+    }
 
     return elements;
-  }, [layers, onFeatureTap]);
-
-  const ASSET_TYPE_LABELS: Record<string, string> = {
-    controller: 'Controller', backflow: 'Backflow', zone: 'Zone', tree: 'Tree',
-    pet_station: 'Pet Station', landscape_bed: 'Landscape Bed', bluegrass_area: 'Bluegrass Area',
-    native_area: 'Native Area', snow_area: 'Snow Area',
-  };
+  }, [layers, onFeatureTap, visibleRegion]);
 
   return (
     <View style={styles.container}>
@@ -243,13 +301,16 @@ export default function NativeMap({
         initialRegion={initialRegion}
         showsUserLocation
         showsMyLocationButton
+        onRegionChangeComplete={handleRegionChange}
+        moveOnMarkerPress={false}
       >
-        {renderGeoJSONFeatures()}
+        {geoJSONElements}
         {tasks.map((task) => (
           <Marker
             key={task.id}
             coordinate={{ latitude: task.latitude, longitude: task.longitude }}
             pinColor={priorityColors[task.priority]}
+            tracksViewChanges={false}
           >
             <Callout onPress={() => onTaskPress(task.id)}>
               <View style={styles.callout}>
@@ -264,6 +325,7 @@ export default function NativeMap({
           <Marker
             coordinate={{ latitude: targetRegion.latitude, longitude: targetRegion.longitude }}
             pinColor="#25C1AC"
+            tracksViewChanges={false}
           >
             {targetRegion.label ? (
               <Callout>
@@ -334,6 +396,8 @@ export default function NativeMap({
     </View>
   );
 }
+
+export default React.memo(NativeMap);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
