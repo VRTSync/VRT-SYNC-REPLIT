@@ -741,6 +741,7 @@ export default function MapScreen() {
         zoneMarkers={zoneMarkers}
         showControllers={showControllerLayer}
         showZones={showZoneLayer}
+        activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
       />
     </View>

@@ -85,9 +85,10 @@ const layerColors = [
 
 const REGION_BUFFER = 1.2;
 const MAX_VISIBLE_FEATURES = 100;
-const ZONE_CLUSTER_ZOOM_THRESHOLD = 0.015;
+const ZOOM_IN_THRESHOLD = 0.012;
+const ZOOM_OUT_THRESHOLD = 0.018;
 const CLUSTER_GRID_SIZE = 0.003;
-const REGION_CHANGE_DEBOUNCE_MS = 200;
+const REGION_CHANGE_DEBOUNCE_MS = 300;
 
 const CLEAN_MAP_STYLE = [
   { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
@@ -182,6 +183,71 @@ function clusterZones(zones: ZoneMarkerData[], gridSize: number): ZoneCluster[] 
   return Array.from(grid.values());
 }
 
+const ControllerMarkerMemo = React.memo(function ControllerMarkerMemo({
+  ctrl,
+  onPress,
+}: {
+  ctrl: ControllerMarkerData;
+  onPress: (featureRef: string) => void;
+}) {
+  return (
+    <Marker
+      key={`ctrl-${ctrl.featureRef}`}
+      coordinate={{ latitude: ctrl.latitude, longitude: ctrl.longitude }}
+      tracksViewChanges={false}
+      anchor={{ x: 0.5, y: 0.5 }}
+      onPress={() => onPress(ctrl.featureRef)}
+      zIndex={10}
+    >
+      <View style={[styles.controllerMarker, { backgroundColor: ctrl.color, borderColor: '#fff' }]}>
+        <Text style={styles.controllerMarkerLabel}>{ctrl.controllerKey}</Text>
+      </View>
+    </Marker>
+  );
+});
+
+const ZoneRingMarkerMemo = React.memo(function ZoneRingMarkerMemo({
+  zone,
+  onPress,
+}: {
+  zone: ZoneMarkerData;
+  onPress: (featureRef: string) => void;
+}) {
+  return (
+    <Marker
+      key={`zone-${zone.featureRef || zone.id}`}
+      coordinate={{ latitude: zone.latitude, longitude: zone.longitude }}
+      tracksViewChanges={false}
+      anchor={{ x: 0.5, y: 0.5 }}
+      onPress={() => onPress(zone.featureRef)}
+      zIndex={5}
+    >
+      <View style={[styles.zoneRing, { borderColor: zone.controllerColor }]} />
+    </Marker>
+  );
+});
+
+const ClusterMarkerMemo = React.memo(function ClusterMarkerMemo({
+  cluster,
+  onPress,
+}: {
+  cluster: ZoneCluster;
+  onPress: (cluster: ZoneCluster) => void;
+}) {
+  const clusterColor = cluster.colors.size > 1 ? '#888' : Array.from(cluster.colors)[0];
+  return (
+    <Marker
+      key={`zcluster-${cluster.key}`}
+      coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+      tracksViewChanges={false}
+      pinColor={clusterColor}
+      title={`${cluster.count} zones`}
+      onPress={() => onPress(cluster)}
+      zIndex={6}
+    />
+  );
+});
+
 type NativeMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -199,6 +265,7 @@ type NativeMapProps = {
   zoneMarkers?: ZoneMarkerData[];
   showControllers?: boolean;
   showZones?: boolean;
+  activeCategory?: string;
   fitToContentKey?: string;
 };
 
@@ -219,21 +286,33 @@ function NativeMap({
   zoneMarkers = [],
   showControllers = false,
   showZones = false,
+  activeCategory = 'community',
   fitToContentKey,
 }: NativeMapProps) {
   const mapRef = useRef<MapView>(null);
   const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
   const regionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isZoomedIn, setIsZoomedIn] = useState(false);
+  const isZoomedInRef = useRef(false);
 
   const handleRegionChange = useCallback((region: Region) => {
     if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
     regionTimerRef.current = setTimeout(() => {
       setVisibleRegion(region);
+      const delta = region.latitudeDelta;
+      const wasZoomed = isZoomedInRef.current;
+      if (!wasZoomed && delta < ZOOM_IN_THRESHOLD) {
+        isZoomedInRef.current = true;
+        setIsZoomedIn(true);
+      } else if (wasZoomed && delta > ZOOM_OUT_THRESHOLD) {
+        isZoomedInRef.current = false;
+        setIsZoomedIn(false);
+      }
     }, REGION_CHANGE_DEBOUNCE_MS);
   }, []);
 
-  const isZoomedIn = visibleRegion ? visibleRegion.latitudeDelta < ZONE_CLUSTER_ZOOM_THRESHOLD : false;
-  const hasCustomMarkers = showControllers || showZones;
+  const isIrrigation = activeCategory === 'irrigation';
+  const hasCustomMarkers = isIrrigation && (showControllers || showZones);
 
   useEffect(() => {
     if (targetRegion && mapRef.current) {
@@ -428,29 +507,31 @@ function NativeMap({
   }, [layers, onFeatureTap, visibleRegion, hasCustomMarkers]);
 
   const visibleControllers = useMemo(() => {
-    if (!showControllers) return [];
+    if (!isIrrigation || !showControllers) return [];
     return controllerMarkers;
-  }, [showControllers, controllerMarkers]);
+  }, [isIrrigation, showControllers, controllerMarkers]);
 
-  const zoneClusters = useMemo(() => {
-    if (!showZones || zoneMarkers.length === 0) return [];
-    if (isZoomedIn) {
-      return zoneMarkers.map(z => ({
-        key: z.featureRef || z.id,
-        latitude: z.latitude,
-        longitude: z.longitude,
-        count: 1,
-        colors: new Set([z.controllerColor]),
-        zones: [z],
-      }));
-    }
+  const clusteredZones = useMemo(() => {
+    if (zoneMarkers.length === 0) return [];
     return clusterZones(zoneMarkers, CLUSTER_GRID_SIZE);
-  }, [showZones, zoneMarkers, isZoomedIn]);
+  }, [zoneMarkers]);
+
+  const visibleZones = useMemo(() => {
+    if (!isIrrigation || !showZones || zoneMarkers.length === 0) return { individual: [] as ZoneMarkerData[], clusters: [] as ZoneCluster[] };
+    if (isZoomedIn) {
+      return { individual: zoneMarkers, clusters: [] as ZoneCluster[] };
+    }
+    return { individual: [] as ZoneMarkerData[], clusters: clusteredZones };
+  }, [isIrrigation, showZones, zoneMarkers, isZoomedIn, clusteredZones]);
+
+  const handleIrrigationTap = useCallback((featureRef: string) => {
+    onFeatureTap?.(featureRef, 'irrigation');
+  }, [onFeatureTap]);
 
   const handleClusterPress = useCallback((cluster: ZoneCluster) => {
     if (cluster.count === 1) {
       const z = cluster.zones[0];
-      onFeatureTap?.(z.featureRef, 'irrigation');
+      handleIrrigationTap(z.featureRef);
       return;
     }
     const lats = cluster.zones.map(z => z.latitude);
@@ -486,49 +567,28 @@ function NativeMap({
         {geoJSONElements}
 
         {visibleControllers.map((ctrl) => (
-          <Marker
+          <ControllerMarkerMemo
             key={`ctrl-${ctrl.featureRef}`}
-            coordinate={{ latitude: ctrl.latitude, longitude: ctrl.longitude }}
-            tracksViewChanges={false}
-            anchor={{ x: 0.5, y: 0.5 }}
-            onPress={() => onFeatureTap?.(ctrl.featureRef, 'irrigation')}
-            zIndex={10}
-          >
-            <View style={[styles.controllerMarker, { backgroundColor: ctrl.color, borderColor: '#fff' }]}>
-              <Text style={styles.controllerMarkerLabel}>{ctrl.controllerKey}</Text>
-            </View>
-          </Marker>
+            ctrl={ctrl}
+            onPress={handleIrrigationTap}
+          />
         ))}
 
-        {zoneClusters.map((cluster) => {
-          if (cluster.count === 1) {
-            const z = cluster.zones[0];
-            return (
-              <Marker
-                key={`zone-${z.featureRef || z.id}`}
-                coordinate={{ latitude: z.latitude, longitude: z.longitude }}
-                tracksViewChanges={false}
-                anchor={{ x: 0.5, y: 0.5 }}
-                onPress={() => onFeatureTap?.(z.featureRef, 'irrigation')}
-                zIndex={5}
-              >
-                <View style={[styles.zoneRing, { borderColor: z.controllerColor }]} />
-              </Marker>
-            );
-          }
-          const clusterColor = cluster.colors.size > 1 ? '#888' : Array.from(cluster.colors)[0];
-          return (
-            <Marker
-              key={`zcluster-${cluster.key}`}
-              coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
-              tracksViewChanges={false}
-              pinColor={clusterColor}
-              title={`${cluster.count} zones`}
-              onPress={() => handleClusterPress(cluster)}
-              zIndex={6}
-            />
-          );
-        })}
+        {visibleZones.individual.map((z) => (
+          <ZoneRingMarkerMemo
+            key={`zone-${z.featureRef || z.id}`}
+            zone={z}
+            onPress={handleIrrigationTap}
+          />
+        ))}
+
+        {visibleZones.clusters.map((cluster) => (
+          <ClusterMarkerMemo
+            key={`zcluster-${cluster.key}`}
+            cluster={cluster}
+            onPress={handleClusterPress}
+          />
+        ))}
 
         {tasks.map((task) => (
           <Marker
