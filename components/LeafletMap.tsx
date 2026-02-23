@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 let WebView: any = null;
@@ -594,6 +594,13 @@ export default function LeafletMap({
   const handleIframeLoad = useCallback(() => {
   }, []);
 
+  const [webViewError, setWebViewError] = useState<string | null>(null);
+
+  const handleWebViewError = useCallback((syntheticEvent: any) => {
+    const { nativeEvent } = syntheticEvent;
+    setWebViewError(nativeEvent?.description || 'Map failed to load');
+  }, []);
+
   const renderMap = () => {
     if (isWeb) {
       return (
@@ -606,12 +613,29 @@ export default function LeafletMap({
       );
     }
     if (!WebView) return null;
+    if (webViewError) {
+      return (
+        <View style={[styles.webview, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f7fa' }]}>
+          <Ionicons name="warning-outline" size={40} color="#ff9800" />
+          <Text style={{ color: '#333', fontSize: 14, marginTop: 8, textAlign: 'center', paddingHorizontal: 20 }}>
+            Map failed to load. Check your connection.
+          </Text>
+          <TouchableOpacity
+            onPress={() => { setWebViewError(null); }}
+            style={{ marginTop: 12, backgroundColor: '#25C1AC', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10 }}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <WebView
         ref={webViewRef}
-        source={{ html: htmlContent }}
+        source={{ html: htmlContent, baseUrl: 'https://unpkg.com' }}
         style={styles.webview}
         onMessage={handleMessage}
+        onError={handleWebViewError}
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}
@@ -622,6 +646,16 @@ export default function LeafletMap({
         showsVerticalScrollIndicator={false}
         allowsInlineMediaPlayback
         mixedContentMode="always"
+        allowFileAccessFromFileURLs
+        allowUniversalAccessFromFileURLs
+        allowFileAccess
+        startInLoadingState
+        renderLoading={() => (
+          <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f7fa' }]}>
+            <ActivityIndicator size="large" color="#25C1AC" />
+            <Text style={{ color: '#888', fontSize: 13, marginTop: 8 }}>Loading map...</Text>
+          </View>
+        )}
       />
     );
   };
