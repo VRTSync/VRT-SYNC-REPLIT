@@ -360,6 +360,11 @@ export default function MapScreen() {
   const activeLayers = React.useMemo(() => {
     return categoryLayers
       .filter((l) => enabledLayerIds.has(l.id))
+      .filter((l) => {
+        if (l.subLayerKey === 'controller' && showControllerLayer) return false;
+        if (l.subLayerKey === 'zone' && showZoneLayer) return false;
+        return true;
+      })
       .map((l, idx) => {
         let geojson = loadedGeoJSON[l.id] || null;
 
@@ -389,7 +394,7 @@ export default function MapScreen() {
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
-  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, enabledControllers, controllerColorMap]);
+  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, enabledControllers, controllerColorMap, showControllerLayer, showZoneLayer]);
 
   const fitToContentKey = useMemo(() => {
     const parts = [

@@ -83,10 +83,13 @@ const layerColors = [
   '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
 ];
 
-const REGION_BUFFER = 1.5;
-const MAX_VISIBLE_FEATURES = 200;
+const REGION_BUFFER = 1.2;
+const MAX_VISIBLE_FEATURES = 100;
+const MAX_CONTROLLER_MARKERS = 50;
+const MAX_ZONE_CLUSTERS = 60;
 const ZONE_CLUSTER_ZOOM_THRESHOLD = 0.015;
 const CLUSTER_GRID_SIZE = 0.003;
+const REGION_CHANGE_DEBOUNCE_MS = 200;
 
 function parseGeoJSONCoords(coords: number[]): { latitude: number; longitude: number } {
   return { latitude: coords[1], longitude: coords[0] };
@@ -215,9 +218,13 @@ function NativeMap({
 }: NativeMapProps) {
   const mapRef = useRef<MapView>(null);
   const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
+  const regionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleRegionChange = useCallback((region: Region) => {
-    setVisibleRegion(region);
+    if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
+    regionTimerRef.current = setTimeout(() => {
+      setVisibleRegion(region);
+    }, REGION_CHANGE_DEBOUNCE_MS);
   }, []);
 
   const isZoomedIn = visibleRegion ? visibleRegion.latitudeDelta < ZONE_CLUSTER_ZOOM_THRESHOLD : false;
@@ -415,9 +422,9 @@ function NativeMap({
 
   const visibleControllers = useMemo(() => {
     if (!showControllers) return [];
-    return controllerMarkers.filter(c =>
-      isPointInRegion(c.latitude, c.longitude, visibleRegion)
-    );
+    return controllerMarkers
+      .filter(c => isPointInRegion(c.latitude, c.longitude, visibleRegion))
+      .slice(0, MAX_CONTROLLER_MARKERS);
   }, [showControllers, controllerMarkers, visibleRegion]);
 
   const zoneClusters = useMemo(() => {
@@ -426,7 +433,7 @@ function NativeMap({
       isPointInRegion(z.latitude, z.longitude, visibleRegion)
     );
     if (isZoomedIn) {
-      return visible.map(z => ({
+      return visible.slice(0, MAX_ZONE_CLUSTERS).map(z => ({
         key: z.featureRef || z.id,
         latitude: z.latitude,
         longitude: z.longitude,
@@ -435,7 +442,7 @@ function NativeMap({
         zones: [z],
       }));
     }
-    return clusterZones(visible, CLUSTER_GRID_SIZE);
+    return clusterZones(visible, CLUSTER_GRID_SIZE).slice(0, MAX_ZONE_CLUSTERS);
   }, [showZones, zoneMarkers, visibleRegion, isZoomedIn]);
 
   const handleClusterPress = useCallback((cluster: ZoneCluster) => {
