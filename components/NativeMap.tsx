@@ -85,8 +85,10 @@ const layerColors = [
 
 const REGION_BUFFER = 1.2;
 const MAX_VISIBLE_FEATURES = 100;
-const ZOOM_IN_THRESHOLD = 0.012;
-const ZOOM_OUT_THRESHOLD = 0.018;
+const ZOOM_IN_THRESHOLD = 0.008;
+const ZOOM_OUT_THRESHOLD = 0.014;
+const FAR_ZOOM_THRESHOLD = 0.08;
+const MAX_INDIVIDUAL_ZONES = 400;
 const CLUSTER_GRID_SIZE = 0.003;
 const REGION_CHANGE_DEBOUNCE_MS = 300;
 
@@ -234,17 +236,22 @@ const ClusterMarkerMemo = React.memo(function ClusterMarkerMemo({
   cluster: ZoneCluster;
   onPress: (cluster: ZoneCluster) => void;
 }) {
-  const clusterColor = cluster.colors.size > 1 ? '#888' : Array.from(cluster.colors)[0];
+  const isMixed = cluster.colors.size > 1;
+  const bgColor = isMixed ? '#6b7280' : Array.from(cluster.colors)[0];
+  const borderCol = isMixed ? '#d1d5db' : '#fff';
   return (
     <Marker
       key={`zcluster-${cluster.key}`}
       coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
       tracksViewChanges={false}
-      pinColor={clusterColor}
-      title={`${cluster.count} zones`}
+      anchor={{ x: 0.5, y: 0.5 }}
       onPress={() => onPress(cluster)}
       zIndex={6}
-    />
+    >
+      <View style={[styles.clusterBadge, { backgroundColor: bgColor, borderColor: borderCol }]}>
+        <Text style={styles.clusterBadgeText}>{cluster.count}</Text>
+      </View>
+    </Marker>
   );
 });
 
@@ -292,12 +299,24 @@ function NativeMap({
   const mapRef = useRef<MapView>(null);
   const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
   const regionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
   const [isZoomedIn, setIsZoomedIn] = useState(false);
+  const [isFarZoom, setIsFarZoom] = useState(true);
   const isZoomedInRef = useRef(false);
+  const isFarZoomRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
+    };
+  }, []);
 
   const handleRegionChange = useCallback((region: Region) => {
     if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
     regionTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
       setVisibleRegion(region);
       const delta = region.latitudeDelta;
       const wasZoomed = isZoomedInRef.current;
@@ -307,6 +326,14 @@ function NativeMap({
       } else if (wasZoomed && delta > ZOOM_OUT_THRESHOLD) {
         isZoomedInRef.current = false;
         setIsZoomedIn(false);
+      }
+      const wasFar = isFarZoomRef.current;
+      if (wasFar && delta < FAR_ZOOM_THRESHOLD * 0.8) {
+        isFarZoomRef.current = false;
+        setIsFarZoom(false);
+      } else if (!wasFar && delta > FAR_ZOOM_THRESHOLD) {
+        isFarZoomRef.current = true;
+        setIsFarZoom(true);
       }
     }, REGION_CHANGE_DEBOUNCE_MS);
   }, []);
@@ -516,13 +543,27 @@ function NativeMap({
     return clusterZones(zoneMarkers, CLUSTER_GRID_SIZE);
   }, [zoneMarkers]);
 
+  const emptyZones = useMemo(() => ({ individual: [] as ZoneMarkerData[], clusters: [] as ZoneCluster[] }), []);
+
   const visibleZones = useMemo(() => {
-    if (!isIrrigation || !showZones || zoneMarkers.length === 0) return { individual: [] as ZoneMarkerData[], clusters: [] as ZoneCluster[] };
-    if (isZoomedIn) {
+    if (!isIrrigation || !showZones || zoneMarkers.length === 0) return emptyZones;
+    if (isFarZoom) return emptyZones;
+    if (isZoomedIn && zoneMarkers.length <= MAX_INDIVIDUAL_ZONES) {
       return { individual: zoneMarkers, clusters: [] as ZoneCluster[] };
     }
     return { individual: [] as ZoneMarkerData[], clusters: clusteredZones };
-  }, [isIrrigation, showZones, zoneMarkers, isZoomedIn, clusteredZones]);
+  }, [isIrrigation, showZones, zoneMarkers, isZoomedIn, isFarZoom, clusteredZones, emptyZones]);
+
+  if (__DEV__) {
+    const prevCountRef = useRef({ ctrl: 0, zoneInd: 0, zoneCl: 0, zoomToggles: 0 });
+    const ctrlCount = visibleControllers.length;
+    const zoneIndCount = visibleZones.individual.length;
+    const zoneClCount = visibleZones.clusters.length;
+    if (ctrlCount !== prevCountRef.current.ctrl || zoneIndCount !== prevCountRef.current.zoneInd || zoneClCount !== prevCountRef.current.zoneCl) {
+      prevCountRef.current = { ...prevCountRef.current, ctrl: ctrlCount, zoneInd: zoneIndCount, zoneCl: zoneClCount };
+      console.log(`[Map] Markers: ${ctrlCount} ctrl, ${zoneIndCount} zone rings, ${zoneClCount} clusters | zoomed=${isZoomedIn} far=${isFarZoom}`);
+    }
+  }
 
   const handleIrrigationTap = useCallback((featureRef: string) => {
     onFeatureTap?.(featureRef, 'irrigation');
@@ -622,6 +663,13 @@ function NativeMap({
           </Marker>
         )}
       </MapView>
+
+      {isIrrigation && showZones && isFarZoom && zoneMarkers.length > 0 && (
+        <View style={styles.zoomHint}>
+          <Ionicons name="search-outline" size={14} color="#fff" />
+          <Text style={styles.zoomHintText}>Zoom in to see zones</Text>
+        </View>
+      )}
 
       <View style={styles.legend}>
         {Object.entries(priorityColors).map(([label, color]) => (
@@ -1008,4 +1056,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#0C1D31',
   },
   assetDetailBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  zoomHint: {
+    position: 'absolute',
+    top: 16,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(12,29,49,0.8)',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  zoomHintText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
 });
