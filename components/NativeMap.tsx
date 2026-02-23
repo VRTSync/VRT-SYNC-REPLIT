@@ -307,6 +307,7 @@ function NativeMap({
     : { latitude: 39.8283, longitude: -98.5795, latitudeDelta: 30, longitudeDelta: 30 };
 
   const geoJSONElements = useMemo(() => {
+    if (hasCustomMarkers) return [];
     const elements: React.ReactNode[] = [];
     let featureCount = 0;
 
@@ -424,22 +425,17 @@ function NativeMap({
     }
 
     return elements;
-  }, [layers, onFeatureTap, visibleRegion]);
+  }, [layers, onFeatureTap, visibleRegion, hasCustomMarkers]);
 
   const visibleControllers = useMemo(() => {
     if (!showControllers) return [];
-    return controllerMarkers.filter(c =>
-      isPointInRegion(c.latitude, c.longitude, visibleRegion)
-    );
-  }, [showControllers, controllerMarkers, visibleRegion]);
+    return controllerMarkers;
+  }, [showControllers, controllerMarkers]);
 
   const zoneClusters = useMemo(() => {
     if (!showZones || zoneMarkers.length === 0) return [];
-    const visible = zoneMarkers.filter(z =>
-      isPointInRegion(z.latitude, z.longitude, visibleRegion)
-    );
     if (isZoomedIn) {
-      return visible.map(z => ({
+      return zoneMarkers.map(z => ({
         key: z.featureRef || z.id,
         latitude: z.latitude,
         longitude: z.longitude,
@@ -448,8 +444,8 @@ function NativeMap({
         zones: [z],
       }));
     }
-    return clusterZones(visible, CLUSTER_GRID_SIZE);
-  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn]);
+    return clusterZones(zoneMarkers, CLUSTER_GRID_SIZE);
+  }, [showZones, zoneMarkers, isZoomedIn]);
 
   const handleClusterPress = useCallback((cluster: ZoneCluster) => {
     if (cluster.count === 1) {
@@ -487,7 +483,7 @@ function NativeMap({
         onRegionChangeComplete={handleRegionChange}
         moveOnMarkerPress={false}
       >
-        {!hasCustomMarkers && geoJSONElements}
+        {geoJSONElements}
 
         {visibleControllers.map((ctrl) => (
           <Marker
@@ -512,29 +508,23 @@ function NativeMap({
                 key={`zone-${z.featureRef || z.id}`}
                 coordinate={{ latitude: z.latitude, longitude: z.longitude }}
                 tracksViewChanges={false}
-                anchor={{ x: 0.5, y: 0.5 }}
+                pinColor={z.controllerColor}
                 onPress={() => onFeatureTap?.(z.featureRef, 'irrigation')}
                 zIndex={5}
-              >
-                <View style={[styles.zoneRing, { borderColor: z.controllerColor }]} />
-              </Marker>
+              />
             );
           }
-          const isMixed = cluster.colors.size > 1;
-          const clusterColor = isMixed ? '#888' : Array.from(cluster.colors)[0];
+          const clusterColor = cluster.colors.size > 1 ? '#888' : Array.from(cluster.colors)[0];
           return (
             <Marker
               key={`zcluster-${cluster.key}`}
               coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
               tracksViewChanges={false}
-              anchor={{ x: 0.5, y: 0.5 }}
+              pinColor={clusterColor}
+              title={`${cluster.count} zones`}
               onPress={() => handleClusterPress(cluster)}
               zIndex={6}
-            >
-              <View style={[styles.clusterBadge, { backgroundColor: clusterColor, borderColor: isMixed ? '#666' : clusterColor }]}>
-                <Text style={styles.clusterBadgeText}>{cluster.count}</Text>
-              </View>
-            </Marker>
+            />
           );
         })}
 
