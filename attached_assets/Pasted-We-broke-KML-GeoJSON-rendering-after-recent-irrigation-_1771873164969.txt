@@ -1,0 +1,66 @@
+We broke KML/GeoJSON rendering after recent irrigation marker work. Fix must be SCALABLE and MUST NOT add new features. Goal: restore reliable map layer rendering (including KML-imported assets) while keeping the irrigation custom controller/zone markers.
+
+Context:
+- components/NativeMap.tsx renders GeoJSON features as Polygon/Polyline/Marker.
+- app/(tabs)/map.tsx passes `layers` (GeoJSON) and also passes `controllerMarkers` / `zoneMarkers` plus `showControllers/showZones` when category is irrigation.
+- Right now: layers exist in DB, but are not displayed.
+
+Root causes to fix (both):
+1) NativeMap currently disables ALL GeoJSON rendering when `hasCustomMarkers` is true:
+   const hasCustomMarkers = isIrrigation && (showControllers || showZones);
+   if (hasCustomMarkers) return [];
+   This hides non-controller irrigation layers (backflows, master valves, etc.) any time controllers or zones are on.
+
+2) NativeMap Point rendering currently skips controller/zone points unconditionally:
+   if (geom.type === 'Point') {
+     if (layer.subLayerKey !== 'controller' && layer.subLayerKey !== 'zone') {
+       render Marker...
+     }
+   }
+   This causes controller/zone KML layers to render NOTHING unless controllerMarkers/zoneMarkers are present and enabled.
+
+Required Fix (NativeMap.tsx):
+A) Change GeoJSON rendering logic so that even when irrigation custom markers are enabled, we still render OTHER layers (community outline, polygons, and irrigation sublayers other than controller/zone).
+   - Do NOT return [] for hasCustomMarkers.
+   - Instead compute `layersToRender`:
+     - If NOT irrigation: render all enabled GeoJSON layers as before.
+     - If irrigation AND (showControllers or showZones):
+         - still render GeoJSON layers EXCEPT those with subLayerKey 'controller' and 'zone' (because those are covered by custom markers)
+         - IMPORTANT: do NOT hide backflows or any other irrigation layers.
+   - Keep MAX_VISIBLE_FEATURES logic and visibleRegion gating.
+
+B) Add a safe fallback so controller/zone Point features still render when controllerMarkers/zoneMarkers are not available.
+   - Only suppress GeoJSON Point markers for controller layer when controllerMarkers.length > 0 AND showControllers is true.
+   - Only suppress GeoJSON Point markers for zone layer when zoneMarkers.length > 0 AND showZones is true.
+   - Otherwise render those points as standard Marker pins (so KML imported controller/zone layers are always visible even if the controller API is empty, offline, or delayed).
+
+C) Add minimal logging (DEV-only) to confirm why something is hidden:
+   - When irrigation and showControllers/showZones, log counts:
+     - layers total
+     - layersToRender count
+     - number of controllerMarkers/zoneMarkers
+     - number of GeoJSON point features rendered
+   - NO noisy per-feature logs.
+
+Required Fix (map.tsx):
+D) Confirm we are not filtering out too much from `activeLayers`:
+   - Currently activeLayers filters out controller/zone layers when controllers.length > 0 (good).
+   - Keep this behavior, BUT ensure that if controllers.length === 0, those layers remain in activeLayers and will now render via the fallback in NativeMap (Requirement B).
+   - Do NOT add new UI. Just ensure the map gets layers + toggles correct.
+
+Acceptance Criteria (must verify manually):
+1) In irrigation category with showControllers=true:
+   - Controller custom markers render.
+   - Backflows (and other irrigation point layers) still render.
+2) In irrigation category with showControllers=true and showZones=true:
+   - Controller markers render, zone rings/clusters render.
+   - Backflows still render.
+3) If controllers API returns 0 OR is disabled:
+   - Irrigation controller and zone GeoJSON points still appear as default Markers (fallback works).
+4) Non-irrigation categories (community/snow/trees) render exactly as before (no regressions).
+5) No crashes when toggling between categories (especially leaving irrigation).
+
+Deliverables:
+- Update components/NativeMap.tsx per A/B/C.
+- Confirm app/(tabs)/map.tsx behavior per D.
+- Do not touch backend, schema, or add features.
