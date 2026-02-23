@@ -556,13 +556,13 @@ function NativeMap({
     return { individual: [] as ZoneMarkerData[], clusters: clusteredZones };
   }, [isIrrigation, showZones, zoneMarkers, isZoomedIn, isFarZoom, clusteredZones, emptyZones]);
 
+  const devPrevCountRef = useRef({ ctrl: 0, zoneInd: 0, zoneCl: 0 });
   if (__DEV__) {
-    const prevCountRef = useRef({ ctrl: 0, zoneInd: 0, zoneCl: 0, zoomToggles: 0 });
     const ctrlCount = visibleControllers.length;
     const zoneIndCount = visibleZones.individual.length;
     const zoneClCount = visibleZones.clusters.length;
-    if (ctrlCount !== prevCountRef.current.ctrl || zoneIndCount !== prevCountRef.current.zoneInd || zoneClCount !== prevCountRef.current.zoneCl) {
-      prevCountRef.current = { ...prevCountRef.current, ctrl: ctrlCount, zoneInd: zoneIndCount, zoneCl: zoneClCount };
+    if (ctrlCount !== devPrevCountRef.current.ctrl || zoneIndCount !== devPrevCountRef.current.zoneInd || zoneClCount !== devPrevCountRef.current.zoneCl) {
+      devPrevCountRef.current = { ctrl: ctrlCount, zoneInd: zoneIndCount, zoneCl: zoneClCount };
       console.log(`[Map] Markers: ${ctrlCount} ctrl, ${zoneIndCount} zone rings, ${zoneClCount} clusters | zoomed=${isZoomedIn} far=${isFarZoom}`);
     }
   }
