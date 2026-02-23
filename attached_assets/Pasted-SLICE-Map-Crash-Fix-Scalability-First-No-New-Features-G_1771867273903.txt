@@ -1,0 +1,78 @@
+SLICE: Map Crash Fix (Scalability-First, No New Features)
+
+GOAL
+Fix native app map crashes when switching away from Irrigation. The map must remain stable with large zone counts (hundreds/thousands). This slice is stability-only: no new UI/UX features.
+
+ROOT CAUSE (what we are preventing)
+When leaving the Irrigation category, the app is still building/passing large controller + zone marker arrays and/or still running irrigation clustering/zoom logic during/after the tab switch. Combined with GeoJSON layer mounting + region-change events, this creates a render/memory spike that can crash Expo/native maps.
+
+REQUIRED CHANGES (ONLY TWO FILES)
+
+1) app/(tabs)/map.tsx — HARD GATE irrigation markers by activeCategory
+- Define:
+  const isIrrigation = activeCategory === "irrigation";
+
+- Ensure controllerMarkers and zoneMarkers are EMPTY unless irrigation is active:
+  - controllerMarkers must be [] if !isIrrigation OR showControllerLayer is false
+  - zoneMarkers must be [] if !isIrrigation OR showZoneLayer is false
+
+- Ensure NativeMap receives safe props when not irrigation:
+  - showControllers = isIrrigation && showControllerLayer
+  - showZones = isIrrigation && showZoneLayer
+  - controllerMarkers = isIrrigation ? controllerMarkers : []
+  - zoneMarkers = isIrrigation ? zoneMarkers : []
+
+- On category change away from irrigation, force-disable irrigation layer toggles so custom marker mode cannot linger:
+  useEffect(() => {
+    if (activeCategory !== "irrigation") {
+      setShowControllerLayer(false);
+      setShowZoneLayer(false);
+      // close any open irrigation-specific selection/popup if applicable:
+      // setSelectedAsset(null);
+    }
+  }, [activeCategory]);
+
+(Important: do NOT compute/controller-zone marker arrays when isIrrigation is false.)
+
+2) components/NativeMap.tsx — ZERO irrigation work unless irrigation is active
+- Define:
+  const isIrrigationActive = activeCategory === "irrigation" && (showControllers || showZones);
+
+- Early gate ALL irrigation-only memo/logic:
+  - If !isIrrigationActive:
+    - return [] for any zone clustering / visible zones computations
+    - do not render controller markers, zone markers, or cluster markers
+    - region-change handler must not trigger irrigation computations
+
+- Add a guard at the top of any region-change handler that updates zoom/farZoom/cluster-related state:
+  if (!isIrrigationActive) return;
+
+- Ensure that marker rendering blocks are wrapped:
+  {isIrrigationActive && (
+    <>
+      // controller markers
+      // zone markers OR clusters (never both)
+    </>
+  )}
+
+- Ensure clusters vs zones are mutually exclusive:
+  - if using clusters at current zoom, do not render individual zones at the same time
+
+OPTIONAL FAILSAFE (ONLY IF CRASH PERSISTS AFTER GATING)
+Force a clean remount of the NativeMap subtree when category changes:
+- In map.tsx, add a key prop:
+  <NativeMap key={`${activeCategory}:${activeCommunityId ?? "none"}`} ... />
+This resets map internal state and cancels any lingering timers/handlers.
+
+ACCEPTANCE TESTS (MUST PASS)
+1) With irrigation loaded (100+ zones), pan/zoom for 30 seconds, then switch to Community → no crash.
+2) Switch between Irrigation/Community/Snow/Trees 20 times quickly → no crash.
+3) When NOT on irrigation:
+   - controllerMarkers length is 0
+   - zoneMarkers length is 0
+   - no cluster recompute logs (if any)
+   - GeoJSON layers render normally
+4) Returning to irrigation shows controllers/zones again according to toggles and zoom rules.
+
+DELIVERABLE
+A stable map that cannot crash due to irrigation overlays while switching categories. No new features, just hard gating + cleanup.
