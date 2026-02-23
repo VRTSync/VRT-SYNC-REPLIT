@@ -415,13 +415,24 @@ function NativeMap({
     ? { ...userLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }
     : { latitude: 39.8283, longitude: -98.5795, latitudeDelta: 30, longitudeDelta: 30 };
 
+  const suppressCtrlGeoJSON = isIrrigationActive && showControllers && controllerMarkers.length > 0;
+  const suppressZoneGeoJSON = isIrrigationActive && showZones && zoneMarkers.length > 0;
+
   const geoJSONElements = useMemo(() => {
-    if (isIrrigationActive) return [];
     const elements: React.ReactNode[] = [];
     let featureCount = 0;
+    let geoPointCount = 0;
 
-    for (let layerIndex = 0; layerIndex < layers.length; layerIndex++) {
-      const layer = layers[layerIndex];
+    const layersToRender = isIrrigationActive
+      ? layers.filter(l => {
+          if (l.subLayerKey === 'controller' && suppressCtrlGeoJSON) return false;
+          if (l.subLayerKey === 'zone' && suppressZoneGeoJSON) return false;
+          return true;
+        })
+      : layers;
+
+    for (let layerIndex = 0; layerIndex < layersToRender.length; layerIndex++) {
+      const layer = layersToRender[layerIndex];
       if (!layer.geojson) continue;
       const color = layer.color || layerColors[layerIndex % layerColors.length];
 
@@ -514,7 +525,11 @@ function NativeMap({
             );
           });
         } else if (geom.type === 'Point') {
-          if (layer.subLayerKey !== 'controller' && layer.subLayerKey !== 'zone') {
+          const isCtrlLayer = layer.subLayerKey === 'controller';
+          const isZoneLayer = layer.subLayerKey === 'zone';
+          const skipCtrlPoint = isCtrlLayer && showControllers && controllerMarkers.length > 0;
+          const skipZonePoint = isZoneLayer && showZones && zoneMarkers.length > 0;
+          if (!skipCtrlPoint && !skipZonePoint) {
             const coord = parseGeoJSONCoords(geom.coordinates);
             elements.push(
               <Marker
@@ -525,6 +540,7 @@ function NativeMap({
                 onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
               />
             );
+            geoPointCount++;
           }
         }
 
@@ -533,8 +549,12 @@ function NativeMap({
       if (featureCount >= MAX_VISIBLE_FEATURES) break;
     }
 
+    if (__DEV__ && isIrrigationActive) {
+      console.log(`[Map GeoJSON] layers=${layers.length} rendered=${layersToRender.length} ctrlMarkers=${controllerMarkers.length} zoneMarkers=${zoneMarkers.length} geoPoints=${geoPointCount}`);
+    }
+
     return elements;
-  }, [layers, onFeatureTap, visibleRegion, isIrrigationActive]);
+  }, [layers, onFeatureTap, visibleRegion, isIrrigationActive, suppressCtrlGeoJSON, suppressZoneGeoJSON, showControllers, showZones, controllerMarkers.length, zoneMarkers.length]);
 
   const visibleControllers = useMemo(() => {
     if (!isIrrigationActive || !showControllers) return [];
