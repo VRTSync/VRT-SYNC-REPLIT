@@ -433,6 +433,35 @@ export default function MapScreen() {
     }
   }, [controllers]);
 
+  const handleShowControllerZones = useCallback((controllerFeatureRef: string) => {
+    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
+    if (!ctrl || !ctrl.zones || ctrl.zones.length === 0) return;
+    const coords = ctrl.zones
+      .filter(z => z.latitude != null && z.longitude != null)
+      .map(z => ({ lat: z.latitude!, lng: z.longitude! }));
+    if (coords.length === 0) return;
+    setSelectedAsset(null);
+    const minLat = Math.min(...coords.map(c => c.lat));
+    const maxLat = Math.max(...coords.map(c => c.lat));
+    const minLng = Math.min(...coords.map(c => c.lng));
+    const maxLng = Math.max(...coords.map(c => c.lng));
+    if (ctrl.latitude != null && ctrl.longitude != null) {
+      const allLats = [...coords.map(c => c.lat), ctrl.latitude];
+      const allLngs = [...coords.map(c => c.lng), ctrl.longitude];
+      setTargetRegion({
+        latitude: (Math.min(...allLats) + Math.max(...allLats)) / 2,
+        longitude: (Math.min(...allLngs) + Math.max(...allLngs)) / 2,
+        label: `${ctrl.label} — ${coords.length} zone${coords.length !== 1 ? 's' : ''}`,
+      });
+    } else {
+      setTargetRegion({
+        latitude: (minLat + maxLat) / 2,
+        longitude: (minLng + maxLng) / 2,
+        label: `${ctrl.label} — ${coords.length} zone${coords.length !== 1 ? 's' : ''}`,
+      });
+    }
+  }, [controllers]);
+
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
@@ -735,6 +764,7 @@ export default function MapScreen() {
         onAssetDetail={handleAssetDetail}
         onAssetHistory={handleAssetHistory}
         onShowController={handleShowController}
+        onShowControllerZones={handleShowControllerZones}
         targetRegion={targetRegion}
         onTargetReached={handleTargetReached}
         controllerMarkers={controllerMarkers}

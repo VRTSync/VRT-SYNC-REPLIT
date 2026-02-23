@@ -266,6 +266,7 @@ type NativeMapProps = {
   onAssetDetail?: (assetId: string) => void;
   onAssetHistory?: (assetId: string) => void;
   onShowController?: (controllerFeatureRef: string) => void;
+  onShowControllerZones?: (controllerFeatureRef: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
   onTargetReached?: () => void;
   controllerMarkers?: ControllerMarkerData[];
@@ -287,6 +288,7 @@ function NativeMap({
   onAssetDetail,
   onAssetHistory,
   onShowController,
+  onShowControllerZones,
   targetRegion,
   onTargetReached,
   controllerMarkers = [],
@@ -569,12 +571,7 @@ function NativeMap({
     onFeatureTap?.(featureRef, 'irrigation');
   }, [onFeatureTap]);
 
-  const handleClusterPress = useCallback((cluster: ZoneCluster) => {
-    if (cluster.count === 1) {
-      const z = cluster.zones[0];
-      handleIrrigationTap(z.featureRef);
-      return;
-    }
+  const zoomToCluster = useCallback((cluster: ZoneCluster) => {
     const lats = cluster.zones.map(z => z.latitude);
     const lngs = cluster.zones.map(z => z.longitude);
     const minLat = Math.min(...lats);
@@ -587,7 +584,35 @@ function NativeMap({
       latitudeDelta: Math.max((maxLat - minLat) * 1.5, 0.003),
       longitudeDelta: Math.max((maxLng - minLng) * 1.5, 0.003),
     }, 500);
-  }, [onFeatureTap]);
+  }, []);
+
+  const handleClusterPress = useCallback((cluster: ZoneCluster) => {
+    if (cluster.count === 1) {
+      const z = cluster.zones[0];
+      handleIrrigationTap(z.featureRef);
+      return;
+    }
+    const breakdown = new Map<string, { label: string; count: number }>();
+    for (const z of cluster.zones) {
+      const key = z.controllerFeatureRef;
+      if (!breakdown.has(key)) {
+        breakdown.set(key, { label: z.controllerLabel || z.controllerKey, count: 0 });
+      }
+      breakdown.get(key)!.count++;
+    }
+    const lines = Array.from(breakdown.values())
+      .sort((a, b) => b.count - a.count)
+      .map(b => `${b.label}: ${b.count}`)
+      .join('\n');
+    Alert.alert(
+      `${cluster.count} zones`,
+      lines,
+      [
+        { text: 'Zoom In', onPress: () => zoomToCluster(cluster) },
+        { text: 'Close', style: 'cancel' },
+      ],
+    );
+  }, [handleIrrigationTap, zoomToCluster]);
 
   return (
     <View style={styles.container}>
@@ -667,7 +692,7 @@ function NativeMap({
       {isIrrigation && showZones && isFarZoom && zoneMarkers.length > 0 && (
         <View style={styles.zoomHint}>
           <Ionicons name="search-outline" size={14} color="#fff" />
-          <Text style={styles.zoomHintText}>Zoom in to see zones</Text>
+          <Text style={styles.zoomHintText}>Zoom in to see zones for each controller</Text>
         </View>
       )}
 
@@ -791,6 +816,15 @@ function NativeMap({
               )}
 
               <View style={styles.assetBtnRow}>
+                {selectedAsset.featureRef && onShowControllerZones && (
+                  <TouchableOpacity
+                    style={[styles.assetDetailBtn, styles.showControllerBtn]}
+                    onPress={() => onShowControllerZones(selectedAsset.featureRef!)}
+                  >
+                    <Ionicons name="water-outline" size={16} color="#0C1D31" />
+                    <Text style={styles.showControllerBtnText}>Zones</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={styles.assetDetailBtn}
                   onPress={() => onAssetDetail?.(selectedAsset.id)}
