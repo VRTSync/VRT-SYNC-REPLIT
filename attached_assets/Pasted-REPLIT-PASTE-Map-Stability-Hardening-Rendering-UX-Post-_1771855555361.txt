@@ -1,0 +1,99 @@
+REPLIT PASTE: Map Stability Hardening + Rendering UX (Post-Fix)
+
+Purpose
+
+Harden the new clustering/zoom logic and improve marker readability without reintroducing crashes.
+
+⸻
+
+1) Replace latitudeDelta thresholds with computed zoom (more stable across devices)
+
+Right now thresholds are based on latitudeDelta. That works, but it can vary by device aspect ratio and region size.
+
+Change:
+	•	Compute an approximate zoomLevel from region.latitudeDelta + screen size (or use map camera zoom if available).
+	•	Use thresholds like:
+	•	zoom in at zoom >= 17
+	•	zoom out at zoom <= 16.5 (hysteresis)
+
+Acceptance:
+	•	Same behavior on iPhone + Android and across different latitudes.
+
+(If direct zoom isn’t available, keep delta but store thresholds in constants and calibrate once.)
+
+⸻
+
+2) Progressive reveal rules (clarity + performance)
+
+Implement explicit rendering rules:
+	•	Always render controllers when controller layer toggle is on
+	•	Zones:
+	•	Zoomed out: show clusters only
+	•	Zoomed in: show individual zones
+	•	Optional: At very far zoom (city-wide), hide zone clusters entirely and show “Zoom in to see zones”.
+
+This prevents “too many dots” and still preserves meaning.
+
+⸻
+
+3) Controller marker vs Zone marker styling (visual clarity)
+
+Make controllers unmistakable:
+
+Controller markers
+	•	Larger (28–36px)
+	•	Solid fill controllerColor
+	•	White border + shadow
+	•	Optional label inside (A/B/C)
+
+Zone markers
+	•	Small ring (10–14px)
+	•	Stroke = controllerColor
+	•	Transparent/white fill
+	•	No label until high zoom (optional)
+
+Acceptance:
+	•	User can tell controllers vs zones instantly.
+
+⸻
+
+4) Cluster UX improvements (so zoom-out doesn’t defeat purpose)
+
+Cluster marker should:
+	•	Show count
+	•	If cluster includes multiple controllers, display “mixed” style (neutral with border) and include breakdown in tap popup:
+	•	“Clock A: 6, Clock B: 4 …”
+Tap behavior:
+	•	Tap cluster zooms to bounds OR zooms in 1 level centered on cluster.
+
+⸻
+
+5) Safety/perf guardrails (never crash again)
+
+Add guardrails:
+	•	Hard cap on individual zone markers rendered at once (e.g., 400). If exceeded, force clusters regardless of zoom and show message “Too many zones — zoom in.”
+	•	Ensure region change handler doesn’t setState if component unmounted (cancel debounced callbacks on unmount).
+	•	Add lightweight performance logging behind a dev flag:
+	•	how many markers rendered
+	•	how often isZoomedIn toggled
+	•	how often clusters recompute
+
+⸻
+
+6) Popup payload improvements (zone shows parent controller)
+
+When tapping a zone marker:
+	•	Show popup that includes:
+	•	Zone Number
+	•	Zone Type
+	•	Parent Controller label + color dot
+Add “Show Controller” action to center map on controller marker.
+
+⸻
+
+Acceptance Tests
+	•	Pan/zoom for 60 seconds on irrigation with 100+ zones: no crash, smooth.
+	•	Switch category tabs repeatedly: GeoJSON always renders on Community/Snow/Trees.
+	•	Controllers look clearly different than zones.
+	•	Zoomed out still communicates density via cluster counts.
+	•	Zone popup shows parent controller and zone details.
