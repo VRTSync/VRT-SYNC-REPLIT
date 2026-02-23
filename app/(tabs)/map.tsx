@@ -384,13 +384,11 @@ export default function MapScreen() {
 
   const fitToContentKey = useMemo(() => {
     const parts = [
-      showControllerLayer ? 'c' : '',
-      showZoneLayer ? 'z' : '',
       Array.from(enabledControllers).sort().join(','),
       Array.from(enabledLayerIds).sort().join(','),
     ];
     return parts.join('|');
-  }, [showControllerLayer, showZoneLayer, enabledControllers, enabledLayerIds]);
+  }, [enabledControllers, enabledLayerIds]);
 
   const mappedTasks = useMemo(() => geoTasks.map((t) => ({
     id: t.id,
