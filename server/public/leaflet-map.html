@@ -279,6 +279,10 @@
     }
   });
 
+  setTimeout(function() { map.invalidateSize(); }, 100);
+  setTimeout(function() { map.invalidateSize(); }, 500);
+  setTimeout(function() { map.invalidateSize(); }, 1500);
+
   post('mapReady', {});
 })();
 </script>
