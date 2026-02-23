@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import MapView, { Marker, Callout, Polygon, Polyline, Region } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -32,12 +32,43 @@ type LayerData = {
   controllerColorMap?: Map<string, string>;
 };
 
+type ControllerMarkerData = {
+  id: string;
+  featureRef: string;
+  label: string;
+  controllerKey: string;
+  color: string;
+  latitude: number;
+  longitude: number;
+  zoneCount: number;
+};
+
+type ZoneMarkerData = {
+  id: string;
+  featureRef: string;
+  label: string;
+  zoneNumber: number | null;
+  zoneType: string | null;
+  controllerFeatureRef: string;
+  controllerLabel: string;
+  controllerKey: string;
+  controllerColor: string;
+  latitude: number;
+  longitude: number;
+};
+
 type AssetInfo = {
   id: string;
   assetType: string;
   label: string;
   featureRef: string | null;
   properties: { key: string; value: string }[];
+  controllerLabel?: string;
+  controllerColor?: string;
+  controllerFeatureRef?: string;
+  zoneNumber?: number | null;
+  zoneType?: string | null;
+  zoneCount?: number;
 };
 
 const priorityColors: Record<string, string> = {
@@ -54,6 +85,8 @@ const layerColors = [
 
 const REGION_BUFFER = 1.5;
 const MAX_VISIBLE_FEATURES = 200;
+const ZONE_CLUSTER_ZOOM_THRESHOLD = 0.015;
+const CLUSTER_GRID_SIZE = 0.003;
 
 function parseGeoJSONCoords(coords: number[]): { latitude: number; longitude: number } {
   return { latitude: coords[1], longitude: coords[0] };
@@ -109,6 +142,38 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
   native_area: 'Native Area', snow_area: 'Snow Area',
 };
 
+type ZoneCluster = {
+  key: string;
+  latitude: number;
+  longitude: number;
+  count: number;
+  colors: Set<string>;
+  zones: ZoneMarkerData[];
+};
+
+function clusterZones(zones: ZoneMarkerData[], gridSize: number): ZoneCluster[] {
+  const grid = new Map<string, ZoneCluster>();
+  for (const z of zones) {
+    const gx = Math.floor(z.latitude / gridSize);
+    const gy = Math.floor(z.longitude / gridSize);
+    const key = `${gx}:${gy}`;
+    if (!grid.has(key)) {
+      grid.set(key, { key, latitude: 0, longitude: 0, count: 0, colors: new Set(), zones: [] });
+    }
+    const cluster = grid.get(key)!;
+    cluster.zones.push(z);
+    cluster.count++;
+    cluster.latitude += z.latitude;
+    cluster.longitude += z.longitude;
+    cluster.colors.add(z.controllerColor);
+  }
+  for (const cluster of grid.values()) {
+    cluster.latitude /= cluster.count;
+    cluster.longitude /= cluster.count;
+  }
+  return Array.from(grid.values());
+}
+
 type NativeMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -119,8 +184,14 @@ type NativeMapProps = {
   onDismissAsset?: () => void;
   onAssetDetail?: (assetId: string) => void;
   onAssetHistory?: (assetId: string) => void;
+  onShowController?: (controllerFeatureRef: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
   onTargetReached?: () => void;
+  controllerMarkers?: ControllerMarkerData[];
+  zoneMarkers?: ZoneMarkerData[];
+  showControllers?: boolean;
+  showZones?: boolean;
+  fitToContentKey?: string;
 };
 
 function NativeMap({
@@ -133,8 +204,14 @@ function NativeMap({
   onDismissAsset,
   onAssetDetail,
   onAssetHistory,
+  onShowController,
   targetRegion,
   onTargetReached,
+  controllerMarkers = [],
+  zoneMarkers = [],
+  showControllers = false,
+  showZones = false,
+  fitToContentKey,
 }: NativeMapProps) {
   const mapRef = useRef<MapView>(null);
   const [visibleRegion, setVisibleRegion] = useState<Region | null>(null);
@@ -142,6 +219,8 @@ function NativeMap({
   const handleRegionChange = useCallback((region: Region) => {
     setVisibleRegion(region);
   }, []);
+
+  const isZoomedIn = visibleRegion ? visibleRegion.latitudeDelta < ZONE_CLUSTER_ZOOM_THRESHOLD : false;
 
   useEffect(() => {
     if (targetRegion && mapRef.current) {
@@ -156,7 +235,7 @@ function NativeMap({
       }, 600);
       return;
     }
-    if (tasks.length > 0 && mapRef.current) {
+    if (tasks.length > 0 && mapRef.current && !fitToContentKey) {
       const coords = tasks.map((t) => ({
         latitude: t.latitude,
         longitude: t.longitude,
@@ -170,6 +249,45 @@ function NativeMap({
       }, 500);
     }
   }, [tasks.length, userLocation, targetRegion]);
+
+  useEffect(() => {
+    if (!fitToContentKey || !mapRef.current) return;
+    const allCoords: { latitude: number; longitude: number }[] = [];
+
+    if (showControllers) {
+      for (const c of controllerMarkers) {
+        allCoords.push({ latitude: c.latitude, longitude: c.longitude });
+      }
+    }
+    if (showZones) {
+      for (const z of zoneMarkers) {
+        allCoords.push({ latitude: z.latitude, longitude: z.longitude });
+      }
+    }
+
+    for (const layer of layers) {
+      if (!layer.geojson) continue;
+      const features: GeoJSONFeature[] = layer.geojson.type === 'FeatureCollection'
+        ? layer.geojson.features || [] : layer.geojson.type === 'Feature' ? [layer.geojson] : [];
+      for (const f of features) {
+        const c = getFeatureCentroid(f.geometry);
+        if (c) allCoords.push({ latitude: c.lat, longitude: c.lng });
+      }
+    }
+
+    for (const t of tasks) {
+      allCoords.push({ latitude: t.latitude, longitude: t.longitude });
+    }
+
+    if (allCoords.length > 0) {
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(allCoords, {
+          edgePadding: { top: 120, right: 60, bottom: 120, left: 60 },
+          animated: true,
+        });
+      }, 300);
+    }
+  }, [fitToContentKey]);
 
   const initialRegion = userLocation
     ? { ...userLocation, latitudeDelta: 0.05, longitudeDelta: 0.05 }
@@ -229,8 +347,8 @@ function NativeMap({
               fillColor={featureFillColor}
               strokeColor={featureColor}
               strokeWidth={2}
-              tappable={!!featureRef && !!onFeatureTap}
-              onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
+              tappable={!!onFeatureTap}
+              onPress={() => onFeatureTap?.(featureRef || `polygon-${key}`, layer.layerKey)}
             />
           );
         } else if (geom.type === 'MultiPolygon') {
@@ -243,8 +361,8 @@ function NativeMap({
                 fillColor={featureFillColor}
                 strokeColor={featureColor}
                 strokeWidth={2}
-                tappable={!!featureRef && !!onFeatureTap}
-                onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
+                tappable={!!onFeatureTap}
+                onPress={() => onFeatureTap?.(featureRef || `polygon-${key}-${pIdx}`, layer.layerKey)}
               />
             );
           });
@@ -273,16 +391,18 @@ function NativeMap({
             );
           });
         } else if (geom.type === 'Point') {
-          const coord = parseGeoJSONCoords(geom.coordinates);
-          elements.push(
-            <Marker
-              key={key}
-              coordinate={coord}
-              pinColor={featureColor}
-              tracksViewChanges={false}
-              onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
-            />
-          );
+          if (layer.subLayerKey !== 'controller' && layer.subLayerKey !== 'zone') {
+            const coord = parseGeoJSONCoords(geom.coordinates);
+            elements.push(
+              <Marker
+                key={key}
+                coordinate={coord}
+                pinColor={featureColor}
+                tracksViewChanges={false}
+                onPress={() => featureRef && onFeatureTap?.(featureRef, layer.layerKey)}
+              />
+            );
+          }
         }
 
         featureCount++;
@@ -292,6 +412,51 @@ function NativeMap({
 
     return elements;
   }, [layers, onFeatureTap, visibleRegion]);
+
+  const visibleControllers = useMemo(() => {
+    if (!showControllers) return [];
+    return controllerMarkers.filter(c =>
+      isPointInRegion(c.latitude, c.longitude, visibleRegion)
+    );
+  }, [showControllers, controllerMarkers, visibleRegion]);
+
+  const zoneClusters = useMemo(() => {
+    if (!showZones || zoneMarkers.length === 0) return [];
+    const visible = zoneMarkers.filter(z =>
+      isPointInRegion(z.latitude, z.longitude, visibleRegion)
+    );
+    if (isZoomedIn) {
+      return visible.map(z => ({
+        key: z.featureRef || z.id,
+        latitude: z.latitude,
+        longitude: z.longitude,
+        count: 1,
+        colors: new Set([z.controllerColor]),
+        zones: [z],
+      }));
+    }
+    return clusterZones(visible, CLUSTER_GRID_SIZE);
+  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn]);
+
+  const handleClusterPress = useCallback((cluster: ZoneCluster) => {
+    if (cluster.count === 1) {
+      const z = cluster.zones[0];
+      onFeatureTap?.(z.featureRef, 'irrigation');
+      return;
+    }
+    const lats = cluster.zones.map(z => z.latitude);
+    const lngs = cluster.zones.map(z => z.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    mapRef.current?.animateToRegion({
+      latitude: (minLat + maxLat) / 2,
+      longitude: (minLng + maxLng) / 2,
+      latitudeDelta: Math.max((maxLat - minLat) * 1.5, 0.003),
+      longitudeDelta: Math.max((maxLng - minLng) * 1.5, 0.003),
+    }, 500);
+  }, [onFeatureTap]);
 
   return (
     <View style={styles.container}>
@@ -305,6 +470,56 @@ function NativeMap({
         moveOnMarkerPress={false}
       >
         {geoJSONElements}
+
+        {visibleControllers.map((ctrl) => (
+          <Marker
+            key={`ctrl-${ctrl.featureRef}`}
+            coordinate={{ latitude: ctrl.latitude, longitude: ctrl.longitude }}
+            tracksViewChanges={false}
+            anchor={{ x: 0.5, y: 0.5 }}
+            onPress={() => onFeatureTap?.(ctrl.featureRef, 'irrigation')}
+            zIndex={10}
+          >
+            <View style={[styles.controllerMarker, { backgroundColor: ctrl.color, borderColor: '#fff' }]}>
+              <Text style={styles.controllerMarkerLabel}>{ctrl.controllerKey}</Text>
+            </View>
+          </Marker>
+        ))}
+
+        {zoneClusters.map((cluster) => {
+          if (cluster.count === 1) {
+            const z = cluster.zones[0];
+            return (
+              <Marker
+                key={`zone-${z.featureRef || z.id}`}
+                coordinate={{ latitude: z.latitude, longitude: z.longitude }}
+                tracksViewChanges={false}
+                anchor={{ x: 0.5, y: 0.5 }}
+                onPress={() => onFeatureTap?.(z.featureRef, 'irrigation')}
+                zIndex={5}
+              >
+                <View style={[styles.zoneRing, { borderColor: z.controllerColor }]} />
+              </Marker>
+            );
+          }
+          const isMixed = cluster.colors.size > 1;
+          const clusterColor = isMixed ? '#888' : Array.from(cluster.colors)[0];
+          return (
+            <Marker
+              key={`zcluster-${cluster.key}`}
+              coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 0.5 }}
+              onPress={() => handleClusterPress(cluster)}
+              zIndex={6}
+            >
+              <View style={[styles.clusterBadge, { backgroundColor: clusterColor, borderColor: isMixed ? '#666' : clusterColor }]}>
+                <Text style={styles.clusterBadgeText}>{cluster.count}</Text>
+              </View>
+            </Marker>
+          );
+        })}
+
         {tasks.map((task) => (
           <Marker
             key={task.id}
@@ -349,48 +564,177 @@ function NativeMap({
 
       {selectedAsset && (
         <View style={styles.assetPopup}>
-          <View style={styles.assetPopupHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
-              <Text style={styles.assetPopupType}>
-                {ASSET_TYPE_LABELS[selectedAsset.assetType] || selectedAsset.assetType}
-              </Text>
-            </View>
-            <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="close-circle" size={24} color="#999" />
-            </TouchableOpacity>
-          </View>
-
-          {selectedAsset.properties.length > 0 && (
-            <View style={styles.assetProps}>
-              {selectedAsset.properties.slice(0, 4).map((p) => (
-                <View key={p.key} style={styles.assetPropRow}>
-                  <Text style={styles.assetPropKey}>{p.key}:</Text>
-                  <Text style={styles.assetPropVal}>{p.value}</Text>
+          {selectedAsset.assetType === 'zone' ? (
+            <>
+              <View style={styles.assetPopupHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
+                  <View style={styles.zoneSubHeader}>
+                    {selectedAsset.controllerColor && (
+                      <View style={[styles.controllerDotInline, { backgroundColor: selectedAsset.controllerColor }]} />
+                    )}
+                    <Text style={styles.zoneControllerText}>
+                      {selectedAsset.controllerLabel || 'Controller'}
+                    </Text>
+                  </View>
                 </View>
-              ))}
-              {selectedAsset.properties.length > 4 && (
-                <Text style={styles.assetPropMore}>+{selectedAsset.properties.length - 4} more</Text>
-              )}
-            </View>
-          )}
+                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={24} color="#999" />
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.assetBtnRow}>
-            <TouchableOpacity
-              style={styles.assetDetailBtn}
-              onPress={() => onAssetDetail?.(selectedAsset.id)}
-            >
-              <Ionicons name="information-circle-outline" size={18} color="#fff" />
-              <Text style={styles.assetDetailBtnText}>Details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-              onPress={() => onAssetHistory?.(selectedAsset.id)}
-            >
-              <Ionicons name="time-outline" size={18} color="#fff" />
-              <Text style={styles.assetDetailBtnText}>Work History</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.zoneDetailsRow}>
+                {selectedAsset.zoneNumber != null && (
+                  <View style={styles.zoneDetailChip}>
+                    <Ionicons name="water-outline" size={13} color="#25C1AC" />
+                    <Text style={styles.zoneDetailChipText}>Zone {selectedAsset.zoneNumber}</Text>
+                  </View>
+                )}
+                {selectedAsset.zoneType && (
+                  <View style={styles.zoneDetailChip}>
+                    <Ionicons name="options-outline" size={13} color="#25C1AC" />
+                    <Text style={styles.zoneDetailChipText}>{selectedAsset.zoneType}</Text>
+                  </View>
+                )}
+              </View>
+
+              {selectedAsset.properties.length > 0 && (
+                <View style={styles.assetProps}>
+                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort').slice(0, 3).map((p) => (
+                    <View key={p.key} style={styles.assetPropRow}>
+                      <Text style={styles.assetPropKey}>{p.key}:</Text>
+                      <Text style={styles.assetPropVal}>{p.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.assetBtnRow}>
+                {selectedAsset.controllerFeatureRef && onShowController && (
+                  <TouchableOpacity
+                    style={[styles.assetDetailBtn, styles.showControllerBtn]}
+                    onPress={() => onShowController(selectedAsset.controllerFeatureRef!)}
+                  >
+                    <Ionicons name="locate-outline" size={16} color="#0C1D31" />
+                    <Text style={styles.showControllerBtnText}>Show Controller</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                  onPress={() => onAssetHistory?.(selectedAsset.id)}
+                >
+                  <Ionicons name="time-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>History</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : selectedAsset.assetType === 'controller' ? (
+            <>
+              <View style={styles.assetPopupHeader}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.controllerPopupTitle}>
+                    {selectedAsset.controllerColor && (
+                      <View style={[styles.controllerDotLarge, { backgroundColor: selectedAsset.controllerColor }]} />
+                    )}
+                    <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
+                  </View>
+                  <Text style={styles.assetPopupType}>Controller</Text>
+                </View>
+                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={24} color="#999" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedAsset.zoneCount != null && (
+                <View style={styles.controllerZoneBadge}>
+                  <Ionicons name="water-outline" size={14} color="#25C1AC" />
+                  <Text style={styles.controllerZoneBadgeText}>
+                    {selectedAsset.zoneCount} zone{selectedAsset.zoneCount !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+              )}
+
+              {selectedAsset.properties.length > 0 && (
+                <View style={styles.assetProps}>
+                  {selectedAsset.properties.filter(p => p.key !== 'controllerKey' && p.key !== 'controllerColor').slice(0, 4).map((p) => (
+                    <View key={p.key} style={styles.assetPropRow}>
+                      <Text style={styles.assetPropKey}>{p.key}:</Text>
+                      <Text style={styles.assetPropVal}>{p.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.assetBtnRow}>
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                  onPress={() => onAssetHistory?.(selectedAsset.id)}
+                >
+                  <Ionicons name="time-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>History</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.assetPopupHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
+                  <Text style={styles.assetPopupType}>
+                    {ASSET_TYPE_LABELS[selectedAsset.assetType] || selectedAsset.assetType}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Ionicons name="close-circle" size={24} color="#999" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedAsset.properties.length > 0 && (
+                <View style={styles.assetProps}>
+                  {selectedAsset.properties.slice(0, 4).map((p) => (
+                    <View key={p.key} style={styles.assetPropRow}>
+                      <Text style={styles.assetPropKey}>{p.key}:</Text>
+                      <Text style={styles.assetPropVal}>{p.value}</Text>
+                    </View>
+                  ))}
+                  {selectedAsset.properties.length > 4 && (
+                    <Text style={styles.assetPropMore}>+{selectedAsset.properties.length - 4} more</Text>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.assetBtnRow}>
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id)}
+                >
+                  <Ionicons name="information-circle-outline" size={18} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                  onPress={() => onAssetHistory?.(selectedAsset.id)}
+                >
+                  <Ionicons name="time-outline" size={18} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>History</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       )}
     </View>
@@ -424,6 +768,54 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 11, color: '#666', textTransform: 'capitalize' },
+
+  controllerMarker: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  controllerMarkerLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+  },
+  zoneRing: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2.5,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  clusterBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  clusterBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#fff',
+  },
+
   assetPopup: {
     position: 'absolute',
     bottom: 100,
@@ -445,6 +837,84 @@ const styles = StyleSheet.create({
   },
   assetPopupLabel: { fontSize: 17, fontWeight: '700', color: '#0C1D31' },
   assetPopupType: { fontSize: 13, color: '#25C1AC', marginTop: 2, fontWeight: '500' },
+
+  zoneSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+    gap: 6,
+  },
+  controllerDotInline: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  zoneControllerText: {
+    fontSize: 13,
+    color: '#666',
+    fontWeight: '500',
+  },
+  zoneDetailsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  zoneDetailChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f0faf8',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  zoneDetailChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0C1D31',
+  },
+  controllerPopupTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  controllerDotLarge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 2,
+  },
+  controllerZoneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#f0faf8',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  controllerZoneBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0C1D31',
+  },
+  showControllerBtn: {
+    backgroundColor: '#f0f0f0',
+  },
+  showControllerBtnText: {
+    color: '#0C1D31',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
   assetProps: { marginBottom: 12 },
   assetPropRow: { flexDirection: 'row', marginBottom: 4 },
   assetPropKey: { fontSize: 13, color: '#666', fontWeight: '500', marginRight: 6 },
@@ -462,10 +932,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#25C1AC',
     borderRadius: 10,
     paddingVertical: 10,
-    gap: 6,
+    gap: 5,
   },
   assetHistoryBtn: {
     backgroundColor: '#0C1D31',
   },
-  assetDetailBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  assetDetailBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });

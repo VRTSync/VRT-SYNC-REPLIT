@@ -35,6 +35,12 @@ type AssetInfo = {
   label: string;
   featureRef: string | null;
   properties: { key: string; value: string }[];
+  controllerLabel?: string;
+  controllerColor?: string;
+  controllerFeatureRef?: string;
+  zoneNumber?: number | null;
+  zoneType?: string | null;
+  zoneCount?: number;
 };
 
 type ControllerInfo = {
@@ -94,6 +100,8 @@ export default function MapScreen() {
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
   const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
   const [enabledControllers, setEnabledControllers] = useState<Set<string>>(new Set());
+  const [showControllerLayer, setShowControllerLayer] = useState(false);
+  const [showZoneLayer, setShowZoneLayer] = useState(false);
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -237,19 +245,53 @@ export default function MapScreen() {
     });
   };
 
+  const enrichAssetInfo = useCallback((asset: any): AssetInfo => {
+    const props: { key: string; value: string }[] = asset.properties || [];
+    const enriched: AssetInfo = { ...asset, properties: props };
+
+    if (asset.assetType === 'zone') {
+      const ctrlRef = props.find(p => p.key === 'controllerFeatureRef')?.value;
+      const zoneNum = props.find(p => p.key === 'zoneNumber')?.value;
+      const zoneType = props.find(p => p.key === 'zoneType')?.value;
+      enriched.zoneNumber = zoneNum ? parseInt(zoneNum, 10) : null;
+      enriched.zoneType = zoneType || null;
+      enriched.controllerFeatureRef = ctrlRef || undefined;
+
+      if (ctrlRef) {
+        const ctrl = controllers.find(c => c.featureRef === ctrlRef);
+        if (ctrl) {
+          enriched.controllerLabel = ctrl.label;
+          enriched.controllerColor = ctrl.controllerColor;
+        }
+      }
+    } else if (asset.assetType === 'controller') {
+      const ctrlKey = props.find(p => p.key === 'controllerKey')?.value;
+      const ctrlColor = props.find(p => p.key === 'controllerColor')?.value;
+      enriched.controllerColor = ctrlColor || undefined;
+      const ctrl = controllers.find(c => c.featureRef === asset.featureRef);
+      if (ctrl) {
+        enriched.zoneCount = ctrl.zoneCount;
+        enriched.controllerColor = ctrl.controllerColor;
+      }
+    }
+
+    return enriched;
+  }, [controllers]);
+
   const handleFeatureTap = useCallback(async (featureRef: string, _layerKey: string) => {
     if (!communityId) return;
+    if (!featureRef) return;
 
     if (useOfflineData) {
       const entry = resolveFeatureToAsset(featureRef);
       if (entry) {
-        setSelectedAsset({
+        setSelectedAsset(enrichAssetInfo({
           id: entry.assetId,
           assetType: entry.assetType,
           label: entry.label,
           featureRef,
           properties: entry.properties,
-        });
+        }));
       }
       return;
     }
@@ -257,13 +299,13 @@ export default function MapScreen() {
     try {
       const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
       const asset = await res.json();
-      if (asset) {
-        setSelectedAsset(asset);
+      if (asset && asset.id) {
+        setSelectedAsset(enrichAssetInfo(asset));
       }
     } catch (err) {
       console.error('Feature tap error:', err);
     }
-  }, [communityId, useOfflineData, resolveFeatureToAsset]);
+  }, [communityId, useOfflineData, resolveFeatureToAsset, enrichAssetInfo]);
 
   const controllerColorMap = React.useMemo(() => {
     const map = new Map<string, string>();
@@ -272,6 +314,48 @@ export default function MapScreen() {
     });
     return map;
   }, [controllers]);
+
+  const controllerMarkers = useMemo(() => {
+    if (!showControllerLayer || controllers.length === 0) return [];
+    return controllers
+      .filter(c => c.latitude != null && c.longitude != null && enabledControllers.has(c.featureRef || c.id))
+      .map(c => ({
+        id: c.id,
+        featureRef: c.featureRef || c.id,
+        label: c.label,
+        controllerKey: c.controllerKey,
+        color: c.controllerColor,
+        latitude: c.latitude!,
+        longitude: c.longitude!,
+        zoneCount: c.zoneCount,
+      }));
+  }, [showControllerLayer, controllers, enabledControllers]);
+
+  const zoneMarkers = useMemo(() => {
+    if (!showZoneLayer || controllers.length === 0) return [];
+    const zones: any[] = [];
+    controllers.forEach(ctrl => {
+      if (!enabledControllers.has(ctrl.featureRef || ctrl.id)) return;
+      ctrl.zones.forEach(z => {
+        if (z.latitude != null && z.longitude != null) {
+          zones.push({
+            id: z.id,
+            featureRef: z.featureRef || z.id,
+            label: z.label,
+            zoneNumber: z.zoneNumber,
+            zoneType: z.zoneType,
+            controllerFeatureRef: ctrl.featureRef || ctrl.id,
+            controllerLabel: ctrl.label,
+            controllerKey: ctrl.controllerKey,
+            controllerColor: ctrl.controllerColor,
+            latitude: z.latitude!,
+            longitude: z.longitude!,
+          });
+        }
+      });
+    });
+    return zones;
+  }, [showZoneLayer, controllers, enabledControllers]);
 
   const activeLayers = React.useMemo(() => {
     return categoryLayers
@@ -307,6 +391,16 @@ export default function MapScreen() {
       });
   }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, enabledControllers, controllerColorMap]);
 
+  const fitToContentKey = useMemo(() => {
+    const parts = [
+      showControllerLayer ? 'c' : '',
+      showZoneLayer ? 'z' : '',
+      Array.from(enabledControllers).sort().join(','),
+      Array.from(enabledLayerIds).sort().join(','),
+    ];
+    return parts.join('|');
+  }, [showControllerLayer, showZoneLayer, enabledControllers, enabledLayerIds]);
+
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
@@ -332,7 +426,7 @@ export default function MapScreen() {
 
         {categoryLayers.length > 0 && (
           <View style={styles.layerListWeb}>
-            {categoryLayers.map((layer, idx) => (
+            {categoryLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone').map((layer, idx) => (
               <View key={layer.id} style={styles.layerToggleRow}>
                 <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
                 <Text style={styles.layerToggleName}>{layer.displayName}</Text>
@@ -346,8 +440,27 @@ export default function MapScreen() {
             {activeCategory === 'irrigation' && controllers.length > 0 && (
               <>
                 <View style={styles.controllerSectionDivider} />
+                <View style={styles.layerToggleRow}>
+                  <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
+                  <Text style={styles.layerToggleName}>Controllers</Text>
+                  <Switch
+                    value={showControllerLayer}
+                    onValueChange={(v) => setShowControllerLayer(v)}
+                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                  />
+                </View>
+                <View style={styles.layerToggleRow}>
+                  <Ionicons name="water-outline" size={16} color="#25C1AC" />
+                  <Text style={styles.layerToggleName}>Zones</Text>
+                  <Switch
+                    value={showZoneLayer}
+                    onValueChange={(v) => setShowZoneLayer(v)}
+                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                  />
+                </View>
+                <View style={styles.controllerSectionDivider} />
                 <View style={styles.controllerSectionHeader}>
-                  <Text style={styles.layerPanelTitle}>Controllers</Text>
+                  <Text style={styles.layerPanelTitle}>Filter Controllers</Text>
                   <TouchableOpacity onPress={() => {
                     const allRefs = controllers.map(c => c.featureRef || c.id);
                     if (enabledControllers.size === allRefs.length) {
@@ -462,6 +575,18 @@ export default function MapScreen() {
     setTargetRegion(null);
   }, []);
 
+  const handleShowController = useCallback((controllerFeatureRef: string) => {
+    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
+    if (ctrl && ctrl.latitude != null && ctrl.longitude != null) {
+      setSelectedAsset(null);
+      setTargetRegion({
+        latitude: ctrl.latitude,
+        longitude: ctrl.longitude,
+        label: ctrl.label,
+      });
+    }
+  }, [controllers]);
+
   return (
     <View style={styles.container}>
       <View style={[styles.categoryBarFloat, { top: insets.top + 10 }]}>
@@ -483,20 +608,19 @@ export default function MapScreen() {
         ))}
       </View>
 
-      {categoryLayers.length > 0 && (
+      {(categoryLayers.length > 0 || (activeCategory === 'irrigation' && controllers.length > 0)) && (
         <TouchableOpacity
           style={[styles.layerToggleBtn, { top: insets.top + 62 }]}
           onPress={() => setShowLayerPanel(!showLayerPanel)}
         >
           <Ionicons name="layers-outline" size={20} color="#0C1D31" />
-          <Text style={styles.layerToggleBtnText}>{categoryLayers.length}</Text>
         </TouchableOpacity>
       )}
 
       {showLayerPanel && (
         <ScrollView style={[styles.layerPanel, { top: insets.top + 62, maxHeight: 400 }]} bounces={false}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
-          {categoryLayers.map((layer, idx) => (
+          {categoryLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone').map((layer, idx) => (
             <View key={layer.id} style={styles.layerToggleRow}>
               <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
               <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
@@ -511,8 +635,28 @@ export default function MapScreen() {
           {activeCategory === 'irrigation' && controllers.length > 0 && (
             <>
               <View style={styles.controllerSectionDivider} />
+              <View style={styles.layerToggleRow}>
+                <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
+                <Text style={styles.layerToggleName}>Controllers</Text>
+                <Switch
+                  value={showControllerLayer}
+                  onValueChange={(v) => setShowControllerLayer(v)}
+                  trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                />
+              </View>
+              <View style={styles.layerToggleRow}>
+                <Ionicons name="water-outline" size={16} color="#25C1AC" />
+                <Text style={styles.layerToggleName}>Zones</Text>
+                <Switch
+                  value={showZoneLayer}
+                  onValueChange={(v) => setShowZoneLayer(v)}
+                  trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                />
+              </View>
+
+              <View style={styles.controllerSectionDivider} />
               <View style={styles.controllerSectionHeader}>
-                <Text style={styles.layerPanelTitle}>Controllers</Text>
+                <Text style={styles.layerPanelTitle}>Filter Controllers</Text>
                 <TouchableOpacity onPress={() => {
                   const allRefs = controllers.map(c => c.featureRef || c.id);
                   if (enabledControllers.size === allRefs.length) {
@@ -554,6 +698,24 @@ export default function MapScreen() {
               })}
             </>
           )}
+
+          {categoryLayers.filter(l => l.subLayerKey === 'controller' || l.subLayerKey === 'zone').length > 0 && activeCategory === 'irrigation' && (
+            <>
+              <View style={styles.controllerSectionDivider} />
+              <Text style={[styles.layerPanelTitle, { fontSize: 12, color: '#999' }]}>GeoJSON Overlays</Text>
+              {categoryLayers.filter(l => l.subLayerKey === 'controller' || l.subLayerKey === 'zone').map((layer, idx) => (
+                <View key={layer.id} style={styles.layerToggleRow}>
+                  <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
+                  <Text style={[styles.layerToggleName, { fontSize: 12 }]} numberOfLines={1}>{layer.displayName}</Text>
+                  <Switch
+                    value={enabledLayerIds.has(layer.id)}
+                    onValueChange={() => toggleLayer(layer.id)}
+                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                  />
+                </View>
+              ))}
+            </>
+          )}
         </ScrollView>
       )}
 
@@ -583,8 +745,14 @@ export default function MapScreen() {
         onDismissAsset={handleDismissAsset}
         onAssetDetail={handleAssetDetail}
         onAssetHistory={handleAssetHistory}
+        onShowController={handleShowController}
         targetRegion={targetRegion}
         onTargetReached={handleTargetReached}
+        controllerMarkers={controllerMarkers}
+        zoneMarkers={zoneMarkers}
+        showControllers={showControllerLayer}
+        showZones={showZoneLayer}
+        fitToContentKey={fitToContentKey}
       />
     </View>
   );
