@@ -1,0 +1,128 @@
+REPLIT PASTE: Native Map Crash Fix (Pan/Zoom) + Category Tab Rendering Bug
+
+Problem Summary (current behavior)
+	1.	Crash on pan/zoom
+zoneClusters recalculates on every pan because isZoomedIn flips based on visibleRegion changes. When zoomed in, it maps ~113 zones into new objects with new Set() each time, plus custom marker re-render pressure → Expo Go crashes.
+	2.	Category tabs not switching layers
+Switching from Irrigation → Community leaves showControllerLayer/showZoneLayer true, so hasCustomMarkers stays true and blocks GeoJSON rendering for other categories (geoJSONElements becomes []).
+
+⸻
+
+Fix Requirements
+
+A) Tie custom marker mode to active category
+
+Rule: Custom controller/zone markers should only be active when:
+	•	activeCategory === "irrigation" AND (showControllerLayer || showZoneLayer)
+
+So replace any:
+	•	hasCustomMarkers = showControllers || showZones
+with:
+	•	hasCustomMarkers = activeCategory === "irrigation" && (showControllerLayer || showZoneLayer)
+
+Acceptance:
+	•	Switching to Community tab always shows Community GeoJSON even if irrigation toggles remain checked.
+
+⸻
+
+B) Stabilize zoom state (do NOT derive from visibleRegion per pan)
+
+1) Compute zoom level from map camera, not visibleRegion bounds
+
+Use onRegionChangeComplete or camera events to calculate a numeric zoom level (or approximate zoom) and derive isZoomedIn from that.
+
+2) Debounce zoom threshold changes (hysteresis)
+
+Implement:
+	•	zoomInThreshold = 16.5
+	•	zoomOutThreshold = 16.0
+
+isZoomedIn changes only when crossing these thresholds, not on minor movements.
+
+3) Ensure pan alone does not toggle isZoomedIn
+
+Pan should not change isZoomedIn unless actual zoom crosses threshold.
+
+Acceptance:
+	•	Panning while staying at same zoom does not trigger cluster recomputation.
+
+⸻
+
+C) Memoize and avoid re-allocations during clustering
+
+1) Do not build new Set() / new arrays on every render/pan
+
+Memoize zone point list by:
+	•	activeCommunityId
+	•	zones dataset version (or zones.length + max updatedAt)
+	•	active controller filters
+	•	isZoomedIn
+
+2) Precompute clusters only when inputs change
+
+Use useMemo (or memoized selector) so zoneClusters only recalculates when:
+	•	isZoomedIn toggles (rare)
+	•	controller selection changes
+	•	zones data changes
+
+3) If zoomed in: render individual zones without converting to new object shapes each time
+
+Keep the original zone array and map it directly; avoid object cloning.
+
+⸻
+
+D) Reduce custom marker re-render pressure
+
+1) Use React.memo for marker components
+	•	ControllerMarker
+	•	ZoneMarker
+	•	ClusterMarker
+
+Props should be stable (avoid inline objects/functions).
+
+2) Avoid passing fresh style objects
+
+Move styles to StyleSheet.create() or constants.
+
+3) Use key stability
+
+Keys must be stable:
+	•	controller: controller.assetId or featureRef
+	•	zone: zone.assetId or featureRef
+	•	cluster: deterministic key from cluster centroid + included ids hash
+
+⸻
+
+E) Safety reset on category switch
+
+When switching away from irrigation:
+	•	Ensure geojson rendering path is active
+	•	Ensure custom marker overlays are not mounted
+
+You do NOT have to change user toggle state; just prevent irrigation overlays from affecting other categories.
+
+⸻
+
+Deliverables
+	1.	Fix crash by stabilizing isZoomedIn + memoizing clustering
+	2.	Fix category tabs rendering by tying hasCustomMarkers to activeCategory === "irrigation"
+	3.	Verify no regressions:
+
+	•	irrigation markers still work
+	•	controller/zones toggles still work
+	•	Community/Snow/Trees GeoJSON renders reliably
+	•	Expo Go no longer crashes during pan/zoom
+
+⸻
+
+Test Checklist
+	•	Open map → Irrigation tab → pan/zoom repeatedly for 60 seconds (no crash)
+	•	Zoom in/out across threshold: zones switch between clustered/individual only when crossing threshold
+	•	Switch to Community tab: community polygons render even if irrigation toggles are ON
+	•	Switch back to Irrigation: markers render again correctly
+
+⸻
+
+If Replit asks where to change this, the likely targets are:
+	•	components/NativeMap.tsx (or wherever hasCustomMarkers, geoJSONElements, and clustering are computed)
+	•	any custom marker components used for controller/zone rendering
