@@ -401,6 +401,49 @@ export default function MapScreen() {
     return parts.join('|');
   }, [showControllerLayer, showZoneLayer, enabledControllers, enabledLayerIds]);
 
+  const mappedTasks = useMemo(() => geoTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    priority: t.priority,
+    latitude: t.latitude!,
+    longitude: t.longitude!,
+    address: t.address,
+  })), [geoTasks]);
+
+  const handleTaskPress = useCallback((taskId: string) => {
+    router.push(`/task/${taskId}`);
+  }, [router]);
+
+  const handleDismissAsset = useCallback(() => {
+    setSelectedAsset(null);
+  }, []);
+
+  const handleAssetDetail = useCallback((assetId: string) => {
+    setSelectedAsset(null);
+    router.push(`/asset/${assetId}`);
+  }, [router]);
+
+  const handleAssetHistory = useCallback((assetId: string) => {
+    setSelectedAsset(null);
+    router.push(`/asset/${assetId}/history` as any);
+  }, [router]);
+
+  const handleTargetReached = useCallback(() => {
+    setTargetRegion(null);
+  }, []);
+
+  const handleShowController = useCallback((controllerFeatureRef: string) => {
+    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
+    if (ctrl && ctrl.latitude != null && ctrl.longitude != null) {
+      setSelectedAsset(null);
+      setTargetRegion({
+        latitude: ctrl.latitude,
+        longitude: ctrl.longitude,
+        label: ctrl.label,
+      });
+    }
+  }, [controllers]);
+
   if (Platform.OS === 'web') {
     return (
       <View style={styles.container}>
@@ -543,49 +586,6 @@ export default function MapScreen() {
       </View>
     );
   }
-
-  const mappedTasks = useMemo(() => geoTasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    priority: t.priority,
-    latitude: t.latitude!,
-    longitude: t.longitude!,
-    address: t.address,
-  })), [geoTasks]);
-
-  const handleTaskPress = useCallback((taskId: string) => {
-    router.push(`/task/${taskId}`);
-  }, [router]);
-
-  const handleDismissAsset = useCallback(() => {
-    setSelectedAsset(null);
-  }, []);
-
-  const handleAssetDetail = useCallback((assetId: string) => {
-    setSelectedAsset(null);
-    router.push(`/asset/${assetId}`);
-  }, [router]);
-
-  const handleAssetHistory = useCallback((assetId: string) => {
-    setSelectedAsset(null);
-    router.push(`/asset/${assetId}/history` as any);
-  }, [router]);
-
-  const handleTargetReached = useCallback(() => {
-    setTargetRegion(null);
-  }, []);
-
-  const handleShowController = useCallback((controllerFeatureRef: string) => {
-    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
-    if (ctrl && ctrl.latitude != null && ctrl.longitude != null) {
-      setSelectedAsset(null);
-      setTargetRegion({
-        latitude: ctrl.latitude,
-        longitude: ctrl.longitude,
-        label: ctrl.label,
-      });
-    }
-  }, [controllers]);
 
   return (
     <View style={styles.container}>
