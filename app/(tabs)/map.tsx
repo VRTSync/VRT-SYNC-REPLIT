@@ -106,6 +106,15 @@ export default function MapScreen() {
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
   const offlineNoPack = !isOnline && !localPack;
+  const isIrrigation = activeCategory === 'irrigation';
+
+  useEffect(() => {
+    if (!isIrrigation) {
+      setShowControllerLayer(false);
+      setShowZoneLayer(false);
+      setSelectedAsset(null);
+    }
+  }, [isIrrigation]);
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
@@ -317,7 +326,7 @@ export default function MapScreen() {
   }, [controllers]);
 
   const controllerMarkers = useMemo(() => {
-    if (!showControllerLayer || controllers.length === 0) return [];
+    if (!isIrrigation || !showControllerLayer || controllers.length === 0) return [];
     return controllers
       .filter(c => c.latitude != null && c.longitude != null && enabledControllers.has(c.featureRef || c.id))
       .map(c => ({
@@ -330,10 +339,10 @@ export default function MapScreen() {
         longitude: c.longitude!,
         zoneCount: c.zoneCount,
       }));
-  }, [showControllerLayer, controllers, enabledControllers]);
+  }, [isIrrigation, showControllerLayer, controllers, enabledControllers]);
 
   const zoneMarkers = useMemo(() => {
-    if (!showZoneLayer || controllers.length === 0) return [];
+    if (!isIrrigation || !showZoneLayer || controllers.length === 0) return [];
     const zones: any[] = [];
     controllers.forEach(ctrl => {
       if (!enabledControllers.has(ctrl.featureRef || ctrl.id)) return;
@@ -356,7 +365,7 @@ export default function MapScreen() {
       });
     });
     return zones;
-  }, [showZoneLayer, controllers, enabledControllers]);
+  }, [isIrrigation, showZoneLayer, controllers, enabledControllers]);
 
   const activeLayers = React.useMemo(() => {
     return categoryLayers
@@ -767,10 +776,10 @@ export default function MapScreen() {
         onShowControllerZones={handleShowControllerZones}
         targetRegion={targetRegion}
         onTargetReached={handleTargetReached}
-        controllerMarkers={controllerMarkers}
-        zoneMarkers={zoneMarkers}
-        showControllers={showControllerLayer}
-        showZones={showZoneLayer}
+        controllerMarkers={isIrrigation ? controllerMarkers : []}
+        zoneMarkers={isIrrigation ? zoneMarkers : []}
+        showControllers={isIrrigation && showControllerLayer}
+        showZones={isIrrigation && showZoneLayer}
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
       />

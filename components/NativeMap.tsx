@@ -315,11 +315,15 @@ function NativeMap({
     };
   }, []);
 
+  const isIrrigation = activeCategory === 'irrigation';
+  const isIrrigationActive = isIrrigation && (showControllers || showZones);
+
   const handleRegionChange = useCallback((region: Region) => {
     if (regionTimerRef.current) clearTimeout(regionTimerRef.current);
     regionTimerRef.current = setTimeout(() => {
       if (!mountedRef.current) return;
       setVisibleRegion(region);
+      if (!isIrrigationActive) return;
       const delta = region.latitudeDelta;
       const wasZoomed = isZoomedInRef.current;
       if (!wasZoomed && delta < ZOOM_IN_THRESHOLD) {
@@ -338,10 +342,7 @@ function NativeMap({
         setIsFarZoom(true);
       }
     }, REGION_CHANGE_DEBOUNCE_MS);
-  }, []);
-
-  const isIrrigation = activeCategory === 'irrigation';
-  const hasCustomMarkers = isIrrigation && (showControllers || showZones);
+  }, [isIrrigationActive]);
 
   useEffect(() => {
     if (targetRegion && mapRef.current) {
@@ -415,7 +416,7 @@ function NativeMap({
     : { latitude: 39.8283, longitude: -98.5795, latitudeDelta: 30, longitudeDelta: 30 };
 
   const geoJSONElements = useMemo(() => {
-    if (hasCustomMarkers) return [];
+    if (isIrrigationActive) return [];
     const elements: React.ReactNode[] = [];
     let featureCount = 0;
 
@@ -533,28 +534,28 @@ function NativeMap({
     }
 
     return elements;
-  }, [layers, onFeatureTap, visibleRegion, hasCustomMarkers]);
+  }, [layers, onFeatureTap, visibleRegion, isIrrigationActive]);
 
   const visibleControllers = useMemo(() => {
-    if (!isIrrigation || !showControllers) return [];
+    if (!isIrrigationActive || !showControllers) return [];
     return controllerMarkers;
-  }, [isIrrigation, showControllers, controllerMarkers]);
+  }, [isIrrigationActive, showControllers, controllerMarkers]);
 
   const clusteredZones = useMemo(() => {
-    if (zoneMarkers.length === 0) return [];
+    if (!isIrrigationActive || zoneMarkers.length === 0) return [];
     return clusterZones(zoneMarkers, CLUSTER_GRID_SIZE);
-  }, [zoneMarkers]);
+  }, [isIrrigationActive, zoneMarkers]);
 
   const emptyZones = useMemo(() => ({ individual: [] as ZoneMarkerData[], clusters: [] as ZoneCluster[] }), []);
 
   const visibleZones = useMemo(() => {
-    if (!isIrrigation || !showZones || zoneMarkers.length === 0) return emptyZones;
+    if (!isIrrigationActive || !showZones || zoneMarkers.length === 0) return emptyZones;
     if (isFarZoom) return emptyZones;
     if (isZoomedIn && zoneMarkers.length <= MAX_INDIVIDUAL_ZONES) {
       return { individual: zoneMarkers, clusters: [] as ZoneCluster[] };
     }
     return { individual: [] as ZoneMarkerData[], clusters: clusteredZones };
-  }, [isIrrigation, showZones, zoneMarkers, isZoomedIn, isFarZoom, clusteredZones, emptyZones]);
+  }, [isIrrigationActive, showZones, zoneMarkers, isZoomedIn, isFarZoom, clusteredZones, emptyZones]);
 
   const devPrevCountRef = useRef({ ctrl: 0, zoneInd: 0, zoneCl: 0 });
   if (__DEV__) {
@@ -632,29 +633,33 @@ function NativeMap({
       >
         {geoJSONElements}
 
-        {visibleControllers.map((ctrl) => (
-          <ControllerMarkerMemo
-            key={`ctrl-${ctrl.featureRef}`}
-            ctrl={ctrl}
-            onPress={handleIrrigationTap}
-          />
-        ))}
+        {isIrrigationActive && (
+          <>
+            {visibleControllers.map((ctrl) => (
+              <ControllerMarkerMemo
+                key={`ctrl-${ctrl.featureRef}`}
+                ctrl={ctrl}
+                onPress={handleIrrigationTap}
+              />
+            ))}
 
-        {visibleZones.individual.map((z) => (
-          <ZoneRingMarkerMemo
-            key={`zone-${z.featureRef || z.id}`}
-            zone={z}
-            onPress={handleIrrigationTap}
-          />
-        ))}
+            {visibleZones.individual.map((z) => (
+              <ZoneRingMarkerMemo
+                key={`zone-${z.featureRef || z.id}`}
+                zone={z}
+                onPress={handleIrrigationTap}
+              />
+            ))}
 
-        {visibleZones.clusters.map((cluster) => (
-          <ClusterMarkerMemo
-            key={`zcluster-${cluster.key}`}
-            cluster={cluster}
-            onPress={handleClusterPress}
-          />
-        ))}
+            {visibleZones.clusters.map((cluster) => (
+              <ClusterMarkerMemo
+                key={`zcluster-${cluster.key}`}
+                cluster={cluster}
+                onPress={handleClusterPress}
+              />
+            ))}
+          </>
+        )}
 
         {tasks.map((task) => (
           <Marker
@@ -689,7 +694,7 @@ function NativeMap({
         )}
       </MapView>
 
-      {isIrrigation && showZones && isFarZoom && zoneMarkers.length > 0 && (
+      {isIrrigationActive && showZones && isFarZoom && zoneMarkers.length > 0 && (
         <View style={styles.zoomHint}>
           <Ionicons name="search-outline" size={14} color="#fff" />
           <Text style={styles.zoomHintText}>Zoom in to see zones for each controller</Text>
