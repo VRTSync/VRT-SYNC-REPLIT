@@ -100,8 +100,8 @@ export default function MapScreen() {
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
   const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
   const [enabledControllers, setEnabledControllers] = useState<Set<string>>(new Set());
-  const [showControllerLayer, setShowControllerLayer] = useState(false);
-  const [showZoneLayer, setShowZoneLayer] = useState(false);
+  const [showControllerLayer, setShowControllerLayer] = useState(true);
+  const [showZoneLayer, setShowZoneLayer] = useState(true);
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -361,28 +361,13 @@ export default function MapScreen() {
     return categoryLayers
       .filter((l) => enabledLayerIds.has(l.id))
       .filter((l) => {
-        if (l.subLayerKey === 'controller' && showControllerLayer) return false;
-        if (l.subLayerKey === 'zone' && showZoneLayer) return false;
+        if (activeCategory === 'irrigation' && controllers.length > 0) {
+          if (l.subLayerKey === 'controller' || l.subLayerKey === 'zone') return false;
+        }
         return true;
       })
       .map((l, idx) => {
-        let geojson = loadedGeoJSON[l.id] || null;
-
-        if (activeCategory === 'irrigation' && controllers.length > 0 && geojson) {
-          if (l.subLayerKey === 'zone') {
-            const filteredFeatures = (geojson.features || []).filter((f: any) => {
-              const ctrlRef = f.properties?.controllerFeatureRef;
-              return ctrlRef && enabledControllers.has(ctrlRef);
-            });
-            geojson = { ...geojson, features: filteredFeatures };
-          } else if (l.subLayerKey === 'controller') {
-            const filteredFeatures = (geojson.features || []).filter((f: any) => {
-              const fRef = f.properties?.featureId || f.id;
-              return fRef && enabledControllers.has(fRef);
-            });
-            geojson = { ...geojson, features: filteredFeatures };
-          }
-        }
+        const geojson = loadedGeoJSON[l.id] || null;
 
         return {
           id: l.id,
@@ -394,7 +379,7 @@ export default function MapScreen() {
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
-  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, enabledControllers, controllerColorMap, showControllerLayer, showZoneLayer]);
+  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, controllerColorMap]);
 
   const fitToContentKey = useMemo(() => {
     const parts = [
