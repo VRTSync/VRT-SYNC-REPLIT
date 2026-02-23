@@ -85,11 +85,19 @@ const layerColors = [
 
 const REGION_BUFFER = 1.2;
 const MAX_VISIBLE_FEATURES = 100;
-const MAX_CONTROLLER_MARKERS = 50;
-const MAX_ZONE_CLUSTERS = 60;
+const MAX_CONTROLLER_MARKERS = 30;
+const MAX_ZONE_CLUSTERS = 40;
 const ZONE_CLUSTER_ZOOM_THRESHOLD = 0.015;
+const ZONE_VISIBILITY_ZOOM_THRESHOLD = 0.05;
 const CLUSTER_GRID_SIZE = 0.003;
 const REGION_CHANGE_DEBOUNCE_MS = 200;
+
+const CLEAN_MAP_STYLE = [
+  { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ visibility: 'on' }, { color: '#e6f4e1' }] },
+  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+];
 
 function parseGeoJSONCoords(coords: number[]): { latitude: number; longitude: number } {
   return { latitude: coords[1], longitude: coords[0] };
@@ -228,6 +236,8 @@ function NativeMap({
   }, []);
 
   const isZoomedIn = visibleRegion ? visibleRegion.latitudeDelta < ZONE_CLUSTER_ZOOM_THRESHOLD : false;
+  const isZoomedEnoughForZones = visibleRegion ? visibleRegion.latitudeDelta < ZONE_VISIBILITY_ZOOM_THRESHOLD : false;
+  const hasCustomMarkers = showControllers || showZones;
 
   useEffect(() => {
     if (targetRegion && mapRef.current) {
@@ -428,7 +438,7 @@ function NativeMap({
   }, [showControllers, controllerMarkers, visibleRegion]);
 
   const zoneClusters = useMemo(() => {
-    if (!showZones || zoneMarkers.length === 0) return [];
+    if (!showZones || zoneMarkers.length === 0 || !isZoomedEnoughForZones) return [];
     const visible = zoneMarkers.filter(z =>
       isPointInRegion(z.latitude, z.longitude, visibleRegion)
     );
@@ -443,7 +453,7 @@ function NativeMap({
       }));
     }
     return clusterZones(visible, CLUSTER_GRID_SIZE).slice(0, MAX_ZONE_CLUSTERS);
-  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn]);
+  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn, isZoomedEnoughForZones]);
 
   const handleClusterPress = useCallback((cluster: ZoneCluster) => {
     if (cluster.count === 1) {
@@ -471,12 +481,17 @@ function NativeMap({
         ref={mapRef}
         style={styles.map}
         initialRegion={initialRegion}
+        mapType="mutedStandard"
+        customMapStyle={CLEAN_MAP_STYLE}
         showsUserLocation
         showsMyLocationButton
+        showsPointsOfInterest={false}
+        showsBuildings={false}
+        showsTraffic={false}
         onRegionChangeComplete={handleRegionChange}
         moveOnMarkerPress={false}
       >
-        {geoJSONElements}
+        {!hasCustomMarkers && geoJSONElements}
 
         {visibleControllers.map((ctrl) => (
           <Marker
