@@ -508,10 +508,12 @@ function NativeMap({
                 key={`zone-${z.featureRef || z.id}`}
                 coordinate={{ latitude: z.latitude, longitude: z.longitude }}
                 tracksViewChanges={false}
-                pinColor={z.controllerColor}
+                anchor={{ x: 0.5, y: 0.5 }}
                 onPress={() => onFeatureTap?.(z.featureRef, 'irrigation')}
                 zIndex={5}
-              />
+              >
+                <View style={[styles.zoneRing, { borderColor: z.controllerColor }]} />
+              </Marker>
             );
           }
           const clusterColor = cluster.colors.size > 1 ? '#888' : Array.from(cluster.colors)[0];
