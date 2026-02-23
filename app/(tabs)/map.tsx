@@ -9,6 +9,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
+import LeafletMap from '@/components/LeafletMap';
 
 type Task = {
   id: string;
@@ -91,7 +92,7 @@ export default function MapScreen() {
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
   const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [NativeMapComponent, setNativeMapComponent] = useState<React.ComponentType<any> | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const [activeCategory, setActiveCategory] = useState(params.category || 'community');
   const [enabledLayerIds, setEnabledLayerIds] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
@@ -186,10 +187,8 @@ export default function MapScreen() {
   }, [params.targetLat, params.targetLng, params.targetLabel]);
 
   useEffect(() => {
+    setMapReady(true);
     if (Platform.OS !== 'web') {
-      import('@/components/NativeMap').then((mod) => {
-        setNativeMapComponent(() => mod.default);
-      });
       import('expo-location').then(async (Location) => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -471,143 +470,12 @@ export default function MapScreen() {
     }
   }, [controllers]);
 
-  if (Platform.OS === 'web') {
+  const isWeb = Platform.OS === 'web';
+  const topOffset = isWeb ? 67 : insets.top;
+
+  if (!mapReady) {
     return (
-      <View style={styles.container}>
-        <StatusBarFill />
-        <View style={styles.categoryBar}>
-          {CATEGORY_TABS.map((cat) => (
-            <TouchableOpacity
-              key={cat.key}
-              style={[styles.categoryTab, activeCategory === cat.key && styles.categoryTabActive]}
-              onPress={() => setActiveCategory(cat.key)}
-            >
-              <Ionicons
-                name={cat.icon}
-                size={16}
-                color={activeCategory === cat.key ? '#25C1AC' : '#999'}
-              />
-              <Text style={[styles.categoryLabel, activeCategory === cat.key && styles.categoryLabelActive]}>
-                {cat.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {categoryLayers.length > 0 && (
-          <View style={styles.layerListWeb}>
-            {categoryLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone').map((layer, idx) => (
-              <View key={layer.id} style={styles.layerToggleRow}>
-                <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
-                <Text style={styles.layerToggleName}>{layer.displayName}</Text>
-                <Switch
-                  value={enabledLayerIds.has(layer.id)}
-                  onValueChange={() => toggleLayer(layer.id)}
-                  trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                />
-              </View>
-            ))}
-            {activeCategory === 'irrigation' && controllers.length > 0 && (
-              <>
-                <View style={styles.controllerSectionDivider} />
-                <View style={styles.layerToggleRow}>
-                  <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
-                  <Text style={styles.layerToggleName}>Controllers</Text>
-                  <Switch
-                    value={showControllerLayer}
-                    onValueChange={(v) => setShowControllerLayer(v)}
-                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                  />
-                </View>
-                <View style={styles.layerToggleRow}>
-                  <Ionicons name="water-outline" size={16} color="#25C1AC" />
-                  <Text style={styles.layerToggleName}>Zones</Text>
-                  <Switch
-                    value={showZoneLayer}
-                    onValueChange={(v) => setShowZoneLayer(v)}
-                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                  />
-                </View>
-                <View style={styles.controllerSectionDivider} />
-                <View style={styles.controllerSectionHeader}>
-                  <Text style={styles.layerPanelTitle}>Filter Controllers</Text>
-                  <TouchableOpacity onPress={() => {
-                    const allRefs = controllers.map(c => c.featureRef || c.id);
-                    if (enabledControllers.size === allRefs.length) {
-                      setEnabledControllers(new Set());
-                    } else {
-                      setEnabledControllers(new Set(allRefs));
-                    }
-                  }}>
-                    <Text style={styles.selectAllText}>
-                      {enabledControllers.size === controllers.length ? 'None' : 'All'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                {controllers.map((ctrl) => {
-                  const ref = ctrl.featureRef || ctrl.id;
-                  return (
-                    <TouchableOpacity
-                      key={ctrl.id}
-                      style={styles.controllerRow}
-                      onPress={() => {
-                        setEnabledControllers(prev => {
-                          const next = new Set(prev);
-                          if (next.has(ref)) next.delete(ref);
-                          else next.add(ref);
-                          return next;
-                        });
-                      }}
-                    >
-                      <View style={[styles.controllerColorDot, { backgroundColor: ctrl.controllerColor }]} />
-                      <Text style={[styles.controllerLabel, !enabledControllers.has(ref) && styles.controllerLabelDisabled]} numberOfLines={1}>
-                        {ctrl.label}
-                      </Text>
-                      <Text style={styles.controllerZoneCount}>{ctrl.zoneCount}</Text>
-                      <View style={[styles.controllerCheck, enabledControllers.has(ref) && styles.controllerCheckActive]}>
-                        {enabledControllers.has(ref) && <Ionicons name="checkmark" size={12} color="#fff" />}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
-            )}
-          </View>
-        )}
-
-        <View style={styles.webFallback}>
-          <Ionicons name="map-outline" size={48} color="#ccc" />
-          <Text style={styles.webFallbackTitle}>Map View</Text>
-          <Text style={styles.webFallbackText}>
-            The interactive map with GeoJSON overlays is available on your mobile device via Expo Go.
-          </Text>
-          {geoTasks.length > 0 && (
-            <View style={styles.taskListFallback}>
-              <Text style={styles.taskListTitle}>{geoTasks.length} Task Location{geoTasks.length !== 1 ? 's' : ''}</Text>
-              {geoTasks.map((t) => (
-                <TouchableOpacity
-                  key={t.id}
-                  style={styles.taskListItem}
-                  onPress={() => router.push(`/task/${t.id}`)}
-                >
-                  <View style={[styles.priorityDot, { backgroundColor: priorityColors[t.priority] }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.taskListItemTitle}>{t.title}</Text>
-                    {t.address && <Text style={styles.taskListItemAddr}>{t.address}</Text>}
-                  </View>
-                  <Ionicons name="chevron-forward" size={14} color="#999" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  }
-
-  if (!NativeMapComponent) {
-    return (
-      <View style={[styles.container, styles.webFallback]}>
+      <View style={[styles.container, styles.loadingContainer]}>
         <ActivityIndicator color="#25C1AC" size="large" />
         <Text style={[styles.webFallbackText, { marginTop: 12 }]}>Loading map...</Text>
       </View>
@@ -616,7 +484,9 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.categoryBarFloat, { top: insets.top + 10 }]}>
+      {isWeb && <StatusBarFill />}
+
+      <View style={[styles.categoryBarFloat, { top: topOffset + 10 }]}>
         {CATEGORY_TABS.map((cat) => (
           <TouchableOpacity
             key={cat.key}
@@ -637,7 +507,7 @@ export default function MapScreen() {
 
       {(categoryLayers.length > 0 || (activeCategory === 'irrigation' && controllers.length > 0)) && (
         <TouchableOpacity
-          style={[styles.layerToggleBtn, { top: insets.top + 62 }]}
+          style={[styles.layerToggleBtn, { top: topOffset + 62 }]}
           onPress={() => setShowLayerPanel(!showLayerPanel)}
         >
           <Ionicons name="layers-outline" size={20} color="#0C1D31" />
@@ -645,7 +515,7 @@ export default function MapScreen() {
       )}
 
       {showLayerPanel && (
-        <ScrollView style={[styles.layerPanel, { top: insets.top + 62, maxHeight: 400 }]} bounces={false}>
+        <ScrollView style={[styles.layerPanel, { top: topOffset + 62, maxHeight: 400 }]} bounces={false}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
           {categoryLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone').map((layer, idx) => (
             <View key={layer.id} style={styles.layerToggleRow}>
@@ -747,14 +617,14 @@ export default function MapScreen() {
       )}
 
       {useOfflineData && (
-        <View style={[styles.offlineBadge, { top: insets.top + 55 }]}>
+        <View style={[styles.offlineBadge, { top: topOffset + 55 }]}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.offlineBadgeText}>Offline Pack v{localPack?.packVersion}</Text>
         </View>
       )}
 
       {offlineNoPack && (
-        <View style={[styles.offlineNoPackBanner, { top: insets.top + 55 }]}>
+        <View style={[styles.offlineNoPackBanner, { top: topOffset + 55 }]}>
           <Ionicons name="cloud-offline-outline" size={18} color="#f44336" />
           <Text style={styles.offlineNoPackText}>
             Offline map pack not downloaded for this community.
@@ -762,7 +632,7 @@ export default function MapScreen() {
         </View>
       )}
 
-      <NativeMapComponent
+      <LeafletMap
         tasks={mappedTasks}
         userLocation={userLocation}
         onTaskPress={handleTaskPress}
@@ -789,6 +659,7 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
+  loadingContainer: { justifyContent: 'center', alignItems: 'center' },
   categoryBar: {
     flexDirection: 'row',
     backgroundColor: '#fff',
