@@ -128,7 +128,8 @@ export default function MapScreen() {
 
   React.useEffect(() => {
     if (controllers.length > 0 && enabledControllers.size === 0) {
-      setEnabledControllers(new Set());
+      const allRefs = controllers.map(c => c.featureRef || c.id);
+      setEnabledControllers(new Set(allRefs));
     }
   }, [controllers.length]);
 

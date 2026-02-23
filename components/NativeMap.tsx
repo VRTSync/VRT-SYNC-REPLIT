@@ -85,10 +85,7 @@ const layerColors = [
 
 const REGION_BUFFER = 1.2;
 const MAX_VISIBLE_FEATURES = 100;
-const MAX_CONTROLLER_MARKERS = 30;
-const MAX_ZONE_CLUSTERS = 40;
 const ZONE_CLUSTER_ZOOM_THRESHOLD = 0.015;
-const ZONE_VISIBILITY_ZOOM_THRESHOLD = 0.05;
 const CLUSTER_GRID_SIZE = 0.003;
 const REGION_CHANGE_DEBOUNCE_MS = 200;
 
@@ -236,7 +233,6 @@ function NativeMap({
   }, []);
 
   const isZoomedIn = visibleRegion ? visibleRegion.latitudeDelta < ZONE_CLUSTER_ZOOM_THRESHOLD : false;
-  const isZoomedEnoughForZones = visibleRegion ? visibleRegion.latitudeDelta < ZONE_VISIBILITY_ZOOM_THRESHOLD : false;
   const hasCustomMarkers = showControllers || showZones;
 
   useEffect(() => {
@@ -432,18 +428,18 @@ function NativeMap({
 
   const visibleControllers = useMemo(() => {
     if (!showControllers) return [];
-    return controllerMarkers
-      .filter(c => isPointInRegion(c.latitude, c.longitude, visibleRegion))
-      .slice(0, MAX_CONTROLLER_MARKERS);
+    return controllerMarkers.filter(c =>
+      isPointInRegion(c.latitude, c.longitude, visibleRegion)
+    );
   }, [showControllers, controllerMarkers, visibleRegion]);
 
   const zoneClusters = useMemo(() => {
-    if (!showZones || zoneMarkers.length === 0 || !isZoomedEnoughForZones) return [];
+    if (!showZones || zoneMarkers.length === 0) return [];
     const visible = zoneMarkers.filter(z =>
       isPointInRegion(z.latitude, z.longitude, visibleRegion)
     );
     if (isZoomedIn) {
-      return visible.slice(0, MAX_ZONE_CLUSTERS).map(z => ({
+      return visible.map(z => ({
         key: z.featureRef || z.id,
         latitude: z.latitude,
         longitude: z.longitude,
@@ -452,8 +448,8 @@ function NativeMap({
         zones: [z],
       }));
     }
-    return clusterZones(visible, CLUSTER_GRID_SIZE).slice(0, MAX_ZONE_CLUSTERS);
-  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn, isZoomedEnoughForZones]);
+    return clusterZones(visible, CLUSTER_GRID_SIZE);
+  }, [showZones, zoneMarkers, visibleRegion, isZoomedIn]);
 
   const handleClusterPress = useCallback((cluster: ZoneCluster) => {
     if (cluster.count === 1) {
