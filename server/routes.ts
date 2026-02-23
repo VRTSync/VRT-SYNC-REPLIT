@@ -344,7 +344,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         address: parsed.data.address ?? undefined,
         assignedTo: parsed.data.assignedTo ?? undefined,
         createdBy: req.session.userId!,
+        startDate: parsed.data.startDate ? new Date(parsed.data.startDate as any) : undefined,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate as any) : undefined,
+        ticketType: parsed.data.ticketType ?? undefined,
       });
 
       if (task.assignedTo) {
@@ -371,6 +373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { version, ...data } = req.body;
       if (typeof version !== "number") {
         return res.status(400).json({ error: "version is required" });
+      }
+      if (data.startDate) {
+        data.startDate = new Date(data.startDate);
       }
       if (data.dueDate) {
         data.dueDate = new Date(data.dueDate);

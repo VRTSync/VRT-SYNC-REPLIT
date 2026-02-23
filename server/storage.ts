@@ -84,7 +84,9 @@ export async function createTask(data: {
   address?: string;
   assignedTo?: string;
   createdBy: string;
+  startDate?: Date;
   dueDate?: Date;
+  ticketType?: string;
 }): Promise<Task> {
   const [task] = await db.insert(tasks).values(data).returning();
   return task;

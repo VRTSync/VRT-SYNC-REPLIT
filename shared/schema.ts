@@ -55,7 +55,9 @@ export const tasks = pgTable("tasks", {
   address: text("address"),
   assignedTo: varchar("assigned_to").references(() => users.id),
   createdBy: varchar("created_by").notNull().references(() => users.id),
+  startDate: timestamp("start_date"),
   dueDate: timestamp("due_date"),
+  ticketType: text("ticket_type"),
   version: integer("version").notNull().default(1),
   scheduleInstanceKey: varchar("schedule_instance_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -399,7 +401,9 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   longitude: true,
   address: true,
   assignedTo: true,
+  startDate: true,
   dueDate: true,
+  ticketType: true,
 });
 
 export const completeTaskSchema = z.object({
