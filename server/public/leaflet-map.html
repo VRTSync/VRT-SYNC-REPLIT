@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #map { width: 100%; height: 100%; }
+  .task-marker {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .ctrl-marker {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 28px; height: 22px; border-radius: 6px;
+    border: 2px solid #fff; color: #fff; font-size: 11px;
+    font-weight: 700; padding: 0 5px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    white-space: nowrap; text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  }
+  .zone-ring {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 3px solid; background: rgba(255,255,255,0.5);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .user-loc {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #4285F4; border: 3px solid #fff;
+    box-shadow: 0 0 8px rgba(66,133,244,0.5);
+  }
+  .target-marker {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #25C1AC; border: 3px solid #fff;
+    box-shadow: 0 0 8px rgba(37,193,172,0.5);
+  }
+  .cluster-badge {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; color: #fff; font-weight: 700;
+    font-size: 12px; border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  }
+  .leaflet-popup-content-wrapper {
+    border-radius: 10px; padding: 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .leaflet-popup-content { margin: 10px 14px; font-family: -apple-system, system-ui, sans-serif; }
+  .popup-title { font-weight: 600; font-size: 14px; color: #0C1D31; }
+  .popup-addr { font-size: 12px; color: #888; margin-top: 2px; }
+  .popup-action { font-size: 12px; color: #25C1AC; margin-top: 6px; font-weight: 500; cursor: pointer; }
+  .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
+    background: rgba(37,193,172,0.3) !important;
+  }
+  .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+    background: #25C1AC !important; color: #fff !important;
+    font-weight: 700 !important;
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+(function() {
+  var map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([39.8283, -98.5795], 4);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 20
+  }).addTo(map);
+
+  var geoLayers = {};
+  var taskLayer = L.layerGroup().addTo(map);
+  var ctrlLayer = L.layerGroup().addTo(map);
+  var zoneClusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 40,
+    disableClusteringAtZoom: 17,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    iconCreateFunction: function(cluster) {
+      var count = cluster.getChildCount();
+      var size = count < 10 ? 30 : count < 50 ? 36 : 42;
+      var colors = {};
+      cluster.getAllChildMarkers().forEach(function(m) {
+        if (m._zoneColor) colors[m._zoneColor] = true;
+      });
+      var colorKeys = Object.keys(colors);
+      var bg = colorKeys.length === 1 ? colorKeys[0] : '#6b7280';
+      return L.divIcon({
+        html: '<div class="cluster-badge" style="width:'+size+'px;height:'+size+'px;background:'+bg+';">'+count+'</div>',
+        className: '',
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2]
+      });
+    }
+  }).addTo(map);
+  var userLocMarker = null;
+  var targetMarker = null;
+
+  function post(type, data) {
+    try {
+      var msg = JSON.stringify({ type: type, data: data });
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(msg);
+      } else if (window.parent !== window) {
+        window.parent.postMessage(msg, '*');
+      }
+    } catch(e) {}
+  }
+
+  function clearGroup(group) {
+    group.clearLayers();
+  }
+
+  window.mapBridge = {
+    setUserLocation: function(lat, lng) {
+      if (userLocMarker) map.removeLayer(userLocMarker);
+      userLocMarker = L.marker([lat, lng], {
+        icon: L.divIcon({ html: '<div class="user-loc"></div>', className: '', iconSize: [14,14], iconAnchor: [7,7] }),
+        zIndex: 1000
+      }).addTo(map);
+    },
+
+    setTasks: function(tasks) {
+      clearGroup(taskLayer);
+      tasks.forEach(function(t) {
+        var color = t.priorityColor || '#ff9800';
+        var m = L.marker([t.latitude, t.longitude], {
+          icon: L.divIcon({
+            html: '<div class="task-marker" style="background:'+color+';"></div>',
+            className: '', iconSize: [12,12], iconAnchor: [6,6]
+          }),
+          zIndex: 100
+        });
+        var popupHtml = '<div class="popup-title">'+escHtml(t.title)+'</div>';
+        if (t.address) popupHtml += '<div class="popup-addr">'+escHtml(t.address)+'</div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._taskTap(\''+t.id+'\')">Tap to view details</div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
+        m.addTo(taskLayer);
+      });
+    },
+
+    _taskTap: function(id) {
+      post('taskPress', { id: id });
+    },
+
+    setLayers: function(layers) {
+      Object.keys(geoLayers).forEach(function(k) {
+        map.removeLayer(geoLayers[k]);
+        delete geoLayers[k];
+      });
+      layers.forEach(function(layer) {
+        if (!layer.geojson) return;
+        var colorMap = layer.controllerColorMap || {};
+        var geoLayer = L.geoJSON(layer.geojson, {
+          style: function(feature) {
+            var c = layer.color;
+            if (layer.subLayerKey === 'zone' && feature.properties && feature.properties.controllerFeatureRef) {
+              c = colorMap[feature.properties.controllerFeatureRef] || c;
+            }
+            if (layer.subLayerKey === 'controller' && feature.properties) {
+              var fid = feature.properties.featureId || feature.id;
+              c = colorMap[fid] || c;
+            }
+            return { color: c, weight: 2, fillColor: c, fillOpacity: 0.25, opacity: 0.8 };
+          },
+          pointToLayer: function(feature, latlng) {
+            var c = layer.color;
+            if (layer.subLayerKey === 'controller' && feature.properties) {
+              var fid = feature.properties.featureId || feature.id;
+              c = colorMap[fid] || c;
+            }
+            if (layer.subLayerKey === 'zone' && feature.properties && feature.properties.controllerFeatureRef) {
+              c = colorMap[feature.properties.controllerFeatureRef] || c;
+            }
+            return L.circleMarker(latlng, {
+              radius: 6, fillColor: c, fillOpacity: 0.7,
+              color: '#fff', weight: 2
+            });
+          },
+          onEachFeature: function(feature, l) {
+            l.on('click', function() {
+              var ref = feature.properties && (feature.properties.featureRef || feature.properties.featureId || feature.properties.id || feature.properties.name);
+              if (ref) {
+                post('featureTap', { featureRef: ref, layerKey: layer.layerKey });
+              }
+            });
+          }
+        }).addTo(map);
+        geoLayers[layer.id] = geoLayer;
+      });
+    },
+
+    setControllerMarkers: function(markers) {
+      clearGroup(ctrlLayer);
+      markers.forEach(function(c) {
+        var m = L.marker([c.latitude, c.longitude], {
+          icon: L.divIcon({
+            html: '<div class="ctrl-marker" style="background:'+c.color+';">'+escHtml(c.controllerKey)+'</div>',
+            className: '', iconSize: [28,22], iconAnchor: [14,11]
+          }),
+          zIndex: 500
+        });
+        m.on('click', function() {
+          post('featureTap', { featureRef: c.featureRef, layerKey: 'irrigation' });
+        });
+        m.addTo(ctrlLayer);
+      });
+    },
+
+    setZoneMarkers: function(markers) {
+      zoneClusterGroup.clearLayers();
+      markers.forEach(function(z) {
+        var m = L.marker([z.latitude, z.longitude], {
+          icon: L.divIcon({
+            html: '<div class="zone-ring" style="border-color:'+z.controllerColor+';"></div>',
+            className: '', iconSize: [14,14], iconAnchor: [7,7]
+          })
+        });
+        m._zoneColor = z.controllerColor;
+        m.on('click', function() {
+          post('featureTap', { featureRef: z.featureRef, layerKey: 'irrigation' });
+        });
+        zoneClusterGroup.addLayer(m);
+      });
+    },
+
+    clearIrrigation: function() {
+      clearGroup(ctrlLayer);
+      zoneClusterGroup.clearLayers();
+    },
+
+    flyTo: function(lat, lng, zoom, label) {
+      map.flyTo([lat, lng], zoom || 16, { duration: 0.8 });
+      if (targetMarker) map.removeLayer(targetMarker);
+      if (label) {
+        targetMarker = L.marker([lat, lng], {
+          icon: L.divIcon({
+            html: '<div class="target-marker"></div>',
+            className: '', iconSize: [16,16], iconAnchor: [8,8]
+          }),
+          zIndex: 900
+        }).bindPopup('<div class="popup-title">'+escHtml(label)+'</div>').addTo(map).openPopup();
+      }
+      post('targetReached', {});
+    },
+
+    fitBounds: function(coords) {
+      if (!coords || coords.length === 0) return;
+      var bounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
+      map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+    },
+
+    showControllers: function(show) {
+      if (show) { if (!map.hasLayer(ctrlLayer)) map.addLayer(ctrlLayer); }
+      else { if (map.hasLayer(ctrlLayer)) map.removeLayer(ctrlLayer); }
+    },
+
+    showZones: function(show) {
+      if (show) { if (!map.hasLayer(zoneClusterGroup)) map.addLayer(zoneClusterGroup); }
+      else { if (map.hasLayer(zoneClusterGroup)) map.removeLayer(zoneClusterGroup); }
+    }
+  };
+
+  function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'eval' && e.data.code) {
+      try { new Function(e.data.code)(); } catch(ex) { console.error(ex); }
+    }
+  });
+
+  post('mapReady', {});
+})();
+</script>
+</body>
+</html>

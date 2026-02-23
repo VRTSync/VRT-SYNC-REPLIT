@@ -201,6 +201,9 @@ function configureExpoAndLanding(app: express.Application) {
   });
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
+  app.get("/leaflet-map.html", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "public", "leaflet-map.html"));
+  });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
   log("Expo routing: Checking expo-platform header on / and /manifest");

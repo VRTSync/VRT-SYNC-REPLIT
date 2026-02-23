@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getApiUrl } from '@/lib/query-client';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -629,10 +630,11 @@ export default function LeafletMap({
         </View>
       );
     }
+    const mapUrl = `${getApiUrl()}leaflet-map.html`;
     return (
       <WebView
         ref={webViewRef}
-        source={{ html: htmlContent, baseUrl: 'https://unpkg.com' }}
+        source={{ uri: mapUrl }}
         style={styles.webview}
         onMessage={handleMessage}
         onError={handleWebViewError}
@@ -646,9 +648,6 @@ export default function LeafletMap({
         showsVerticalScrollIndicator={false}
         allowsInlineMediaPlayback
         mixedContentMode="always"
-        allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
-        allowFileAccess
         startInLoadingState
         renderLoading={() => (
           <View style={[StyleSheet.absoluteFill, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f7fa' }]}>
