@@ -3,12 +3,13 @@ import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
-  taskSchedules, scheduleRuns, scheduleRunItems,
+  taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
-  type TaskSchedule, type ScheduleRun, type ScheduleRunItem
+  type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
+  type ServiceSchedule, type ServiceVisit
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1362,4 +1363,90 @@ export async function updateScheduleNextRunAt(id: string, nextRunAt: Date | null
   await db.update(taskSchedules)
     .set({ nextRunAt, updatedAt: new Date() })
     .where(eq(taskSchedules.id, id));
+}
+
+export async function getServiceSchedulesByCommunity(communityId: string): Promise<ServiceSchedule[]> {
+  return db.select().from(serviceSchedules)
+    .where(eq(serviceSchedules.communityId, communityId))
+    .orderBy(asc(serviceSchedules.dayOfWeek));
+}
+
+export async function getServiceScheduleById(id: string): Promise<ServiceSchedule | undefined> {
+  const [schedule] = await db.select().from(serviceSchedules).where(eq(serviceSchedules.id, id));
+  return schedule;
+}
+
+export async function createServiceSchedule(data: {
+  communityId: string;
+  serviceType?: "mowing_visit";
+  dayOfWeek: number;
+  seasonStart?: string | null;
+  seasonEnd?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}): Promise<ServiceSchedule> {
+  const [schedule] = await db.insert(serviceSchedules).values(data).returning();
+  return schedule;
+}
+
+export async function updateServiceSchedule(id: string, data: {
+  dayOfWeek?: number;
+  seasonStart?: string | null;
+  seasonEnd?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+}): Promise<ServiceSchedule | undefined> {
+  const [updated] = await db.update(serviceSchedules)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(serviceSchedules.id, id))
+    .returning();
+  return updated;
+}
+
+export async function deleteServiceSchedule(id: string): Promise<boolean> {
+  const result = await db.delete(serviceSchedules).where(eq(serviceSchedules.id, id)).returning();
+  return result.length > 0;
+}
+
+export async function getServiceVisits(scheduleId: string, opts?: { from?: string; to?: string }): Promise<ServiceVisit[]> {
+  const conditions = [eq(serviceVisits.scheduleId, scheduleId)];
+  if (opts?.from) conditions.push(gte(serviceVisits.serviceDate, opts.from));
+  if (opts?.to) conditions.push(lte(serviceVisits.serviceDate, opts.to));
+  return db.select().from(serviceVisits)
+    .where(and(...conditions))
+    .orderBy(asc(serviceVisits.serviceDate));
+}
+
+export async function getServiceVisitsByCommunity(communityId: string, opts?: { from?: string; to?: string }): Promise<ServiceVisit[]> {
+  const conditions = [eq(serviceVisits.communityId, communityId)];
+  if (opts?.from) conditions.push(gte(serviceVisits.serviceDate, opts.from));
+  if (opts?.to) conditions.push(lte(serviceVisits.serviceDate, opts.to));
+  return db.select().from(serviceVisits)
+    .where(and(...conditions))
+    .orderBy(asc(serviceVisits.serviceDate));
+}
+
+export async function upsertServiceVisit(data: {
+  scheduleId: string;
+  communityId: string;
+  serviceDate: string;
+  completedAt?: Date | null;
+  completedBy?: string | null;
+  employeeSignOffName?: string;
+  notes?: string | null;
+}): Promise<ServiceVisit> {
+  const [visit] = await db.insert(serviceVisits)
+    .values(data)
+    .onConflictDoUpdate({
+      target: [serviceVisits.scheduleId, serviceVisits.serviceDate],
+      set: {
+        completedAt: data.completedAt ?? new Date(),
+        completedBy: data.completedBy,
+        employeeSignOffName: data.employeeSignOffName ?? '',
+        notes: data.notes,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return visit;
 }
