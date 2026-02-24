@@ -1828,11 +1828,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const csvContent = req.file.buffer.toString("utf-8");
+      const firstLine = csvContent.split(/\r?\n/)[0] || "";
+      const delimiter = firstLine.includes("\t") ? "\t" : ",";
       const records = parse(csvContent, {
         columns: true,
         skip_empty_lines: true,
         trim: true,
         relax_column_count: true,
+        delimiter,
       });
 
       if (records.length === 0) {

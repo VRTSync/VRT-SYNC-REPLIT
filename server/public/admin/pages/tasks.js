@@ -238,13 +238,13 @@ window._renderTasks = async function(container, communityId) {
         <div class="modal-body">
           <div id="csv-upload-section">
             <p class="text-sm text-muted" style="margin-bottom:12px">
-              Upload a CSV file with task data. Supported columns: Ticket Title, Ticket Type, Priority, Start Date, End Date, Frequency, Total Visits, Description.
+              Upload a CSV or tab-separated file with task data. Supported columns: Ticket Title, Ticket Type, Priority, Start Date, End Date, Frequency, Total Visits, Description.
               Priority mapping: Critical \u2192 Urgent, Core \u2192 High, Ongoing \u2192 Medium.
             </p>
             <div style="border:2px dashed var(--border);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s" id="csv-dropzone">
               <div style="font-size:32px;margin-bottom:8px">\uD83D\uDCC4</div>
-              <div>Drop CSV file here or click to browse</div>
-              <input type="file" accept=".csv" id="csv-file-input" style="display:none" />
+              <div>Drop CSV/TSV/TXT file here or click to browse</div>
+              <input type="file" accept=".csv,.tsv,.txt" id="csv-file-input" style="display:none" />
             </div>
             <div id="csv-file-name" style="margin-top:8px;display:none" class="text-sm"></div>
           </div>
@@ -296,8 +296,8 @@ window._renderTasks = async function(container, communityId) {
     });
 
     function handleFile(file) {
-      if (!file.name.endsWith('.csv')) {
-        showToast('Please select a CSV file', 'error');
+      if (!file.name.endsWith('.csv') && !file.name.endsWith('.tsv') && !file.name.endsWith('.txt')) {
+        showToast('Please select a CSV, TSV, or TXT file', 'error');
         return;
       }
       selectedFile = file;
