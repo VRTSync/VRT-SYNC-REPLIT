@@ -95,6 +95,7 @@ export default function MapScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [disabledLayerIds, setDisabledLayerIds] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string>('community');
   const [selectedAsset, setSelectedAsset] = useState<AssetInfo | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
@@ -235,45 +236,17 @@ export default function MapScreen() {
     });
   };
 
-  const isCategoryEnabled = (catKey: string) => {
-    const catLayers = (layersByCategory[catKey] || []).filter(
-      l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
-    );
-    if (catKey === 'irrigation') {
-      if (!showControllerLayer && !showZoneLayer && catLayers.every(l => disabledLayerIds.has(l.id))) return false;
-    }
-    if (catLayers.length === 0) return true;
-    return catLayers.some(l => !disabledLayerIds.has(l.id));
-  };
-
-  const toggleCategory = (catKey: string) => {
-    const catLayers = (layersByCategory[catKey] || []).filter(
-      l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
-    );
-    const enabled = isCategoryEnabled(catKey);
-    setDisabledLayerIds((prev) => {
-      const next = new Set(prev);
-      catLayers.forEach(l => {
-        if (enabled) next.add(l.id);
-        else next.delete(l.id);
-      });
-      return next;
-    });
-    if (catKey === 'irrigation') {
-      setShowControllerLayer(!enabled);
-      setShowZoneLayer(!enabled);
-    }
-  };
-
-  const enableAllCategories = () => {
+  const handleCategorySelect = (catKey: string) => {
+    setActiveCategory(catKey);
+    setShowLayerPanel(false);
     setDisabledLayerIds(new Set());
-    setShowControllerLayer(true);
-    setShowZoneLayer(true);
-    const allRefs = controllers.map(c => c.featureRef || c.id);
-    setEnabledControllers(new Set(allRefs));
+    if (catKey === 'irrigation') {
+      setShowControllerLayer(true);
+      setShowZoneLayer(true);
+      const allRefs = controllers.map(c => c.featureRef || c.id);
+      setEnabledControllers(new Set(allRefs));
+    }
   };
-
-  const allEnabled = disabledLayerIds.size === 0 && showControllerLayer && showZoneLayer;
 
   const enrichAssetInfo = useCallback((asset: any): AssetInfo => {
     const props: { key: string; value: string }[] = asset.properties || [];
@@ -359,7 +332,7 @@ export default function MapScreen() {
   }, [controllers]);
 
   const controllerMarkers = useMemo(() => {
-    if (!showControllerLayer || controllers.length === 0) return [];
+    if (activeCategory !== 'irrigation' || !showControllerLayer || controllers.length === 0) return [];
     return controllers
       .filter(c => c.latitude != null && c.longitude != null && enabledControllers.has(c.featureRef || c.id))
       .map(c => ({
@@ -372,10 +345,10 @@ export default function MapScreen() {
         longitude: c.longitude!,
         zoneCount: c.zoneCount,
       }));
-  }, [showControllerLayer, controllers, enabledControllers]);
+  }, [activeCategory, showControllerLayer, controllers, enabledControllers]);
 
   const zoneMarkers = useMemo(() => {
-    if (!showZoneLayer || controllers.length === 0) return [];
+    if (activeCategory !== 'irrigation' || !showZoneLayer || controllers.length === 0) return [];
     const zones: any[] = [];
     controllers.forEach(ctrl => {
       if (!enabledControllers.has(ctrl.featureRef || ctrl.id)) return;
@@ -398,10 +371,11 @@ export default function MapScreen() {
       });
     });
     return zones;
-  }, [showZoneLayer, controllers, enabledControllers]);
+  }, [activeCategory, showZoneLayer, controllers, enabledControllers]);
 
   const activeLayers = React.useMemo(() => {
     return allLayers
+      .filter((l) => l.layerKey === activeCategory)
       .filter((l) => !disabledLayerIds.has(l.id))
       .filter((l) => {
         if (controllers.length > 0) {
@@ -422,7 +396,7 @@ export default function MapScreen() {
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
-  }, [allLayers, disabledLayerIds, loadedGeoJSON, controllers, controllerColorMap]);
+  }, [allLayers, activeCategory, disabledLayerIds, loadedGeoJSON, controllers, controllerColorMap]);
 
   const fitToContentKey = useMemo(() => {
     const parts = [
@@ -530,139 +504,6 @@ export default function MapScreen() {
     <View style={styles.container}>
       {isWeb && <StatusBarFill />}
 
-      {(allLayers.length > 0 || controllers.length > 0) && (
-        <View style={[styles.categoryBar, { top: topOffset + 10 }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryBarContent}>
-            <TouchableOpacity
-              style={[styles.categoryTab, allEnabled && styles.categoryTabActive]}
-              onPress={enableAllCategories}
-            >
-              <Ionicons name="globe-outline" size={14} color={allEnabled ? '#fff' : '#0C1D31'} />
-              <Text style={[styles.categoryTabText, allEnabled && styles.categoryTabTextActive]}>All</Text>
-            </TouchableOpacity>
-            {CATEGORY_TABS.map((cat) => {
-              const active = isCategoryEnabled(cat.key);
-              return (
-                <TouchableOpacity
-                  key={cat.key}
-                  style={[styles.categoryTab, active && styles.categoryTabActive]}
-                  onPress={() => toggleCategory(cat.key)}
-                >
-                  <Ionicons name={cat.icon} size={14} color={active ? '#fff' : '#0C1D31'} />
-                  <Text style={[styles.categoryTabText, active && styles.categoryTabTextActive]}>{cat.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity
-              style={styles.categoryTab}
-              onPress={() => setShowLayerPanel(!showLayerPanel)}
-            >
-              <Ionicons name="options-outline" size={14} color="#0C1D31" />
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      )}
-
-      {showLayerPanel && (
-        <ScrollView style={[styles.layerPanel, { top: topOffset + 52, maxHeight: 400 }]} bounces={false}>
-          <Text style={styles.layerPanelTitle}>Layers</Text>
-          {CATEGORY_TABS.map((cat) => {
-            const catLayers = (layersByCategory[cat.key] || []).filter(
-              l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
-            );
-            if (catLayers.length === 0 && !(cat.key === 'irrigation' && controllers.length > 0)) return null;
-            return (
-              <View key={cat.key}>
-                <View style={styles.categorySectionHeader}>
-                  <Ionicons name={cat.icon} size={14} color="#25C1AC" />
-                  <Text style={styles.categorySectionLabel}>{cat.label}</Text>
-                </View>
-                {catLayers.map((layer, idx) => (
-                  <View key={layer.id} style={styles.layerToggleRow}>
-                    <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
-                    <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
-                    <Switch
-                      value={!disabledLayerIds.has(layer.id)}
-                      onValueChange={() => toggleLayer(layer.id)}
-                      trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                    />
-                  </View>
-                ))}
-                {cat.key === 'irrigation' && controllers.length > 0 && (
-                  <>
-                    <View style={styles.layerToggleRow}>
-                      <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
-                      <Text style={styles.layerToggleName}>Controllers</Text>
-                      <Switch
-                        value={showControllerLayer}
-                        onValueChange={(v) => setShowControllerLayer(v)}
-                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                      />
-                    </View>
-                    <View style={styles.layerToggleRow}>
-                      <Ionicons name="water-outline" size={16} color="#25C1AC" />
-                      <Text style={styles.layerToggleName}>Zones</Text>
-                      <Switch
-                        value={showZoneLayer}
-                        onValueChange={(v) => setShowZoneLayer(v)}
-                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                      />
-                    </View>
-                  </>
-                )}
-              </View>
-            );
-          })}
-
-          {controllers.length > 0 && (
-            <>
-              <View style={styles.controllerSectionDivider} />
-              <View style={styles.controllerSectionHeader}>
-                <Text style={styles.layerPanelTitle}>Filter Controllers</Text>
-                <TouchableOpacity onPress={() => {
-                  const allRefs = controllers.map(c => c.featureRef || c.id);
-                  if (enabledControllers.size === allRefs.length) {
-                    setEnabledControllers(new Set());
-                  } else {
-                    setEnabledControllers(new Set(allRefs));
-                  }
-                }}>
-                  <Text style={styles.selectAllText}>
-                    {enabledControllers.size === controllers.length ? 'None' : 'All'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              {controllers.map((ctrl) => {
-                const ref = ctrl.featureRef || ctrl.id;
-                return (
-                  <TouchableOpacity
-                    key={ctrl.id}
-                    style={styles.controllerRow}
-                    onPress={() => {
-                      setEnabledControllers(prev => {
-                        const next = new Set(prev);
-                        if (next.has(ref)) next.delete(ref);
-                        else next.add(ref);
-                        return next;
-                      });
-                    }}
-                  >
-                    <View style={[styles.controllerColorDot, { backgroundColor: ctrl.controllerColor }]} />
-                    <Text style={[styles.controllerLabel, !enabledControllers.has(ref) && styles.controllerLabelDisabled]} numberOfLines={1}>
-                      {ctrl.label}
-                    </Text>
-                    <Text style={styles.controllerZoneCount}>{ctrl.zoneCount}</Text>
-                    <View style={[styles.controllerCheck, enabledControllers.has(ref) && styles.controllerCheckActive]}>
-                      {enabledControllers.has(ref) && <Ionicons name="checkmark" size={12} color="#fff" />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </>
-          )}
-        </ScrollView>
-      )}
-
       {useOfflineData && (
         <View style={[styles.offlineBadge, { top: topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
@@ -697,9 +538,133 @@ export default function MapScreen() {
         zoneMarkers={zoneMarkers}
         showControllers={showControllerLayer}
         showZones={showZoneLayer}
-        activeCategory="all"
+        activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
       />
+
+      {showLayerPanel && (
+        <View style={[styles.layerPanel, { bottom: isWeb ? 84 + 52 + 8 : (insets.bottom || 0) + 50 + 52 + 8 }]}>
+          <ScrollView bounces={false} style={{ maxHeight: 300 }}>
+            {(() => {
+              const catLayers = (layersByCategory[activeCategory] || []).filter(
+                l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
+              );
+              const hasLayers = catLayers.length > 0;
+              const hasControllers = activeCategory === 'irrigation' && controllers.length > 0;
+              if (!hasLayers && !hasControllers) {
+                return <Text style={styles.layerPanelEmpty}>No layers available for this category.</Text>;
+              }
+              return (
+                <>
+                  {catLayers.map((layer, idx) => (
+                    <View key={layer.id} style={styles.layerToggleRow}>
+                      <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
+                      <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
+                      <Switch
+                        value={!disabledLayerIds.has(layer.id)}
+                        onValueChange={() => toggleLayer(layer.id)}
+                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                      />
+                    </View>
+                  ))}
+                  {hasControllers && (
+                    <>
+                      <View style={styles.layerToggleRow}>
+                        <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
+                        <Text style={styles.layerToggleName}>Controllers</Text>
+                        <Switch
+                          value={showControllerLayer}
+                          onValueChange={(v) => setShowControllerLayer(v)}
+                          trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                        />
+                      </View>
+                      <View style={styles.layerToggleRow}>
+                        <Ionicons name="water-outline" size={16} color="#25C1AC" />
+                        <Text style={styles.layerToggleName}>Zones</Text>
+                        <Switch
+                          value={showZoneLayer}
+                          onValueChange={(v) => setShowZoneLayer(v)}
+                          trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                        />
+                      </View>
+                      <View style={styles.controllerSectionDivider} />
+                      <View style={styles.controllerSectionHeader}>
+                        <Text style={styles.controllerSectionTitle}>Controllers</Text>
+                        <TouchableOpacity onPress={() => {
+                          const allRefs = controllers.map(c => c.featureRef || c.id);
+                          if (enabledControllers.size === allRefs.length) {
+                            setEnabledControllers(new Set());
+                          } else {
+                            setEnabledControllers(new Set(allRefs));
+                          }
+                        }}>
+                          <Text style={styles.selectAllText}>
+                            {enabledControllers.size === controllers.length ? 'None' : 'All'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {controllers.map((ctrl) => {
+                        const ref = ctrl.featureRef || ctrl.id;
+                        return (
+                          <TouchableOpacity
+                            key={ctrl.id}
+                            style={styles.controllerRow}
+                            onPress={() => {
+                              setEnabledControllers(prev => {
+                                const next = new Set(prev);
+                                if (next.has(ref)) next.delete(ref);
+                                else next.add(ref);
+                                return next;
+                              });
+                            }}
+                          >
+                            <View style={[styles.controllerColorDot, { backgroundColor: ctrl.controllerColor }]} />
+                            <Text style={[styles.controllerLabel, !enabledControllers.has(ref) && styles.controllerLabelDisabled]} numberOfLines={1}>
+                              {ctrl.label}
+                            </Text>
+                            <Text style={styles.controllerZoneCount}>{ctrl.zoneCount}</Text>
+                            <View style={[styles.controllerCheck, enabledControllers.has(ref) && styles.controllerCheckActive]}>
+                              {enabledControllers.has(ref) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                            </View>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </ScrollView>
+        </View>
+      )}
+
+      {(allLayers.length > 0 || controllers.length > 0) && (
+        <>
+          <TouchableOpacity
+            style={[styles.layersButton, { bottom: isWeb ? 84 + 52 + 4 : (insets.bottom || 0) + 50 + 52 + 4 }]}
+            onPress={() => setShowLayerPanel(!showLayerPanel)}
+          >
+            <Ionicons name={showLayerPanel ? 'close' : 'layers-outline'} size={18} color="#fff" />
+            <Text style={styles.layersButtonText}>{showLayerPanel ? 'Close' : 'Layers'}</Text>
+          </TouchableOpacity>
+
+          <View style={[styles.categoryBar, { bottom: isWeb ? 84 : (insets.bottom || 0) + 50, paddingBottom: 0 }]}>
+            {CATEGORY_TABS.map((cat) => {
+              const isActive = activeCategory === cat.key;
+              return (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+                  onPress={() => handleCategorySelect(cat.key)}
+                >
+                  <Ionicons name={cat.icon} size={20} color={isActive ? '#25C1AC' : '#999'} />
+                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>{cat.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -707,103 +672,74 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   loadingContainer: { justifyContent: 'center', alignItems: 'center' },
-  categorySectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 10,
-    marginBottom: 4,
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  categorySectionLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0C1D31',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
   categoryBar: {
     position: 'absolute',
     left: 0,
     right: 0,
     zIndex: 12,
-    paddingHorizontal: 8,
-  },
-  categoryBarContent: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 4,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e8e8e8',
+    height: 52,
   },
   categoryTab: {
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    elevation: 3,
+    justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 6,
   },
-  categoryTabActive: {
-    backgroundColor: '#0C1D31',
-  },
+  categoryTabActive: {},
   categoryTabText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '600',
-    color: '#0C1D31',
+    color: '#999',
   },
   categoryTabTextActive: {
-    color: '#fff',
+    color: '#25C1AC',
   },
-  layerToggleBtn: {
+  layersButton: {
     position: 'absolute',
-    top: 112,
     right: 12,
-    zIndex: 10,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 10,
+    zIndex: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
+    backgroundColor: '#0C1D31',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 4,
+    elevation: 5,
   },
-  layerToggleBtnText: {
+  layersButtonText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#0C1D31',
+    color: '#fff',
   },
   layerPanel: {
     position: 'absolute',
-    top: 112,
-    right: 56,
-    zIndex: 10,
+    left: 12,
+    right: 12,
+    zIndex: 14,
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 12,
-    minWidth: 200,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 5,
   },
-  layerPanelTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0C1D31',
-    marginBottom: 8,
+  layerPanelEmpty: {
+    fontSize: 13,
+    color: '#999',
+    textAlign: 'center',
+    paddingVertical: 12,
   },
   layerToggleRow: {
     flexDirection: 'row',
@@ -890,6 +826,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  controllerSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1D31',
   },
   selectAllText: {
     fontSize: 12,
