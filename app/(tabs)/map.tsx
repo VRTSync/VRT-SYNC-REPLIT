@@ -308,9 +308,17 @@ export default function MapScreen() {
     return enriched;
   }, [controllers]);
 
-  const handleFeatureTap = useCallback(async (featureRef: string, _layerKey: string) => {
+  const handleFeatureTap = useCallback(async (featureRef: string, _layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => {
     if (!communityId) return;
     if (!featureRef) return;
+
+    const buildFallback = (): AssetInfo => ({
+      id: `geo-${featureRef}`,
+      assetType: meta?.assetType || 'feature',
+      label: meta?.label || featureRef,
+      featureRef,
+      properties: meta?.layerName ? [{ key: 'Layer', value: meta.layerName }] : [],
+    });
 
     if (useOfflineData) {
       const entry = resolveFeatureToAsset(featureRef);
@@ -322,6 +330,8 @@ export default function MapScreen() {
           featureRef,
           properties: entry.properties,
         }));
+      } else {
+        setSelectedAsset(enrichAssetInfo(buildFallback()));
       }
       return;
     }
@@ -331,9 +341,12 @@ export default function MapScreen() {
       const asset = await res.json();
       if (asset && asset.id) {
         setSelectedAsset(enrichAssetInfo(asset));
+      } else {
+        setSelectedAsset(enrichAssetInfo(buildFallback()));
       }
     } catch (err) {
       console.error('Feature tap error:', err);
+      setSelectedAsset(enrichAssetInfo(buildFallback()));
     }
   }, [communityId, useOfflineData, resolveFeatureToAsset, enrichAssetInfo]);
 

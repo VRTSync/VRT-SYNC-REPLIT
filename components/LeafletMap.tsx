@@ -780,20 +780,24 @@ export default function LeafletMap({
                     <Text style={styles.showControllerBtnText}>Show Controller</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                  onPress={() => onAssetHistory?.(selectedAsset.id)}
-                >
-                  <Ionicons name="time-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>History</Text>
-                </TouchableOpacity>
+                {!selectedAsset.id.startsWith('geo-') && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.assetDetailBtn}
+                      onPress={() => onAssetDetail?.(selectedAsset.id)}
+                    >
+                      <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                      <Text style={styles.assetDetailBtnText}>Details</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                      onPress={() => onAssetHistory?.(selectedAsset.id)}
+                    >
+                      <Ionicons name="time-outline" size={16} color="#fff" />
+                      <Text style={styles.assetDetailBtnText}>History</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </>
           ) : selectedAsset.assetType === 'controller' ? (
@@ -828,20 +832,24 @@ export default function LeafletMap({
                     <Text style={styles.showControllerBtnText}>Show Zones</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                  onPress={() => onAssetHistory?.(selectedAsset.id)}
-                >
-                  <Ionicons name="time-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>History</Text>
-                </TouchableOpacity>
+                {!selectedAsset.id.startsWith('geo-') && (
+                  <>
+                    <TouchableOpacity
+                      style={styles.assetDetailBtn}
+                      onPress={() => onAssetDetail?.(selectedAsset.id)}
+                    >
+                      <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                      <Text style={styles.assetDetailBtnText}>Details</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                      onPress={() => onAssetHistory?.(selectedAsset.id)}
+                    >
+                      <Ionicons name="time-outline" size={16} color="#fff" />
+                      <Text style={styles.assetDetailBtnText}>History</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </View>
             </>
           ) : (
@@ -867,22 +875,24 @@ export default function LeafletMap({
                   ))}
                 </View>
               )}
-              <View style={styles.assetBtnRow}>
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                  onPress={() => onAssetHistory?.(selectedAsset.id)}
-                >
-                  <Ionicons name="time-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>History</Text>
-                </TouchableOpacity>
-              </View>
+              {!selectedAsset.id.startsWith('geo-') && (
+                <View style={styles.assetBtnRow}>
+                  <TouchableOpacity
+                    style={styles.assetDetailBtn}
+                    onPress={() => onAssetDetail?.(selectedAsset.id)}
+                  >
+                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.assetDetailBtnText}>Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
+                    onPress={() => onAssetHistory?.(selectedAsset.id)}
+                  >
+                    <Ionicons name="time-outline" size={16} color="#fff" />
+                    <Text style={styles.assetDetailBtnText}>History</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </>
           )}
         </View>
