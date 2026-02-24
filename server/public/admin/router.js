@@ -82,6 +82,10 @@ window.AdminRouter = (function() {
       };
     }
 
+    if (parts[0] === 'imports' && parts[1]) {
+      return { route: 'imports/' + parts[1], params: {} };
+    }
+
     return { route: parts[0] || 'dashboard', params: {} };
   }
 
