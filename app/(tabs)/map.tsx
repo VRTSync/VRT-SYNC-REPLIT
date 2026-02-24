@@ -454,15 +454,6 @@ export default function MapScreen() {
   const isWeb = Platform.OS === 'web';
   const topOffset = isWeb ? 67 : insets.top;
 
-  if (!mapReady) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator color="#25C1AC" size="large" />
-        <Text style={[styles.webFallbackText, { marginTop: 12 }]}>Loading map...</Text>
-      </View>
-    );
-  }
-
   const layersByCategory = useMemo(() => {
     const grouped: Record<string, MapLayerMeta[]> = {};
     CATEGORY_TABS.forEach(cat => { grouped[cat.key] = []; });
@@ -472,6 +463,15 @@ export default function MapScreen() {
     });
     return grouped;
   }, [allLayers]);
+
+  if (!mapReady) {
+    return (
+      <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator color="#25C1AC" size="large" />
+        <Text style={[styles.webFallbackText, { marginTop: 12 }]}>Loading map...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
