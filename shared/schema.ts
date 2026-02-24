@@ -63,10 +63,12 @@ export const tasks = pgTable("tasks", {
   windowEnd: date("window_end"),
   version: integer("version").notNull().default(1),
   scheduleInstanceKey: varchar("schedule_instance_key"),
+  importFingerprint: varchar("import_fingerprint"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("tasks_schedule_instance_key_idx").on(table.scheduleInstanceKey),
+  index("tasks_import_fingerprint_idx").on(table.importFingerprint),
 ]);
 
 export const taskCompletions = pgTable("task_completions", {
