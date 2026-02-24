@@ -34,6 +34,14 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for:
 ### Mobile Service Schedule Widget
 The mobile dashboard includes a MowingDayCard component (`components/MowingDayCard.tsx`) that displays active service schedules for the selected community. It shows the service type, day-of-week badge, season awareness, and next service date. A "Log" button opens a LogVisitModal (`components/LogVisitModal.tsx`) bottom-sheet for recording visits with date, sign-off name, and notes. The OfflineContext (`client/contexts/OfflineContext.tsx`) supports full offline caching of schedules/visits and an offline queue for visit logging (matching the task completion offline pattern). API paths: `GET /api/communities/:id/service-schedules`, `GET /api/communities/:id/service-visits`, `POST /api/service-schedules/:id/log`.
 
+### Calendar View
+The Tasks screen (`app/(tabs)/tasks.tsx`) includes a calendar/list view toggle. The CalendarView component (`components/CalendarView.tsx`) renders a month grid with:
+- **Task window bars**: Horizontal bars spanning windowStart→windowEnd across day columns, color-coded by priority (green/orange/red/purple), with completed tasks showing strikethrough and muted colors, overdue tasks in red. Lane stacking (max 3 visible) with "+X more" overflow that opens a week items modal.
+- **Mowing day indicators**: Green dots on matching day-of-week cells with season awareness. Filled green = logged, outlined = not logged. Tapping opens LogVisitModal with pre-filled date.
+- **Month navigation**: Prev/next arrows and tap month title to return to today. Today highlighted with teal circle.
+- **Offline support**: Reuses cached tasks, service schedules, and visits from OfflineContext — no new API calls. Works fully offline.
+- **Interactions**: Tap task bar → navigate to task detail. Tap mowing dot → LogVisitModal. Tap "+X more" → week items modal listing all tasks and service days for that week.
+
 ### Access Control
 Contractors have restricted access to tasks within their assigned communities, while Admins have full access. Community membership is managed through the admin interface. Optimistic locking is implemented for concurrency control.
 
