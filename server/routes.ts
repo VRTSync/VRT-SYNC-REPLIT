@@ -427,6 +427,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      if (req.session.role !== 'admin' && existingTask.windowStart && existingTask.windowEnd) {
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' });
+        const today = new Date(todayStr + 'T00:00:00');
+        const wStart = new Date(existingTask.windowStart + (typeof existingTask.windowStart === 'string' && !existingTask.windowStart.includes('T') ? 'T00:00:00' : ''));
+        const wEnd = new Date(existingTask.windowEnd + (typeof existingTask.windowEnd === 'string' && !existingTask.windowEnd.includes('T') ? 'T00:00:00' : ''));
+        const startDate = new Date(wStart.toISOString().split('T')[0] + 'T00:00:00');
+        const endDate = new Date(wEnd.toISOString().split('T')[0] + 'T00:00:00');
+        if (today < startDate || today > endDate) {
+          return res.status(400).json({
+            error: "This task can only be completed within its execution window.",
+            code: "OUTSIDE_EXECUTION_WINDOW",
+            windowStart: existingTask.windowStart,
+            windowEnd: existingTask.windowEnd,
+          });
+        }
+      }
+
       const updated = await storage.updateTask(req.params.id as string, parsed.data.version, {
         status: "completed",
       });
