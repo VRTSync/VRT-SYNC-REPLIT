@@ -254,6 +254,10 @@ function generateLeafletHTML(): string {
       post('taskPress', { id: id });
     },
 
+    _featureTap: function(ref, layerKey) {
+      post('featureTap', { featureRef: ref, layerKey: layerKey });
+    },
+
     setLayers: function(layers) {
       Object.keys(geoLayers).forEach(function(k) {
         map.removeLayer(geoLayers[k]);
@@ -289,8 +293,17 @@ function generateLeafletHTML(): string {
             });
           },
           onEachFeature: function(feature, l) {
+            var props = feature.properties || {};
+            var ref = props.featureRef || props.featureId || props.id || props.name;
+            var label = props.label || props.name || props.displayName || props.title || (layer.displayName + (ref ? ' - ' + ref : ''));
+            var assetType = props.assetType || layer.subLayerKey || layer.layerKey;
+            var popupHtml = '<div class="popup-title">' + escHtml(label) + '</div>';
+            popupHtml += '<div class="popup-addr">' + escHtml(assetType) + '</div>';
+            if (ref) {
+              popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\')">View Details</div>';
+            }
+            l.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
             l.on('click', function() {
-              var ref = feature.properties && (feature.properties.featureRef || feature.properties.featureId || feature.properties.id || feature.properties.name);
               if (ref) {
                 post('featureTap', { featureRef: ref, layerKey: layer.layerKey });
               }
@@ -311,9 +324,10 @@ function generateLeafletHTML(): string {
           }),
           zIndex: 500
         });
-        m.on('click', function() {
-          post('featureTap', { featureRef: c.featureRef, layerKey: 'irrigation' });
-        });
+        var popupHtml = '<div class="popup-title">' + escHtml(c.label) + '</div>';
+        popupHtml += '<div class="popup-addr">Controller &bull; ' + c.zoneCount + ' zones</div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(c.featureRef) + '\',\'irrigation\')">View Details</div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
         m.addTo(ctrlLayer);
       });
     },
@@ -328,9 +342,10 @@ function generateLeafletHTML(): string {
           })
         });
         m._zoneColor = z.controllerColor;
-        m.on('click', function() {
-          post('featureTap', { featureRef: z.featureRef, layerKey: 'irrigation' });
-        });
+        var popupHtml = '<div class="popup-title">' + escHtml(z.label) + '</div>';
+        popupHtml += '<div class="popup-addr">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + ' &bull; ' + escHtml(z.controllerLabel) + '</div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(z.featureRef) + '\',\'irrigation\')">View Details</div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
         zoneClusterGroup.addLayer(m);
       });
     },

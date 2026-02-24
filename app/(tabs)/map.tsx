@@ -86,7 +86,7 @@ const layerColors = [
 
 export default function MapScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ category?: string; targetLat?: string; targetLng?: string; targetLabel?: string }>();
+  const params = useLocalSearchParams<{ targetLat?: string; targetLng?: string; targetLabel?: string }>();
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
