@@ -71,7 +71,7 @@ type LeafletMapProps = {
   userLocation: { latitude: number; longitude: number } | null;
   onTaskPress: (id: string) => void;
   layers?: LayerData[];
-  onFeatureTap?: (featureRef: string, layerKey: string) => void;
+  onFeatureTap?: (featureRef: string, layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => void;
   selectedAsset?: AssetInfo | null;
   onDismissAsset?: () => void;
   onAssetDetail?: (assetId: string) => void;
@@ -269,8 +269,8 @@ function generateLeafletHTML(): string {
       post('taskPress', { id: id });
     },
 
-    _featureTap: function(ref, layerKey) {
-      post('featureTap', { featureRef: ref, layerKey: layerKey });
+    _featureTap: function(ref, layerKey, label, assetType, layerName) {
+      post('featureTap', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
     },
 
     setLayers: function(layers) {
@@ -328,13 +328,13 @@ function generateLeafletHTML(): string {
             }
             if (ref) {
               popupHtml += '<div class="popup-divider"></div>';
-              popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+              popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\',\'' + escHtml(label) + '\',\'' + escHtml(assetType) + '\',\'' + escHtml(layer.displayName || '') + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
             }
             popupHtml += '</div></div>';
             l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
             l.on('click', function() {
               if (ref) {
-                post('featureTap', { featureRef: ref, layerKey: layer.layerKey });
+                post('featureTap', { featureRef: ref, layerKey: layer.layerKey, label: label, assetType: assetType, layerName: layer.displayName || '' });
               }
             });
           }
@@ -358,7 +358,7 @@ function generateLeafletHTML(): string {
         popupHtml += '<div class="popup-title">' + escHtml(c.label) + '</div>';
         popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+c.color+';"></span> ' + c.zoneCount + ' zone' + (c.zoneCount !== 1 ? 's' : '') + '</div></div>';
         popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(c.featureRef) + '\',\'irrigation\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(c.featureRef) + '\',\'irrigation\',\'' + escHtml(c.label) + '\',\'controller\',\'\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         m.addTo(ctrlLayer);
@@ -380,7 +380,7 @@ function generateLeafletHTML(): string {
         popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
         popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+z.controllerColor+';"></span> ' + escHtml(z.controllerLabel) + '</div></div>';
         popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(z.featureRef) + '\',\'irrigation\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(z.featureRef) + '\',\'irrigation\',\'' + escHtml(z.label) + '\',\'zone\',\'' + escHtml(z.controllerLabel || '') + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         zoneClusterGroup.addLayer(m);
@@ -507,7 +507,11 @@ export default function LeafletMap({
         onTaskPress(msg.data.id);
         break;
       case 'featureTap':
-        onFeatureTap?.(msg.data.featureRef, msg.data.layerKey);
+        onFeatureTap?.(msg.data.featureRef, msg.data.layerKey, {
+          label: msg.data.label,
+          assetType: msg.data.assetType,
+          layerName: msg.data.layerName,
+        });
         break;
       case 'targetReached':
         onTargetReached?.();
