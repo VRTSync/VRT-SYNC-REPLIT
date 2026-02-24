@@ -1191,6 +1191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
       if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
       const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
+      if (!asset) {
+        console.warn(`[by-feature] No asset found for communityId=${communityId} featureRef=${featureRef}`);
+      }
       res.json(asset);
     } catch (error) {
       console.error("Get asset by feature error:", error);
