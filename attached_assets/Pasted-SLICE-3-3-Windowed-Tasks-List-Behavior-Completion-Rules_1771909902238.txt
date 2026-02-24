@@ -1,0 +1,68 @@
+SLICE 3.3 — Windowed Tasks: List Behavior + Completion Rules (Contractor + Admin)
+
+Goal:
+Convert the task list to operate on execution windows using tasks.windowStart and tasks.windowEnd:
+- Contractors see tasks grouped by window state (Overdue / Active Window / Upcoming)
+- Task cards display the window and urgency (“X days left” / “Overdue by X days”)
+- Completing a task records completedAt as the actual completion timestamp (already supported)
+- Enforce window completion rules:
+  - Contractors can only complete tasks within their window (inclusive)
+  - Admin can override (admin-only)
+
+Scope:
+MOBILE TASK LIST + TASK DETAIL
+Minimal backend adjustment only where needed for validation.
+No calendar changes in this slice (that’s 3.4).
+
+Definitions:
+- today = local date (America/Denver)
+- Active Window: windowStart <= today <= windowEnd AND task not completed
+- Upcoming: today < windowStart AND task not completed
+- Overdue: today > windowEnd AND task not completed
+- Completed: task status completed (existing behavior)
+
+Backend adjustments (only if needed):
+1) Ensure GET /api/tasks returns windowStart/windowEnd fields.
+2) Update POST /api/tasks/:id/complete validation:
+   - If requester is contractor:
+     - If task.windowStart/windowEnd exist:
+       - completion must be within [windowStart, windowEnd] inclusive
+       - else return 400 with code OUTSIDE_EXECUTION_WINDOW and include windowStart/windowEnd in response
+   - If requester is admin: allow completion outside window (override)
+3) If task has no windowStart/windowEnd (legacy), allow completion (do not block).
+
+Frontend changes (mobile):
+1) Task list grouping:
+- Replace current generic list sections with:
+  - Overdue
+  - Active Window (Today)
+  - Upcoming
+  - (Optional collapsed) Completed
+
+2) Task card display:
+- Show window line:
+  “Window: Mar 1 – Apr 15”
+- Status chip:
+  - Overdue: “Overdue Xd”
+  - Active: “Xd left”
+  - Upcoming: “Starts in Xd”
+- Keep existing priority and status visuals.
+
+3) Filters:
+- Add toggles or tabs:
+  - “Active” (default): shows Overdue + Active + Upcoming
+  - “Completed” (optional)
+- Keep community switching behavior intact.
+
+4) Task detail completion UX:
+- If contractor tries to complete outside window:
+  - Show friendly modal:
+    “This task can only be completed between Mar 1 and Apr 15.”
+- If admin completes outside window:
+  - Show small warning banner “Completed outside window (admin override)”.
+
+Acceptance Criteria:
+- Tasks are grouped correctly based on today + windowStart/windowEnd.
+- Contractors can only complete within the window (inclusive) unless legacy tasks lack windows.
+- Admin can override outside-window completion.
+- No regressions to offline completion queue, attachments, or asset linking.
