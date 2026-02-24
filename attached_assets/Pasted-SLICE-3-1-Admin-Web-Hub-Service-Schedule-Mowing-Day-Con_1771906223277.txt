@@ -1,0 +1,86 @@
+SLICE 3.1 — Admin Web Hub: Service Schedule (Mowing Day) Configuration + Visit Log
+
+Goal:
+Expose the new Service Schedule model in the admin web hub so an admin can:
+1) Set the mowing day per community (service_schedules)
+2) View and manage service visit logs (service_visits)
+This is admin-only UI. No new backend tables or routes needed beyond Slice 3.0.
+
+Scope:
+WEB ADMIN ONLY (desktop-first)
+- Page: /web/admin/schedules (or add as a new sidebar item “Service Schedules”)
+- Focus on mowing_visit first, but keep structure generic for future service types.
+
+Data Sources (already built in Slice 3.0):
+- GET /api/communities/:communityId/service-schedules
+- POST /api/communities/:communityId/service-schedules (admin)
+- PATCH /api/service-schedules/:id (admin)
+- DELETE /api/service-schedules/:id (admin)
+- GET /api/communities/:communityId/service-visits?dateFrom=&dateTo=
+- POST /api/service-schedules/:scheduleId/log (admin may use for corrections)
+
+UI REQUIREMENTS
+
+1) Service Schedules Page Layout
+- Left nav: add “Service Schedules”
+- Top bar: community selector (existing pattern), user info
+- Main content:
+
+A) “Weekly Landscape Visit” card (mowing_visit)
+- If schedule exists for mowing_visit in the selected community:
+  - Show an editable form
+- If not:
+  - Show “Create schedule” CTA
+
+Fields:
+- Day of week picker (Mon–Sun)
+- Season Start (date, optional)
+- Season End (date, optional)
+- Notes (textarea)
+- Active toggle
+Buttons:
+- Save (PATCH)
+- Delete (DELETE) with confirmation modal
+
+Validation:
+- dayOfWeek required
+- seasonStart <= seasonEnd if both set
+
+B) Visit Logs section
+- Date range filter:
+  - Default: last 30 days to next 14 days
+- Table columns:
+  - Service Date
+  - Completed At (or “Not logged”)
+  - Completed By (displayName if available)
+  - Sign-off Name
+  - Notes (truncate with hover)
+  - Actions: View / Edit (admin only)
+
+Visit Log Details Modal:
+- Show:
+  - serviceDate (read-only)
+  - completedAt (editable only for admin correction)
+  - employeeSignOffName
+  - notes
+- Buttons:
+  - Save (POST /api/service-schedules/:scheduleId/log with serviceDate; idempotent upsert)
+  - Cancel
+- If visit not yet completed:
+  - allow admin to mark it complete manually (optional, but useful for corrections)
+
+2) Permissions / Guardrails
+- Entire page admin-only; non-admin redirect to /web/admin (or show “Not authorized”)
+- Community selector only shows allowed communities already handled by auth bootstrap.
+
+3) UX Acceptance Criteria
+- Admin selects a community and can set “Mowing Day” and save it
+- Reload shows schedule persisted
+- Admin can filter visit logs by date range and see completion status
+- Admin can open a visit and edit notes/sign-off/correct completion time (via idempotent upsert)
+- No impact on contractor mobile app yet (that’s Slice 3.2)
+
+Out of Scope
+- Contractor dashboard display
+- Calendar windows view
+- Automated generation of service dates (the system logs visits when performed; we are not generating future rows)
