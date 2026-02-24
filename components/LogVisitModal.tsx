@@ -23,11 +23,12 @@ type Props = {
     completedAt: string;
   }) => void;
   userName?: string;
+  prefillDate?: string;
 };
 
-export default function LogVisitModal({ visible, schedule, onClose, onSubmit, userName }: Props) {
+export default function LogVisitModal({ visible, schedule, onClose, onSubmit, userName, prefillDate }: Props) {
   const todayStr = new Date().toISOString().split('T')[0];
-  const [serviceDate, setServiceDate] = useState(todayStr);
+  const [serviceDate, setServiceDate] = useState(prefillDate || todayStr);
   const [signOffName, setSignOffName] = useState(userName || '');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -36,7 +37,10 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
     if (visible && userName && !signOffName) {
       setSignOffName(userName);
     }
-  }, [visible, userName]);
+    if (visible && prefillDate) {
+      setServiceDate(prefillDate);
+    }
+  }, [visible, userName, prefillDate]);
 
   const resetForm = () => {
     setServiceDate(todayStr);

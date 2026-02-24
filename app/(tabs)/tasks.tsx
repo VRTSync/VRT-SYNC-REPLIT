@@ -7,10 +7,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
 import SearchModal from '@/components/SearchModal';
+import CalendarView from '@/components/CalendarView';
+import LogVisitModal from '@/components/LogVisitModal';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
-import { useOffline } from '@/client/contexts/OfflineContext';
+import { useOffline, ServiceSchedule } from '@/client/contexts/OfflineContext';
 
 type Task = {
   id: string;
@@ -63,6 +65,7 @@ function diffDays(a: Date, b: Date): number {
 
 type WindowGroup = 'overdue' | 'active_window' | 'upcoming' | 'no_window';
 type FilterMode = 'active' | 'completed';
+type ViewMode = 'list' | 'calendar';
 
 function classifyTask(task: Task, today: Date): WindowGroup {
   if (task.status === 'completed') return 'no_window';
@@ -111,10 +114,18 @@ export default function TasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
-  const { isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions } = useOffline();
+  const {
+    isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions,
+    cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
+    cacheServiceSchedules, cacheServiceVisits, addPendingServiceVisit,
+    syncPendingServiceVisits,
+  } = useOffline();
   const [syncing, setSyncing] = React.useState(false);
   const [searchVisible, setSearchVisible] = React.useState(false);
   const [filterMode, setFilterMode] = React.useState<FilterMode>('active');
+  const [viewMode, setViewMode] = React.useState<ViewMode>('list');
+  const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
+  const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -139,6 +150,30 @@ export default function TasksScreen() {
     enabled: !!activeCommunity && isOnline,
   });
 
+  const { data: schedules, refetch: refetchSchedules } = useQuery({
+    queryKey: ['service-schedules', communityId],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/communities/${communityId}/service-schedules`);
+      const data = await res.json();
+      if (communityId) cacheServiceSchedules(communityId, data);
+      return data as ServiceSchedule[];
+    },
+    enabled: !!communityId && isOnline,
+  });
+
+  const { data: recentVisits, refetch: refetchVisits } = useQuery({
+    queryKey: ['service-visits', communityId],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const monthAgo = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
+      const res = await apiRequest('GET', `/api/communities/${communityId}/service-visits?from=${monthAgo}&to=${today}`);
+      const data = await res.json();
+      if (communityId) cacheServiceVisits(communityId, data);
+      return data;
+    },
+    enabled: !!communityId && isOnline,
+  });
+
   React.useEffect(() => {
     if (serverTasks && serverTasks.length > 0) {
       cacheTasks(serverTasks);
@@ -146,10 +181,33 @@ export default function TasksScreen() {
   }, [serverTasks]);
 
   const tasks: Task[] = serverTasks || (isOnline ? [] : cachedTasks);
+  const displaySchedules = schedules || cachedServiceSchedules;
+  const displayVisits = recentVisits || cachedServiceVisits;
   const today = getTodayDenver();
 
   const activeTasks = tasks.filter((t) => t.status !== 'completed');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
+
+  const handleLogVisit = async (data: any) => {
+    if (isOnline) {
+      try {
+        await apiRequest('POST', `/api/service-schedules/${data.scheduleId}/log`, {
+          serviceDate: data.serviceDate,
+          employeeSignOffName: data.employeeSignOffName,
+          notes: data.notes,
+          completedAt: data.completedAt,
+        });
+        refetchVisits();
+        refetchSchedules();
+      } catch (e: any) {
+        await addPendingServiceVisit(data);
+        Alert.alert('Queued Offline', 'Visit logged offline and will sync when connected.');
+      }
+    } else {
+      await addPendingServiceVisit(data);
+      Alert.alert('Queued Offline', 'Visit logged offline and will sync when connected.');
+    }
+  };
 
   const buildGroupedList = (): (Task | { type: 'header'; title: string; count: number })[] => {
     if (filterMode === 'completed') {
@@ -301,6 +359,17 @@ export default function TasksScreen() {
           </Text>
         </View>
         <TouchableOpacity
+          onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
+          style={[styles.viewToggle, viewMode === 'calendar' && styles.viewToggleActive]}
+          testID="view-toggle"
+        >
+          <Ionicons
+            name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
+            size={20}
+            color={viewMode === 'calendar' ? '#fff' : '#0C1D31'}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => setSearchVisible(true)}
           style={styles.searchButton}
           testID="search-button"
@@ -309,26 +378,28 @@ export default function TasksScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterTab, filterMode === 'active' && styles.filterTabActive]}
-          onPress={() => setFilterMode('active')}
-          testID="filter-active"
-        >
-          <Text style={[styles.filterTabText, filterMode === 'active' && styles.filterTabTextActive]}>
-            Active ({activeTasks.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterTab, filterMode === 'completed' && styles.filterTabActive]}
-          onPress={() => setFilterMode('completed')}
-          testID="filter-completed"
-        >
-          <Text style={[styles.filterTabText, filterMode === 'completed' && styles.filterTabTextActive]}>
-            Completed ({completedTasks.length})
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {viewMode === 'list' && (
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[styles.filterTab, filterMode === 'active' && styles.filterTabActive]}
+            onPress={() => setFilterMode('active')}
+            testID="filter-active"
+          >
+            <Text style={[styles.filterTabText, filterMode === 'active' && styles.filterTabTextActive]}>
+              Active ({activeTasks.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, filterMode === 'completed' && styles.filterTabActive]}
+            onPress={() => setFilterMode('completed')}
+            testID="filter-completed"
+          >
+            <Text style={[styles.filterTabText, filterMode === 'completed' && styles.filterTabTextActive]}>
+              Completed ({completedTasks.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <SearchModal
         visible={searchVisible}
@@ -344,7 +415,20 @@ export default function TasksScreen() {
         }}
       />
 
-      {allItems.length === 0 && !isLoading ? (
+      {viewMode === 'calendar' ? (
+        <CalendarView
+          tasks={tasks}
+          schedules={displaySchedules || []}
+          visits={displayVisits || []}
+          pendingVisits={pendingServiceVisits}
+          onTaskPress={(taskId) => router.push(`/task/${taskId}`)}
+          onLogVisit={(schedule, dateStr) => {
+            setLogVisitSchedule(schedule);
+            setLogVisitDate(dateStr);
+          }}
+          isOffline={!isOnline}
+        />
+      ) : allItems.length === 0 && !isLoading ? (
         <View style={styles.emptyState}>
           <Ionicons name="clipboard-outline" size={48} color="#ccc" />
           <Text style={styles.emptyTitle}>
@@ -388,6 +472,15 @@ export default function TasksScreen() {
           scrollEnabled={!!allItems.length}
         />
       )}
+
+      <LogVisitModal
+        visible={!!logVisitSchedule}
+        schedule={logVisitSchedule}
+        onClose={() => { setLogVisitSchedule(null); setLogVisitDate(undefined); }}
+        onSubmit={handleLogVisit}
+        userName={user?.displayName || ''}
+        prefillDate={logVisitDate}
+      />
     </View>
   );
 }
@@ -396,6 +489,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
   searchButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f2f5', alignItems: 'center', justifyContent: 'center' },
+  viewToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f2f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  viewToggleActive: {
+    backgroundColor: '#25C1AC',
+  },
   communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
   taskCount: { fontSize: 14, color: '#888', marginTop: 2 },
   filterRow: {
