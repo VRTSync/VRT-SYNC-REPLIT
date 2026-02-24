@@ -146,13 +146,24 @@ function generateLeafletHTML(): string {
     text-shadow: 0 1px 1px rgba(0,0,0,0.3);
   }
   .leaflet-popup-content-wrapper {
-    border-radius: 10px; padding: 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-radius: 12px; padding: 0;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    overflow: hidden;
   }
-  .leaflet-popup-content { margin: 10px 14px; font-family: -apple-system, system-ui, sans-serif; }
-  .popup-title { font-weight: 600; font-size: 14px; color: #0C1D31; }
-  .popup-addr { font-size: 12px; color: #888; margin-top: 2px; }
-  .popup-action { font-size: 12px; color: #25C1AC; margin-top: 6px; font-weight: 500; cursor: pointer; }
+  .leaflet-popup-content { margin: 0 !important; font-family: -apple-system, system-ui, sans-serif; width: auto !important; }
+  .leaflet-popup-tip { box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+  .popup-card { display: flex; flex-direction: row; min-width: 180px; }
+  .popup-bar { width: 5px; flex-shrink: 0; border-radius: 3px 0 0 3px; }
+  .popup-body { padding: 10px 14px 10px 11px; flex: 1; }
+  .popup-type { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #fff; padding: 2px 7px; border-radius: 4px; margin-bottom: 5px; }
+  .popup-title { font-weight: 700; font-size: 14px; color: #0C1D31; line-height: 1.3; margin-bottom: 3px; }
+  .popup-meta { font-size: 11px; color: #7a8a9e; margin-top: 0; line-height: 1.4; }
+  .popup-meta-row { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+  .popup-meta-icon { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .popup-divider { height: 1px; background: #eef1f5; margin: 8px 0 6px; }
+  .popup-action { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; color: #25C1AC; font-weight: 600; cursor: pointer; padding: 5px 0 2px; transition: color 0.15s; }
+  .popup-action:hover { color: #1da894; }
+  .popup-action svg { width: 14px; height: 14px; }
   .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
     background: rgba(37,193,172,0.3) !important;
   }
@@ -242,10 +253,14 @@ function generateLeafletHTML(): string {
           }),
           zIndex: 100
         });
-        var popupHtml = '<div class="popup-title">'+escHtml(t.title)+'</div>';
-        if (t.address) popupHtml += '<div class="popup-addr">'+escHtml(t.address)+'</div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._taskTap(\''+t.id+'\')">Tap to view details</div>';
-        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
+        var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+color+';"></div><div class="popup-body">';
+        popupHtml += '<span class="popup-type" style="background:'+color+';">Task</span>';
+        popupHtml += '<div class="popup-title">'+escHtml(t.title)+'</div>';
+        if (t.address) popupHtml += '<div class="popup-meta">'+escHtml(t.address)+'</div>';
+        popupHtml += '<div class="popup-divider"></div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._taskTap(\''+t.id+'\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '</div></div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         m.addTo(taskLayer);
       });
     },
@@ -297,12 +312,26 @@ function generateLeafletHTML(): string {
             var ref = props.featureRef || props.featureId || props.id || props.name;
             var label = props.label || props.name || props.displayName || props.title || (layer.displayName + (ref ? ' - ' + ref : ''));
             var assetType = props.assetType || layer.subLayerKey || layer.layerKey;
-            var popupHtml = '<div class="popup-title">' + escHtml(label) + '</div>';
-            popupHtml += '<div class="popup-addr">' + escHtml(assetType) + '</div>';
-            if (ref) {
-              popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\')">View Details</div>';
+            var featureColor = layer.color || '#25C1AC';
+            if (layer.subLayerKey === 'controller' && props) {
+              var fid = props.featureId || feature.id;
+              featureColor = (layer.controllerColorMap || {})[fid] || featureColor;
             }
-            l.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
+            if (layer.subLayerKey === 'zone' && props && props.controllerFeatureRef) {
+              featureColor = (layer.controllerColorMap || {})[props.controllerFeatureRef] || featureColor;
+            }
+            var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+featureColor+';"></div><div class="popup-body">';
+            popupHtml += '<span class="popup-type" style="background:'+featureColor+';">' + escHtml(assetType) + '</span>';
+            popupHtml += '<div class="popup-title">' + escHtml(label) + '</div>';
+            if (layer.displayName && layer.displayName !== label) {
+              popupHtml += '<div class="popup-meta">' + escHtml(layer.displayName) + '</div>';
+            }
+            if (ref) {
+              popupHtml += '<div class="popup-divider"></div>';
+              popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+            }
+            popupHtml += '</div></div>';
+            l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
             l.on('click', function() {
               if (ref) {
                 post('featureTap', { featureRef: ref, layerKey: layer.layerKey });
@@ -324,10 +353,14 @@ function generateLeafletHTML(): string {
           }),
           zIndex: 500
         });
-        var popupHtml = '<div class="popup-title">' + escHtml(c.label) + '</div>';
-        popupHtml += '<div class="popup-addr">Controller &bull; ' + c.zoneCount + ' zones</div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(c.featureRef) + '\',\'irrigation\')">View Details</div>';
-        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
+        var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+c.color+';"></div><div class="popup-body">';
+        popupHtml += '<span class="popup-type" style="background:'+c.color+';">Controller</span>';
+        popupHtml += '<div class="popup-title">' + escHtml(c.label) + '</div>';
+        popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+c.color+';"></span> ' + c.zoneCount + ' zone' + (c.zoneCount !== 1 ? 's' : '') + '</div></div>';
+        popupHtml += '<div class="popup-divider"></div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(c.featureRef) + '\',\'irrigation\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '</div></div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         m.addTo(ctrlLayer);
       });
     },
@@ -342,10 +375,14 @@ function generateLeafletHTML(): string {
           })
         });
         m._zoneColor = z.controllerColor;
-        var popupHtml = '<div class="popup-title">' + escHtml(z.label) + '</div>';
-        popupHtml += '<div class="popup-addr">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + ' &bull; ' + escHtml(z.controllerLabel) + '</div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(z.featureRef) + '\',\'irrigation\')">View Details</div>';
-        m.bindPopup(popupHtml, { closeButton: true, minWidth: 150 });
+        var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+z.controllerColor+';"></div><div class="popup-body">';
+        popupHtml += '<span class="popup-type" style="background:'+z.controllerColor+';">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + '</span>';
+        popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
+        popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+z.controllerColor+';"></span> ' + escHtml(z.controllerLabel) + '</div></div>';
+        popupHtml += '<div class="popup-divider"></div>';
+        popupHtml += '<div class="popup-action" onclick="window.mapBridge._featureTap(\'' + escHtml(z.featureRef) + '\',\'irrigation\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '</div></div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         zoneClusterGroup.addLayer(m);
       });
     },
