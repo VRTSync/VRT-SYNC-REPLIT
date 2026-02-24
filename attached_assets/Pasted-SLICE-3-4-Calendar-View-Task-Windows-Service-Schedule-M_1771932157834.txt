@@ -1,0 +1,72 @@
+SLICE 3.4 — Calendar View: Task Windows + Service Schedule (Mowing Day) Overlay
+
+Goal:
+Add a calendar view in the mobile contractor app that visually shows:
+1) Windowed tasks as “window bars” spanning windowStart → windowEnd
+2) Service schedules (mowing day) as a weekly repeating indicator with completion state (logged vs not)
+
+Scope:
+MOBILE ONLY
+- Add a Calendar screen/tab OR a calendar toggle in Tasks screen (choose whichever matches current navigation).
+- No backend schema changes.
+- Use existing APIs and cached/offline data where possible.
+
+Data Inputs (already available):
+A) Tasks
+- Source: existing /api/tasks response includes windowStart/windowEnd.
+- Use active community filtering like current Task list.
+
+B) Service schedules + visits
+- Source: existing service schedules + service visits already cached for dashboard (Slice 3.2).
+- Use the same cached schedule and visit range; extend range fetch as needed for month view.
+
+Calendar Model
+- Calendar operates by month with week rows.
+- For the currently visible month, compute a date range:
+  rangeStart = first day displayed in calendar grid
+  rangeEnd = last day displayed in calendar grid
+- Fetch (or use cache) tasks and visits that overlap this range:
+  - A task overlaps if windowStart <= rangeEnd AND windowEnd >= rangeStart (inclusive)
+  - A visit overlaps if serviceDate in [rangeStart, rangeEnd]
+
+UI Requirements
+
+1) Day Cells
+Each day cell can show:
+- Mowing indicator (if day-of-week matches mowing schedule and in-season)
+  - If visit logged for that date: show checkmark/done state
+  - If not logged: show “Mow” dot/badge
+
+2) Task Windows (bars)
+Render each windowed task as a horizontal bar spanning days from windowStart to windowEnd.
+Rules:
+- Use only windowStart/windowEnd. If missing, do not show as a window bar (legacy tasks can remain list-only).
+- If a task is completed, show completed styling (checkmark or muted bar).
+- If overdue (today > windowEnd and not completed), show overdue styling.
+
+Placement:
+- Within each week row, stack bars in up to N lanes (e.g., 3). If overflow:
+  - Show “+X more” indicator in that week row; tapping opens a list modal for that week.
+
+3) Taps / Navigation
+- Tap a task bar -> open Task Detail screen for that task
+- Tap “+X more” -> open “Week Items” modal:
+  - list of tasks whose windows overlap that week
+  - list of mowing days in that week with completion status
+- Tap a mowing indicator -> open Log Visit modal prefilled for that date
+
+4) Performance & Offline
+- Must not re-fetch on every tiny scroll. Fetch only when month changes.
+- Use cached tasks/visits if offline; show “Offline” banner if cache missing.
+- For service visits, extend caching window to cover the visible month (+ buffer weeks).
+
+Acceptance Criteria
+- Calendar displays task execution windows as spanning bars.
+- Calendar shows mowing-day indicator weekly with completed/not completed status.
+- Taps navigate correctly to Task Detail and Log Visit.
+- Works offline using cached tasks/visits; shows warning if no cache for current month.
+- No regressions to task list or dashboard.
+
+Notes
+- Do not generate weekly mowing tasks. Mowing remains a service schedule + visit logs.
+- Do not add new scheduling automation in this slice.
