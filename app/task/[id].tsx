@@ -29,6 +29,8 @@ type Task = {
   assignedTo: string | null;
   createdBy: string;
   dueDate: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
   version: number;
   createdAt: string;
   updatedAt: string;
@@ -82,6 +84,27 @@ const statusLabels: Record<string, string> = {
   in_progress: 'In Progress',
   completed: 'Completed',
 };
+
+function getTodayDenver(): Date {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' });
+  return new Date(todayStr + 'T00:00:00');
+}
+
+function toDateOnly(s: string): Date {
+  const d = s.includes('T') ? s.split('T')[0] : s;
+  return new Date(d + 'T00:00:00');
+}
+
+function isInWindow(task: Task): 'before' | 'in' | 'after' | null {
+  if (!task.windowStart || !task.windowEnd) return null;
+  const today = getTodayDenver();
+  const start = toDateOnly(task.windowStart);
+  const end = toDateOnly(task.windowEnd);
+  if (today < start) return 'before';
+  if (today > end) return 'after';
+  return 'in';
+}
 
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -339,6 +362,24 @@ export default function TaskDetailScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Details</Text>
+        {task.windowStart && task.windowEnd ? (
+          <View style={styles.windowRow}>
+            <Ionicons name="time-outline" size={16} color={
+              isInWindow(task) === 'after' ? '#c62828' :
+              isInWindow(task) === 'in' ? '#25C1AC' : '#1565c0'
+            } />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.detailText}>
+                Window: {toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+              {isInWindow(task) === 'after' && task.status !== 'completed' ? (
+                <Text style={styles.windowWarning}>Window has passed</Text>
+              ) : isInWindow(task) === 'before' && task.status !== 'completed' ? (
+                <Text style={styles.windowUpcoming}>Not yet in window</Text>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
         {task.address ? (
           <View style={styles.detailRow}>
             <Ionicons name="location-outline" size={16} color="#666" />
@@ -356,6 +397,26 @@ export default function TaskDetailScreen() {
           <Text style={styles.detailText}>Version: {task.version}</Text>
         </View>
       </View>
+
+      {task.windowStart && task.windowEnd && isInWindow(task) !== 'in' && task.status !== 'completed' && (
+        user?.role === 'admin' ? (
+          <View style={styles.adminOverrideBanner}>
+            <Ionicons name="shield-checkmark-outline" size={16} color="#e65100" />
+            <Text style={styles.adminOverrideText}>
+              Admin override: You can complete this task outside its execution window.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.windowBlockBanner}>
+            <Ionicons name="lock-closed-outline" size={16} color="#c62828" />
+            <Text style={styles.windowBlockText}>
+              {isInWindow(task) === 'before'
+                ? `This task cannot be completed until ${toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
+                : `This task's execution window ended on ${toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`}
+            </Text>
+          </View>
+        )
+      )}
 
       {taskLink && (
         <View style={styles.card}>
@@ -540,14 +601,19 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && (
-        <TouchableOpacity
-          style={styles.completeButton}
-          onPress={() => setShowCompleteForm(true)}
-        >
-          <Text style={styles.completeButtonText}>Complete This Task</Text>
-        </TouchableOpacity>
-      )}
+      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && (() => {
+        const windowStatus = isInWindow(task);
+        const blocked = windowStatus !== null && windowStatus !== 'in' && user?.role !== 'admin';
+        if (blocked) return null;
+        return (
+          <TouchableOpacity
+            style={styles.completeButton}
+            onPress={() => setShowCompleteForm(true)}
+          >
+            <Text style={styles.completeButtonText}>Complete This Task</Text>
+          </TouchableOpacity>
+        );
+      })()}
     </ScrollView>
   );
 }
@@ -576,6 +642,33 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#0C1D31', marginBottom: 12 },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   detailText: { fontSize: 14, color: '#555' },
+  windowRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 },
+  windowWarning: { fontSize: 12, color: '#c62828', marginTop: 2, fontWeight: '500' },
+  windowUpcoming: { fontSize: 12, color: '#1565c0', marginTop: 2, fontWeight: '500' },
+  adminOverrideBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff3e0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ffcc80',
+  },
+  adminOverrideText: { fontSize: 13, color: '#e65100', flex: 1, fontWeight: '500' },
+  windowBlockBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ffebee',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ef9a9a',
+  },
+  windowBlockText: { fontSize: 13, color: '#c62828', flex: 1, fontWeight: '500' },
   completionItem: {
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
