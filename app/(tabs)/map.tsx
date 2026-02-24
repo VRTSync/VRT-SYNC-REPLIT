@@ -500,19 +500,51 @@ export default function MapScreen() {
     );
   }
 
+  const categoryBarTop = topOffset;
+  const layersButtonTop = categoryBarTop + 52;
+  const layerPanelTop = categoryBarTop + 52 + 40;
+
   return (
     <View style={styles.container}>
       {isWeb && <StatusBarFill />}
 
+      {(allLayers.length > 0 || controllers.length > 0) && (
+        <>
+          <View style={[styles.categoryBar, { top: categoryBarTop }]}>
+            {CATEGORY_TABS.map((cat) => {
+              const isActive = activeCategory === cat.key;
+              return (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+                  onPress={() => handleCategorySelect(cat.key)}
+                >
+                  <Ionicons name={cat.icon} size={20} color={isActive ? '#25C1AC' : '#999'} />
+                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>{cat.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={[styles.layersButton, { top: layersButtonTop }]}
+            onPress={() => setShowLayerPanel(!showLayerPanel)}
+          >
+            <Ionicons name={showLayerPanel ? 'close' : 'layers-outline'} size={16} color="#fff" />
+            <Text style={styles.layersButtonText}>{showLayerPanel ? 'Close' : 'Layers'}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
       {useOfflineData && (
-        <View style={[styles.offlineBadge, { top: topOffset + 14 }]}>
+        <View style={[styles.offlineBadge, { top: (allLayers.length > 0 || controllers.length > 0) ? layersButtonTop : topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.offlineBadgeText}>Offline Pack v{localPack?.packVersion}</Text>
         </View>
       )}
 
       {offlineNoPack && (
-        <View style={[styles.offlineNoPackBanner, { top: topOffset + 14 }]}>
+        <View style={[styles.offlineNoPackBanner, { top: (allLayers.length > 0 || controllers.length > 0) ? layersButtonTop : topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={18} color="#f44336" />
           <Text style={styles.offlineNoPackText}>
             Offline map pack not downloaded for this community.
@@ -543,7 +575,7 @@ export default function MapScreen() {
       />
 
       {showLayerPanel && (
-        <View style={[styles.layerPanel, { bottom: isWeb ? 84 + 52 + 8 : (insets.bottom || 0) + 50 + 52 + 8 }]}>
+        <View style={[styles.layerPanel, { top: layerPanelTop }]}>
           <ScrollView bounces={false} style={{ maxHeight: 300 }}>
             {(() => {
               const catLayers = (layersByCategory[activeCategory] || []).filter(
@@ -637,34 +669,6 @@ export default function MapScreen() {
           </ScrollView>
         </View>
       )}
-
-      {(allLayers.length > 0 || controllers.length > 0) && (
-        <>
-          <TouchableOpacity
-            style={[styles.layersButton, { bottom: isWeb ? 84 + 52 + 4 : (insets.bottom || 0) + 50 + 52 + 4 }]}
-            onPress={() => setShowLayerPanel(!showLayerPanel)}
-          >
-            <Ionicons name={showLayerPanel ? 'close' : 'layers-outline'} size={18} color="#fff" />
-            <Text style={styles.layersButtonText}>{showLayerPanel ? 'Close' : 'Layers'}</Text>
-          </TouchableOpacity>
-
-          <View style={[styles.categoryBar, { bottom: isWeb ? 84 : (insets.bottom || 0) + 50, paddingBottom: 0 }]}>
-            {CATEGORY_TABS.map((cat) => {
-              const isActive = activeCategory === cat.key;
-              return (
-                <TouchableOpacity
-                  key={cat.key}
-                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
-                  onPress={() => handleCategorySelect(cat.key)}
-                >
-                  <Ionicons name={cat.icon} size={20} color={isActive ? '#25C1AC' : '#999'} />
-                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>{cat.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </>
-      )}
     </View>
   );
 }
@@ -679,8 +683,8 @@ const styles = StyleSheet.create({
     zIndex: 12,
     flexDirection: 'row',
     backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e8e8e8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8e8e8',
     height: 52,
   },
   categoryTab: {
@@ -701,15 +705,15 @@ const styles = StyleSheet.create({
   },
   layersButton: {
     position: 'absolute',
-    right: 12,
+    left: 12,
     zIndex: 13,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
     backgroundColor: '#0C1D31',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -730,7 +734,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 5,
