@@ -1,0 +1,91 @@
+SLICE 3.2 — Contractor Mobile: Mowing Day Widget + Visit Logging (Online + Offline Queue)
+
+Goal:
+Add a contractor-facing “Mowing Day” system to the mobile app:
+- Show the configured mowing day for the active community
+- Show “Next Visit” date + completion status (logged/not logged)
+- Allow contractor to log a visit as completed for a specific date
+- Support offline logging with automatic sync (same pattern as offline task completions)
+
+Scope:
+MOBILE APP ONLY (contractor portal)
+No changes to admin web hub.
+No changes to tasks list behavior yet (that’s 3.3/3.4).
+
+Backend (already exists from 3.0):
+- GET /api/communities/:communityId/service-schedules
+- GET /api/communities/:communityId/service-visits?dateFrom=&dateTo=
+- POST /api/service-schedules/:scheduleId/log (idempotent by scheduleId+serviceDate)
+
+Implementation Requirements (Mobile)
+
+1) Data Fetching + Caching
+A) Extend existing bootstrap or CommunityContext flow:
+- When active community changes, fetch service schedules for that community.
+- From schedules, identify mowing_visit schedule (serviceType === "mowing_visit").
+
+B) Fetch visit logs for a date window:
+- Default window: [today - 14 days, today + 14 days]
+- Only needed for the active community.
+
+C) Cache in AsyncStorage:
+- Store the mowing schedule object for the active community.
+- Store visit logs for that window keyed by communityId.
+
+2) Dashboard Widget (Home / Dashboard screen)
+Add a “Mowing Day” card at top (or near top) of dashboard:
+- Title: “Mowing Day”
+- If no mowing_visit schedule exists:
+  - Show: “No mowing day set for this community.”
+- If schedule exists:
+  - Show day-of-week (e.g., “Tuesday”)
+  - Show Next Visit Date:
+    - Compute next date that matches schedule.dayOfWeek, respecting seasonStart/seasonEnd if set:
+      - If today is mowing day, “Today” is the next visit date.
+      - If outside season, show “Out of season” state.
+  - Show status for that date:
+    - If a service_visit exists for (scheduleId, nextVisitDate) with completedAt -> “Completed”
+    - Else -> “Not logged”
+  - Primary button:
+    - If nextVisitDate is Today: “Log Today’s Visit”
+    - Else: “Log Visit”
+
+3) Log Visit Flow (Modal)
+When contractor taps Log Visit:
+- Open a modal:
+  Fields:
+  - Service Date (defaults to nextVisitDate; allow change within a sensible range, e.g., last 7 days to next 7 days)
+  - Sign-off name (required)
+  - Notes (optional)
+  - CompletedAt timestamp auto-set to now() (but we store it in payload; server can default if absent)
+- Submit:
+  POST /api/service-schedules/:scheduleId/log
+  body: { serviceDate, employeeSignOffName, notes, completedAt }
+
+4) Offline Logging (must work like task completion queue)
+If offline:
+- Do not block logging.
+- Queue the log payload in OfflineContext under a new queue “offlineServiceVisits”:
+  - { scheduleId, communityId, serviceDate, employeeSignOffName, notes, completedAt, idempotencyKey }
+  - idempotencyKey = `${scheduleId}:${serviceDate}:${deviceLocalId}` or deterministic `${scheduleId}:${serviceDate}` (server is idempotent by unique constraint; we still track client-side state)
+- UI state on dashboard:
+  - If a visit for nextVisitDate is queued -> show “Queued” badge
+  - If syncing -> “Syncing”
+  - If failed -> “Sync Error” with Retry/Discard options (same UX pattern as offline task completion)
+
+Sync behavior:
+- When connectivity restored:
+  - drain offlineServiceVisits queue
+  - for each item, call POST /api/service-schedules/:scheduleId/log
+  - on success, remove from queue and refresh visits cache for the active community window
+
+5) Role + Permission
+- Contractors can only read schedules/visits for communities they are members of (existing membership rules).
+- Contractors can only log visits for schedules in their communities (server should enforce; verify).
+
+Acceptance Criteria
+- Contractor sees mowing day (if set) for active community.
+- Next visit date computed correctly.
+- Can log a visit online and it appears in dashboard status as Completed.
+- Can log offline; dashboard shows Queued; sync later marks it Completed.
+- No regressions to tasks list or task completion flow.
