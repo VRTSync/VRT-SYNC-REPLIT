@@ -2308,7 +2308,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         communityId: schedule.communityId,
         serviceDate: parsed.data.serviceDate,
         completedAt: parsed.data.completedAt ? new Date(parsed.data.completedAt) : new Date(),
-        completedBy: (req as any).user?.id,
+        completedBy: req.session.userId || null,
         employeeSignOffName: parsed.data.employeeSignOffName,
         notes: parsed.data.notes ?? null,
       });

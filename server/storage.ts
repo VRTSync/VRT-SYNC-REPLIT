@@ -1404,6 +1404,7 @@ export async function updateServiceSchedule(id: string, data: {
 }
 
 export async function deleteServiceSchedule(id: string): Promise<boolean> {
+  await db.delete(serviceVisits).where(eq(serviceVisits.scheduleId, id));
   const result = await db.delete(serviceSchedules).where(eq(serviceSchedules.id, id)).returning();
   return result.length > 0;
 }
