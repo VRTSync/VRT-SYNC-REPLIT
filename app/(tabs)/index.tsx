@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl,
   ActivityIndicator, Alert,
@@ -9,9 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
-import { useOffline } from '@/client/contexts/OfflineContext';
+import { useOffline, ServiceSchedule } from '@/client/contexts/OfflineContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import SearchModal from '@/components/SearchModal';
+import MowingDayCard from '@/components/MowingDayCard';
+import LogVisitModal from '@/components/LogVisitModal';
 
 type Task = {
   id: string;
@@ -71,10 +73,16 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { activeCommunity, communities, setActiveCommunity } = useCommunity();
   const { user } = useAuth();
-  const { isOnline, pendingCompletions, syncPendingCompletions } = useOffline();
+  const {
+    isOnline, pendingCompletions, syncPendingCompletions,
+    cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
+    cacheServiceSchedules, cacheServiceVisits, addPendingServiceVisit,
+    syncPendingServiceVisits,
+  } = useOffline();
   const [syncing, setSyncing] = useState(false);
   const [showCommunitySwitcher, setShowCommunitySwitcher] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [logVisitSchedule, setLogVisitSchedule] = useState<ServiceSchedule | null>(null);
 
   const communityId = activeCommunity?.id;
 
@@ -87,19 +95,72 @@ export default function DashboardScreen() {
     enabled: !!communityId && isOnline,
   });
 
+  const { data: schedules, isLoading: schedulesLoading, refetch: refetchSchedules } = useQuery({
+    queryKey: ['service-schedules', communityId],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/service-schedules?communityId=${communityId}`);
+      const data = await res.json();
+      if (communityId) cacheServiceSchedules(communityId, data);
+      return data as ServiceSchedule[];
+    },
+    enabled: !!communityId && isOnline,
+  });
+
+  const { data: recentVisits, refetch: refetchVisits } = useQuery({
+    queryKey: ['service-visits', communityId],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+      const res = await apiRequest('GET', `/api/service-schedules/visits?communityId=${communityId}&from=${weekAgo}&to=${today}`);
+      const data = await res.json();
+      if (communityId) cacheServiceVisits(communityId, data);
+      return data;
+    },
+    enabled: !!communityId && isOnline,
+  });
+
+  const displaySchedules = schedules || cachedServiceSchedules;
+  const displayVisits = recentVisits || cachedServiceVisits;
+
+  const handleLogVisit = async (data: any) => {
+    if (isOnline) {
+      try {
+        await apiRequest('POST', `/api/service-schedules/${data.scheduleId}/log`, {
+          serviceDate: data.serviceDate,
+          employeeSignOffName: data.employeeSignOffName,
+          notes: data.notes,
+          completedAt: data.completedAt,
+        });
+        refetchVisits();
+        refetchSchedules();
+      } catch (e: any) {
+        await addPendingServiceVisit(data);
+        Alert.alert('Queued Offline', 'Visit logged offline and will sync when connected.');
+      }
+    } else {
+      await addPendingServiceVisit(data);
+      Alert.alert('Queued Offline', 'Visit logged offline and will sync when connected.');
+    }
+  };
+
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      await syncPendingCompletions();
+      await Promise.all([syncPendingCompletions(), syncPendingServiceVisits()]);
       refetch();
+      refetchVisits();
+      refetchSchedules();
     } finally {
       setSyncing(false);
     }
   };
 
-  const queuedCount = pendingCompletions.filter(c => c.state === 'queued').length;
-  const failedCount = pendingCompletions.filter(c => c.state === 'failed').length;
-  const syncingCount = pendingCompletions.filter(c => c.state === 'syncing').length;
+  const queuedCount = pendingCompletions.filter(c => c.state === 'queued').length
+    + pendingServiceVisits.filter(v => v.state === 'queued').length;
+  const failedCount = pendingCompletions.filter(c => c.state === 'failed').length
+    + pendingServiceVisits.filter(v => v.state === 'failed').length;
+  const syncingCount = pendingCompletions.filter(c => c.state === 'syncing').length
+    + pendingServiceVisits.filter(v => v.state === 'syncing').length;
   const hasPending = queuedCount + failedCount + syncingCount > 0;
 
   const getSyncLabel = () => {
@@ -273,6 +334,14 @@ export default function DashboardScreen() {
               )}
             </View>
 
+            <MowingDayCard
+              schedules={displaySchedules || []}
+              visits={displayVisits || []}
+              pendingVisits={pendingServiceVisits}
+              onLogVisit={(schedule) => setLogVisitSchedule(schedule)}
+              loading={schedulesLoading}
+            />
+
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="calendar-outline" size={18} color="#0C1D31" />
@@ -382,6 +451,13 @@ export default function DashboardScreen() {
             Alert.alert('No Location', 'This item does not have map coordinates.');
           }
         }}
+      />
+      <LogVisitModal
+        visible={!!logVisitSchedule}
+        schedule={logVisitSchedule}
+        onClose={() => setLogVisitSchedule(null)}
+        onSubmit={handleLogVisit}
+        userName={user?.displayName || ''}
       />
     </View>
   );
