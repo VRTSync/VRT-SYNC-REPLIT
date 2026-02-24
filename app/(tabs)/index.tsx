@@ -98,7 +98,7 @@ export default function DashboardScreen() {
   const { data: schedules, isLoading: schedulesLoading, refetch: refetchSchedules } = useQuery({
     queryKey: ['service-schedules', communityId],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/service-schedules?communityId=${communityId}`);
+      const res = await apiRequest('GET', `/api/communities/${communityId}/service-schedules`);
       const data = await res.json();
       if (communityId) cacheServiceSchedules(communityId, data);
       return data as ServiceSchedule[];
@@ -111,7 +111,7 @@ export default function DashboardScreen() {
     queryFn: async () => {
       const today = new Date().toISOString().split('T')[0];
       const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-      const res = await apiRequest('GET', `/api/service-schedules/visits?communityId=${communityId}&from=${weekAgo}&to=${today}`);
+      const res = await apiRequest('GET', `/api/communities/${communityId}/service-visits?from=${weekAgo}&to=${today}`);
       const data = await res.json();
       if (communityId) cacheServiceVisits(communityId, data);
       return data;

@@ -32,6 +32,12 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  React.useEffect(() => {
+    if (visible && userName && !signOffName) {
+      setSignOffName(userName);
+    }
+  }, [visible, userName]);
+
   const resetForm = () => {
     setServiceDate(todayStr);
     setSignOffName(userName || '');
