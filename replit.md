@@ -31,6 +31,9 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for:
 - **Service Visits**: Individual visit logs tied to a schedule+date, with idempotent upsert via unique (scheduleId, serviceDate) constraint.
 - **Tasks** now include `windowStart` and `windowEnd` date columns for windowed task scheduling.
 
+### Mobile Service Schedule Widget
+The mobile dashboard includes a MowingDayCard component (`components/MowingDayCard.tsx`) that displays active service schedules for the selected community. It shows the service type, day-of-week badge, season awareness, and next service date. A "Log" button opens a LogVisitModal (`components/LogVisitModal.tsx`) bottom-sheet for recording visits with date, sign-off name, and notes. The OfflineContext (`client/contexts/OfflineContext.tsx`) supports full offline caching of schedules/visits and an offline queue for visit logging (matching the task completion offline pattern). API paths: `GET /api/communities/:id/service-schedules`, `GET /api/communities/:id/service-visits`, `POST /api/service-schedules/:id/log`.
+
 ### Access Control
 Contractors have restricted access to tasks within their assigned communities, while Admins have full access. Community membership is managed through the admin interface. Optimistic locking is implemented for concurrency control.
 
