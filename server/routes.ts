@@ -17,6 +17,7 @@ import {
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
   insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
   insertTaskTemplateSchema, generateFromTemplateSchema, insertTaskScheduleSchema,
+  insertServiceScheduleSchema, updateServiceScheduleSchema, logServiceVisitSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -2210,6 +2211,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Download ZIP error:", error);
       res.status(500).json({ error: "Failed to download ZIP" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/service-schedules", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const schedules = await storage.getServiceSchedulesByCommunity(req.params.communityId as string);
+      res.json(schedules);
+    } catch (error) {
+      console.error("Get service schedules error:", error);
+      res.status(500).json({ error: "Failed to get service schedules" });
+    }
+  });
+
+  app.post("/api/communities/:communityId/service-schedules", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertServiceScheduleSchema.safeParse({
+        ...req.body,
+        communityId: req.params.communityId,
+      });
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+      }
+      const schedule = await storage.createServiceSchedule(parsed.data);
+      res.status(201).json(schedule);
+    } catch (error) {
+      console.error("Create service schedule error:", error);
+      res.status(500).json({ error: "Failed to create service schedule" });
+    }
+  });
+
+  app.patch("/api/service-schedules/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = updateServiceScheduleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+      }
+      const schedule = await storage.updateServiceSchedule(req.params.id as string, parsed.data);
+      if (!schedule) {
+        return res.status(404).json({ error: "Service schedule not found" });
+      }
+      res.json(schedule);
+    } catch (error) {
+      console.error("Update service schedule error:", error);
+      res.status(500).json({ error: "Failed to update service schedule" });
+    }
+  });
+
+  app.delete("/api/service-schedules/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteServiceSchedule(req.params.id as string);
+      if (!deleted) {
+        return res.status(404).json({ error: "Service schedule not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete service schedule error:", error);
+      res.status(500).json({ error: "Failed to delete service schedule" });
+    }
+  });
+
+  app.get("/api/service-schedules/:scheduleId/visits", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { from, to } = req.query as { from?: string; to?: string };
+      const visits = await storage.getServiceVisits(req.params.scheduleId as string, { from, to });
+      res.json(visits);
+    } catch (error) {
+      console.error("Get service visits error:", error);
+      res.status(500).json({ error: "Failed to get service visits" });
+    }
+  });
+
+  app.get("/api/communities/:communityId/service-visits", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { from, to } = req.query as { from?: string; to?: string };
+      const visits = await storage.getServiceVisitsByCommunity(req.params.communityId as string, { from, to });
+      res.json(visits);
+    } catch (error) {
+      console.error("Get community service visits error:", error);
+      res.status(500).json({ error: "Failed to get service visits" });
+    }
+  });
+
+  app.post("/api/service-schedules/:scheduleId/log", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const parsed = logServiceVisitSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+      }
+      const schedule = await storage.getServiceScheduleById(req.params.scheduleId as string);
+      if (!schedule) {
+        return res.status(404).json({ error: "Service schedule not found" });
+      }
+      const visit = await storage.upsertServiceVisit({
+        scheduleId: schedule.id,
+        communityId: schedule.communityId,
+        serviceDate: parsed.data.serviceDate,
+        completedAt: parsed.data.completedAt ? new Date(parsed.data.completedAt) : new Date(),
+        completedBy: (req as any).user?.id,
+        employeeSignOffName: parsed.data.employeeSignOffName,
+        notes: parsed.data.notes ?? null,
+      });
+      res.status(201).json(visit);
+    } catch (error) {
+      console.error("Log service visit error:", error);
+      res.status(500).json({ error: "Failed to log service visit" });
     }
   });
 
