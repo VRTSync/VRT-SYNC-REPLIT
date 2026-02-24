@@ -235,6 +235,46 @@ export default function MapScreen() {
     });
   };
 
+  const isCategoryEnabled = (catKey: string) => {
+    const catLayers = (layersByCategory[catKey] || []).filter(
+      l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
+    );
+    if (catKey === 'irrigation') {
+      if (!showControllerLayer && !showZoneLayer && catLayers.every(l => disabledLayerIds.has(l.id))) return false;
+    }
+    if (catLayers.length === 0) return true;
+    return catLayers.some(l => !disabledLayerIds.has(l.id));
+  };
+
+  const toggleCategory = (catKey: string) => {
+    const catLayers = (layersByCategory[catKey] || []).filter(
+      l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
+    );
+    const enabled = isCategoryEnabled(catKey);
+    setDisabledLayerIds((prev) => {
+      const next = new Set(prev);
+      catLayers.forEach(l => {
+        if (enabled) next.add(l.id);
+        else next.delete(l.id);
+      });
+      return next;
+    });
+    if (catKey === 'irrigation') {
+      setShowControllerLayer(!enabled);
+      setShowZoneLayer(!enabled);
+    }
+  };
+
+  const enableAllCategories = () => {
+    setDisabledLayerIds(new Set());
+    setShowControllerLayer(true);
+    setShowZoneLayer(true);
+    const allRefs = controllers.map(c => c.featureRef || c.id);
+    setEnabledControllers(new Set(allRefs));
+  };
+
+  const allEnabled = disabledLayerIds.size === 0 && showControllerLayer && showZoneLayer;
+
   const enrichAssetInfo = useCallback((asset: any): AssetInfo => {
     const props: { key: string; value: string }[] = asset.properties || [];
     const enriched: AssetInfo = { ...asset, properties: props };
@@ -478,16 +518,40 @@ export default function MapScreen() {
       {isWeb && <StatusBarFill />}
 
       {(allLayers.length > 0 || controllers.length > 0) && (
-        <TouchableOpacity
-          style={[styles.layerToggleBtn, { top: topOffset + 14 }]}
-          onPress={() => setShowLayerPanel(!showLayerPanel)}
-        >
-          <Ionicons name="layers-outline" size={20} color="#0C1D31" />
-        </TouchableOpacity>
+        <View style={[styles.categoryBar, { top: topOffset + 10 }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryBarContent}>
+            <TouchableOpacity
+              style={[styles.categoryTab, allEnabled && styles.categoryTabActive]}
+              onPress={enableAllCategories}
+            >
+              <Ionicons name="globe-outline" size={14} color={allEnabled ? '#fff' : '#0C1D31'} />
+              <Text style={[styles.categoryTabText, allEnabled && styles.categoryTabTextActive]}>All</Text>
+            </TouchableOpacity>
+            {CATEGORY_TABS.map((cat) => {
+              const active = isCategoryEnabled(cat.key);
+              return (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[styles.categoryTab, active && styles.categoryTabActive]}
+                  onPress={() => toggleCategory(cat.key)}
+                >
+                  <Ionicons name={cat.icon} size={14} color={active ? '#fff' : '#0C1D31'} />
+                  <Text style={[styles.categoryTabText, active && styles.categoryTabTextActive]}>{cat.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.categoryTab}
+              onPress={() => setShowLayerPanel(!showLayerPanel)}
+            >
+              <Ionicons name="options-outline" size={14} color="#0C1D31" />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
       )}
 
       {showLayerPanel && (
-        <ScrollView style={[styles.layerPanel, { top: topOffset + 14, maxHeight: 450 }]} bounces={false}>
+        <ScrollView style={[styles.layerPanel, { top: topOffset + 52, maxHeight: 400 }]} bounces={false}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
           {CATEGORY_TABS.map((cat) => {
             const catLayers = (layersByCategory[cat.key] || []).filter(
@@ -646,6 +710,44 @@ const styles = StyleSheet.create({
     color: '#0C1D31',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  categoryBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 12,
+    paddingHorizontal: 8,
+  },
+  categoryBarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  categoryTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  categoryTabActive: {
+    backgroundColor: '#0C1D31',
+  },
+  categoryTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0C1D31',
+  },
+  categoryTabTextActive: {
+    color: '#fff',
   },
   layerToggleBtn: {
     position: 'absolute',
