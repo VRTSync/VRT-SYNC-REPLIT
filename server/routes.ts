@@ -348,6 +348,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         startDate: parsed.data.startDate ? new Date(parsed.data.startDate as any) : undefined,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate as any) : undefined,
         ticketType: parsed.data.ticketType ?? undefined,
+        windowStart: parsed.data.windowStart ? String(parsed.data.windowStart) : undefined,
+        windowEnd: parsed.data.windowEnd ? String(parsed.data.windowEnd) : undefined,
       });
 
       if (task.assignedTo) {
@@ -380,6 +382,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (data.dueDate) {
         data.dueDate = new Date(data.dueDate);
+      }
+      if (data.windowStart) {
+        data.windowStart = String(data.windowStart);
+      }
+      if (data.windowEnd) {
+        data.windowEnd = String(data.windowEnd);
       }
       const previousAssignee = task!.assignedTo;
       const updated = await storage.updateTask(req.params.id as string, version, data);
@@ -427,14 +435,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      if (req.session.role !== 'admin' && existingTask.windowStart && existingTask.windowEnd) {
+      const completingUser = await storage.getUserById(req.session.userId!);
+      if (completingUser?.role !== 'admin' && existingTask.windowStart && existingTask.windowEnd) {
         const now = new Date();
         const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' });
         const today = new Date(todayStr + 'T00:00:00');
-        const wStart = new Date(existingTask.windowStart + (typeof existingTask.windowStart === 'string' && !existingTask.windowStart.includes('T') ? 'T00:00:00' : ''));
-        const wEnd = new Date(existingTask.windowEnd + (typeof existingTask.windowEnd === 'string' && !existingTask.windowEnd.includes('T') ? 'T00:00:00' : ''));
-        const startDate = new Date(wStart.toISOString().split('T')[0] + 'T00:00:00');
-        const endDate = new Date(wEnd.toISOString().split('T')[0] + 'T00:00:00');
+        const wsVal = typeof existingTask.windowStart === 'object' ? (existingTask.windowStart as Date).toISOString().split('T')[0] : String(existingTask.windowStart).split('T')[0];
+        const weVal = typeof existingTask.windowEnd === 'object' ? (existingTask.windowEnd as Date).toISOString().split('T')[0] : String(existingTask.windowEnd).split('T')[0];
+        const startDate = new Date(wsVal + 'T00:00:00');
+        const endDate = new Date(weVal + 'T00:00:00');
         if (today < startDate || today > endDate) {
           return res.status(400).json({
             error: "This task can only be completed within its execution window.",

@@ -62,6 +62,11 @@ window._renderTasks = async function(container, communityId) {
   }
 
   function formatDateWindow(task) {
+    if (task.windowStart && task.windowEnd) {
+      const ws = new Date(task.windowStart + 'T00:00:00').toLocaleDateString();
+      const we = new Date(task.windowEnd + 'T00:00:00').toLocaleDateString();
+      return `${ws} \u2013 ${we}`;
+    }
     const s = task.startDate ? new Date(task.startDate).toLocaleDateString() : null;
     const d = task.dueDate ? new Date(task.dueDate).toLocaleDateString() : null;
     if (s && d) return `${s} \u2013 ${d}`;
@@ -178,6 +183,17 @@ window._renderTasks = async function(container, communityId) {
               <input type="date" class="form-input" id="task-due" value="${task?.dueDate ? task.dueDate.substring(0, 10) : ''}" />
             </div>
           </div>
+          <div class="flex gap-4">
+            <div class="form-group" style="flex:1">
+              <label>Window Start</label>
+              <input type="date" class="form-input" id="task-window-start" value="${task?.windowStart || ''}" />
+            </div>
+            <div class="form-group" style="flex:1">
+              <label>Window End</label>
+              <input type="date" class="form-input" id="task-window-end" value="${task?.windowEnd || ''}" />
+            </div>
+          </div>
+          <p class="text-sm text-muted" style="margin-top:-8px;margin-bottom:8px">Execution window restricts when contractors can complete this task.</p>
           <div class="form-group">
             <label>Address</label>
             <input type="text" class="form-input" id="task-address" value="${esc(task?.address || '')}" />
@@ -204,10 +220,16 @@ window._renderTasks = async function(container, communityId) {
       const startDate = document.getElementById('task-start').value || null;
       const dueDate = document.getElementById('task-due').value || null;
       const address = document.getElementById('task-address').value.trim() || null;
+      const windowStart = document.getElementById('task-window-start').value || null;
+      const windowEnd = document.getElementById('task-window-end').value || null;
 
       if (!title) { showToast('Title is required', 'error'); return; }
+      if ((windowStart && !windowEnd) || (!windowStart && windowEnd)) {
+        showToast('Both window start and end are required', 'error');
+        return;
+      }
 
-      const body = { title, description: description || null, ticketType, priority, assignedTo, startDate, dueDate, address, communityId };
+      const body = { title, description: description || null, ticketType, priority, assignedTo, startDate, dueDate, address, communityId, windowStart, windowEnd };
 
       try {
         if (isEdit) {

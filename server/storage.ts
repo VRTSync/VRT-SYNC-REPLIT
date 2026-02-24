@@ -88,6 +88,8 @@ export async function createTask(data: {
   startDate?: Date;
   dueDate?: Date;
   ticketType?: string;
+  windowStart?: string;
+  windowEnd?: string;
 }): Promise<Task> {
   const [task] = await db.insert(tasks).values(data).returning();
   return task;
@@ -139,6 +141,8 @@ export async function updateTask(id: string, expectedVersion: number, data: Part
   address: string;
   assignedTo: string;
   dueDate: Date;
+  windowStart: string;
+  windowEnd: string;
 }>): Promise<Task | null> {
   const [updated] = await db.update(tasks)
     .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
