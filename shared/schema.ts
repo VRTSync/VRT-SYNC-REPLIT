@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -9,6 +9,7 @@ export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
 export const exportStatusEnum = pgEnum("export_status", ["queued", "running", "complete", "failed"]);
+export const serviceTypeEnum = pgEnum("service_type", ["mowing_visit"]);
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -58,6 +59,8 @@ export const tasks = pgTable("tasks", {
   startDate: timestamp("start_date"),
   dueDate: timestamp("due_date"),
   ticketType: text("ticket_type"),
+  windowStart: date("window_start"),
+  windowEnd: date("window_end"),
   version: integer("version").notNull().default(1),
   scheduleInstanceKey: varchar("schedule_instance_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -300,9 +303,52 @@ export const exports = pgTable("exports", {
   index("exports_community_created_idx").on(table.communityId, table.createdAt),
 ]);
 
+export const serviceSchedules = pgTable("service_schedules", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  serviceType: serviceTypeEnum("service_type").notNull().default("mowing_visit"),
+  dayOfWeek: integer("day_of_week").notNull(),
+  seasonStart: date("season_start"),
+  seasonEnd: date("season_end"),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const serviceVisits = pgTable("service_visits", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => serviceSchedules.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  serviceDate: date("service_date").notNull(),
+  completedAt: timestamp("completed_at"),
+  completedBy: varchar("completed_by").references(() => users.id),
+  employeeSignOffName: text("employee_sign_off_name").notNull().default(''),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("service_visits_schedule_date_idx").on(table.scheduleId, table.serviceDate),
+]);
+
 export const exportsRelations = relations(exports, ({ one }) => ({
   community: one(communities, { fields: [exports.communityId], references: [communities.id] }),
   creator: one(users, { fields: [exports.createdBy], references: [users.id] }),
+}));
+
+export const serviceSchedulesRelations = relations(serviceSchedules, ({ one, many }) => ({
+  community: one(communities, { fields: [serviceSchedules.communityId], references: [communities.id] }),
+  visits: many(serviceVisits),
+}));
+
+export const serviceVisitsRelations = relations(serviceVisits, ({ one }) => ({
+  schedule: one(serviceSchedules, { fields: [serviceVisits.scheduleId], references: [serviceSchedules.id] }),
+  community: one(communities, { fields: [serviceVisits.communityId], references: [communities.id] }),
+  completedByUser: one(users, { fields: [serviceVisits.completedBy], references: [users.id] }),
 }));
 
 export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
@@ -404,6 +450,8 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   startDate: true,
   dueDate: true,
   ticketType: true,
+  windowStart: true,
+  windowEnd: true,
 });
 
 export const completeTaskSchema = z.object({
@@ -523,6 +571,31 @@ export const insertTaskScheduleSchema = z.object({
   isEnabled: z.boolean().default(true),
 });
 
+export const insertServiceScheduleSchema = z.object({
+  communityId: z.string().min(1),
+  serviceType: z.enum(["mowing_visit"]).default("mowing_visit"),
+  dayOfWeek: z.number().int().min(0).max(6),
+  seasonStart: z.string().nullable().optional(),
+  seasonEnd: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  isActive: z.boolean().default(true),
+});
+
+export const updateServiceScheduleSchema = z.object({
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  seasonStart: z.string().nullable().optional(),
+  seasonEnd: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const logServiceVisitSchema = z.object({
+  serviceDate: z.string().min(1),
+  employeeSignOffName: z.string().default(''),
+  notes: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Community = typeof communities.$inferSelect;
@@ -542,3 +615,5 @@ export type TaskSchedule = typeof taskSchedules.$inferSelect;
 export type ScheduleRun = typeof scheduleRuns.$inferSelect;
 export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
 export type Export = typeof exports.$inferSelect;
+export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
+export type ServiceVisit = typeof serviceVisits.$inferSelect;
