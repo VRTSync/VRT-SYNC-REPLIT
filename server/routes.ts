@@ -21,6 +21,7 @@ import {
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
+import { parseFile, generatePreview, commitImport } from "./contractImporter";
 import { exports as exportsTable } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -2343,6 +2344,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Log service visit error:", error);
       res.status(500).json({ error: "Failed to log service visit" });
+    }
+  });
+
+  app.post("/api/admin/import/contract-tasks/parse", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const sheetName = req.body?.sheetName || undefined;
+      const result = parseFile(req.file.buffer, req.file.originalname, sheetName);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Parse error:", error);
+      res.status(400).json({ error: error.message || "Failed to parse file" });
+    }
+  });
+
+  app.post("/api/admin/import/contract-tasks/preview", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { communityId, mappings, mowingConfig, defaultPriority, importMode, parsedData } = req.body;
+      if (!communityId || !mappings || !mowingConfig || !parsedData) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      if (!mappings.title || !mappings.windowStart || !mappings.windowEnd) {
+        return res.status(400).json({ error: "Title, Window Start, and Window End mappings are required" });
+      }
+      const result = await generatePreview(
+        parsedData,
+        communityId,
+        mappings,
+        mowingConfig,
+        defaultPriority || "medium",
+        importMode || "create"
+      );
+      res.json(result);
+    } catch (error: any) {
+      console.error("Preview error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate preview" });
+    }
+  });
+
+  app.post("/api/admin/import/contract-tasks/commit", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { communityId, tasksPreview, mowingSchedulePreview, defaultPriority } = req.body;
+      if (!communityId || !tasksPreview) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const result = await commitImport(
+        tasksPreview,
+        mowingSchedulePreview || null,
+        communityId,
+        req.session.userId!,
+        defaultPriority || "medium"
+      );
+      res.json(result);
+    } catch (error: any) {
+      console.error("Commit error:", error);
+      res.status(500).json({ error: error.message || "Failed to commit import" });
     }
   });
 
