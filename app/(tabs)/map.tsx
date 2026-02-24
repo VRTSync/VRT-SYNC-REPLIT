@@ -93,8 +93,7 @@ export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [activeCategory, setActiveCategory] = useState(params.category || 'community');
-  const [enabledLayerIds, setEnabledLayerIds] = useState<Set<string>>(new Set());
+  const [disabledLayerIds, setDisabledLayerIds] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<AssetInfo | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
@@ -107,15 +106,6 @@ export default function MapScreen() {
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
   const offlineNoPack = !isOnline && !localPack;
-  const isIrrigation = activeCategory === 'irrigation';
-
-  useEffect(() => {
-    if (!isIrrigation) {
-      setShowControllerLayer(false);
-      setShowZoneLayer(false);
-      setSelectedAsset(null);
-    }
-  }, [isIrrigation]);
 
   const { data: tasks = [] } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
@@ -133,7 +123,7 @@ export default function MapScreen() {
       const res = await apiRequest('GET', `/api/communities/${communityId}/controllers`);
       return res.json();
     },
-    enabled: !!communityId && activeCategory === 'irrigation',
+    enabled: !!communityId,
   });
 
   React.useEffect(() => {
@@ -167,14 +157,7 @@ export default function MapScreen() {
   }, [useOfflineData, localPack]);
 
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
-  const categoryLayers = allLayers.filter((l) => l.layerKey === activeCategory);
   const geoTasks = tasks.filter((t) => t.latitude != null && t.longitude != null && t.status !== 'completed');
-
-  useEffect(() => {
-    if (params.category && CATEGORY_TABS.some(c => c.key === params.category)) {
-      setActiveCategory(params.category);
-    }
-  }, [params.category]);
 
   useEffect(() => {
     if (params.targetLat && params.targetLng) {
@@ -206,10 +189,6 @@ export default function MapScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    // no-op: layers start disabled, user opts in via the panel
-  }, [categoryLayers.length, activeCategory]);
-
   const fetchGeoJSON = useCallback(async (layerId: string) => {
     if (loadedGeoJSON[layerId] || loadingGeoJSON.has(layerId)) return;
 
@@ -240,13 +219,15 @@ export default function MapScreen() {
   }, [loadedGeoJSON, loadingGeoJSON, useOfflineData, getOfflineGeoJSON]);
 
   useEffect(() => {
-    enabledLayerIds.forEach((id) => {
-      if (!loadedGeoJSON[id]) fetchGeoJSON(id);
+    allLayers.forEach((layer) => {
+      if (!loadedGeoJSON[layer.id] && !loadingGeoJSON.has(layer.id)) {
+        fetchGeoJSON(layer.id);
+      }
     });
-  }, [enabledLayerIds]);
+  }, [allLayers]);
 
   const toggleLayer = (id: string) => {
-    setEnabledLayerIds((prev) => {
+    setDisabledLayerIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -325,7 +306,7 @@ export default function MapScreen() {
   }, [controllers]);
 
   const controllerMarkers = useMemo(() => {
-    if (!isIrrigation || !showControllerLayer || controllers.length === 0) return [];
+    if (!showControllerLayer || controllers.length === 0) return [];
     return controllers
       .filter(c => c.latitude != null && c.longitude != null && enabledControllers.has(c.featureRef || c.id))
       .map(c => ({
@@ -338,10 +319,10 @@ export default function MapScreen() {
         longitude: c.longitude!,
         zoneCount: c.zoneCount,
       }));
-  }, [isIrrigation, showControllerLayer, controllers, enabledControllers]);
+  }, [showControllerLayer, controllers, enabledControllers]);
 
   const zoneMarkers = useMemo(() => {
-    if (!isIrrigation || !showZoneLayer || controllers.length === 0) return [];
+    if (!showZoneLayer || controllers.length === 0) return [];
     const zones: any[] = [];
     controllers.forEach(ctrl => {
       if (!enabledControllers.has(ctrl.featureRef || ctrl.id)) return;
@@ -364,13 +345,13 @@ export default function MapScreen() {
       });
     });
     return zones;
-  }, [isIrrigation, showZoneLayer, controllers, enabledControllers]);
+  }, [showZoneLayer, controllers, enabledControllers]);
 
   const activeLayers = React.useMemo(() => {
-    return categoryLayers
-      .filter((l) => enabledLayerIds.has(l.id))
+    return allLayers
+      .filter((l) => !disabledLayerIds.has(l.id))
       .filter((l) => {
-        if (activeCategory === 'irrigation' && controllers.length > 0) {
+        if (controllers.length > 0) {
           if (l.subLayerKey === 'controller' || l.subLayerKey === 'zone') return false;
         }
         return true;
@@ -388,15 +369,15 @@ export default function MapScreen() {
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
-  }, [categoryLayers, enabledLayerIds, loadedGeoJSON, activeCategory, controllers, controllerColorMap]);
+  }, [allLayers, disabledLayerIds, loadedGeoJSON, controllers, controllerColorMap]);
 
   const fitToContentKey = useMemo(() => {
     const parts = [
       Array.from(enabledControllers).sort().join(','),
-      Array.from(enabledLayerIds).sort().join(','),
+      allLayers.filter(l => !disabledLayerIds.has(l.id)).map(l => l.id).sort().join(','),
     ];
     return parts.join('|');
-  }, [enabledControllers, enabledLayerIds]);
+  }, [enabledControllers, disabledLayerIds, allLayers]);
 
   const mappedTasks = useMemo(() => geoTasks.map((t) => ({
     id: t.id,
@@ -482,32 +463,23 @@ export default function MapScreen() {
     );
   }
 
+  const layersByCategory = useMemo(() => {
+    const grouped: Record<string, MapLayerMeta[]> = {};
+    CATEGORY_TABS.forEach(cat => { grouped[cat.key] = []; });
+    allLayers.forEach(l => {
+      if (!grouped[l.layerKey]) grouped[l.layerKey] = [];
+      grouped[l.layerKey].push(l);
+    });
+    return grouped;
+  }, [allLayers]);
+
   return (
     <View style={styles.container}>
       {isWeb && <StatusBarFill />}
 
-      <View style={[styles.categoryBarFloat, { top: topOffset + 10 }]}>
-        {CATEGORY_TABS.map((cat) => (
-          <TouchableOpacity
-            key={cat.key}
-            style={[styles.categoryTabFloat, activeCategory === cat.key && styles.categoryTabFloatActive]}
-            onPress={() => setActiveCategory(cat.key)}
-          >
-            <Ionicons
-              name={cat.icon}
-              size={15}
-              color={activeCategory === cat.key ? '#fff' : 'rgba(255,255,255,0.7)'}
-            />
-            <Text style={[styles.categoryLabelFloat, activeCategory === cat.key && styles.categoryLabelFloatActive]}>
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {(categoryLayers.length > 0 || (activeCategory === 'irrigation' && controllers.length > 0)) && (
+      {(allLayers.length > 0 || controllers.length > 0) && (
         <TouchableOpacity
-          style={[styles.layerToggleBtn, { top: topOffset + 62 }]}
+          style={[styles.layerToggleBtn, { top: topOffset + 14 }]}
           onPress={() => setShowLayerPanel(!showLayerPanel)}
         >
           <Ionicons name="layers-outline" size={20} color="#0C1D31" />
@@ -515,42 +487,58 @@ export default function MapScreen() {
       )}
 
       {showLayerPanel && (
-        <ScrollView style={[styles.layerPanel, { top: topOffset + 62, maxHeight: 400 }]} bounces={false}>
+        <ScrollView style={[styles.layerPanel, { top: topOffset + 14, maxHeight: 450 }]} bounces={false}>
           <Text style={styles.layerPanelTitle}>Layers</Text>
-          {categoryLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone').map((layer, idx) => (
-            <View key={layer.id} style={styles.layerToggleRow}>
-              <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
-              <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
-              <Switch
-                value={enabledLayerIds.has(layer.id)}
-                onValueChange={() => toggleLayer(layer.id)}
-                trackColor={{ true: '#25C1AC', false: '#ddd' }}
-              />
-            </View>
-          ))}
+          {CATEGORY_TABS.map((cat) => {
+            const catLayers = (layersByCategory[cat.key] || []).filter(
+              l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone'
+            );
+            if (catLayers.length === 0 && !(cat.key === 'irrigation' && controllers.length > 0)) return null;
+            return (
+              <View key={cat.key}>
+                <View style={styles.categorySectionHeader}>
+                  <Ionicons name={cat.icon} size={14} color="#25C1AC" />
+                  <Text style={styles.categorySectionLabel}>{cat.label}</Text>
+                </View>
+                {catLayers.map((layer, idx) => (
+                  <View key={layer.id} style={styles.layerToggleRow}>
+                    <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
+                    <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
+                    <Switch
+                      value={!disabledLayerIds.has(layer.id)}
+                      onValueChange={() => toggleLayer(layer.id)}
+                      trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                    />
+                  </View>
+                ))}
+                {cat.key === 'irrigation' && controllers.length > 0 && (
+                  <>
+                    <View style={styles.layerToggleRow}>
+                      <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
+                      <Text style={styles.layerToggleName}>Controllers</Text>
+                      <Switch
+                        value={showControllerLayer}
+                        onValueChange={(v) => setShowControllerLayer(v)}
+                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                      />
+                    </View>
+                    <View style={styles.layerToggleRow}>
+                      <Ionicons name="water-outline" size={16} color="#25C1AC" />
+                      <Text style={styles.layerToggleName}>Zones</Text>
+                      <Switch
+                        value={showZoneLayer}
+                        onValueChange={(v) => setShowZoneLayer(v)}
+                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                      />
+                    </View>
+                  </>
+                )}
+              </View>
+            );
+          })}
 
-          {activeCategory === 'irrigation' && controllers.length > 0 && (
+          {controllers.length > 0 && (
             <>
-              <View style={styles.controllerSectionDivider} />
-              <View style={styles.layerToggleRow}>
-                <Ionicons name="navigate-outline" size={16} color="#25C1AC" />
-                <Text style={styles.layerToggleName}>Controllers</Text>
-                <Switch
-                  value={showControllerLayer}
-                  onValueChange={(v) => setShowControllerLayer(v)}
-                  trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                />
-              </View>
-              <View style={styles.layerToggleRow}>
-                <Ionicons name="water-outline" size={16} color="#25C1AC" />
-                <Text style={styles.layerToggleName}>Zones</Text>
-                <Switch
-                  value={showZoneLayer}
-                  onValueChange={(v) => setShowZoneLayer(v)}
-                  trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                />
-              </View>
-
               <View style={styles.controllerSectionDivider} />
               <View style={styles.controllerSectionHeader}>
                 <Text style={styles.layerPanelTitle}>Filter Controllers</Text>
@@ -595,36 +583,18 @@ export default function MapScreen() {
               })}
             </>
           )}
-
-          {categoryLayers.filter(l => l.subLayerKey === 'controller' || l.subLayerKey === 'zone').length > 0 && activeCategory === 'irrigation' && (
-            <>
-              <View style={styles.controllerSectionDivider} />
-              <Text style={[styles.layerPanelTitle, { fontSize: 12, color: '#999' }]}>GeoJSON Overlays</Text>
-              {categoryLayers.filter(l => l.subLayerKey === 'controller' || l.subLayerKey === 'zone').map((layer, idx) => (
-                <View key={layer.id} style={styles.layerToggleRow}>
-                  <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
-                  <Text style={[styles.layerToggleName, { fontSize: 12 }]} numberOfLines={1}>{layer.displayName}</Text>
-                  <Switch
-                    value={enabledLayerIds.has(layer.id)}
-                    onValueChange={() => toggleLayer(layer.id)}
-                    trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                  />
-                </View>
-              ))}
-            </>
-          )}
         </ScrollView>
       )}
 
       {useOfflineData && (
-        <View style={[styles.offlineBadge, { top: topOffset + 55 }]}>
+        <View style={[styles.offlineBadge, { top: topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.offlineBadgeText}>Offline Pack v{localPack?.packVersion}</Text>
         </View>
       )}
 
       {offlineNoPack && (
-        <View style={[styles.offlineNoPackBanner, { top: topOffset + 55 }]}>
+        <View style={[styles.offlineNoPackBanner, { top: topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={18} color="#f44336" />
           <Text style={styles.offlineNoPackText}>
             Offline map pack not downloaded for this community.
@@ -646,11 +616,11 @@ export default function MapScreen() {
         onShowControllerZones={handleShowControllerZones}
         targetRegion={targetRegion}
         onTargetReached={handleTargetReached}
-        controllerMarkers={isIrrigation ? controllerMarkers : []}
-        zoneMarkers={isIrrigation ? zoneMarkers : []}
-        showControllers={isIrrigation && showControllerLayer}
-        showZones={isIrrigation && showZoneLayer}
-        activeCategory={activeCategory}
+        controllerMarkers={controllerMarkers}
+        zoneMarkers={zoneMarkers}
+        showControllers={showControllerLayer}
+        showZones={showZoneLayer}
+        activeCategory="all"
         fitToContentKey={fitToContentKey}
       />
     </View>
@@ -660,53 +630,23 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   loadingContainer: { justifyContent: 'center', alignItems: 'center' },
-  categoryBar: {
+  categorySectionHeader: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 4,
+    paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingHorizontal: 8,
+    borderBottomColor: '#f0f0f0',
   },
-  categoryTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+  categorySectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0C1D31',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  categoryTabActive: {
-    borderBottomColor: '#25C1AC',
-  },
-  categoryLabel: { fontSize: 13, color: '#999', fontWeight: '500' },
-  categoryLabelActive: { color: '#25C1AC', fontWeight: '600' },
-  categoryBarFloat: {
-    position: 'absolute',
-    top: 60,
-    left: 12,
-    right: 12,
-    zIndex: 10,
-    flexDirection: 'row',
-    backgroundColor: 'rgba(12,29,49,0.9)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  categoryTabFloat: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  categoryTabFloatActive: {
-    backgroundColor: '#25C1AC',
-  },
-  categoryLabelFloat: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
-  categoryLabelFloatActive: { color: '#fff', fontWeight: '600' },
   layerToggleBtn: {
     position: 'absolute',
     top: 112,

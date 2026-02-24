@@ -523,30 +523,22 @@ export default function LeafletMap({
   }, [layerData, runJS]);
 
   useEffect(() => {
-    const isIrrigation = activeCategory === 'irrigation';
-    if (isIrrigation && showControllers && controllerMarkers.length > 0) {
+    if (showControllers && controllerMarkers.length > 0) {
       runJS(`window.mapBridge.setControllerMarkers(${JSON.stringify(controllerMarkers)})`);
       runJS(`window.mapBridge.showControllers(true)`);
     } else {
       runJS(`window.mapBridge.showControllers(false)`);
     }
-  }, [activeCategory, showControllers, controllerMarkers, runJS]);
+  }, [showControllers, controllerMarkers, runJS]);
 
   useEffect(() => {
-    const isIrrigation = activeCategory === 'irrigation';
-    if (isIrrigation && showZones && zoneMarkers.length > 0) {
+    if (showZones && zoneMarkers.length > 0) {
       runJS(`window.mapBridge.setZoneMarkers(${JSON.stringify(zoneMarkers)})`);
       runJS(`window.mapBridge.showZones(true)`);
     } else {
       runJS(`window.mapBridge.showZones(false)`);
     }
-  }, [activeCategory, showZones, zoneMarkers, runJS]);
-
-  useEffect(() => {
-    if (activeCategory !== 'irrigation') {
-      runJS(`window.mapBridge.clearIrrigation()`);
-    }
-  }, [activeCategory, runJS]);
+  }, [showZones, zoneMarkers, runJS]);
 
   useEffect(() => {
     if (targetRegion) {
