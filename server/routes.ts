@@ -766,6 +766,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/assets/by-feature", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const communityId = req.query.communityId as string;
+      const featureRef = req.query.featureRef as string;
+      if (!communityId || !featureRef) return res.status(400).json({ error: "communityId and featureRef are required" });
+      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
+      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
+      if (!asset) {
+        console.warn(`[by-feature] No asset found for communityId=${communityId} featureRef=${featureRef}`);
+      }
+      res.json(asset);
+    } catch (error) {
+      console.error("Get asset by feature error:", error);
+      res.status(500).json({ error: "Failed to fetch asset" });
+    }
+  });
+
+  app.post("/api/assets/bulk/properties", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { assetIds, key, value, mode } = req.body;
+      if (!Array.isArray(assetIds) || assetIds.length === 0) {
+        return res.status(400).json({ error: "assetIds must be a non-empty array" });
+      }
+      if (!key || typeof key !== "string" || !value || typeof value !== "string") {
+        return res.status(400).json({ error: "key and value are required strings" });
+      }
+      const validMode = mode === "overwrite" ? "overwrite" : "set_if_missing";
+      const result = await storage.bulkUpsertAssetProperty(assetIds, key.trim(), value.trim(), validMode);
+      res.json(result);
+    } catch (error) {
+      console.error("Bulk upsert properties error:", error);
+      res.status(500).json({ error: "Failed to bulk upsert properties" });
+    }
+  });
+
   app.get("/api/assets/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const asset = await storage.getAssetById(req.params.id as string);
@@ -1277,24 +1313,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/assets/by-feature", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const communityId = req.query.communityId as string;
-      const featureRef = req.query.featureRef as string;
-      if (!communityId || !featureRef) return res.status(400).json({ error: "communityId and featureRef are required" });
-      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
-      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
-      const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
-      if (!asset) {
-        console.warn(`[by-feature] No asset found for communityId=${communityId} featureRef=${featureRef}`);
-      }
-      res.json(asset);
-    } catch (error) {
-      console.error("Get asset by feature error:", error);
-      res.status(500).json({ error: "Failed to fetch asset" });
-    }
-  });
-
   app.post("/api/map-layers/:id/sync-assets", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
@@ -1483,24 +1501,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get asset completeness error:", error);
       res.status(500).json({ error: "Failed to fetch asset completeness" });
-    }
-  });
-
-  app.post("/api/assets/bulk/properties", requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const { assetIds, key, value, mode } = req.body;
-      if (!Array.isArray(assetIds) || assetIds.length === 0) {
-        return res.status(400).json({ error: "assetIds must be a non-empty array" });
-      }
-      if (!key || typeof key !== "string" || !value || typeof value !== "string") {
-        return res.status(400).json({ error: "key and value are required strings" });
-      }
-      const validMode = mode === "overwrite" ? "overwrite" : "set_if_missing";
-      const result = await storage.bulkUpsertAssetProperty(assetIds, key.trim(), value.trim(), validMode);
-      res.json(result);
-    } catch (error) {
-      console.error("Bulk upsert properties error:", error);
-      res.status(500).json({ error: "Failed to bulk upsert properties" });
     }
   });
 
