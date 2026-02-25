@@ -232,7 +232,7 @@ function generateLeafletHTML(): string {
         popupHtml += '<div class="popup-title">'+escHtml(t.title)+'</div>';
         if (t.address) popupHtml += '<div class="popup-meta">'+escHtml(t.address)+'</div>';
         popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._taskTap(\''+t.id+'\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '<div class="popup-action" data-action="taskTap" data-id="'+escHtml(t.id)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         m.addTo(taskLayer);
@@ -302,7 +302,7 @@ function generateLeafletHTML(): string {
             }
             if (ref) {
               popupHtml += '<div class="popup-divider"></div>';
-              popupHtml += '<div class="popup-action" onclick="window.mapBridge._viewDetail(\'' + escHtml(ref) + '\',\'' + escHtml(layer.layerKey) + '\',\'' + escHtml(label) + '\',\'' + escHtml(assetType) + '\',\'' + escHtml(layer.displayName || '') + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+              popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(ref)+'" data-layer="'+escHtml(layer.layerKey)+'" data-label="'+escHtml(label)+'" data-asset-type="'+escHtml(assetType)+'" data-layer-name="'+escHtml(layer.displayName || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
             }
             popupHtml += '</div></div>';
             l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
@@ -327,7 +327,7 @@ function generateLeafletHTML(): string {
         popupHtml += '<div class="popup-title">' + escHtml(c.label) + '</div>';
         popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+c.color+';"></span> ' + c.zoneCount + ' zone' + (c.zoneCount !== 1 ? 's' : '') + '</div></div>';
         popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._viewDetail(\'' + escHtml(c.featureRef) + '\',\'irrigation\',\'' + escHtml(c.label) + '\',\'controller\',\'\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(c.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(c.label)+'" data-asset-type="controller" data-layer-name=""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         m.addTo(ctrlLayer);
@@ -349,7 +349,7 @@ function generateLeafletHTML(): string {
         popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
         popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+z.controllerColor+';"></span> ' + escHtml(z.controllerLabel) + '</div></div>';
         popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" onclick="window.mapBridge._viewDetail(\'' + escHtml(z.featureRef) + '\',\'irrigation\',\'' + escHtml(z.label) + '\',\'zone\',\'' + escHtml(z.controllerLabel || '') + '\')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+        popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(z.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(z.label)+'" data-asset-type="zone" data-layer-name="'+escHtml(z.controllerLabel || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         zoneClusterGroup.addLayer(m);
@@ -394,8 +394,9 @@ function generateLeafletHTML(): string {
   };
 
   function escHtml(s) {
-    if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    if (!s && s !== 0) return '';
+    s = String(s);
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   window.addEventListener('message', function(e) {
@@ -407,6 +408,24 @@ function generateLeafletHTML(): string {
   setTimeout(function() { map.invalidateSize(); }, 100);
   setTimeout(function() { map.invalidateSize(); }, 500);
   setTimeout(function() { map.invalidateSize(); }, 1500);
+
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el !== document.body) {
+      if (el.classList && el.classList.contains('popup-action') && el.dataset && el.dataset.action) {
+        var action = el.dataset.action;
+        if (action === 'taskTap') {
+          window.mapBridge._taskTap(el.dataset.id);
+        } else if (action === 'viewDetail') {
+          window.mapBridge._viewDetail(el.dataset.ref, el.dataset.layer, el.dataset.label, el.dataset.assetType, el.dataset.layerName);
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      el = el.parentElement;
+    }
+  });
 
   post('mapReady', {});
 })();
