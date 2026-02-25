@@ -431,6 +431,30 @@ export default function MapScreen() {
     setDetailPanelAssetId(assetId);
   }, []);
 
+  const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
+    if (!communityId || !featureRef) return;
+
+    if (useOfflineData) {
+      const entry = resolveFeatureToAsset(featureRef);
+      if (entry) {
+        setSelectedAsset(null);
+        setDetailPanelAssetId(entry.assetId);
+      }
+      return;
+    }
+
+    try {
+      const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
+      const asset = await res.json();
+      if (asset && asset.id) {
+        setSelectedAsset(null);
+        setDetailPanelAssetId(asset.id);
+      }
+    } catch (err) {
+      console.error('View asset detail error:', err);
+    }
+  }, [communityId, useOfflineData, resolveFeatureToAsset]);
+
   const handleTargetReached = useCallback(() => {
     setTargetRegion(null);
   }, []);
@@ -556,6 +580,7 @@ export default function MapScreen() {
         onTaskPress={handleTaskPress}
         layers={activeLayers}
         onFeatureTap={handleFeatureTap}
+        onViewAssetDetail={handleViewAssetDetail}
         selectedAsset={selectedAsset}
         onDismissAsset={handleDismissAsset}
         onAssetDetail={handleAssetDetail}
