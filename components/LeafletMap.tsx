@@ -52,32 +52,12 @@ type ZoneMarkerData = {
   longitude: number;
 };
 
-type AssetInfo = {
-  id: string;
-  assetType: string;
-  label: string;
-  featureRef: string | null;
-  properties: { key: string; value: string }[];
-  controllerLabel?: string;
-  controllerColor?: string;
-  controllerFeatureRef?: string;
-  zoneNumber?: number | null;
-  zoneType?: string | null;
-  zoneCount?: number;
-};
-
 type LeafletMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
   onTaskPress: (id: string) => void;
   layers?: LayerData[];
-  onFeatureTap?: (featureRef: string, layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => void;
   onViewAssetDetail?: (featureRef: string, layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => void;
-  selectedAsset?: AssetInfo | null;
-  onDismissAsset?: () => void;
-  onAssetDetail?: (assetId: string, featureRef?: string | null) => void;
-  onShowController?: (controllerFeatureRef: string) => void;
-  onShowControllerZones?: (controllerFeatureRef: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
   onTargetReached?: () => void;
   controllerMarkers?: ControllerMarkerData[];
@@ -94,23 +74,6 @@ const priorityColors: Record<string, string> = {
   high: '#f44336',
   urgent: '#9c27b0',
 };
-
-const ASSET_TYPE_LABELS: Record<string, string> = {
-  controller: 'Controller', backflow: 'Backflow', zone: 'Zone', tree: 'Tree',
-  pet_station: 'Pet Station', landscape_bed: 'Landscape Bed', bluegrass_area: 'Bluegrass Area',
-  native_area: 'Native Area', snow_area: 'Snow Area',
-};
-
-function formatSqFt(value: string): string {
-  const num = parseFloat(value);
-  if (isNaN(num)) return value;
-  return Math.round(num).toLocaleString();
-}
-
-function getSqFtFromProps(properties: { key: string; value: string }[]): string | null {
-  const prop = properties.find(p => p.key === 'sqFt');
-  return prop ? prop.value : null;
-}
 
 function generateLeafletHTML(): string {
   return `<!DOCTYPE html>
@@ -280,10 +243,6 @@ function generateLeafletHTML(): string {
       post('taskPress', { id: id });
     },
 
-    _featureTap: function(ref, layerKey, label, assetType, layerName) {
-      post('featureTap', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
-    },
-
     _viewDetail: function(ref, layerKey, label, assetType, layerName) {
       post('viewAssetDetail', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
     },
@@ -347,11 +306,6 @@ function generateLeafletHTML(): string {
             }
             popupHtml += '</div></div>';
             l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
-            l.on('click', function() {
-              if (ref) {
-                post('featureTap', { featureRef: ref, layerKey: layer.layerKey, label: label, assetType: assetType, layerName: layer.displayName || '' });
-              }
-            });
           }
         }).addTo(map);
         geoLayers[layer.id] = geoLayer;
@@ -466,13 +420,7 @@ export default function LeafletMap({
   userLocation,
   onTaskPress,
   layers = [],
-  onFeatureTap,
   onViewAssetDetail,
-  selectedAsset,
-  onDismissAsset,
-  onAssetDetail,
-  onShowController,
-  onShowControllerZones,
   targetRegion,
   onTargetReached,
   controllerMarkers = [],
@@ -521,13 +469,6 @@ export default function LeafletMap({
       case 'taskPress':
         onTaskPress(msg.data.id);
         break;
-      case 'featureTap':
-        onFeatureTap?.(msg.data.featureRef, msg.data.layerKey, {
-          label: msg.data.label,
-          assetType: msg.data.assetType,
-          layerName: msg.data.layerName,
-        });
-        break;
       case 'viewAssetDetail':
         onViewAssetDetail?.(msg.data.featureRef, msg.data.layerKey, {
           label: msg.data.label,
@@ -539,7 +480,7 @@ export default function LeafletMap({
         onTargetReached?.();
         break;
     }
-  }, [onTaskPress, onFeatureTap, onViewAssetDetail, onTargetReached, flushPending]);
+  }, [onTaskPress, onViewAssetDetail, onTargetReached, flushPending]);
 
   const handleMessage = useCallback((event: any) => {
     try {
@@ -747,169 +688,6 @@ export default function LeafletMap({
           </View>
         ))}
       </View>
-
-      {selectedAsset && (
-        <View style={styles.assetPopup}>
-          {selectedAsset.assetType === 'zone' ? (
-            <>
-              <View style={styles.assetPopupHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
-                  <View style={styles.zoneSubHeader}>
-                    {selectedAsset.controllerColor && (
-                      <View style={[styles.controllerDotInline, { backgroundColor: selectedAsset.controllerColor }]} />
-                    )}
-                    <Text style={styles.zoneControllerText}>
-                      {selectedAsset.controllerLabel || 'Controller'}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={24} color="#999" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.zoneDetailsRow}>
-                {selectedAsset.zoneNumber != null && (
-                  <View style={styles.zoneDetailChip}>
-                    <Ionicons name="water-outline" size={13} color="#25C1AC" />
-                    <Text style={styles.zoneDetailChipText}>Zone {selectedAsset.zoneNumber}</Text>
-                  </View>
-                )}
-                {selectedAsset.zoneType && (
-                  <View style={styles.zoneDetailChip}>
-                    <Ionicons name="options-outline" size={13} color="#25C1AC" />
-                    <Text style={styles.zoneDetailChipText}>{selectedAsset.zoneType}</Text>
-                  </View>
-                )}
-                {(() => {
-                  const sqFt = getSqFtFromProps(selectedAsset.properties);
-                  if (!sqFt) return null;
-                  return (
-                    <View style={styles.zoneDetailChip}>
-                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
-                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
-                    </View>
-                  );
-                })()}
-              </View>
-              {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').length > 0 && (
-                <View style={styles.assetProps}>
-                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').slice(0, 3).map((p) => (
-                    <View key={p.key} style={styles.assetPropRow}>
-                      <Text style={styles.assetPropKey}>{p.key}:</Text>
-                      <Text style={styles.assetPropVal}>{p.value}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-              <View style={styles.assetBtnRow}>
-                {selectedAsset.controllerFeatureRef && onShowController && (
-                  <TouchableOpacity
-                    style={[styles.assetDetailBtn, styles.showControllerBtn]}
-                    onPress={() => onShowController(selectedAsset.controllerFeatureRef!)}
-                  >
-                    <Ionicons name="locate-outline" size={16} color="#0C1D31" />
-                    <Text style={styles.showControllerBtnText}>Show Controller</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>View Details</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : selectedAsset.assetType === 'controller' ? (
-            <>
-              <View style={styles.assetPopupHeader}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.controllerPopupTitle}>
-                    {selectedAsset.controllerColor && (
-                      <View style={[styles.controllerDotLarge, { backgroundColor: selectedAsset.controllerColor }]} />
-                    )}
-                    <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
-                  </View>
-                  <Text style={styles.assetPopupType}>Controller</Text>
-                </View>
-                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={24} color="#999" />
-                </TouchableOpacity>
-              </View>
-              {selectedAsset.zoneCount != null && (
-                <View style={styles.controllerZoneBadge}>
-                  <Ionicons name="water-outline" size={14} color="#25C1AC" />
-                  <Text style={styles.controllerZoneBadgeText}>{selectedAsset.zoneCount} zones</Text>
-                </View>
-              )}
-              <View style={styles.assetBtnRow}>
-                {onShowControllerZones && selectedAsset.featureRef && (
-                  <TouchableOpacity
-                    style={[styles.assetDetailBtn, styles.showControllerBtn]}
-                    onPress={() => onShowControllerZones(selectedAsset.featureRef!)}
-                  >
-                    <Ionicons name="map-outline" size={16} color="#0C1D31" />
-                    <Text style={styles.showControllerBtnText}>Show Zones</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>View Details</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <>
-              <View style={styles.assetPopupHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.assetPopupLabel}>{selectedAsset.label}</Text>
-                  <Text style={styles.assetPopupType}>
-                    {ASSET_TYPE_LABELS[selectedAsset.assetType] || selectedAsset.assetType}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={onDismissAsset} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close-circle" size={24} color="#999" />
-                </TouchableOpacity>
-              </View>
-              {(() => {
-                const sqFt = getSqFtFromProps(selectedAsset.properties);
-                if (!sqFt) return null;
-                return (
-                  <View style={styles.sqFtChipRow}>
-                    <View style={styles.zoneDetailChip}>
-                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
-                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
-                    </View>
-                  </View>
-                );
-              })()}
-              {selectedAsset.properties.filter(p => p.key !== 'sqFt').length > 0 && (
-                <View style={styles.assetProps}>
-                  {selectedAsset.properties.filter(p => p.key !== 'sqFt').slice(0, 4).map((p) => (
-                    <View key={p.key} style={styles.assetPropRow}>
-                      <Text style={styles.assetPropKey}>{p.key}:</Text>
-                      <Text style={styles.assetPropVal}>{p.value}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-              <View style={styles.assetBtnRow}>
-                <TouchableOpacity
-                  style={styles.assetDetailBtn}
-                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
-                >
-                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.assetDetailBtnText}>View Details</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
-        </View>
-      )}
     </View>
   );
 }
@@ -936,59 +714,4 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 10, color: '#666', textTransform: 'capitalize' },
-  assetPopup: {
-    position: 'absolute',
-    bottom: 50,
-    left: 12,
-    right: 12,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  assetPopupHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  assetPopupLabel: { fontSize: 16, fontWeight: '700', color: '#0C1D31' },
-  assetPopupType: { fontSize: 12, color: '#888', marginTop: 2 },
-  zoneSubHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
-  controllerDotInline: { width: 10, height: 10, borderRadius: 5 },
-  zoneControllerText: { fontSize: 13, color: '#666', fontWeight: '500' },
-  zoneDetailsRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-  zoneDetailChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#f0faf8', borderRadius: 8,
-    paddingHorizontal: 8, paddingVertical: 4,
-  },
-  zoneDetailChipText: { fontSize: 12, color: '#0C1D31', fontWeight: '500' },
-  sqFtChipRow: { flexDirection: 'row', marginBottom: 8 },
-  assetProps: { marginBottom: 10, gap: 4 },
-  assetPropRow: { flexDirection: 'row', gap: 8 },
-  assetPropKey: { fontSize: 12, color: '#888', fontWeight: '500' },
-  assetPropVal: { fontSize: 12, color: '#333', flex: 1 },
-  assetBtnRow: { flexDirection: 'row', gap: 8 },
-  assetDetailBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 4, backgroundColor: '#25C1AC', borderRadius: 10, paddingVertical: 10,
-  },
-  assetDetailBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  assetHistoryBtn: { backgroundColor: '#0C1D31' },
-  showControllerBtn: { backgroundColor: '#f0f0f0' },
-  showControllerBtnText: { color: '#0C1D31', fontSize: 13, fontWeight: '600' },
-  controllerPopupTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  controllerDotLarge: { width: 14, height: 14, borderRadius: 7 },
-  controllerZoneBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#f0faf8', borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10,
-    alignSelf: 'flex-start',
-  },
-  controllerZoneBadgeText: { fontSize: 13, color: '#0C1D31', fontWeight: '500' },
 });

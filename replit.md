@@ -43,6 +43,9 @@ The Tasks screen (`app/(tabs)/tasks.tsx`) includes a calendar/list view toggle. 
 - **Offline support**: Reuses cached tasks, service schedules, and visits from OfflineContext — no new API calls. Works fully offline.
 - **Interactions**: Tap task bar → navigate to task detail. Tap mowing dot → LogVisitModal. Tap "+X more" → week items modal listing all tasks and service days for that week.
 
+### Map Popups & Asset Detail
+The map uses Leaflet HTML popups (inside the iframe/WebView) as the single popup system. Each feature popup shows the asset type, label, and a "View Details" button. The "View Details" button sends a `viewAssetDetail` bridge message which resolves the feature's database asset by featureRef and opens the `AssetDetailPanel`. There is no React Native overlay popup — all popup interaction happens inside Leaflet.
+
 ### Asset Detail Panel
 The map popup's "View Details" button opens a full-screen `AssetDetailPanel` modal (`components/AssetDetailPanel.tsx`) with 3 tabs:
 1. **Details**: Asset type, feature ref, geometry, location, sqFt (prominent for polygons), tags, properties, audit trail.

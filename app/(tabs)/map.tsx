@@ -31,20 +31,6 @@ type MapLayerMeta = {
   version: number;
 };
 
-type AssetInfo = {
-  id: string;
-  assetType: string;
-  label: string;
-  featureRef: string | null;
-  properties: { key: string; value: string }[];
-  controllerLabel?: string;
-  controllerColor?: string;
-  controllerFeatureRef?: string;
-  zoneNumber?: number | null;
-  zoneType?: string | null;
-  zoneCount?: number;
-};
-
 type ControllerInfo = {
   id: string;
   label: string;
@@ -97,7 +83,6 @@ export default function MapScreen() {
   const [disabledLayerIds, setDisabledLayerIds] = useState<Set<string>>(new Set());
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('community');
-  const [selectedAsset, setSelectedAsset] = useState<AssetInfo | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const [loadingGeoJSON, setLoadingGeoJSON] = useState<Set<string>>(new Set());
   const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
@@ -249,81 +234,6 @@ export default function MapScreen() {
     }
   };
 
-  const enrichAssetInfo = useCallback((asset: any): AssetInfo => {
-    const props: { key: string; value: string }[] = asset.properties || [];
-    const enriched: AssetInfo = { ...asset, properties: props };
-
-    if (asset.assetType === 'zone') {
-      const ctrlRef = props.find(p => p.key === 'controllerFeatureRef')?.value;
-      const zoneNum = props.find(p => p.key === 'zoneNumber')?.value;
-      const zoneType = props.find(p => p.key === 'zoneType')?.value;
-      enriched.zoneNumber = zoneNum ? parseInt(zoneNum, 10) : null;
-      enriched.zoneType = zoneType || null;
-      enriched.controllerFeatureRef = ctrlRef || undefined;
-
-      if (ctrlRef) {
-        const ctrl = controllers.find(c => c.featureRef === ctrlRef);
-        if (ctrl) {
-          enriched.controllerLabel = ctrl.label;
-          enriched.controllerColor = ctrl.controllerColor;
-        }
-      }
-    } else if (asset.assetType === 'controller') {
-      const ctrlKey = props.find(p => p.key === 'controllerKey')?.value;
-      const ctrlColor = props.find(p => p.key === 'controllerColor')?.value;
-      enriched.controllerColor = ctrlColor || undefined;
-      const ctrl = controllers.find(c => c.featureRef === asset.featureRef);
-      if (ctrl) {
-        enriched.zoneCount = ctrl.zoneCount;
-        enriched.controllerColor = ctrl.controllerColor;
-      }
-    }
-
-    return enriched;
-  }, [controllers]);
-
-  const handleFeatureTap = useCallback(async (featureRef: string, _layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => {
-    if (!communityId) return;
-    if (!featureRef) return;
-
-    const buildFallback = (): AssetInfo => ({
-      id: `geo-${featureRef}`,
-      assetType: meta?.assetType || 'feature',
-      label: meta?.label || featureRef,
-      featureRef,
-      properties: meta?.layerName ? [{ key: 'Layer', value: meta.layerName }] : [],
-    });
-
-    if (useOfflineData) {
-      const entry = resolveFeatureToAsset(featureRef);
-      if (entry) {
-        setSelectedAsset(enrichAssetInfo({
-          id: entry.assetId,
-          assetType: entry.assetType,
-          label: entry.label,
-          featureRef,
-          properties: entry.properties,
-        }));
-      } else {
-        setSelectedAsset(enrichAssetInfo(buildFallback()));
-      }
-      return;
-    }
-
-    try {
-      const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
-      const asset = await res.json();
-      if (asset && asset.id) {
-        setSelectedAsset(enrichAssetInfo(asset));
-      } else {
-        setSelectedAsset(enrichAssetInfo(buildFallback()));
-      }
-    } catch (err) {
-      console.error('Feature tap error:', err);
-      setSelectedAsset(enrichAssetInfo(buildFallback()));
-    }
-  }, [communityId, useOfflineData, resolveFeatureToAsset, enrichAssetInfo]);
-
   const controllerColorMap = React.useMemo(() => {
     const map = new Map<string, string>();
     controllers.forEach(c => {
@@ -420,48 +330,7 @@ export default function MapScreen() {
     router.push(`/task/${taskId}`);
   }, [router]);
 
-  const handleDismissAsset = useCallback(() => {
-    setSelectedAsset(null);
-  }, []);
-
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
-
-  const handleAssetDetail = useCallback(async (assetId: string, featureRef?: string | null) => {
-    setSelectedAsset(null);
-
-    if (!assetId.startsWith('geo-')) {
-      setDetailPanelAssetId(assetId);
-      return;
-    }
-
-    if (!featureRef || !communityId) {
-      Alert.alert('Not Available', 'No detailed record found for this feature.');
-      return;
-    }
-
-    try {
-      if (useOfflineData) {
-        const entry = resolveFeatureToAsset(featureRef);
-        if (entry) {
-          setDetailPanelAssetId(entry.assetId);
-        } else {
-          Alert.alert('Not Available', 'No detailed record found for this feature.');
-        }
-        return;
-      }
-
-      const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
-      const asset = await res.json();
-      if (asset && asset.id) {
-        setDetailPanelAssetId(asset.id);
-      } else {
-        Alert.alert('Not Available', 'No detailed record found for this feature.');
-      }
-    } catch (err) {
-      console.error('Asset detail lookup error:', err);
-      Alert.alert('Error', 'Failed to load asset details.');
-    }
-  }, [communityId, useOfflineData, resolveFeatureToAsset]);
 
   const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
     if (!communityId || !featureRef) return;
@@ -469,7 +338,6 @@ export default function MapScreen() {
     if (useOfflineData) {
       const entry = resolveFeatureToAsset(featureRef);
       if (entry) {
-        setSelectedAsset(null);
         setDetailPanelAssetId(entry.assetId);
       } else {
         Alert.alert('Not Available', 'No detailed record found for this feature.');
@@ -481,7 +349,6 @@ export default function MapScreen() {
       const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
       const asset = await res.json();
       if (asset && asset.id) {
-        setSelectedAsset(null);
         setDetailPanelAssetId(asset.id);
       } else {
         Alert.alert('Not Available', 'No detailed record found for this feature.');
@@ -495,47 +362,6 @@ export default function MapScreen() {
   const handleTargetReached = useCallback(() => {
     setTargetRegion(null);
   }, []);
-
-  const handleShowController = useCallback((controllerFeatureRef: string) => {
-    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
-    if (ctrl && ctrl.latitude != null && ctrl.longitude != null) {
-      setSelectedAsset(null);
-      setTargetRegion({
-        latitude: ctrl.latitude,
-        longitude: ctrl.longitude,
-        label: ctrl.label,
-      });
-    }
-  }, [controllers]);
-
-  const handleShowControllerZones = useCallback((controllerFeatureRef: string) => {
-    const ctrl = controllers.find(c => c.featureRef === controllerFeatureRef);
-    if (!ctrl || !ctrl.zones || ctrl.zones.length === 0) return;
-    const coords = ctrl.zones
-      .filter(z => z.latitude != null && z.longitude != null)
-      .map(z => ({ lat: z.latitude!, lng: z.longitude! }));
-    if (coords.length === 0) return;
-    setSelectedAsset(null);
-    const minLat = Math.min(...coords.map(c => c.lat));
-    const maxLat = Math.max(...coords.map(c => c.lat));
-    const minLng = Math.min(...coords.map(c => c.lng));
-    const maxLng = Math.max(...coords.map(c => c.lng));
-    if (ctrl.latitude != null && ctrl.longitude != null) {
-      const allLats = [...coords.map(c => c.lat), ctrl.latitude];
-      const allLngs = [...coords.map(c => c.lng), ctrl.longitude];
-      setTargetRegion({
-        latitude: (Math.min(...allLats) + Math.max(...allLats)) / 2,
-        longitude: (Math.min(...allLngs) + Math.max(...allLngs)) / 2,
-        label: `${ctrl.label} — ${coords.length} zone${coords.length !== 1 ? 's' : ''}`,
-      });
-    } else {
-      setTargetRegion({
-        latitude: (minLat + maxLat) / 2,
-        longitude: (minLng + maxLng) / 2,
-        label: `${ctrl.label} — ${coords.length} zone${coords.length !== 1 ? 's' : ''}`,
-      });
-    }
-  }, [controllers]);
 
   const isWeb = Platform.OS === 'web';
   const topOffset = isWeb ? 67 : insets.top;
@@ -616,13 +442,7 @@ export default function MapScreen() {
         userLocation={userLocation}
         onTaskPress={handleTaskPress}
         layers={activeLayers}
-        onFeatureTap={handleFeatureTap}
         onViewAssetDetail={handleViewAssetDetail}
-        selectedAsset={selectedAsset}
-        onDismissAsset={handleDismissAsset}
-        onAssetDetail={handleAssetDetail}
-        onShowController={handleShowController}
-        onShowControllerZones={handleShowControllerZones}
         targetRegion={targetRegion}
         onTargetReached={handleTargetReached}
         controllerMarkers={controllerMarkers}
