@@ -18,6 +18,20 @@ function formatServiceType(type: string): string {
   return SERVICE_TYPE_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+const SERVICE_INCLUDES: Record<string, string[]> = {
+  mowing_visit: ['Mowing', 'Trimming', 'Blowing', 'Roundup', 'Pet Station Service'],
+  mowing: ['Mowing', 'Trimming', 'Blowing', 'Roundup', 'Pet Station Service'],
+};
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatSeasonRange(seasonStart?: string | null, seasonEnd?: string | null): string | null {
+  if (!seasonStart || !seasonEnd) return null;
+  const [sm, sd] = seasonStart.split('-').map(Number);
+  const [em, ed] = seasonEnd.split('-').map(Number);
+  return `${MONTH_SHORT[sm - 1]} ${sd} – ${MONTH_SHORT[em - 1]} ${ed}`;
+}
+
 function isInSeason(schedule: ServiceSchedule, date: Date): boolean {
   if (!schedule.seasonStart || !schedule.seasonEnd) return true;
   const mm = date.getMonth() + 1;
@@ -89,6 +103,9 @@ export default function MowingDayCard({ schedules, visits, pendingVisits, onLogV
           );
           const completedToday = !!todayVisit || !!pendingTodayVisit;
 
+          const includes = SERVICE_INCLUDES[schedule.serviceType];
+          const seasonRange = formatSeasonRange(schedule.seasonStart, schedule.seasonEnd);
+
           return (
             <View key={schedule.id} style={styles.scheduleRow}>
               <View style={styles.scheduleInfo}>
@@ -103,14 +120,25 @@ export default function MowingDayCard({ schedules, visits, pendingVisits, onLogV
                   </View>
                 </View>
 
+                {includes && (
+                  <Text style={styles.includesText}>{includes.join(' · ')}</Text>
+                )}
+
                 {!inSeason ? (
-                  <Text style={styles.offSeason}>Off season</Text>
-                ) : nextDate ? (
-                  <Text style={styles.nextDate}>
-                    {isToday
-                      ? (completedToday ? 'Done today' : 'Today')
-                      : `Next: ${formatShortDate(nextDate)}`}
+                  <Text style={styles.offSeason}>
+                    Off season{seasonRange ? ` · Season: ${seasonRange}` : ''}
                   </Text>
+                ) : nextDate ? (
+                  <View>
+                    <Text style={styles.nextDate}>
+                      {isToday
+                        ? (completedToday ? 'Done today' : 'Today')
+                        : `Next: ${formatShortDate(nextDate)}`}
+                    </Text>
+                    {seasonRange && (
+                      <Text style={styles.seasonRange}>Season: {seasonRange}</Text>
+                    )}
+                  </View>
                 ) : null}
 
                 {schedule.notes && (
@@ -226,11 +254,22 @@ const styles = StyleSheet.create({
     color: '#888',
     marginTop: 3,
   },
+  includesText: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 3,
+    lineHeight: 15,
+  },
   offSeason: {
     fontSize: 13,
     color: '#bbb',
     marginTop: 3,
     fontStyle: 'italic',
+  },
+  seasonRange: {
+    fontSize: 11,
+    color: '#aaa',
+    marginTop: 2,
   },
   notes: {
     fontSize: 12,
