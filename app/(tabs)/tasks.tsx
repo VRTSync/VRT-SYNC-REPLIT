@@ -366,7 +366,7 @@ export default function TasksScreen() {
           <Ionicons
             name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
             size={20}
-            color={viewMode === 'calendar' ? '#fff' : '#0C1D31'}
+            color="#fff"
           />
         </TouchableOpacity>
         <TouchableOpacity
@@ -374,7 +374,7 @@ export default function TasksScreen() {
           style={styles.searchButton}
           testID="search-button"
         >
-          <Ionicons name="search" size={22} color="#0C1D31" />
+          <Ionicons name="search" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
 
@@ -487,13 +487,13 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' },
-  searchButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f2f5', alignItems: 'center', justifyContent: 'center' },
+  headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: '#0C1D31' },
+  searchButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
   viewToggle: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
@@ -501,8 +501,8 @@ const styles = StyleSheet.create({
   viewToggleActive: {
     backgroundColor: '#25C1AC',
   },
-  communityName: { fontSize: 22, fontWeight: '700', color: '#0C1D31' },
-  taskCount: { fontSize: 14, color: '#888', marginTop: 2 },
+  communityName: { fontSize: 22, fontWeight: '700', color: '#fff' },
+  taskCount: { fontSize: 14, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
   filterRow: {
     flexDirection: 'row',
     marginHorizontal: 20,

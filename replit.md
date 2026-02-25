@@ -59,6 +59,9 @@ Built with Expo SDK and Expo Router for file-based routing. Uses React Query for
 - **Maps**: Leaflet-based web map (`components/LeafletMap.tsx`) used across all platforms.
 - **Platform**: Supports iOS, Android, and web with platform-specific conditional logic.
 
+### Screen Header Pattern
+All screens use the `StatusBarFill` component (`components/StatusBarFill.tsx`) at the very top of the view hierarchy. This component renders an `ImageBackground` with `topography-texture.png` overlaid with `rgba(12, 29, 49, 0.88)` (dark navy). Its height equals `useSafeAreaInsets().top` on native and `67 + insets.top` on web. Screen-specific content (titles, back buttons, controls) sits below it as regular views — NOT inside the StatusBarFill. Sub-screens (like task detail) use `headerShown: false` in their Stack layout and render `<StatusBarFill />` + a content-level header bar. The task list header bar uses opaque `#0C1D31` background with white text/icons for contrast.
+
 ### API Design
 A RESTful JSON API (`/api/`) provides endpoints for authentication, communities, tasks, user management, and object storage. Data is filtered by the selected community.
 
