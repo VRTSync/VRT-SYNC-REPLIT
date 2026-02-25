@@ -771,8 +771,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const communityId = req.query.communityId as string;
       const featureRef = req.query.featureRef as string;
       if (!communityId || !featureRef) return res.status(400).json({ error: "communityId and featureRef are required" });
-      const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
-      if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
       const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
       if (!asset) {
         console.warn(`[by-feature] No asset found for communityId=${communityId} featureRef=${featureRef}`);
