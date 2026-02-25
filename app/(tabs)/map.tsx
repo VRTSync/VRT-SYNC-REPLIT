@@ -73,7 +73,7 @@ const layerColors = [
 
 export default function MapScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ targetLat?: string; targetLng?: string; targetLabel?: string }>();
+  const params = useLocalSearchParams<{ targetLat?: string; targetLng?: string; targetLabel?: string; category?: string }>();
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
@@ -233,6 +233,12 @@ export default function MapScreen() {
       setEnabledControllers(new Set(allRefs));
     }
   };
+
+  useEffect(() => {
+    if (params.category && CATEGORY_TABS.some(c => c.key === params.category) && params.category !== activeCategory) {
+      handleCategorySelect(params.category);
+    }
+  }, [params.category]);
 
   const controllerColorMap = React.useMemo(() => {
     const map = new Map<string, string>();
