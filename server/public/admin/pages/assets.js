@@ -36,10 +36,11 @@ window._renderAssets = async function(container, communityId) {
           <th>Feature Ref</th>
           <th>Layer</th>
           <th>Status</th>
+          <th>Tags</th>
           <th>Missing Fields</th>
         </tr></thead>
         <tbody id="assets-tbody">
-          <tr><td colspan="7" class="loading-spinner">Loading...</td></tr>
+          <tr><td colspan="8" class="loading-spinner">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -143,10 +144,15 @@ window._renderAssets = async function(container, communityId) {
   function renderTable() {
     const tbody = document.getElementById('assets-tbody');
     if (allAssets.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No assets match filters</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No assets match filters</td></tr>';
       return;
     }
-    tbody.innerHTML = allAssets.map(a => `
+    tbody.innerHTML = allAssets.map(a => {
+      const tags = a.tags || [];
+      const tagsHtml = tags.length > 0
+        ? tags.map(t => `<span class="badge badge-teal" style="margin-right:4px;cursor:pointer" title="Click to remove tag" data-asset-id="${a.id}" data-tag="${esc(t)}">${esc(t)}</span>`).join('')
+        : '<span class="text-muted">—</span>';
+      return `
       <tr class="${a.isArchived ? 'row-archived' : ''}">
         <td class="checkbox-cell">
           <input type="checkbox" class="asset-cb" data-id="${a.id}" ${selectedIds.has(a.id) ? 'checked' : ''} />
@@ -156,15 +162,59 @@ window._renderAssets = async function(container, communityId) {
         <td class="font-mono text-sm">${esc(a.featureRef || '—')}</td>
         <td class="text-sm">${esc(a.mapLayerId ? a.mapLayerId.substring(0, 8) + '...' : '—')}</td>
         <td>${a.isArchived ? '<span class="badge badge-gray">Archived</span>' : '<span class="badge badge-green">Active</span>'}</td>
+        <td class="tags-cell" data-asset-id="${a.id}">${tagsHtml} <button class="btn-add-tag" data-asset-id="${a.id}" title="Add tag" style="border:none;background:none;cursor:pointer;font-size:14px;color:#25C1AC;padding:2px 4px">+</button></td>
         <td>${a.missingKeys && a.missingKeys.length > 0 ? a.missingKeys.map(k => `<span class="badge badge-amber">${esc(k)}</span>`).join(' ') : '<span class="text-muted">—</span>'}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
 
     tbody.querySelectorAll('.asset-cb').forEach(cb => {
       cb.addEventListener('change', () => {
         if (cb.checked) selectedIds.add(cb.dataset.id);
         else selectedIds.delete(cb.dataset.id);
         renderBulkPanel();
+      });
+    });
+
+    tbody.querySelectorAll('.btn-add-tag').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const assetId = btn.dataset.assetId;
+        const tag = prompt('Enter tag name:');
+        if (!tag || !tag.trim()) return;
+        const asset = allAssets.find(a => a.id === assetId);
+        if (!asset) return;
+        const currentTags = asset.tags || [];
+        const newTags = [...currentTags, tag.trim()];
+        try {
+          await apiFetch(`/api/assets/${assetId}`, {
+            method: 'PATCH',
+            body: { tags: newTags, version: asset.version },
+          });
+          showToast('Tag added', 'success');
+          await loadAssets();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+
+    tbody.querySelectorAll('.badge[data-tag]').forEach(badge => {
+      badge.addEventListener('click', async () => {
+        const assetId = badge.dataset.assetId;
+        const tagToRemove = badge.dataset.tag;
+        if (!confirm(`Remove tag "${tagToRemove}"?`)) return;
+        const asset = allAssets.find(a => a.id === assetId);
+        if (!asset) return;
+        const newTags = (asset.tags || []).filter(t => t !== tagToRemove);
+        try {
+          await apiFetch(`/api/assets/${assetId}`, {
+            method: 'PATCH',
+            body: { tags: newTags, version: asset.version },
+          });
+          showToast('Tag removed', 'success');
+          await loadAssets();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
       });
     });
   }

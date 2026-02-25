@@ -1,6 +1,19 @@
 import { eq, and, notInArray, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { assets, assetProperties, type Asset } from "@shared/schema";
+import turfArea from "@turf/area";
+
+export function computeAreaSqFt(feature: any): number | null {
+  const geom = feature?.geometry;
+  if (!geom) return null;
+  if (geom.type !== "Polygon" && geom.type !== "MultiPolygon") return null;
+  try {
+    const areaM2 = turfArea(feature);
+    return Math.round(areaM2 * 10.7639);
+  } catch {
+    return null;
+  }
+}
 
 export const ASSET_TYPE_TEMPLATES: Record<string, {
   requiredKeys: string[];
@@ -145,6 +158,7 @@ export async function syncAssetsFromLayer(
   layerKey: string,
   subLayerKey: string,
   geojsonData: string | null,
+  triggeredByUserId?: string,
 ): Promise<SyncResult> {
   const assetType = resolveAssetType(layerKey, subLayerKey);
   if (!assetType) {
@@ -195,11 +209,23 @@ export async function syncAssetsFromLayer(
           archivedAt: null,
           sourceUpdatedAt: new Date(),
           updatedAt: new Date(),
+          ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
         })
         .where(eq(assets.id, existing.id));
+
+      const sqFt = computeAreaSqFt(feature);
+      if (sqFt != null) {
+        await db.insert(assetProperties)
+          .values({ assetId: existing.id, key: "sqFt", value: String(sqFt) })
+          .onConflictDoUpdate({
+            target: [assetProperties.assetId, assetProperties.key],
+            set: { value: String(sqFt), updatedAt: new Date() },
+          });
+      }
+
       updated++;
     } else {
-      await db.insert(assets).values({
+      const [inserted] = await db.insert(assets).values({
         communityId,
         assetType: assetType as Asset["assetType"],
         label,
@@ -210,7 +236,19 @@ export async function syncAssetsFromLayer(
         longitude: lng,
         isArchived: false,
         sourceUpdatedAt: new Date(),
-      });
+        ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
+      }).returning();
+
+      const sqFt = computeAreaSqFt(feature);
+      if (sqFt != null) {
+        await db.insert(assetProperties)
+          .values({ assetId: inserted.id, key: "sqFt", value: String(sqFt) })
+          .onConflictDoUpdate({
+            target: [assetProperties.assetId, assetProperties.key],
+            set: { value: String(sqFt), updatedAt: new Date() },
+          });
+      }
+
       created++;
     }
   }
@@ -526,6 +564,7 @@ export async function syncIrrigationAssets(
       zoneLabelShort: string | null;
     }>;
   }>,
+  triggeredByUserId?: string,
 ): Promise<IrrigationSyncResult> {
   let controllersCreated = 0;
   let controllersUpdated = 0;
@@ -560,6 +599,7 @@ export async function syncIrrigationAssets(
           archivedAt: null,
           sourceUpdatedAt: new Date(),
           updatedAt: new Date(),
+          ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
         })
         .where(eq(assets.id, existing.id));
       assetId = existing.id;
@@ -576,6 +616,7 @@ export async function syncIrrigationAssets(
         longitude: ctrl.lng,
         isArchived: false,
         sourceUpdatedAt: new Date(),
+        ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
       }).returning();
       assetId = inserted.id;
       controllersCreated++;
@@ -622,6 +663,7 @@ export async function syncIrrigationAssets(
             archivedAt: null,
             sourceUpdatedAt: new Date(),
             updatedAt: new Date(),
+            ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
           })
           .where(eq(assets.id, existingZone.id));
         zoneAssetId = existingZone.id;
@@ -638,6 +680,7 @@ export async function syncIrrigationAssets(
           longitude: zone.lng,
           isArchived: false,
           sourceUpdatedAt: new Date(),
+          ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
         }).returning();
         zoneAssetId = insertedZone.id;
         zonesCreated++;

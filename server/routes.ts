@@ -7,7 +7,7 @@ import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
 import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
-import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry } from "./assetSync";
+import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "./assetSync";
 import { parseIrrigationKml } from "./kmlIrrigationParser";
 import { validateLayerGeoJSON } from "./layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "./layerKeys";
@@ -777,7 +777,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const properties = await storage.getAssetProperties(asset.id);
       const missingRequiredKeys = getMissingRequiredKeys(asset.assetType, properties);
-      res.json({ ...asset, properties, missingRequiredKeys, workHistorySummary: { totalTasks: 0, completedTasks: 0 } });
+      let createdByName: string | null = null;
+      let updatedByName: string | null = null;
+      if (asset.createdBy) {
+        const cbUser = await storage.getUserById(asset.createdBy);
+        createdByName = cbUser?.displayName ?? null;
+      }
+      if (asset.updatedBy) {
+        const ubUser = await storage.getUserById(asset.updatedBy);
+        updatedByName = ubUser?.displayName ?? null;
+      }
+      res.json({ ...asset, properties, missingRequiredKeys, createdByName, updatedByName, workHistorySummary: { totalTasks: 0, completedTasks: 0 } });
     } catch (error) {
       console.error("Get asset error:", error);
       res.status(500).json({ error: "Failed to fetch asset" });
@@ -808,7 +818,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
-      const asset = await storage.createAsset(parsed.data);
+      const asset = await storage.createAsset({
+        ...parsed.data,
+        createdBy: req.session.userId!,
+        updatedBy: req.session.userId!,
+      });
       res.status(201).json(asset);
     } catch (error) {
       console.error("Create asset error:", error);
@@ -823,7 +837,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const { version, ...data } = parsed.data;
-      const updated = await storage.updateAsset(req.params.id as string, version, data);
+      const updated = await storage.updateAsset(req.params.id as string, version, {
+        ...data,
+        updatedBy: req.session.userId!,
+      });
       if (!updated) {
         const latest = await storage.getAssetById(req.params.id as string);
         if (!latest) return res.status(404).json({ error: "Asset not found" });
@@ -950,7 +967,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const geo = JSON.parse(layer.geojsonData);
           featureCount = geo.features?.length || 0;
         } catch {}
-        syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+        syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
       }
       const { geojsonData, ...rest } = layer;
       res.status(201).json({ ...rest, featureCount, syncResult });
@@ -1050,7 +1067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             code: "VERSION_CONFLICT",
           });
         }
-        const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData);
+        const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = updated;
         return res.json({ ...rest, featureCount, syncResult });
       } else {
@@ -1062,7 +1079,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           sourceFormat,
           geojsonData,
         });
-        const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+        const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = layer;
         return res.status(201).json({ ...rest, featureCount, syncResult });
       }
@@ -1153,6 +1170,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         controllerLayer.id,
         zoneLayer.id,
         parseResult.controllers,
+        req.session.userId!,
       );
 
       res.json({
@@ -1191,7 +1209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const geo = JSON.parse(updated.geojsonData || "{}");
           featureCount = geo.features?.length || 0;
         } catch {}
-        syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData);
+        syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
       }
       const { geojsonData, ...rest } = updated;
       res.json({ ...rest, featureCount, syncResult });
@@ -1234,7 +1252,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
       if (!layer) return res.status(404).json({ error: "Layer not found" });
-      const result = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData);
+      const result = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
       res.json(result);
     } catch (error) {
       console.error("Sync assets from layer error:", error);
@@ -1325,7 +1343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (feature) {
           const label = extractLabel(feature, assetType, 0);
           const { geometryType, lat, lng } = resolveGeometry(feature);
-          await storage.createAssetFromFeature({
+          const newAsset = await storage.createAssetFromFeature({
             communityId: layer.communityId,
             assetType: assetType as any,
             label,
@@ -1334,7 +1352,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             geometryType,
             latitude: lat,
             longitude: lng,
+            createdBy: req.session.userId!,
           });
+
+          const sqFt = computeAreaSqFt(feature);
+          if (sqFt != null) {
+            await storage.upsertAssetProperty(newAsset.id, "sqFt", String(sqFt));
+          }
+
           created++;
         }
       }

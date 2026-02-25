@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -138,6 +138,9 @@ export const assets = pgTable("assets", {
   isArchived: boolean("is_archived").notNull().default(false),
   archivedAt: timestamp("archived_at"),
   sourceUpdatedAt: timestamp("source_updated_at"),
+  tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+  createdBy: varchar("created_by").references((): AnyPgColumn => users.id),
+  updatedBy: varchar("updated_by").references((): AnyPgColumn => users.id),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -364,6 +367,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   completions: many(taskCompletions),
   uploadedAttachments: many(attachments),
   pushTokens: many(pushTokens),
+  createdAssets: many(assets, { relationName: "createdAssets" }),
+  updatedAssets: many(assets, { relationName: "updatedAssets" }),
 }));
 
 export const offlinePacksRelations = relations(offlinePacks, ({ one }) => ({
@@ -405,6 +410,8 @@ export const attachmentsRelations = relations(attachments, ({ one }) => ({
 export const assetsRelations = relations(assets, ({ one, many }) => ({
   community: one(communities, { fields: [assets.communityId], references: [communities.id] }),
   mapLayer: one(mapLayers, { fields: [assets.mapLayerId], references: [mapLayers.id] }),
+  createdByUser: one(users, { fields: [assets.createdBy], references: [users.id], relationName: "createdAssets" }),
+  updatedByUser: one(users, { fields: [assets.updatedBy], references: [users.id], relationName: "updatedAssets" }),
   properties: many(assetProperties),
   taskLinks: many(taskLinks),
 }));
@@ -485,6 +492,7 @@ export const insertAssetSchema = z.object({
   geometryType: z.enum(["point", "polygon", "line"]).optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  tags: z.array(z.string()).optional(),
 });
 
 export const updateAssetSchema = z.object({
@@ -493,6 +501,7 @@ export const updateAssetSchema = z.object({
   geometryType: z.enum(["point", "polygon", "line"]).nullable().optional(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
+  tags: z.array(z.string()).optional(),
   version: z.number(),
 });
 

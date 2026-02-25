@@ -394,6 +394,9 @@ export async function createAsset(data: {
   geometryType?: Asset["geometryType"];
   latitude?: number;
   longitude?: number;
+  tags?: string[];
+  createdBy?: string;
+  updatedBy?: string;
 }): Promise<Asset> {
   const [asset] = await db.insert(assets).values(data).returning();
   return asset;
@@ -425,6 +428,7 @@ export async function createAssetFromFeature(data: {
   geometryType: "point" | "polygon" | "line" | null;
   latitude: number | null;
   longitude: number | null;
+  createdBy?: string;
 }): Promise<Asset> {
   const [asset] = await db.insert(assets).values({
     communityId: data.communityId,
@@ -437,6 +441,7 @@ export async function createAssetFromFeature(data: {
     longitude: data.longitude,
     isArchived: false,
     sourceUpdatedAt: new Date(),
+    createdBy: data.createdBy,
   }).returning();
   return asset;
 }
@@ -460,6 +465,8 @@ export async function updateAsset(id: string, expectedVersion: number, data: Par
   geometryType: Asset["geometryType"] | null;
   latitude: number | null;
   longitude: number | null;
+  tags: string[];
+  updatedBy: string;
 }>): Promise<Asset | null> {
   const [updated] = await db.update(assets)
     .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
@@ -483,6 +490,18 @@ export async function getAssetPropertiesBulk(assetIds: string[]): Promise<{ asse
   }).from(assetProperties)
     .where(inArray(assetProperties.assetId, assetIds));
   return rows;
+}
+
+export async function upsertAssetProperty(assetId: string, key: string, value: string): Promise<void> {
+  const [existing] = await db.select().from(assetProperties)
+    .where(and(eq(assetProperties.assetId, assetId), eq(assetProperties.key, key)));
+  if (existing) {
+    await db.update(assetProperties)
+      .set({ value, version: existing.version + 1, updatedAt: new Date() })
+      .where(eq(assetProperties.id, existing.id));
+  } else {
+    await db.insert(assetProperties).values({ assetId, key, value });
+  }
 }
 
 export async function upsertAssetProperties(assetId: string, props: { key: string; value: string }[]): Promise<AssetProperty[]> {

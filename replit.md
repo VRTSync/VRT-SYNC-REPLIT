@@ -23,7 +23,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for:
 - **Tasks**: Community-scoped tasks with status, priority, geolocation, assignee, and versioning. Supports CSV import and bulk assignment.
 - **Task Completions**: Records task completion details including notes, sign-off, time, materials, and follow-up.
 - **Attachments**: References to files stored in Google Cloud Storage.
-- **Assets**: Community-scoped physical assets with types (e.g., controller, backflow, tree) and properties. Features auto-sync from GeoJSON map layers, KML ingestion for irrigation systems, and bulk property completion.
+- **Assets**: Community-scoped physical assets with types (e.g., controller, backflow, tree) and properties. Features auto-sync from GeoJSON map layers, KML ingestion for irrigation systems, and bulk property completion. Includes `tags[]` text array, `createdBy`/`updatedBy` audit fields (FK to users), and auto-computed `sqFt` property for polygon assets via @turf/area.
 - **Task Templates**: Reusable templates for generating tasks, supporting scheduled task generation.
 - **Offline Packs**: Per-community downloadable data packs for offline functionality.
 - **Task Schedules**: Recurrence schedules for automated task generation based on templates.

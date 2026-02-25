@@ -153,6 +153,17 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
   native_area: 'Native Area', snow_area: 'Snow Area',
 };
 
+function formatSqFt(value: string): string {
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  return Math.round(num).toLocaleString();
+}
+
+function getSqFtFromProps(properties: { key: string; value: string }[]): string | null {
+  const prop = properties.find(p => p.key === 'sqFt');
+  return prop ? prop.value : null;
+}
+
 type ZoneCluster = {
   key: string;
   latitude: number;
@@ -764,11 +775,21 @@ function NativeMap({
                     <Text style={styles.zoneDetailChipText}>{selectedAsset.zoneType}</Text>
                   </View>
                 )}
+                {(() => {
+                  const sqFt = getSqFtFromProps(selectedAsset.properties);
+                  if (!sqFt) return null;
+                  return (
+                    <View style={styles.zoneDetailChip}>
+                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
+                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
+                    </View>
+                  );
+                })()}
               </View>
 
-              {selectedAsset.properties.length > 0 && (
+              {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').length > 0 && (
                 <View style={styles.assetProps}>
-                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort').slice(0, 3).map((p) => (
+                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').slice(0, 3).map((p) => (
                     <View key={p.key} style={styles.assetPropRow}>
                       <Text style={styles.assetPropKey}>{p.key}:</Text>
                       <Text style={styles.assetPropVal}>{p.value}</Text>
@@ -880,16 +901,29 @@ function NativeMap({
                 </TouchableOpacity>
               </View>
 
-              {selectedAsset.properties.length > 0 && (
+              {(() => {
+                const sqFt = getSqFtFromProps(selectedAsset.properties);
+                if (!sqFt) return null;
+                return (
+                  <View style={styles.sqFtChipRow}>
+                    <View style={styles.zoneDetailChip}>
+                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
+                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
+                    </View>
+                  </View>
+                );
+              })()}
+
+              {selectedAsset.properties.filter(p => p.key !== 'sqFt').length > 0 && (
                 <View style={styles.assetProps}>
-                  {selectedAsset.properties.slice(0, 4).map((p) => (
+                  {selectedAsset.properties.filter(p => p.key !== 'sqFt').slice(0, 4).map((p) => (
                     <View key={p.key} style={styles.assetPropRow}>
                       <Text style={styles.assetPropKey}>{p.key}:</Text>
                       <Text style={styles.assetPropVal}>{p.value}</Text>
                     </View>
                   ))}
-                  {selectedAsset.properties.length > 4 && (
-                    <Text style={styles.assetPropMore}>+{selectedAsset.properties.length - 4} more</Text>
+                  {selectedAsset.properties.filter(p => p.key !== 'sqFt').length > 4 && (
+                    <Text style={styles.assetPropMore}>+{selectedAsset.properties.filter(p => p.key !== 'sqFt').length - 4} more</Text>
                   )}
                 </View>
               )}
@@ -1092,6 +1126,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  sqFtChipRow: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
   assetProps: { marginBottom: 12 },
   assetPropRow: { flexDirection: 'row', marginBottom: 4 },
   assetPropKey: { fontSize: 13, color: '#666', fontWeight: '500', marginRight: 6 },

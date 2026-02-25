@@ -101,6 +101,17 @@ const ASSET_TYPE_LABELS: Record<string, string> = {
   native_area: 'Native Area', snow_area: 'Snow Area',
 };
 
+function formatSqFt(value: string): string {
+  const num = parseFloat(value);
+  if (isNaN(num)) return value;
+  return Math.round(num).toLocaleString();
+}
+
+function getSqFtFromProps(properties: { key: string; value: string }[]): string | null {
+  const prop = properties.find(p => p.key === 'sqFt');
+  return prop ? prop.value : null;
+}
+
 function generateLeafletHTML(): string {
   return `<!DOCTYPE html>
 <html>
@@ -759,10 +770,20 @@ export default function LeafletMap({
                     <Text style={styles.zoneDetailChipText}>{selectedAsset.zoneType}</Text>
                   </View>
                 )}
+                {(() => {
+                  const sqFt = getSqFtFromProps(selectedAsset.properties);
+                  if (!sqFt) return null;
+                  return (
+                    <View style={styles.zoneDetailChip}>
+                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
+                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
+                    </View>
+                  );
+                })()}
               </View>
-              {selectedAsset.properties.length > 0 && (
+              {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').length > 0 && (
                 <View style={styles.assetProps}>
-                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort').slice(0, 3).map((p) => (
+                  {selectedAsset.properties.filter(p => p.key !== 'zoneNumber' && p.key !== 'zoneType' && p.key !== 'controllerFeatureRef' && p.key !== 'controllerKey' && p.key !== 'controllerColor' && p.key !== 'zoneLabelShort' && p.key !== 'sqFt').slice(0, 3).map((p) => (
                     <View key={p.key} style={styles.assetPropRow}>
                       <Text style={styles.assetPropKey}>{p.key}:</Text>
                       <Text style={styles.assetPropVal}>{p.value}</Text>
@@ -865,9 +886,21 @@ export default function LeafletMap({
                   <Ionicons name="close-circle" size={24} color="#999" />
                 </TouchableOpacity>
               </View>
-              {selectedAsset.properties.length > 0 && (
+              {(() => {
+                const sqFt = getSqFtFromProps(selectedAsset.properties);
+                if (!sqFt) return null;
+                return (
+                  <View style={styles.sqFtChipRow}>
+                    <View style={styles.zoneDetailChip}>
+                      <Ionicons name="resize-outline" size={13} color="#25C1AC" />
+                      <Text style={styles.zoneDetailChipText}>{formatSqFt(sqFt)} sq ft</Text>
+                    </View>
+                  </View>
+                );
+              })()}
+              {selectedAsset.properties.filter(p => p.key !== 'sqFt').length > 0 && (
                 <View style={styles.assetProps}>
-                  {selectedAsset.properties.slice(0, 4).map((p) => (
+                  {selectedAsset.properties.filter(p => p.key !== 'sqFt').slice(0, 4).map((p) => (
                     <View key={p.key} style={styles.assetPropRow}>
                       <Text style={styles.assetPropKey}>{p.key}:</Text>
                       <Text style={styles.assetPropVal}>{p.value}</Text>
@@ -955,6 +988,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 4,
   },
   zoneDetailChipText: { fontSize: 12, color: '#0C1D31', fontWeight: '500' },
+  sqFtChipRow: { flexDirection: 'row', marginBottom: 8 },
   assetProps: { marginBottom: 10, gap: 4 },
   assetPropRow: { flexDirection: 'row', gap: 8 },
   assetPropKey: { fontSize: 12, color: '#888', fontWeight: '500' },
