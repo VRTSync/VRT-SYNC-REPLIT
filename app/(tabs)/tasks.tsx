@@ -506,6 +506,7 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     marginHorizontal: 20,
+    marginTop: 12,
     marginBottom: 4,
     backgroundColor: '#e8eaed',
     borderRadius: 10,
