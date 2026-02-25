@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, Image, Platform,
+  Alert, ActivityIndicator, Image, ImageBackground, Platform,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -268,11 +268,38 @@ export default function TaskDetailScreen() {
     }
   };
 
+  const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
+
+  const renderHeader = (title: string, showComplete?: boolean) => (
+    <ImageBackground
+      source={require('@/assets/images/topography-texture.png')}
+      style={[styles.headerBg, { paddingTop: topPad }]}
+      resizeMode="cover"
+    >
+      <View style={styles.headerOverlay} />
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerBackBtn}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
+        {showComplete ? (
+          <TouchableOpacity onPress={() => setShowCompleteForm(true)} style={styles.headerActionBtn}>
+            <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerActionBtn} />
+        )}
+      </View>
+    </ImageBackground>
+  );
+
   if (isLoading || !task) {
     return (
-      <View style={styles.loadingContainer}>
-        <Stack.Screen options={{ title: 'Loading...' }} />
-        <ActivityIndicator size="large" color="#25C1AC" />
+      <View style={styles.container}>
+        {renderHeader('Loading...')}
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#25C1AC" />
+        </View>
       </View>
     );
   }
@@ -280,18 +307,9 @@ export default function TaskDetailScreen() {
   const pendingForTask = pendingCompletions.find(c => c.taskId === id && c.state !== 'synced');
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Stack.Screen
-        options={{
-          title: task.title,
-          headerRight: () =>
-            task.status !== 'completed' && !pendingForTask ? (
-              <TouchableOpacity onPress={() => setShowCompleteForm(true)}>
-                <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
-              </TouchableOpacity>
-            ) : null,
-        }}
-      />
+    <View style={styles.container}>
+      {renderHeader(task.title, task.status !== 'completed' && !pendingForTask)}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
 
       {pendingForTask && (
         <View style={[styles.offlineBanner, {
@@ -614,7 +632,8 @@ export default function TaskDetailScreen() {
           </TouchableOpacity>
         );
       })()}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -622,6 +641,41 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   content: { padding: 16, paddingBottom: 100 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  headerBg: {
+    width: '100%',
+  },
+  headerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 29, 49, 0.88)',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 14,
+    gap: 10,
+  },
+  headerBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   card: {
     backgroundColor: '#fff',
     borderRadius: 14,
