@@ -417,7 +417,6 @@ function generateLeafletHTML(): string {
         if (action === 'taskTap') {
           window.mapBridge._taskTap(el.dataset.id);
         } else if (action === 'viewDetail') {
-          post('_debug', { step: 'iframe-click', ref: el.dataset.ref, layer: el.dataset.layer, assetType: el.dataset.assetType });
           window.mapBridge._viewDetail(el.dataset.ref, el.dataset.layer, el.dataset.label, el.dataset.assetType, el.dataset.layerName);
         }
         e.preventDefault();
@@ -487,26 +486,20 @@ export default function LeafletMap({
   }, [isWeb]);
 
   const processMsg = useCallback((msg: any) => {
-    if (msg.type !== 'mapReady') {
-      console.log('[DEBUG processMsg]', msg.type, msg.data);
-    }
     switch (msg.type) {
       case 'mapReady':
         mapReadyRef.current = true;
         flushPending();
         break;
-      case '_debug':
-        console.log('[DEBUG from iframe]', msg.data);
-        break;
       case 'taskPress':
         onTaskPressRef.current(msg.data.id);
         break;
       case 'viewAssetDetail':
-        console.log('[DEBUG viewAssetDetail] onViewAssetDetailRef.current is:', typeof onViewAssetDetailRef.current);
+      case 'featureTap':
         onViewAssetDetailRef.current?.(msg.data.featureRef, msg.data.layerKey, {
-          label: msg.data.label,
-          assetType: msg.data.assetType,
-          layerName: msg.data.layerName,
+          label: msg.data.label || '',
+          assetType: msg.data.assetType || '',
+          layerName: msg.data.layerName || '',
         });
         break;
       case 'targetReached':

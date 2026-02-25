@@ -333,11 +333,7 @@ export default function MapScreen() {
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
 
   const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
-    console.log('[DEBUG handleViewAssetDetail] called with:', { featureRef, communityId, useOfflineData });
-    if (!communityId || !featureRef) {
-      console.log('[DEBUG handleViewAssetDetail] EARLY RETURN - communityId:', communityId, 'featureRef:', featureRef);
-      return;
-    }
+    if (!communityId || !featureRef) return;
 
     if (useOfflineData) {
       const entry = resolveFeatureToAsset(featureRef);
