@@ -1,0 +1,64 @@
+SLICE 3.9 — Map “View Details” → Asset Detail Panel (Details + Work History + Contractor Notes)
+
+Goal:
+Use the existing Map popup “View Details” button to open a full Asset Detail panel (bottom sheet or full screen) that includes:
+1) Details
+2) Work History
+3) Contractor Notes
+
+Scope:
+MOBILE APP ONLY for the detail panel UI + wiring from map popup.
+Backend additions ONLY if notes and/or asset resolving are not already present.
+
+Rules:
+- Do not add new map rendering features.
+- The popup remains lightweight (title + buttons). The panel is the real UI.
+- Asset Details fields remain EXACTLY as your asset-details list (no renames, no additions).
+
+UI (Mobile)
+A) Asset Detail Panel (reusable component)
+- Opened by assetId
+- Tabs (or sections):
+  1) Details
+     - Display: displayName, layer/subLayer, status, tags
+     - Render asset-type-specific fields (per your canonical list)
+     - If polygon: show areaSqFt prominently
+  2) Work History
+     - Show linked work history records (task completions / service work)
+     - Show: completedAt, task title, employee sign-off name, notes, photos/attachments
+     - Photo viewer supported
+  3) Contractor Notes
+     - Notes list (newest-first)
+     - Add note input + submit
+     - Offline supported (queued and synced)
+
+B) Wire Map popup “View Details”
+- When tapped:
+  - If popup has assetId: open panel directly
+  - Else: resolve to assetId then open panel
+
+Backend (only if missing)
+1) Asset resolve (only if popup lacks assetId)
+- Provide resolve by: communityId + mapLayerId (or layer/subLayer) + featureRef
+- Returns assetId or 404
+
+2) Contractor Notes
+- Add storage for asset notes:
+  asset_notes: id, assetId, communityId, createdBy, noteText, createdAt
+- Endpoints:
+  - GET notes for asset
+  - POST note for asset
+- Permissions:
+  contractors only in their communities; admins allowed
+
+Offline
+- Add offlineAssetNotes queue:
+  { assetId, communityId, noteText, createdAtLocal, idempotencyKey }
+- Sync on reconnect; show “Queued/Syncing/Sync Error” state in Notes tab
+
+Acceptance Criteria
+- “View Details” always opens the Asset Detail Panel for the tapped item.
+- Details tab shows correct fields and areaSqFt when polygon.
+- Work History tab loads and displays records correctly.
+- Contractor Notes can be added online and offline; offline notes sync later.
+- No regressions to map stability/performance.
