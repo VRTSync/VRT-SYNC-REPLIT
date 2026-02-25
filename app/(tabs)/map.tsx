@@ -333,10 +333,12 @@ export default function MapScreen() {
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
 
   const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
+    console.log('[handleViewAssetDetail] called', { featureRef, communityId, useOfflineData });
     if (!communityId || !featureRef) return;
 
     if (useOfflineData) {
       const entry = resolveFeatureToAsset(featureRef);
+      console.log('[handleViewAssetDetail] offline resolve:', entry);
       if (entry) {
         setDetailPanelAssetId(entry.assetId);
       } else {
@@ -346,15 +348,17 @@ export default function MapScreen() {
     }
 
     try {
+      console.log('[handleViewAssetDetail] fetching by-feature API');
       const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
       const asset = await res.json();
+      console.log('[handleViewAssetDetail] API result:', asset?.id);
       if (asset && asset.id) {
         setDetailPanelAssetId(asset.id);
       } else {
         Alert.alert('Not Available', 'No detailed record found for this feature.');
       }
     } catch (err) {
-      console.error('View asset detail error:', err);
+      console.error('[handleViewAssetDetail] error:', err);
       Alert.alert('Error', 'Failed to load asset details.');
     }
   }, [communityId, useOfflineData, resolveFeatureToAsset]);

@@ -673,7 +673,7 @@ export default function LeafletMap({
         </View>
       );
     }
-    const mapUrl = `${getApiUrl()}leaflet-map.html`;
+    const mapUrl = `${getApiUrl()}leaflet-map.html?v=${Date.now()}`;
     return (
       <WebView
         ref={webViewRef}
@@ -683,6 +683,7 @@ export default function LeafletMap({
         onError={handleWebViewError}
         javaScriptEnabled
         domStorageEnabled
+        cacheEnabled={false}
         originWhitelist={['*']}
         scrollEnabled={false}
         bounces={false}
