@@ -106,7 +106,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const { localPack, getOfflineWorkHistory } = useOfflinePack();
   const useOfflineData = !isOnline && !!localPack;
 
-  const { data: asset, isLoading: assetLoading } = useQuery<AssetDetail>({
+  const { data: asset, isLoading: assetLoading, error: assetError } = useQuery<AssetDetail>({
     queryKey: [`/api/assets/${assetId}`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!assetId,
@@ -546,7 +546,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
     );
   }
 
-  if (!asset) {
+  if (assetError || !asset) {
     return (
       <Modal visible animationType="slide" presentationStyle="fullScreen">
         <View style={[styles.container, { paddingTop: topPad }]}>
@@ -558,7 +558,12 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           </View>
           <View style={styles.center}>
             <Ionicons name="alert-circle-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyTitle}>Asset not found</Text>
+            <Text style={styles.emptyTitle}>
+              {assetError ? 'Failed to load asset details' : 'Asset not found'}
+            </Text>
+            <TouchableOpacity onPress={onClose} style={{ marginTop: 16, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: '#25C1AC', borderRadius: 8 }}>
+              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Go Back</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

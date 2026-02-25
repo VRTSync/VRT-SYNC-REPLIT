@@ -75,7 +75,7 @@ type LeafletMapProps = {
   onViewAssetDetail?: (featureRef: string, layerKey: string, meta?: { label?: string; assetType?: string; layerName?: string }) => void;
   selectedAsset?: AssetInfo | null;
   onDismissAsset?: () => void;
-  onAssetDetail?: (assetId: string) => void;
+  onAssetDetail?: (assetId: string, featureRef?: string | null) => void;
   onShowController?: (controllerFeatureRef: string) => void;
   onShowControllerZones?: (controllerFeatureRef: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
@@ -812,15 +812,13 @@ export default function LeafletMap({
                     <Text style={styles.showControllerBtnText}>Show Controller</Text>
                   </TouchableOpacity>
                 )}
-                {!selectedAsset.id.startsWith('geo-') && (
-                  <TouchableOpacity
-                    style={styles.assetDetailBtn}
-                    onPress={() => onAssetDetail?.(selectedAsset.id)}
-                  >
-                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                    <Text style={styles.assetDetailBtnText}>View Details</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>View Details</Text>
+                </TouchableOpacity>
               </View>
             </>
           ) : selectedAsset.assetType === 'controller' ? (
@@ -855,15 +853,13 @@ export default function LeafletMap({
                     <Text style={styles.showControllerBtnText}>Show Zones</Text>
                   </TouchableOpacity>
                 )}
-                {!selectedAsset.id.startsWith('geo-') && (
-                  <TouchableOpacity
-                    style={styles.assetDetailBtn}
-                    onPress={() => onAssetDetail?.(selectedAsset.id)}
-                  >
-                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                    <Text style={styles.assetDetailBtnText}>View Details</Text>
-                  </TouchableOpacity>
-                )}
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>View Details</Text>
+                </TouchableOpacity>
               </View>
             </>
           ) : (
@@ -901,17 +897,15 @@ export default function LeafletMap({
                   ))}
                 </View>
               )}
-              {!selectedAsset.id.startsWith('geo-') && (
-                <View style={styles.assetBtnRow}>
-                  <TouchableOpacity
-                    style={styles.assetDetailBtn}
-                    onPress={() => onAssetDetail?.(selectedAsset.id)}
-                  >
-                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                    <Text style={styles.assetDetailBtnText}>View Details</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <View style={styles.assetBtnRow}>
+                <TouchableOpacity
+                  style={styles.assetDetailBtn}
+                  onPress={() => onAssetDetail?.(selectedAsset.id, selectedAsset.featureRef)}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.assetDetailBtnText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
         </View>

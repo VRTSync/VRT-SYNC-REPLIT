@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -426,10 +426,42 @@ export default function MapScreen() {
 
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
 
-  const handleAssetDetail = useCallback((assetId: string) => {
+  const handleAssetDetail = useCallback(async (assetId: string, featureRef?: string | null) => {
     setSelectedAsset(null);
-    setDetailPanelAssetId(assetId);
-  }, []);
+
+    if (!assetId.startsWith('geo-')) {
+      setDetailPanelAssetId(assetId);
+      return;
+    }
+
+    if (!featureRef || !communityId) {
+      Alert.alert('Not Available', 'No detailed record found for this feature.');
+      return;
+    }
+
+    try {
+      if (useOfflineData) {
+        const entry = resolveFeatureToAsset(featureRef);
+        if (entry) {
+          setDetailPanelAssetId(entry.assetId);
+        } else {
+          Alert.alert('Not Available', 'No detailed record found for this feature.');
+        }
+        return;
+      }
+
+      const res = await apiRequest('GET', `/api/assets/by-feature?communityId=${communityId}&featureRef=${encodeURIComponent(featureRef)}`);
+      const asset = await res.json();
+      if (asset && asset.id) {
+        setDetailPanelAssetId(asset.id);
+      } else {
+        Alert.alert('Not Available', 'No detailed record found for this feature.');
+      }
+    } catch (err) {
+      console.error('Asset detail lookup error:', err);
+      Alert.alert('Error', 'Failed to load asset details.');
+    }
+  }, [communityId, useOfflineData, resolveFeatureToAsset]);
 
   const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
     if (!communityId || !featureRef) return;
@@ -439,6 +471,8 @@ export default function MapScreen() {
       if (entry) {
         setSelectedAsset(null);
         setDetailPanelAssetId(entry.assetId);
+      } else {
+        Alert.alert('Not Available', 'No detailed record found for this feature.');
       }
       return;
     }
@@ -449,9 +483,12 @@ export default function MapScreen() {
       if (asset && asset.id) {
         setSelectedAsset(null);
         setDetailPanelAssetId(asset.id);
+      } else {
+        Alert.alert('Not Available', 'No detailed record found for this feature.');
       }
     } catch (err) {
       console.error('View asset detail error:', err);
+      Alert.alert('Error', 'Failed to load asset details.');
     }
   }, [communityId, useOfflineData, resolveFeatureToAsset]);
 
