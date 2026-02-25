@@ -3,7 +3,7 @@ AdminRouter.register('schedules', async function(container) {
 
   container.innerHTML = `
     <div class="page-header" style="margin-top:16px">
-      <h2 style="font-size:16px">Recurrence Schedules</h2>
+      <h2 style="font-size:16px">Task Auto-Generate</h2>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost btn-sm" id="run-now-btn">Run Now</button>
         <button class="btn btn-primary btn-sm" id="add-schedule-btn">+ New Schedule</button>

@@ -15,7 +15,7 @@ AdminRouter.register('service-schedules', async function(container) {
 
   container.innerHTML = `
     <div class="page-header" style="margin-top:16px">
-      <h2 style="font-size:16px">Service Schedules</h2>
+      <h2 style="font-size:16px">Mowing &amp; Service Days</h2>
     </div>
     <div style="margin-bottom:16px">
       <label class="form-label" style="margin-bottom:4px">Community</label>
