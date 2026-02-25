@@ -49,7 +49,7 @@ Contractors have restricted access to tasks within their assigned communities, w
 Built with Expo SDK and Expo Router for file-based routing. Uses React Query for server state management. Features include:
 - **Context Providers**: For authentication, active community selection, and offline support.
 - **Offline Support**: Tasks are cached locally, and completions can be queued and synced. Offline map packs provide local GeoJSON layers and asset indexes.
-- **Maps**: `react-native-maps` for native platforms, with web fallback.
+- **Maps**: Leaflet-based web map (`components/LeafletMap.tsx`) used across all platforms.
 - **Platform**: Supports iOS, Android, and web with platform-specific conditional logic.
 
 ### API Design
@@ -75,7 +75,6 @@ Development involves separate processes for Expo and Express. Production builds 
 - **express**: API server.
 - **express-session**, **connect-pg-simple**: Session management.
 - **bcryptjs**: Password hashing.
-- **react-native-maps**: Native map rendering.
 - **expo-image-picker**, **expo-location**: Photo capture and GPS services.
 - **@react-native-async-storage/async-storage**: Local persistence.
 - **zod**, **drizzle-zod**: Validation schemas.
