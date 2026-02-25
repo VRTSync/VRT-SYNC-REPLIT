@@ -6,6 +6,18 @@ import { ServiceSchedule, ServiceVisit, PendingServiceVisit } from '@/client/con
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  mowing_visit: 'Mowing',
+  mowing: 'Mowing',
+  fertilization: 'Fertilization',
+  irrigation_check: 'Irrigation Check',
+  snow_removal: 'Snow Removal',
+};
+
+function formatServiceType(type: string): string {
+  return SERVICE_TYPE_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function isInSeason(schedule: ServiceSchedule, date: Date): boolean {
   if (!schedule.seasonStart || !schedule.seasonEnd) return true;
   const mm = date.getMonth() + 1;
@@ -82,7 +94,7 @@ export default function MowingDayCard({ schedules, visits, pendingVisits, onLogV
               <View style={styles.scheduleInfo}>
                 <View style={styles.dayRow}>
                   <Text style={styles.serviceType}>
-                    {schedule.serviceType === 'mowing' ? 'Mowing' : schedule.serviceType}
+                    {formatServiceType(schedule.serviceType)}
                   </Text>
                   <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
                     <Text style={[styles.dayBadgeText, isToday && styles.dayBadgeTodayText]}>
