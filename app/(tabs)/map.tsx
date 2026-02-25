@@ -530,7 +530,7 @@ export default function MapScreen() {
             style={[styles.layersButton, { top: layersButtonTop }]}
             onPress={() => setShowLayerPanel(!showLayerPanel)}
           >
-            <Ionicons name={showLayerPanel ? 'close' : 'layers-outline'} size={16} color="#fff" />
+            <Ionicons name={showLayerPanel ? 'close' : 'layers-outline'} size={18} color="#25C1AC" />
             <Text style={styles.layersButtonText}>{showLayerPanel ? 'Close' : 'Layers'}</Text>
           </TouchableOpacity>
         </>
@@ -678,14 +678,19 @@ const styles = StyleSheet.create({
   loadingContainer: { justifyContent: 'center', alignItems: 'center' },
   categoryBar: {
     position: 'absolute',
-    left: 0,
-    right: 0,
+    left: 8,
+    right: 8,
     zIndex: 12,
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8e8e8',
+    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderRadius: 14,
     height: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 5,
+    overflow: 'hidden' as const,
   },
   categoryTab: {
     flex: 1,
@@ -694,7 +699,9 @@ const styles = StyleSheet.create({
     gap: 2,
     paddingVertical: 6,
   },
-  categoryTabActive: {},
+  categoryTabActive: {
+    backgroundColor: 'rgba(37,193,172,0.1)',
+  },
   categoryTabText: {
     fontSize: 10,
     fontWeight: '600',
@@ -709,34 +716,34 @@ const styles = StyleSheet.create({
     zIndex: 13,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#0C1D31',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
   },
   layersButtonText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#0C1D31',
   },
   layerPanel: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: 8,
+    right: 8,
     zIndex: 14,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 14,
+    padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
     elevation: 5,
   },
   layerPanelEmpty: {
