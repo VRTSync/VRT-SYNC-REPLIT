@@ -11,6 +11,7 @@ const PENDING_COMPLETIONS_KEY = 'offline_pending_completions';
 const SERVICE_SCHEDULES_CACHE_KEY = 'offline_service_schedules';
 const SERVICE_VISITS_CACHE_KEY = 'offline_service_visits';
 const PENDING_SERVICE_VISITS_KEY = 'offline_pending_service_visits';
+const PENDING_ASSET_NOTES_KEY = 'offline_pending_asset_notes';
 
 export type ServiceSchedule = {
   id: string;
@@ -42,6 +43,17 @@ export type PendingServiceVisit = {
   employeeSignOffName: string;
   notes: string | null;
   completedAt: string;
+  state: 'queued' | 'syncing' | 'synced' | 'failed';
+  lastError?: string;
+};
+
+export type PendingAssetNote = {
+  id: string;
+  assetId: string;
+  communityId: string;
+  noteText: string;
+  createdAt: string;
+  idempotencyKey: string;
   state: 'queued' | 'syncing' | 'synced' | 'failed';
   lastError?: string;
 };
@@ -95,6 +107,12 @@ type OfflineContextType = {
   retryServiceVisit: (visitId: string) => Promise<void>;
   dismissServiceVisit: (visitId: string) => Promise<void>;
   getPendingVisitForDate: (scheduleId: string, serviceDate: string) => PendingServiceVisit | undefined;
+  pendingAssetNotes: PendingAssetNote[];
+  addPendingAssetNote: (note: Omit<PendingAssetNote, 'state'>) => Promise<void>;
+  syncPendingAssetNotes: () => Promise<{ synced: number; failed: number }>;
+  retryAssetNote: (noteId: string) => Promise<void>;
+  dismissAssetNote: (noteId: string) => Promise<void>;
+  getPendingNotesForAsset: (assetId: string) => PendingAssetNote[];
 };
 
 const OfflineContext = createContext<OfflineContextType | null>(null);
@@ -152,12 +170,15 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   const [cachedServiceSchedules, setCachedServiceSchedules] = useState<ServiceSchedule[]>([]);
   const [cachedServiceVisits, setCachedServiceVisits] = useState<ServiceVisit[]>([]);
   const [pendingServiceVisits, setPendingServiceVisits] = useState<PendingServiceVisit[]>([]);
+  const [pendingAssetNotes, setPendingAssetNotes] = useState<PendingAssetNote[]>([]);
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const syncingRef = useRef(false);
   const svcSyncingRef = useRef(false);
+  const notesSyncingRef = useRef(false);
   const pendingRef = useRef(pendingCompletions);
   const pendingSvcRef = useRef(pendingServiceVisits);
+  const pendingNotesRef = useRef(pendingAssetNotes);
 
   useEffect(() => {
     pendingRef.current = pendingCompletions;
@@ -166,6 +187,10 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     pendingSvcRef.current = pendingServiceVisits;
   }, [pendingServiceVisits]);
+
+  useEffect(() => {
+    pendingNotesRef.current = pendingAssetNotes;
+  }, [pendingAssetNotes]);
 
   useEffect(() => {
     const checkConnection = async () => {
@@ -198,17 +223,22 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       if (hasSvcWork) {
         syncPendingServiceVisits();
       }
+      const hasNoteWork = pendingNotesRef.current.some(n => n.state === 'queued' || n.state === 'failed');
+      if (hasNoteWork) {
+        syncPendingAssetNotes();
+      }
     }
   }, [isOnline, user]);
 
   const loadCachedData = async () => {
     try {
-      const [tasksJson, completionsJson, schedJson, visitsJson, pendingSvcJson] = await Promise.all([
+      const [tasksJson, completionsJson, schedJson, visitsJson, pendingSvcJson, pendingNotesJson] = await Promise.all([
         AsyncStorage.getItem(TASKS_CACHE_KEY),
         AsyncStorage.getItem(PENDING_COMPLETIONS_KEY),
         AsyncStorage.getItem(SERVICE_SCHEDULES_CACHE_KEY),
         AsyncStorage.getItem(SERVICE_VISITS_CACHE_KEY),
         AsyncStorage.getItem(PENDING_SERVICE_VISITS_KEY),
+        AsyncStorage.getItem(PENDING_ASSET_NOTES_KEY),
       ]);
       if (tasksJson) setCachedTasks(JSON.parse(tasksJson));
       if (completionsJson) {
@@ -228,6 +258,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         );
         setPendingServiceVisits(reset);
         pendingSvcRef.current = reset;
+      }
+      if (pendingNotesJson) {
+        const loaded = JSON.parse(pendingNotesJson);
+        const reset = loaded.map((n: PendingAssetNote) =>
+          n.state === 'syncing' ? { ...n, state: 'queued' as const } : n
+        );
+        setPendingAssetNotes(reset);
+        pendingNotesRef.current = reset;
       }
     } catch (e) {
       console.error('Failed to load offline cache:', e);
@@ -546,6 +584,88 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     );
   }, [pendingServiceVisits]);
 
+  const persistNotesQueue = async (list: PendingAssetNote[]) => {
+    await AsyncStorage.setItem(PENDING_ASSET_NOTES_KEY, JSON.stringify(list));
+  };
+
+  const addPendingAssetNote = useCallback(async (input: Omit<PendingAssetNote, 'state'>) => {
+    const note: PendingAssetNote = { ...input, state: 'queued' };
+    const updated = [...pendingNotesRef.current, note];
+    await persistNotesQueue(updated);
+    setPendingAssetNotes(updated);
+    pendingNotesRef.current = updated;
+  }, []);
+
+  const syncPendingAssetNotes = useCallback(async () => {
+    if (notesSyncingRef.current) return { synced: 0, failed: 0 };
+    const currentQueue = [...pendingNotesRef.current];
+    const toSync = currentQueue.filter(n => n.state === 'queued' || n.state === 'failed');
+    if (toSync.length === 0) return { synced: 0, failed: 0 };
+
+    notesSyncingRef.current = true;
+    let synced = 0;
+    let failed = 0;
+    let updatedList = [...currentQueue];
+
+    for (let i = 0; i < updatedList.length; i++) {
+      const note = updatedList[i];
+      if (note.state !== 'queued' && note.state !== 'failed') continue;
+
+      updatedList[i] = { ...note, state: 'syncing', lastError: undefined };
+      setPendingAssetNotes([...updatedList]);
+      pendingNotesRef.current = [...updatedList];
+
+      try {
+        await apiRequest('POST', `/api/assets/${note.assetId}/notes`, {
+          noteText: note.noteText,
+          idempotencyKey: note.idempotencyKey,
+        });
+        updatedList[i] = { ...updatedList[i], state: 'synced' };
+        synced++;
+      } catch (e: any) {
+        updatedList[i] = { ...updatedList[i], state: 'failed', lastError: e.message || 'Sync failed' };
+        failed++;
+      }
+
+      setPendingAssetNotes([...updatedList]);
+      pendingNotesRef.current = [...updatedList];
+    }
+
+    const remaining = updatedList.filter(n => n.state !== 'synced');
+    await persistNotesQueue(remaining);
+    setPendingAssetNotes(remaining);
+    pendingNotesRef.current = remaining;
+    notesSyncingRef.current = false;
+
+    if (synced > 0) {
+      const assetIds = new Set(currentQueue.filter(n => n.state === 'queued' || n.state === 'failed').map(n => n.assetId));
+      assetIds.forEach(aid => queryClient.invalidateQueries({ queryKey: [`/api/assets/${aid}/notes`] }));
+    }
+
+    return { synced, failed };
+  }, [queryClient]);
+
+  const retryAssetNote = useCallback(async (noteId: string) => {
+    const updated = pendingNotesRef.current.map(n =>
+      n.id === noteId ? { ...n, state: 'queued' as const, lastError: undefined } : n
+    );
+    await persistNotesQueue(updated);
+    setPendingAssetNotes(updated);
+    pendingNotesRef.current = updated;
+    syncPendingAssetNotes();
+  }, [syncPendingAssetNotes]);
+
+  const dismissAssetNote = useCallback(async (noteId: string) => {
+    const updated = pendingNotesRef.current.filter(n => n.id !== noteId);
+    await persistNotesQueue(updated);
+    setPendingAssetNotes(updated);
+    pendingNotesRef.current = updated;
+  }, []);
+
+  const getPendingNotesForAsset = useCallback((assetId: string) => {
+    return pendingNotesRef.current.filter(n => n.assetId === assetId && n.state !== 'synced');
+  }, [pendingAssetNotes]);
+
   const clearCache = useCallback(async () => {
     await Promise.all([
       AsyncStorage.removeItem(TASKS_CACHE_KEY),
@@ -553,6 +673,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       AsyncStorage.removeItem(SERVICE_SCHEDULES_CACHE_KEY),
       AsyncStorage.removeItem(SERVICE_VISITS_CACHE_KEY),
       AsyncStorage.removeItem(PENDING_SERVICE_VISITS_KEY),
+      AsyncStorage.removeItem(PENDING_ASSET_NOTES_KEY),
     ]);
     setCachedTasks([]);
     setPendingCompletions([]);
@@ -561,6 +682,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     setCachedServiceVisits([]);
     setPendingServiceVisits([]);
     pendingSvcRef.current = [];
+    setPendingAssetNotes([]);
+    pendingNotesRef.current = [];
   }, []);
 
   return (
@@ -586,6 +709,12 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         retryServiceVisit,
         dismissServiceVisit,
         getPendingVisitForDate,
+        pendingAssetNotes,
+        addPendingAssetNote,
+        syncPendingAssetNotes,
+        retryAssetNote,
+        dismissAssetNote,
+        getPendingNotesForAsset,
       }}
     >
       {children}

@@ -3,13 +3,13 @@ import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
-  taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits,
+  taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
-  type ServiceSchedule, type ServiceVisit
+  type ServiceSchedule, type ServiceVisit, type AssetNote
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1473,4 +1473,39 @@ export async function upsertServiceVisit(data: {
     })
     .returning();
   return visit;
+}
+
+export async function getAssetNotes(assetId: string) {
+  return db
+    .select({
+      id: assetNotes.id,
+      assetId: assetNotes.assetId,
+      communityId: assetNotes.communityId,
+      createdBy: assetNotes.createdBy,
+      noteText: assetNotes.noteText,
+      createdAt: assetNotes.createdAt,
+      creatorName: users.displayName,
+    })
+    .from(assetNotes)
+    .leftJoin(users, eq(assetNotes.createdBy, users.id))
+    .where(eq(assetNotes.assetId, assetId))
+    .orderBy(desc(assetNotes.createdAt));
+}
+
+export async function createAssetNote(data: {
+  assetId: string;
+  communityId: string;
+  createdBy: string;
+  noteText: string;
+  idempotencyKey?: string;
+}): Promise<AssetNote> {
+  if (data.idempotencyKey) {
+    const [existing] = await db
+      .select()
+      .from(assetNotes)
+      .where(eq(assetNotes.idempotencyKey, data.idempotencyKey));
+    if (existing) return existing;
+  }
+  const [note] = await db.insert(assetNotes).values(data).returning();
+  return note;
 }

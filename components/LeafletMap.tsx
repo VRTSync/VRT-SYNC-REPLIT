@@ -75,7 +75,6 @@ type LeafletMapProps = {
   selectedAsset?: AssetInfo | null;
   onDismissAsset?: () => void;
   onAssetDetail?: (assetId: string) => void;
-  onAssetHistory?: (assetId: string) => void;
   onShowController?: (controllerFeatureRef: string) => void;
   onShowControllerZones?: (controllerFeatureRef: string) => void;
   targetRegion?: { latitude: number; longitude: number; label?: string } | null;
@@ -466,7 +465,6 @@ export default function LeafletMap({
   selectedAsset,
   onDismissAsset,
   onAssetDetail,
-  onAssetHistory,
   onShowController,
   onShowControllerZones,
   targetRegion,
@@ -802,22 +800,13 @@ export default function LeafletMap({
                   </TouchableOpacity>
                 )}
                 {!selectedAsset.id.startsWith('geo-') && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.assetDetailBtn}
-                      onPress={() => onAssetDetail?.(selectedAsset.id)}
-                    >
-                      <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                      <Text style={styles.assetDetailBtnText}>Details</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                      onPress={() => onAssetHistory?.(selectedAsset.id)}
-                    >
-                      <Ionicons name="time-outline" size={16} color="#fff" />
-                      <Text style={styles.assetDetailBtnText}>History</Text>
-                    </TouchableOpacity>
-                  </>
+                  <TouchableOpacity
+                    style={styles.assetDetailBtn}
+                    onPress={() => onAssetDetail?.(selectedAsset.id)}
+                  >
+                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.assetDetailBtnText}>View Details</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </>
@@ -854,22 +843,13 @@ export default function LeafletMap({
                   </TouchableOpacity>
                 )}
                 {!selectedAsset.id.startsWith('geo-') && (
-                  <>
-                    <TouchableOpacity
-                      style={styles.assetDetailBtn}
-                      onPress={() => onAssetDetail?.(selectedAsset.id)}
-                    >
-                      <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                      <Text style={styles.assetDetailBtnText}>Details</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                      onPress={() => onAssetHistory?.(selectedAsset.id)}
-                    >
-                      <Ionicons name="time-outline" size={16} color="#fff" />
-                      <Text style={styles.assetDetailBtnText}>History</Text>
-                    </TouchableOpacity>
-                  </>
+                  <TouchableOpacity
+                    style={styles.assetDetailBtn}
+                    onPress={() => onAssetDetail?.(selectedAsset.id)}
+                  >
+                    <Ionicons name="information-circle-outline" size={16} color="#fff" />
+                    <Text style={styles.assetDetailBtnText}>View Details</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             </>
@@ -915,14 +895,7 @@ export default function LeafletMap({
                     onPress={() => onAssetDetail?.(selectedAsset.id)}
                   >
                     <Ionicons name="information-circle-outline" size={16} color="#fff" />
-                    <Text style={styles.assetDetailBtnText}>Details</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.assetDetailBtn, styles.assetHistoryBtn]}
-                    onPress={() => onAssetHistory?.(selectedAsset.id)}
-                  >
-                    <Ionicons name="time-outline" size={16} color="#fff" />
-                    <Text style={styles.assetDetailBtnText}>History</Text>
+                    <Text style={styles.assetDetailBtnText}>View Details</Text>
                   </TouchableOpacity>
                 </View>
               )}

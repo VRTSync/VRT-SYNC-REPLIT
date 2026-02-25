@@ -10,6 +10,7 @@ import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import LeafletMap from '@/components/LeafletMap';
+import AssetDetailPanel from '@/components/AssetDetailPanel';
 
 type Task = {
   id: string;
@@ -423,15 +424,12 @@ export default function MapScreen() {
     setSelectedAsset(null);
   }, []);
 
+  const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
+
   const handleAssetDetail = useCallback((assetId: string) => {
     setSelectedAsset(null);
-    router.push(`/asset/${assetId}`);
-  }, [router]);
-
-  const handleAssetHistory = useCallback((assetId: string) => {
-    setSelectedAsset(null);
-    router.push(`/asset/${assetId}/history` as any);
-  }, [router]);
+    setDetailPanelAssetId(assetId);
+  }, []);
 
   const handleTargetReached = useCallback(() => {
     setTargetRegion(null);
@@ -561,7 +559,6 @@ export default function MapScreen() {
         selectedAsset={selectedAsset}
         onDismissAsset={handleDismissAsset}
         onAssetDetail={handleAssetDetail}
-        onAssetHistory={handleAssetHistory}
         onShowController={handleShowController}
         onShowControllerZones={handleShowControllerZones}
         targetRegion={targetRegion}
@@ -668,6 +665,13 @@ export default function MapScreen() {
             })()}
           </ScrollView>
         </View>
+      )}
+
+      {detailPanelAssetId && (
+        <AssetDetailPanel
+          assetId={detailPanelAssetId}
+          onClose={() => setDetailPanelAssetId(null)}
+        />
       )}
     </View>
   );

@@ -29,6 +29,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for:
 - **Task Schedules**: Recurrence schedules for automated task generation based on templates.
 - **Service Schedules**: Recurring service day-of-week schedules (e.g., mowing) per community with seasonal bounds.
 - **Service Visits**: Individual visit logs tied to a schedule+date, with idempotent upsert via unique (scheduleId, serviceDate) constraint.
+- **Asset Notes**: Contractor notes on assets with offline queue support. Fields: id, assetId, communityId, createdBy, noteText, idempotencyKey (unique for offline dedup), createdAt. API: `GET /api/assets/:id/notes`, `POST /api/assets/:id/notes`.
 - **Tasks** now include `windowStart` and `windowEnd` date columns for windowed task scheduling.
 
 ### Mobile Service Schedule Widget
@@ -41,6 +42,12 @@ The Tasks screen (`app/(tabs)/tasks.tsx`) includes a calendar/list view toggle. 
 - **Month navigation**: Prev/next arrows and tap month title to return to today. Today highlighted with teal circle.
 - **Offline support**: Reuses cached tasks, service schedules, and visits from OfflineContext — no new API calls. Works fully offline.
 - **Interactions**: Tap task bar → navigate to task detail. Tap mowing dot → LogVisitModal. Tap "+X more" → week items modal listing all tasks and service days for that week.
+
+### Asset Detail Panel
+The map popup's "View Details" button opens a full-screen `AssetDetailPanel` modal (`components/AssetDetailPanel.tsx`) with 3 tabs:
+1. **Details**: Asset type, feature ref, geometry, location, sqFt (prominent for polygons), tags, properties, audit trail.
+2. **Work History**: Task completions linked to the asset with dates, sign-off, notes, materials, follow-ups, and photo viewer.
+3. **Contractor Notes**: Notes list (newest-first) with creator name + timestamp. Add note input with offline queue support (queued/syncing/failed states). Notes sync automatically on reconnect via OfflineContext.
 
 ### Access Control
 Contractors have restricted access to tasks within their assigned communities, while Admins have full access. Community membership is managed through the admin interface. Optimistic locking is implemented for concurrency control.

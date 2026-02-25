@@ -18,6 +18,7 @@ import {
   insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
   insertTaskTemplateSchema, generateFromTemplateSchema, insertTaskScheduleSchema,
   insertServiceScheduleSchema, updateServiceScheduleSchema, logServiceVisitSchema,
+  insertAssetNoteSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -809,6 +810,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get asset history error:", error);
       res.status(500).json({ error: "Failed to fetch asset history" });
+    }
+  });
+
+  app.get("/api/assets/:id/notes", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const asset = await storage.getAssetById(req.params.id as string);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+      const notes = await storage.getAssetNotes(asset.id);
+      res.json(notes);
+    } catch (error) {
+      console.error("Get asset notes error:", error);
+      res.status(500).json({ error: "Failed to fetch asset notes" });
+    }
+  });
+
+  app.post("/api/assets/:id/notes", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertAssetNoteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const asset = await storage.getAssetById(req.params.id as string);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+      const note = await storage.createAssetNote({
+        assetId: asset.id,
+        communityId: asset.communityId,
+        createdBy: req.session.userId!,
+        noteText: parsed.data.noteText,
+        idempotencyKey: parsed.data.idempotencyKey,
+      });
+      res.status(201).json(note);
+    } catch (error) {
+      console.error("Create asset note error:", error);
+      res.status(500).json({ error: "Failed to create asset note" });
     }
   });
 

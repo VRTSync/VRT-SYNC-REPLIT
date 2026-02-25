@@ -118,6 +118,21 @@ export const assetTypeEnum = pgEnum("asset_type", [
   "landscape_bed", "bluegrass_area", "native_area", "snow_area",
 ]);
 
+export const assetNotes = pgTable("asset_notes", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id),
+  createdBy: varchar("created_by").notNull().references(() => users.id),
+  noteText: text("note_text").notNull(),
+  idempotencyKey: varchar("idempotency_key").unique(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("asset_notes_asset_idx").on(table.assetId),
+  index("asset_notes_community_idx").on(table.communityId),
+]);
+
 export const geometryTypeEnum = pgEnum("geometry_type", ["point", "polygon", "line"]);
 
 export const linkTypeEnum = pgEnum("link_type", ["asset", "pin"]);
@@ -420,6 +435,12 @@ export const assetPropertiesRelations = relations(assetProperties, ({ one }) => 
   asset: one(assets, { fields: [assetProperties.assetId], references: [assets.id] }),
 }));
 
+export const assetNotesRelations = relations(assetNotes, ({ one }) => ({
+  asset: one(assets, { fields: [assetNotes.assetId], references: [assets.id] }),
+  community: one(communities, { fields: [assetNotes.communityId], references: [communities.id] }),
+  creator: one(users, { fields: [assetNotes.createdBy], references: [users.id] }),
+}));
+
 export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
   task: one(tasks, { fields: [taskLinks.taskId], references: [tasks.id] }),
   asset: one(assets, { fields: [taskLinks.assetId], references: [assets.id] }),
@@ -628,3 +649,9 @@ export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
 export type Export = typeof exports.$inferSelect;
 export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
 export type ServiceVisit = typeof serviceVisits.$inferSelect;
+export type AssetNote = typeof assetNotes.$inferSelect;
+
+export const insertAssetNoteSchema = z.object({
+  noteText: z.string().min(1, "Note text is required"),
+  idempotencyKey: z.string().optional(),
+});
