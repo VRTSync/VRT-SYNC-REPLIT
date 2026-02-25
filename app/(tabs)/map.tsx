@@ -501,8 +501,8 @@ export default function MapScreen() {
   }
 
   const categoryBarTop = topOffset;
-  const layersButtonTop = categoryBarTop + 52;
-  const layerPanelTop = categoryBarTop + 52 + 40;
+  const layersButtonTop = categoryBarTop + 52 + 12;
+  const layerPanelTop = layersButtonTop + 40;
 
   return (
     <View style={styles.container}>
