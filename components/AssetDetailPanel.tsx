@@ -12,6 +12,7 @@ import * as Crypto from 'expo-crypto';
 import { getQueryFn, apiRequest } from '@/lib/query-client';
 import { useOffline, type PendingAssetNote } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
+import { ASSET_FIELD_TEMPLATES, getRequiredFieldsMissing, getTemplateKeys } from '@shared/assetFieldTemplates';
 
 type AssetDetail = {
   id: string;
@@ -162,20 +163,43 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
     }
   };
 
+  const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
+  const [rawPropsExpanded, setRawPropsExpanded] = useState(false);
+
   const sqFtProp = asset?.properties.find(p => p.key === 'sqFt');
-  const displayProps = asset?.properties.filter(p => p.key !== 'sqFt') || [];
   const hasTags = asset?.tags && asset.tags.length > 0;
   const hasAudit = asset?.createdByName || asset?.updatedByName;
+  const template = asset ? ASSET_FIELD_TEMPLATES[asset.assetType] : undefined;
+  const missingInfo = asset ? getRequiredFieldsMissing(asset.assetType, asset.properties) : { count: 0, fields: [] };
+  const isPolygon = asset?.geometryType === 'polygon' || asset?.geometryType === 'multipolygon';
+  const templateKeys = asset ? getTemplateKeys(asset.assetType) : new Set<string>();
+  const rawProps = asset?.properties.filter(p => !templateKeys.has(p.key)) || [];
 
-  const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
+  const getPropValue = (key: string): string | null => {
+    const prop = asset?.properties.find(p => p.key === key);
+    return prop?.value?.trim() || null;
+  };
 
   const renderDetailsTab = () => (
     <ScrollView contentContainerStyle={styles.tabContent}>
+      {missingInfo.count > 0 && (
+        <View style={styles.missingBanner}>
+          <Ionicons name="warning-outline" size={16} color="#e67e22" />
+          <Text style={styles.missingBannerText}>
+            {missingInfo.count} required field{missingInfo.count > 1 ? 's' : ''} missing
+          </Text>
+        </View>
+      )}
+
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Details</Text>
+        <Text style={styles.sectionTitle}>Identity</Text>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Label</Text>
+          <Text style={styles.detailValue}>{asset?.label}</Text>
+        </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Type</Text>
-          <Text style={styles.detailValue}>{ASSET_TYPE_LABELS[asset?.assetType || ''] || asset?.assetType}</Text>
+          <Text style={styles.detailValue}>{template?.displayName || ASSET_TYPE_LABELS[asset?.assetType || ''] || asset?.assetType}</Text>
         </View>
         {asset?.featureRef && (
           <View style={styles.detailRow}>
@@ -183,9 +207,13 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
             <Text style={styles.detailValue}>{asset.featureRef}</Text>
           </View>
         )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Geometry</Text>
         {asset?.geometryType && (
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Geometry</Text>
+            <Text style={styles.detailLabel}>Type</Text>
             <Text style={styles.detailValue}>{asset.geometryType}</Text>
           </View>
         )}
@@ -199,15 +227,48 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         )}
       </View>
 
-      {sqFtProp && (
+      {isPolygon && (
         <View style={[styles.card, styles.sqFtCard]}>
           <View style={styles.sqFtRow}>
             <Ionicons name="resize-outline" size={22} color="#25C1AC" />
-            <Text style={styles.sqFtValue}>{formatSqFt(sqFtProp.value)}</Text>
-            <Text style={styles.sqFtLabel}>sq ft</Text>
+            {sqFtProp ? (
+              <>
+                <Text style={styles.sqFtValue}>{formatSqFt(sqFtProp.value)}</Text>
+                <Text style={styles.sqFtLabel}>sq ft</Text>
+              </>
+            ) : (
+              <Text style={styles.sqFtMissing}>Area not calculated</Text>
+            )}
           </View>
         </View>
       )}
+
+      {template && template.sections.map((section) => (
+        <View key={section.title} style={styles.card}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          {section.fields.map((field) => {
+            const value = getPropValue(field.key);
+            const isMissing = field.required && !value;
+            return (
+              <View key={field.key} style={styles.detailRow}>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={styles.detailLabel}>{field.label}</Text>
+                  {field.required && (
+                    <Text style={styles.requiredStar}>*</Text>
+                  )}
+                </View>
+                {isMissing ? (
+                  <View style={styles.missingBadge}>
+                    <Text style={styles.missingBadgeText}>Missing</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.detailValue}>{value || '—'}</Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      ))}
 
       {hasTags && (
         <View style={styles.card}>
@@ -219,18 +280,6 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
               </View>
             ))}
           </View>
-        </View>
-      )}
-
-      {displayProps.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Properties</Text>
-          {displayProps.map((p) => (
-            <View key={p.id} style={styles.detailRow}>
-              <Text style={styles.detailLabel}>{p.key}</Text>
-              <Text style={styles.detailValue}>{p.value}</Text>
-            </View>
-          ))}
         </View>
       )}
 
@@ -261,6 +310,24 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
               </View>
             </View>
           )}
+        </View>
+      )}
+
+      {rawProps.length > 0 && (
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.rawPropsHeader}
+            onPress={() => setRawPropsExpanded(!rawPropsExpanded)}
+          >
+            <Text style={styles.sectionTitle}>Raw Properties</Text>
+            <Ionicons name={rawPropsExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#999" />
+          </TouchableOpacity>
+          {rawPropsExpanded && rawProps.map((p) => (
+            <View key={p.id} style={styles.detailRow}>
+              <Text style={styles.detailLabel}>{p.key}</Text>
+              <Text style={styles.detailValue}>{p.value}</Text>
+            </View>
+          ))}
         </View>
       )}
     </ScrollView>
@@ -842,5 +909,55 @@ const styles = StyleSheet.create({
   fullPhoto: {
     width: screenWidth - 32,
     height: screenWidth - 32,
+  },
+  missingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef3e2',
+    borderWidth: 1,
+    borderColor: '#f5c542',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  missingBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#e67e22',
+  },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  requiredStar: {
+    fontSize: 14,
+    color: '#e74c3c',
+    fontWeight: '700',
+  },
+  missingBadge: {
+    backgroundColor: '#fdecea',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: '#f5c6cb',
+  },
+  missingBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#c0392b',
+  },
+  sqFtMissing: {
+    fontSize: 14,
+    color: '#999',
+    fontStyle: 'italic',
+  },
+  rawPropsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
 });
