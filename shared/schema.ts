@@ -35,7 +35,7 @@ export const communityMembers = pgTable("community_members", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   userId: varchar("user_id").notNull().references(() => users.id),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
@@ -46,7 +46,7 @@ export const tasks = pgTable("tasks", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   title: text("title").notNull(),
   description: text("description"),
   status: taskStatusEnum("status").notNull().default("pending"),
@@ -75,7 +75,7 @@ export const taskCompletions = pgTable("task_completions", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").notNull().references(() => tasks.id),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   completedBy: varchar("completed_by").notNull().references(() => users.id),
   notes: text("notes"),
   employeeSignOffName: text("employee_sign_off_name").notNull().default(''),
@@ -89,7 +89,7 @@ export const attachments = pgTable("attachments", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  taskCompletionId: varchar("task_completion_id").notNull().references(() => taskCompletions.id),
+  taskCompletionId: varchar("task_completion_id").notNull().references(() => taskCompletions.id, { onDelete: 'cascade' }),
   fileRef: text("file_ref").notNull(),
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
@@ -122,8 +122,8 @@ export const assetNotes = pgTable("asset_notes", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  assetId: varchar("asset_id").notNull().references(() => assets.id),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: 'cascade' }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   noteText: text("note_text").notNull(),
   idempotencyKey: varchar("idempotency_key").unique(),
@@ -142,11 +142,11 @@ export const assets = pgTable("assets", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   assetType: assetTypeEnum("asset_type").notNull(),
   label: text("label").notNull(),
   featureRef: text("feature_ref"),
-  mapLayerId: varchar("map_layer_id").references(() => mapLayers.id),
+  mapLayerId: varchar("map_layer_id").references(() => mapLayers.id, { onDelete: 'cascade' }),
   geometryType: geometryTypeEnum("geometry_type"),
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
@@ -170,7 +170,7 @@ export const assetProperties = pgTable("asset_properties", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  assetId: varchar("asset_id").notNull().references(() => assets.id),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: 'cascade' }),
   key: text("key").notNull(),
   value: text("value").notNull(),
   version: integer("version").notNull().default(1),
@@ -184,9 +184,9 @@ export const taskLinks = pgTable("task_links", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  taskId: varchar("task_id").notNull().references(() => tasks.id),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
   linkType: linkTypeEnum("link_type").notNull(),
-  assetId: varchar("asset_id").references(() => assets.id),
+  assetId: varchar("asset_id").references(() => assets.id, { onDelete: 'cascade' }),
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -196,7 +196,7 @@ export const offlinePacks = pgTable("offline_packs", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   packVersion: integer("pack_version").notNull().default(1),
   mbtilesRef: text("mbtiles_ref"),
   manifestRef: text("manifest_ref"),
@@ -216,7 +216,7 @@ export const mapLayers = pgTable("map_layers", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   layerKey: text("layer_key").notNull(),
   subLayerKey: text("sub_layer_key").notNull(),
   displayName: text("display_name").notNull(),
@@ -242,8 +242,8 @@ export const taskTemplates = pgTable("task_templates", {
   dueDaysOffset: integer("due_days_offset"),
   targetType: templateTargetTypeEnum("target_type").notNull().default("none"),
   targetAssetType: text("target_asset_type"),
-  targetMapLayerId: varchar("target_map_layer_id").references(() => mapLayers.id),
-  targetAssetId: varchar("target_asset_id").references(() => assets.id),
+  targetMapLayerId: varchar("target_map_layer_id").references(() => mapLayers.id, { onDelete: 'set null' }),
+  targetAssetId: varchar("target_asset_id").references(() => assets.id, { onDelete: 'set null' }),
   requireSignOffName: boolean("require_sign_off_name").notNull().default(true),
   allowPhotos: boolean("allow_photos").notNull().default(true),
   createdBy: varchar("created_by").notNull().references(() => users.id),
@@ -255,8 +255,8 @@ export const templateRuns = pgTable("template_runs", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  templateId: varchar("template_id").notNull().references(() => taskTemplates.id),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  templateId: varchar("template_id").notNull().references(() => taskTemplates.id, { onDelete: 'cascade' }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   runAt: timestamp("run_at").defaultNow().notNull(),
   taskCountCreated: integer("task_count_created").notNull().default(0),
@@ -267,8 +267,8 @@ export const taskSchedules = pgTable("task_schedules", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
-  templateId: varchar("template_id").notNull().references(() => taskTemplates.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  templateId: varchar("template_id").notNull().references(() => taskTemplates.id, { onDelete: 'cascade' }),
   frequency: scheduleFrequencyEnum("frequency").notNull().default("weekly"),
   daysOfWeek: text("days_of_week"),
   dayOfMonth: integer("day_of_month"),
@@ -287,7 +287,7 @@ export const scheduleRuns = pgTable("schedule_runs", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  scheduleId: varchar("schedule_id").notNull().references(() => taskSchedules.id),
+  scheduleId: varchar("schedule_id").notNull().references(() => taskSchedules.id, { onDelete: 'cascade' }),
   runAt: timestamp("run_at").defaultNow().notNull(),
   windowStart: timestamp("window_start").notNull(),
   windowEnd: timestamp("window_end").notNull(),
@@ -301,15 +301,15 @@ export const scheduleRunItems = pgTable("schedule_run_items", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  runId: varchar("run_id").notNull().references(() => scheduleRuns.id),
-  taskId: varchar("task_id").notNull().references(() => tasks.id),
+  runId: varchar("run_id").notNull().references(() => scheduleRuns.id, { onDelete: 'cascade' }),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
 });
 
 export const exports = pgTable("exports", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   type: text("type").notNull().default("proof_of_work"),
   status: exportStatusEnum("status").notNull().default("queued"),
@@ -327,7 +327,7 @@ export const serviceSchedules = pgTable("service_schedules", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   serviceType: serviceTypeEnum("service_type").notNull().default("mowing_visit"),
   dayOfWeek: integer("day_of_week").notNull(),
   seasonStart: date("season_start"),
@@ -342,8 +342,8 @@ export const serviceVisits = pgTable("service_visits", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  scheduleId: varchar("schedule_id").notNull().references(() => serviceSchedules.id),
-  communityId: varchar("community_id").notNull().references(() => communities.id),
+  scheduleId: varchar("schedule_id").notNull().references(() => serviceSchedules.id, { onDelete: 'cascade' }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
   serviceDate: date("service_date").notNull(),
   completedAt: timestamp("completed_at"),
   completedBy: varchar("completed_by").references(() => users.id),
