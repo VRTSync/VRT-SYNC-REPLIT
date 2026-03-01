@@ -8,6 +8,34 @@ if (Platform.OS !== 'web') {
   WebView = require('react-native-webview').WebView;
 }
 
+function extractGeometryCoords(geometry: any, out: [number, number][]) {
+  if (!geometry) return;
+  if (!geometry.coordinates && geometry.type !== 'GeometryCollection') return;
+  switch (geometry.type) {
+    case 'Point':
+      out.push([geometry.coordinates[1], geometry.coordinates[0]]);
+      break;
+    case 'MultiPoint':
+    case 'LineString':
+      for (const c of geometry.coordinates) out.push([c[1], c[0]]);
+      break;
+    case 'MultiLineString':
+    case 'Polygon':
+      for (const ring of geometry.coordinates)
+        for (const c of ring) out.push([c[1], c[0]]);
+      break;
+    case 'MultiPolygon':
+      for (const poly of geometry.coordinates)
+        for (const ring of poly)
+          for (const c of ring) out.push([c[1], c[0]]);
+      break;
+    case 'GeometryCollection':
+      if (geometry.geometries)
+        for (const g of geometry.geometries) extractGeometryCoords(g, out);
+      break;
+  }
+}
+
 type Task = {
   id: string;
   title: string;
@@ -606,9 +634,7 @@ export default function LeafletMap({
       const features = layer.geojson.type === 'FeatureCollection'
         ? layer.geojson.features || [] : layer.geojson.type === 'Feature' ? [layer.geojson] : [];
       features.forEach((f: any) => {
-        if (f.geometry?.type === 'Point' && f.geometry.coordinates) {
-          allCoords.push([f.geometry.coordinates[1], f.geometry.coordinates[0]]);
-        }
+        extractGeometryCoords(f.geometry, allCoords);
       });
     });
     tasks.forEach(t => allCoords.push([t.latitude, t.longitude]));
