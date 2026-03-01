@@ -456,6 +456,10 @@ function generateLeafletHTML(): string {
   });
 
   post('mapReady', {});
+  var _readyRetries = [100, 300, 800, 1500];
+  _readyRetries.forEach(function(delay) {
+    setTimeout(function() { post('mapReady', {}); }, delay);
+  });
 })();
 </script>
 </body>
@@ -555,8 +559,16 @@ export default function LeafletMap({
       }
     };
     window.addEventListener('message', handler);
+    if (!mapReadyRef.current && iframeRef.current?.contentWindow) {
+      try {
+        if ((iframeRef.current.contentWindow as any).mapBridge) {
+          mapReadyRef.current = true;
+          flushPending();
+        }
+      } catch (e) {}
+    }
     return () => window.removeEventListener('message', handler);
-  }, [isWeb, processMsg]);
+  }, [isWeb, processMsg, flushPending]);
 
   useEffect(() => {
     if (userLocation) {

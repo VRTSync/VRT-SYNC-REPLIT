@@ -350,6 +350,10 @@
   });
 
   post('mapReady', {});
+  var _readyRetries = [100, 300, 800, 1500];
+  _readyRetries.forEach(function(delay) {
+    setTimeout(function() { post('mapReady', {}); }, delay);
+  });
 })();
 </script>
 </body>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -176,8 +176,13 @@ export default function MapScreen() {
     }
   }, []);
 
+  const loadedGeoJSONRef = useRef(loadedGeoJSON);
+  loadedGeoJSONRef.current = loadedGeoJSON;
+  const loadingGeoJSONRef = useRef(loadingGeoJSON);
+  loadingGeoJSONRef.current = loadingGeoJSON;
+
   const fetchGeoJSON = useCallback(async (layerId: string) => {
-    if (loadedGeoJSON[layerId] || loadingGeoJSON.has(layerId)) return;
+    if (loadedGeoJSONRef.current[layerId] || loadingGeoJSONRef.current.has(layerId)) return;
 
     if (useOfflineData) {
       const offlineData = getOfflineGeoJSON(layerId);
@@ -203,15 +208,15 @@ export default function MapScreen() {
         return next;
       });
     }
-  }, [loadedGeoJSON, loadingGeoJSON, useOfflineData, getOfflineGeoJSON]);
+  }, [useOfflineData, getOfflineGeoJSON]);
 
   useEffect(() => {
     allLayers.forEach((layer) => {
-      if (!loadedGeoJSON[layer.id] && !loadingGeoJSON.has(layer.id)) {
+      if (!loadedGeoJSONRef.current[layer.id] && !loadingGeoJSONRef.current.has(layer.id)) {
         fetchGeoJSON(layer.id);
       }
     });
-  }, [allLayers]);
+  }, [allLayers, fetchGeoJSON]);
 
   const toggleLayer = (id: string) => {
     setDisabledLayerIds((prev) => {
