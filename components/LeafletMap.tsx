@@ -644,16 +644,42 @@ export default function LeafletMap({
     }
   }, [fitToContentKey, runJS]);
 
+  const layerCoordsKey = useMemo(() => {
+    return layers.filter(l => l.geojson).map(l => l.id).sort().join(',');
+  }, [layers]);
+
+  const layerCoords = useMemo(() => {
+    const out: [number, number][] = [];
+    layers.forEach(layer => {
+      if (!layer.geojson) return;
+      const features = layer.geojson.type === 'FeatureCollection'
+        ? layer.geojson.features || [] : layer.geojson.type === 'Feature' ? [layer.geojson] : [];
+      features.forEach((f: any) => {
+        extractGeometryCoords(f.geometry, out);
+      });
+    });
+    return out;
+  }, [layerCoordsKey]);
+
+  const initialFitDoneRef = useRef(false);
+
   useEffect(() => {
     if (!mapReadyRef.current) return;
-    if (tasks.length > 0) {
-      const coords: [number, number][] = tasks.map(t => [t.latitude, t.longitude]);
-      if (userLocation) coords.push([userLocation.latitude, userLocation.longitude]);
+    const hasContent = tasks.length > 0 || layerCoords.length > 0 || userLocation != null;
+    if (!hasContent) return;
+    if (initialFitDoneRef.current) return;
+    initialFitDoneRef.current = true;
+    const coords: [number, number][] = [
+      ...tasks.map(t => [t.latitude, t.longitude] as [number, number]),
+      ...layerCoords,
+    ];
+    if (userLocation) coords.push([userLocation.latitude, userLocation.longitude]);
+    if (coords.length > 0) {
       runJS(`window.mapBridge.fitBounds(${JSON.stringify(coords)})`);
     } else if (userLocation) {
       runJS(`window.mapBridge.flyTo(${userLocation.latitude}, ${userLocation.longitude}, 14, '')`);
     }
-  }, [tasks.length > 0, userLocation != null]);
+  }, [tasks, layerCoords, userLocation, runJS]);
 
   const htmlContent = useMemo(() => generateLeafletHTML(), []);
 
