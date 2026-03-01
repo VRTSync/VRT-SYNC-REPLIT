@@ -33,8 +33,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   setupSession(app);
   registerAuthRoutes(app);
 
-  app.get("/public-objects/{filePath}", async (req: Request, res: Response) => {
-    const filePath = req.params.filePath as string;
+  app.get("/public-objects/{*filePath}", async (req: Request, res: Response) => {
+    const filePath = (req.params as any).filePath as string;
     const objectStorageService = new ObjectStorageService();
     try {
       const file = await objectStorageService.searchPublicObject(filePath);
@@ -48,7 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/objects/{objectPath}", requireAuth, async (req: Request, res: Response) => {
+  app.get("/objects/{*objectPath}", requireAuth, async (req: Request, res: Response) => {
     const userId = req.session.userId;
     const objectStorageService = new ObjectStorageService();
     try {
