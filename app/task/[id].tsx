@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, Image,
+  Alert, ActivityIndicator, Image, Modal, FlatList, Dimensions, Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -122,6 +122,9 @@ export default function TaskDetailScreen() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [completing, setCompleting] = useState(false);
   const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
+  const [photoViewerImages, setPhotoViewerImages] = useState<{ id: string; url: string }[]>([]);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
 
   const { data: task, isLoading } = useQuery<Task>({
     queryKey: [`/api/tasks/${id}`],
@@ -489,32 +492,148 @@ export default function TaskDetailScreen() {
 
       {completions.length > 0 && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Completion History</Text>
-          {completions.map((c) => (
-            <View key={c.id} style={styles.completionItem}>
-              <Text style={styles.completionDate}>
-                {new Date(c.completedAt).toLocaleString()}
-              </Text>
-              <Text style={styles.signOffLabel}>Signed off by: {c.employeeSignOffName}</Text>
-              {c.notes ? <Text style={styles.completionNotes}>{c.notes}</Text> : null}
-              {c.timeSpentMinutes ? <Text style={styles.completionMeta}>Time: {c.timeSpentMinutes} min</Text> : null}
-              {c.materialsUsed ? <Text style={styles.completionMeta}>Materials: {c.materialsUsed}</Text> : null}
-              {c.followUpNeeded ? <Text style={styles.completionMeta}>Follow-up: {c.followUpNeeded}</Text> : null}
+          <Text style={styles.cardTitle}>Completion Details</Text>
+          {completions.map((c, cIdx) => (
+            <View key={c.id} style={[styles.completionItem, cIdx === 0 && { borderTopWidth: 0, marginTop: 0, paddingTop: 0 }]}>
+              <View style={styles.completionHeader}>
+                <View style={styles.completedBadge}>
+                  <Ionicons name="checkmark-circle" size={14} color="#fff" />
+                  <Text style={styles.completedBadgeText}>Completed</Text>
+                </View>
+                <Text style={styles.completionDate}>
+                  {new Date(c.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(c.completedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </View>
+
+              <View style={styles.completionDetailRow}>
+                <Ionicons name="person-outline" size={16} color="#25C1AC" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.completionDetailLabel}>Signed Off By</Text>
+                  <Text style={styles.completionDetailValue}>{c.employeeSignOffName}</Text>
+                </View>
+              </View>
+
+              {c.notes ? (
+                <View style={styles.completionDetailRow}>
+                  <Ionicons name="document-text-outline" size={16} color="#25C1AC" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.completionDetailLabel}>Notes</Text>
+                    <Text style={styles.completionDetailValue}>{c.notes}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {c.timeSpentMinutes ? (
+                <View style={styles.completionDetailRow}>
+                  <Ionicons name="timer-outline" size={16} color="#25C1AC" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.completionDetailLabel}>Time Spent</Text>
+                    <Text style={styles.completionDetailValue}>
+                      {c.timeSpentMinutes >= 60
+                        ? `${Math.floor(c.timeSpentMinutes / 60)}h ${c.timeSpentMinutes % 60}m`
+                        : `${c.timeSpentMinutes} min`}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {c.materialsUsed ? (
+                <View style={styles.completionDetailRow}>
+                  <Ionicons name="construct-outline" size={16} color="#25C1AC" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.completionDetailLabel}>Materials Used</Text>
+                    <Text style={styles.completionDetailValue}>{c.materialsUsed}</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {c.followUpNeeded ? (
+                <View style={styles.completionDetailRow}>
+                  <Ionicons name="flag-outline" size={16} color="#e65100" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.completionDetailLabel}>Follow-Up Needed</Text>
+                    <Text style={[styles.completionDetailValue, { color: '#e65100' }]}>{c.followUpNeeded}</Text>
+                  </View>
+                </View>
+              ) : null}
+
               {c.attachments && c.attachments.length > 0 && (
-                <View style={styles.attachmentRow}>
-                  {c.attachments.map((a) => (
-                    <Image
-                      key={a.id}
-                      source={{ uri: `${getApiUrl()}${a.url}` }}
-                      style={styles.attachmentThumb}
-                    />
-                  ))}
+                <View style={styles.completionPhotosSection}>
+                  <View style={styles.completionDetailRow}>
+                    <Ionicons name="camera-outline" size={16} color="#25C1AC" />
+                    <Text style={styles.completionDetailLabel}>Photos ({c.attachments.length})</Text>
+                  </View>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.completionPhotoScroll}>
+                    {c.attachments.map((a, aIdx) => (
+                      <TouchableOpacity
+                        key={a.id}
+                        onPress={() => {
+                          setPhotoViewerImages(c.attachments.map(att => ({ id: att.id, url: `${getApiUrl()}${att.url}` })));
+                          setPhotoViewerIndex(aIdx);
+                          setPhotoViewerVisible(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Image
+                          source={{ uri: `${getApiUrl()}${a.url}` }}
+                          style={styles.completionPhotoThumb}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
             </View>
           ))}
         </View>
       )}
+
+      <Modal
+        visible={photoViewerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoViewerVisible(false)}
+      >
+        <View style={styles.photoViewerOverlay}>
+          <TouchableOpacity
+            style={styles.photoViewerClose}
+            onPress={() => setPhotoViewerVisible(false)}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+          {photoViewerImages.length > 1 && (
+            <Text style={styles.photoViewerCounter}>
+              {photoViewerIndex + 1} / {photoViewerImages.length}
+            </Text>
+          )}
+          <FlatList
+            data={photoViewerImages}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={photoViewerIndex}
+            getItemLayout={(_, index) => ({
+              length: Dimensions.get('window').width,
+              offset: Dimensions.get('window').width * index,
+              index,
+            })}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / Dimensions.get('window').width);
+              setPhotoViewerIndex(idx);
+            }}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.photoViewerSlide}>
+                <Image
+                  source={{ uri: item.url }}
+                  style={styles.photoViewerImage}
+                  resizeMode="contain"
+                />
+              </View>
+            )}
+          />
+        </View>
+      </Modal>
 
       {showCompleteForm && task.status !== 'completed' && !pendingForTask && (
         <View style={styles.card}>
@@ -713,16 +832,105 @@ const styles = StyleSheet.create({
   windowBlockText: { fontSize: 13, color: '#c62828', flex: 1, fontWeight: '500' },
   completionItem: {
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 12,
-    marginTop: 8,
+    borderTopColor: '#eef1f5',
+    paddingTop: 16,
+    marginTop: 12,
   },
-  completionDate: { fontSize: 12, color: '#999', marginBottom: 4 },
-  signOffLabel: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 2 },
-  completionNotes: { fontSize: 14, color: '#555' },
-  completionMeta: { fontSize: 13, color: '#777', marginTop: 2 },
-  attachmentRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
-  attachmentThumb: { width: 60, height: 60, borderRadius: 8 },
+  completionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  completedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#25C1AC',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  completedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#fff',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  completionDate: { fontSize: 12, color: '#999' },
+  completionDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 12,
+    paddingLeft: 2,
+  },
+  completionDetailLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#999',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  completionDetailValue: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+  },
+  completionPhotosSection: {
+    marginTop: 4,
+  },
+  completionPhotoScroll: {
+    marginTop: 8,
+    marginLeft: 28,
+  },
+  completionPhotoThumb: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    marginRight: 10,
+    backgroundColor: '#f0f0f0',
+  },
+  photoViewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+  },
+  photoViewerClose: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 20 : 50,
+    right: 16,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoViewerCounter: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 28 : 58,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600' as const,
+    zIndex: 10,
+  },
+  photoViewerSlide: {
+    width: Dimensions.get('window').width,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  photoViewerImage: {
+    width: Dimensions.get('window').width - 32,
+    height: Dimensions.get('window').height * 0.7,
+  },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 4, marginTop: 8 },
   fieldInput: {
     backgroundColor: '#f5f7fa',
