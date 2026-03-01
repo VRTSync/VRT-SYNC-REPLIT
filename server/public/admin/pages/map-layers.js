@@ -1,6 +1,13 @@
 window._renderMapLayers = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
 
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    var k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
   const LAYER_HIERARCHY = {
     community: ["bluegrass_area", "native_area", "landscape_bed", "pet_station"],
     irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve"],
