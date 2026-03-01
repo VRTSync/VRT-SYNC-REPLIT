@@ -673,14 +673,16 @@ export default function LeafletMap({
     return out;
   }, [layerCoordsKey]);
 
-  const initialFitDoneRef = useRef(false);
+  const lastFitKeyRef = useRef('');
 
   useEffect(() => {
     if (!mapReadyRef.current) return;
-    const hasContent = tasks.length > 0 || layerCoords.length > 0 || userLocation != null;
-    if (!hasContent) return;
-    if (initialFitDoneRef.current) return;
-    initialFitDoneRef.current = true;
+    const layersWithData = layers.filter(l => l.geojson);
+    const layersPending = layers.length > 0 && layersWithData.length === 0;
+    if (layersPending) return;
+    const fitKey = layerCoordsKey + '|' + tasks.length;
+    if (fitKey === lastFitKeyRef.current) return;
+    lastFitKeyRef.current = fitKey;
     const coords: [number, number][] = [
       ...tasks.map(t => [t.latitude, t.longitude] as [number, number]),
       ...layerCoords,
@@ -691,7 +693,7 @@ export default function LeafletMap({
     } else if (userLocation) {
       runJS(`window.mapBridge.flyTo(${userLocation.latitude}, ${userLocation.longitude}, 14, '')`);
     }
-  }, [tasks, layerCoords, userLocation, runJS]);
+  }, [tasks, layerCoords, layerCoordsKey, layers.length, userLocation, runJS]);
 
   const htmlContent = useMemo(() => generateLeafletHTML(), []);
 
