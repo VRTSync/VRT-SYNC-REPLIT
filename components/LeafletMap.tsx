@@ -8,34 +8,6 @@ if (Platform.OS !== 'web') {
   WebView = require('react-native-webview').WebView;
 }
 
-function extractGeometryCoords(geometry: any, out: [number, number][]) {
-  if (!geometry) return;
-  if (!geometry.coordinates && geometry.type !== 'GeometryCollection') return;
-  switch (geometry.type) {
-    case 'Point':
-      out.push([geometry.coordinates[1], geometry.coordinates[0]]);
-      break;
-    case 'MultiPoint':
-    case 'LineString':
-      for (const c of geometry.coordinates) out.push([c[1], c[0]]);
-      break;
-    case 'MultiLineString':
-    case 'Polygon':
-      for (const ring of geometry.coordinates)
-        for (const c of ring) out.push([c[1], c[0]]);
-      break;
-    case 'MultiPolygon':
-      for (const poly of geometry.coordinates)
-        for (const ring of poly)
-          for (const c of ring) out.push([c[1], c[0]]);
-      break;
-    case 'GeometryCollection':
-      if (geometry.geometries)
-        for (const g of geometry.geometries) extractGeometryCoords(g, out);
-      break;
-  }
-}
-
 type Task = {
   id: string;
   title: string;
@@ -410,6 +382,47 @@ function generateLeafletHTML(): string {
       map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
     },
 
+    fitToContent: function(taskCoords, userLoc) {
+      var bounds = null;
+      Object.keys(geoLayers).forEach(function(k) {
+        try {
+          var lb = geoLayers[k].getBounds();
+          if (lb && lb.isValid()) {
+            bounds = bounds ? bounds.extend(lb) : L.latLngBounds(lb.getSouthWest(), lb.getNorthEast());
+          }
+        } catch(e) {}
+      });
+      if (map.hasLayer(ctrlLayer)) {
+        ctrlLayer.eachLayer(function(m) {
+          var ll = m.getLatLng();
+          if (ll) {
+            bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+          }
+        });
+      }
+      if (map.hasLayer(zoneClusterGroup)) {
+        zoneClusterGroup.eachLayer(function(m) {
+          var ll = m.getLatLng();
+          if (ll) {
+            bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+          }
+        });
+      }
+      if (taskCoords && taskCoords.length > 0) {
+        taskCoords.forEach(function(c) {
+          var ll = L.latLng(c[0], c[1]);
+          bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+        });
+      }
+      if (userLoc) {
+        var ul = L.latLng(userLoc[0], userLoc[1]);
+        bounds = bounds ? bounds.extend(ul) : L.latLngBounds(ul, ul);
+      }
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+      }
+    },
+
     showControllers: function(show) {
       if (show) { if (!map.hasLayer(ctrlLayer)) map.addLayer(ctrlLayer); }
       else { if (map.hasLayer(ctrlLayer)) map.removeLayer(ctrlLayer); }
@@ -633,45 +646,14 @@ export default function LeafletMap({
 
   useEffect(() => {
     if (!fitToContentKey) return;
-    const allCoords: [number, number][] = [];
-
-    if (showControllers) {
-      controllerMarkers.forEach(c => allCoords.push([c.latitude, c.longitude]));
-    }
-    if (showZones) {
-      zoneMarkers.forEach(z => allCoords.push([z.latitude, z.longitude]));
-    }
-    layers.forEach(layer => {
-      if (!layer.geojson) return;
-      const features = layer.geojson.type === 'FeatureCollection'
-        ? layer.geojson.features || [] : layer.geojson.type === 'Feature' ? [layer.geojson] : [];
-      features.forEach((f: any) => {
-        extractGeometryCoords(f.geometry, allCoords);
-      });
-    });
-    tasks.forEach(t => allCoords.push([t.latitude, t.longitude]));
-
-    if (allCoords.length > 0) {
-      runJS(`window.mapBridge.fitBounds(${JSON.stringify(allCoords)})`);
-    }
+    const taskCoords = tasks.map(t => [t.latitude, t.longitude] as [number, number]);
+    const userLoc = userLocation ? [userLocation.latitude, userLocation.longitude] : null;
+    runJS(`window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`);
   }, [fitToContentKey, runJS]);
 
   const layerCoordsKey = useMemo(() => {
     return layers.filter(l => l.geojson).map(l => l.id).sort().join(',');
   }, [layers]);
-
-  const layerCoords = useMemo(() => {
-    const out: [number, number][] = [];
-    layers.forEach(layer => {
-      if (!layer.geojson) return;
-      const features = layer.geojson.type === 'FeatureCollection'
-        ? layer.geojson.features || [] : layer.geojson.type === 'Feature' ? [layer.geojson] : [];
-      features.forEach((f: any) => {
-        extractGeometryCoords(f.geometry, out);
-      });
-    });
-    return out;
-  }, [layerCoordsKey]);
 
   const lastFitKeyRef = useRef('');
 
@@ -683,17 +665,10 @@ export default function LeafletMap({
     const fitKey = layerCoordsKey + '|' + tasks.length;
     if (fitKey === lastFitKeyRef.current) return;
     lastFitKeyRef.current = fitKey;
-    const coords: [number, number][] = [
-      ...tasks.map(t => [t.latitude, t.longitude] as [number, number]),
-      ...layerCoords,
-    ];
-    if (userLocation) coords.push([userLocation.latitude, userLocation.longitude]);
-    if (coords.length > 0) {
-      runJS(`window.mapBridge.fitBounds(${JSON.stringify(coords)})`);
-    } else if (userLocation) {
-      runJS(`window.mapBridge.flyTo(${userLocation.latitude}, ${userLocation.longitude}, 14, '')`);
-    }
-  }, [tasks, layerCoords, layerCoordsKey, layers.length, userLocation, runJS]);
+    const taskCoords = tasks.map(t => [t.latitude, t.longitude] as [number, number]);
+    const userLoc = userLocation ? [userLocation.latitude, userLocation.longitude] : null;
+    runJS(`window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`);
+  }, [tasks, layerCoordsKey, layers.length, userLocation, runJS]);
 
   const htmlContent = useMemo(() => generateLeafletHTML(), []);
 

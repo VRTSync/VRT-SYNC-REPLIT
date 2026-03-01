@@ -310,6 +310,47 @@
       map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
     },
 
+    fitToContent: function(taskCoords, userLoc) {
+      var bounds = null;
+      Object.keys(geoLayers).forEach(function(k) {
+        try {
+          var lb = geoLayers[k].getBounds();
+          if (lb && lb.isValid()) {
+            bounds = bounds ? bounds.extend(lb) : L.latLngBounds(lb.getSouthWest(), lb.getNorthEast());
+          }
+        } catch(e) {}
+      });
+      if (map.hasLayer(ctrlLayer)) {
+        ctrlLayer.eachLayer(function(m) {
+          var ll = m.getLatLng();
+          if (ll) {
+            bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+          }
+        });
+      }
+      if (map.hasLayer(zoneClusterGroup)) {
+        zoneClusterGroup.eachLayer(function(m) {
+          var ll = m.getLatLng();
+          if (ll) {
+            bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+          }
+        });
+      }
+      if (taskCoords && taskCoords.length > 0) {
+        taskCoords.forEach(function(c) {
+          var ll = L.latLng(c[0], c[1]);
+          bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+        });
+      }
+      if (userLoc) {
+        var ul = L.latLng(userLoc[0], userLoc[1]);
+        bounds = bounds ? bounds.extend(ul) : L.latLngBounds(ul, ul);
+      }
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+      }
+    },
+
     showControllers: function(show) {
       if (show) { if (!map.hasLayer(ctrlLayer)) map.addLayer(ctrlLayer); }
       else { if (map.hasLayer(ctrlLayer)) map.removeLayer(ctrlLayer); }
