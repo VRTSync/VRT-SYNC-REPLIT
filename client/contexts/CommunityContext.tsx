@@ -14,6 +14,7 @@ type CommunityContextType = {
   activeCommunity: Community | null;
   setActiveCommunity: (c: Community) => void;
   isLoading: boolean;
+  isHoaUser: boolean;
 };
 
 const CommunityContext = createContext<CommunityContextType | null>(null);
@@ -44,13 +45,16 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     });
   }, [user, bootstrapCommunities, defaultCommunityId]);
 
+  const isHoaUser = user?.role === 'hoa_admin' || user?.role === 'hoa_member';
+
   const activeCommunity = bootstrapCommunities.find((c) => c.id === activeCommunityId) ?? bootstrapCommunities[0] ?? null;
 
   const setActiveCommunity = useCallback((c: Community) => {
     if (!c?.id) return;
+    if (isHoaUser) return;
     setActiveCommunityId(c.id);
     AsyncStorage.setItem(ACTIVE_COMMUNITY_KEY, String(c.id));
-  }, []);
+  }, [isHoaUser]);
 
   return (
     <CommunityContext.Provider value={{
@@ -58,6 +62,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
       activeCommunity,
       setActiveCommunity,
       isLoading: authLoading || (!initialized && !!user),
+      isHoaUser,
     }}>
       {children}
     </CommunityContext.Provider>

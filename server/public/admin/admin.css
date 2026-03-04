@@ -423,6 +423,7 @@ tbody tr:hover { background: rgba(37, 193, 172, 0.03); }
 .badge-amber { background: var(--amber-light); color: #b45309; }
 .badge-green { background: var(--green-light); color: #059669; }
 .badge-blue { background: var(--blue-light); color: #2563eb; }
+.badge-purple { background: #f3e8ff; color: #7c3aed; }
 .badge-gray { background: var(--gray-100); color: var(--gray-600); }
 .badge-outline { background: transparent; border: 1px solid var(--gray-200); color: var(--gray-600); }
 

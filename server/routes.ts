@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { requireAuth, requireAdmin, registerAuthRoutes, setupSession } from "./auth";
+import { requireAuth, requireAdmin, registerAuthRoutes, setupSession, enforceHoaScoping, isHoaRole } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
@@ -29,9 +29,22 @@ import { eq, and, desc } from "drizzle-orm";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
+async function checkHoaLimits(communityId: string, role: string, excludeUserId?: string): Promise<string | null> {
+  const count = await storage.getHoaUserCountByCommunity(communityId, role, excludeUserId);
+  if (role === 'hoa_admin' && count >= 1) {
+    return 'This community already has an HOA Admin (limit: 1)';
+  }
+  if (role === 'hoa_member' && count >= 4) {
+    return 'This community already has 4 HOA Members (limit: 4)';
+  }
+  return null;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   setupSession(app);
   registerAuthRoutes(app);
+
+  app.use("/api", enforceHoaScoping);
 
   app.get("/public-objects/{*filePath}", async (req: Request, res: Response) => {
     const filePath = (req.params as any).filePath as string;
@@ -105,6 +118,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user?.role === "admin") {
         const allCommunities = await storage.getCommunities();
         return res.json(allCommunities);
+      }
+      if (isHoaRole(user?.role || '') && user?.hoaCommunityId) {
+        const community = await storage.getCommunityById(user.hoaCommunityId);
+        return res.json(community ? [community] : []);
       }
       const memberships = await storage.getUserCommunities(req.session.userId!);
       res.json(memberships.map((m) => m.community));
@@ -289,7 +306,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
-      const communityId = req.query.communityId as string | undefined;
+      let communityId = req.query.communityId as string | undefined;
+
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        communityId = user.hoaCommunityId;
+        const tasks = await storage.getTasksByCommunity(communityId);
+        return res.json(tasks);
+      }
 
       if (user.role === "admin") {
         if (communityId) {
@@ -644,14 +667,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/users/:id/role", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { role } = req.body;
-      if (role !== "admin" && role !== "contractor") {
+      const { role, hoaCommunityId } = req.body;
+      const validRoles = ["admin", "contractor", "hoa_admin", "hoa_member"];
+      if (!validRoles.includes(role)) {
         return res.status(400).json({ error: "Invalid role" });
       }
       if (req.params.id === req.session.userId) {
         return res.status(400).json({ error: "Cannot change your own role" });
       }
-      const updated = await storage.updateUserRole(req.params.id as string, role);
+      if (isHoaRole(role) && !hoaCommunityId) {
+        return res.status(400).json({ error: "HOA roles require a community assignment" });
+      }
+      if (isHoaRole(role) && hoaCommunityId) {
+        const limitCheck = await checkHoaLimits(hoaCommunityId, role, req.params.id as string);
+        if (limitCheck) {
+          return res.status(400).json({ error: limitCheck });
+        }
+      }
+      const updated = await storage.updateUserRole(req.params.id as string, role, isHoaRole(role) ? hoaCommunityId : null);
       if (!updated) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -665,12 +698,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/users", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { username, password, displayName, role } = req.body;
+      const { username, password, displayName, role, hoaCommunityId } = req.body;
       if (!username || !password) {
         return res.status(400).json({ error: "username and password are required" });
       }
-      if (role && role !== "contractor" && role !== "admin") {
-        return res.status(400).json({ error: "role must be contractor or admin" });
+      const validRoles = ["contractor", "admin", "hoa_admin", "hoa_member"];
+      if (role && !validRoles.includes(role)) {
+        return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+      }
+      if (isHoaRole(role) && !hoaCommunityId) {
+        return res.status(400).json({ error: "HOA roles require a community assignment" });
+      }
+      if (isHoaRole(role) && hoaCommunityId) {
+        const limitCheck = await checkHoaLimits(hoaCommunityId, role);
+        if (limitCheck) {
+          return res.status(400).json({ error: limitCheck });
+        }
       }
       const existing = await storage.getUserByUsername(username);
       if (existing) {
@@ -682,12 +725,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: hashedPassword,
         displayName: displayName || username,
         role: role || "contractor",
+        hoaCommunityId: isHoaRole(role) ? hoaCommunityId : undefined,
       });
+      if (isHoaRole(role) && hoaCommunityId) {
+        await storage.addCommunityMembers(hoaCommunityId, [user.id]);
+      }
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
       console.error("Create user error:", error);
       res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id as string;
+      if (userId === req.session.userId) {
+        return res.status(400).json({ error: "Cannot delete yourself" });
+      }
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      await storage.deleteUser(userId);
+      res.json({ message: "User deleted" });
+    } catch (error) {
+      console.error("Delete user error:", error);
+      res.status(500).json({ error: "Failed to delete user" });
     }
   });
 

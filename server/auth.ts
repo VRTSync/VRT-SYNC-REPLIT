@@ -32,12 +32,35 @@ export function setupSession(app: any) {
 declare module "express-session" {
   interface SessionData {
     userId: string;
+    hoaCommunityId?: string;
   }
+}
+
+export function isHoaRole(role: string): boolean {
+  return role === 'hoa_admin' || role === 'hoa_member';
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });
+  }
+  next();
+}
+
+export function enforceHoaScoping(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  const hoaCommunityId = req.session.hoaCommunityId;
+  if (!hoaCommunityId) {
+    return next();
+  }
+  const communityId =
+    req.params.id || req.params.communityId ||
+    req.query.communityId ||
+    req.body?.communityId;
+  if (communityId && communityId !== hoaCommunityId) {
+    return res.status(403).json({ message: "Access denied: HOA users can only access their assigned community" });
   }
   next();
 }
@@ -76,6 +99,9 @@ export function registerAuthRoutes(app: any) {
       });
 
       req.session.userId = user.id;
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        req.session.hoaCommunityId = user.hoaCommunityId;
+      }
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
@@ -102,6 +128,9 @@ export function registerAuthRoutes(app: any) {
       }
 
       req.session.userId = user.id;
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        req.session.hoaCommunityId = user.hoaCommunityId;
+      }
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (error) {
@@ -132,12 +161,19 @@ export function registerAuthRoutes(app: any) {
     let communities: any[] = [];
     if (user.role === "admin") {
       communities = await storage.getCommunities();
+    } else if (isHoaRole(user.role) && user.hoaCommunityId) {
+      const community = await storage.getCommunityById(user.hoaCommunityId);
+      if (community) {
+        communities = [community];
+      }
     } else {
       const memberships = await storage.getUserCommunities(user.id);
       communities = memberships.map((m) => m.community);
     }
 
-    const defaultCommunityId = communities.length > 0 ? communities[0].id : null;
+    const defaultCommunityId = isHoaRole(user.role) && user.hoaCommunityId
+      ? user.hoaCommunityId
+      : (communities.length > 0 ? communities[0].id : null);
 
     res.json({
       user: safeUser,

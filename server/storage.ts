@@ -277,12 +277,33 @@ export async function getAllUsers(): Promise<User[]> {
   return db.select().from(users).orderBy(users.displayName);
 }
 
-export async function updateUserRole(userId: string, role: "contractor" | "admin"): Promise<User | null> {
+export async function updateUserRole(userId: string, role: string, hoaCommunityId?: string | null): Promise<User | null> {
   const [updated] = await db.update(users)
-    .set({ role })
+    .set({ role: role as any, hoaCommunityId: hoaCommunityId ?? null })
     .where(eq(users.id, userId))
     .returning();
   return updated || null;
+}
+
+export async function getHoaUserCountByCommunity(communityId: string, role: string, excludeUserId?: string): Promise<number> {
+  const conditions = [
+    eq(users.hoaCommunityId, communityId),
+    eq(users.role, role as any),
+  ];
+  if (excludeUserId) {
+    conditions.push(ne(users.id, excludeUserId));
+  }
+  const result = await db.select({ count: sql<number>`count(*)` })
+    .from(users)
+    .where(and(...conditions));
+  return Number(result[0]?.count ?? 0);
+}
+
+export async function deleteUser(userId: string): Promise<boolean> {
+  await db.delete(communityMembers).where(eq(communityMembers.userId, userId));
+  await db.delete(pushTokens).where(eq(pushTokens.userId, userId));
+  const result = await db.delete(users).where(eq(users.id, userId)).returning();
+  return result.length > 0;
 }
 
 export async function addCommunityMembers(communityId: string, userIds: string[]): Promise<{ added: number; skipped: number }> {

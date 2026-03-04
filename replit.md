@@ -14,11 +14,11 @@ Preferred communication style: Simple, everyday language.
 The project is organized as a monorepo with `app/` for the Expo React Native application, `server/` for the Express.js API, and `shared/` for common code including Drizzle ORM schema definitions and Zod validation.
 
 ### Authentication & Authorization
-The system employs session-based authentication using `express-session` with a PostgreSQL store. Passwords are `bcryptjs` hashed. There are two roles: `admin` and `contractor`, with middleware enforcing access control (`requireAuth`, `requireAdmin`). React Query manages client-side user sessions.
+The system employs session-based authentication using `express-session` with a PostgreSQL store. Passwords are `bcryptjs` hashed. There are four roles: `admin`, `contractor`, `hoa_admin`, and `hoa_member`. Middleware enforces access control: `requireAuth`, `requireAdmin`, and `enforceHoaScoping` (applied globally to `/api` routes). HOA users have a `hoaCommunityId` FK column on the users table that locks them to a single community. Session stores `hoaCommunityId` for HOA roles. HOA user limits: max 1 `hoa_admin` and max 4 `hoa_member` per community. React Query manages client-side user sessions. The mobile app hides the Admin tab for non-admin roles and locks community switching for HOA users.
 
 ### Data Model
 The PostgreSQL database, managed with Drizzle ORM, includes tables for:
-- **Users**: Contractors and Admins.
+- **Users**: Contractors, Admins, HOA Admins, and HOA Members. HOA users have a `hoaCommunityId` column for single-community scoping.
 - **Communities**: Core organizational units.
 - **Tasks**: Community-scoped tasks with status, priority, geolocation, assignee, and versioning. Supports CSV import and bulk assignment.
 - **Task Completions**: Records task completion details including notes, sign-off, time, materials, and follow-up.

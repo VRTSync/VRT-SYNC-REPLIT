@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEn
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const userRoleEnum = pgEnum("user_role", ["contractor", "admin"]);
+export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
@@ -19,6 +19,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   displayName: text("display_name").notNull(),
   role: userRoleEnum("role").notNull().default("contractor"),
+  hoaCommunityId: varchar("hoa_community_id").references(() => communities.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -456,6 +457,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
   password: true,
   displayName: true,
   role: true,
+  hoaCommunityId: true,
 });
 
 export const loginSchema = z.object({

@@ -47,7 +47,8 @@ type User = {
   id: string;
   username: string;
   displayName: string;
-  role: 'contractor' | 'admin';
+  role: 'contractor' | 'admin' | 'hoa_admin' | 'hoa_member';
+  hoaCommunityId?: string | null;
 };
 
 type Community = {

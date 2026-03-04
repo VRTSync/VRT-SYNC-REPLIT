@@ -5,8 +5,11 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 import React from "react";
+import { useAuth } from "@/client/contexts/AuthContext";
 
 function NativeTabLayout() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   return (
     <NativeTabs>
       <NativeTabs.Trigger name="index">
@@ -21,10 +24,12 @@ function NativeTabLayout() {
         <Icon sf={{ default: "map", selected: "map.fill" }} />
         <Label>Map</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="admin">
-        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
-        <Label>Admin</Label>
-      </NativeTabs.Trigger>
+      {isAdmin && (
+        <NativeTabs.Trigger name="admin">
+          <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+          <Label>Admin</Label>
+        </NativeTabs.Trigger>
+      )}
       <NativeTabs.Trigger name="profile">
         <Icon sf={{ default: "person", selected: "person.fill" }} />
         <Label>Profile</Label>
@@ -34,6 +39,8 @@ function NativeTabLayout() {
 }
 
 function ClassicTabLayout() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -99,6 +106,7 @@ function ClassicTabLayout() {
         options={{
           title: "Admin",
           headerShown: false,
+          href: isAdmin ? undefined : null,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="settings-outline" color={color} size={size || 24} />
           ),
