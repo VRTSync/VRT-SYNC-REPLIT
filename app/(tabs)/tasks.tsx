@@ -2,7 +2,7 @@ import React from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
@@ -18,7 +18,7 @@ type Task = {
   id: string;
   title: string;
   description: string | null;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'submitted' | 'acknowledged';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   address: string | null;
   assignedTo: string | null;
@@ -27,6 +27,7 @@ type Task = {
   windowEnd: string | null;
   version: number;
   createdAt: string;
+  origin?: string | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -40,12 +41,16 @@ const statusLabels: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
   completed: 'Completed',
+  submitted: 'Submitted',
+  acknowledged: 'Acknowledged',
 };
 
 const statusColors: Record<string, string> = {
   pending: '#ff9800',
   in_progress: '#25C1AC',
   completed: '#4caf50',
+  submitted: '#e65100',
+  acknowledged: '#1565c0',
 };
 
 function getTodayDenver(): Date {
@@ -126,6 +131,8 @@ export default function TasksScreen() {
   const [viewMode, setViewMode] = React.useState<ViewMode>('list');
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
+  const [acknowledgingId, setAcknowledgingId] = React.useState<string | null>(null);
+  const qc = useQueryClient();
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -209,6 +216,22 @@ export default function TasksScreen() {
     }
   };
 
+  const handleAcknowledge = async (task: Task) => {
+    setAcknowledgingId(task.id);
+    try {
+      await apiRequest('PUT', `/api/tasks/${task.id}`, {
+        status: 'acknowledged',
+        version: task.version,
+      });
+      qc.invalidateQueries({ queryKey: ['/api/tasks'] });
+      refetch();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to acknowledge request');
+    } finally {
+      setAcknowledgingId(null);
+    }
+  };
+
   const buildGroupedList = (): (Task | { type: 'header'; title: string; count: number })[] => {
     if (filterMode === 'completed') {
       if (completedTasks.length === 0) return [];
@@ -218,13 +241,23 @@ export default function TasksScreen() {
       ];
     }
 
+    const hoaStatuses = ['submitted', 'acknowledged'];
+    const urgentHoa = activeTasks
+      .filter(t => t.origin === 'HOA' && t.priority === 'urgent' && hoaStatuses.includes(t.status))
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const normalHoa = activeTasks
+      .filter(t => t.origin === 'HOA' && t.priority !== 'urgent' && hoaStatuses.includes(t.status))
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+    const nonHoaTasks = activeTasks.filter(t => !(t.origin === 'HOA' && hoaStatuses.includes(t.status)));
+
     const groups: Record<WindowGroup, Task[]> = {
       overdue: [],
       active_window: [],
       upcoming: [],
       no_window: [],
     };
-    for (const t of activeTasks) {
+    for (const t of nonHoaTasks) {
       const group = classifyTask(t, today);
       groups[group].push(t);
     }
@@ -246,6 +279,16 @@ export default function TasksScreen() {
     });
 
     const items: (Task | { type: 'header'; title: string; count: number })[] = [];
+
+    if (urgentHoa.length > 0) {
+      items.push({ type: 'header', title: 'Urgent Requests', count: urgentHoa.length } as any);
+      items.push(...urgentHoa);
+    }
+    if (normalHoa.length > 0) {
+      items.push({ type: 'header', title: 'HOA Requests', count: normalHoa.length } as any);
+      items.push(...normalHoa);
+    }
+
     for (const group of GROUP_ORDER) {
       if (groups[group].length > 0) {
         items.push({ type: 'header', title: GROUP_LABELS[group], count: groups[group].length } as any);
@@ -261,10 +304,11 @@ export default function TasksScreen() {
     const pending = pendingCompletions.find(c => c.taskId === item.id && c.state !== 'synced');
     const urgency = getUrgencyChip(item, today);
     const windowRange = formatWindowRange(item);
+    const isHoa = item.origin === 'HOA';
 
     return (
       <TouchableOpacity
-        style={styles.taskCard}
+        style={[styles.taskCard, isHoa && styles.hoaTaskCard]}
         onPress={() => router.push(`/task/${item.id}`)}
         activeOpacity={0.7}
         testID={`task-${item.id}`}
@@ -272,6 +316,11 @@ export default function TasksScreen() {
         <View style={styles.taskHeader}>
           <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
           <Text style={styles.taskTitle} numberOfLines={1}>{item.title}</Text>
+          {isHoa ? (
+            <View style={styles.hoaBadge}>
+              <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
+            </View>
+          ) : null}
           {pending ? (
             <View style={[styles.statusBadge, {
               backgroundColor: pending.state === 'failed' ? '#ffebee' : '#fff3e0',
@@ -294,6 +343,20 @@ export default function TasksScreen() {
             </View>
           )}
         </View>
+        {isHoa ? (
+          <View style={styles.hoaMetaRow}>
+            <View style={[styles.hoaPriorityChip, item.priority === 'urgent' && styles.hoaPriorityUrgent]}>
+              <Text style={[styles.hoaPriorityText, item.priority === 'urgent' && styles.hoaPriorityUrgentText]}>
+                {item.priority === 'urgent' ? 'Urgent' : 'Normal'}
+              </Text>
+            </View>
+            <View style={[styles.hoaStatusChip, { backgroundColor: statusColors[item.status] + '20' }]}>
+              <Text style={[styles.hoaStatusText, { color: statusColors[item.status] }]}>
+                {statusLabels[item.status]}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         {item.description ? (
           <Text style={styles.taskDescription} numberOfLines={2}>{item.description}</Text>
         ) : null}
@@ -317,6 +380,22 @@ export default function TasksScreen() {
                 {new Date(item.dueDate).toLocaleDateString()}
               </Text>
             </View>
+          ) : null}
+          {isHoa && item.status === 'submitted' ? (
+            <TouchableOpacity
+              style={styles.acknowledgeButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleAcknowledge(item);
+              }}
+              disabled={acknowledgingId === item.id}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+              <Text style={styles.acknowledgeButtonText}>
+                {acknowledgingId === item.id ? 'Acknowledging...' : 'Acknowledge'}
+              </Text>
+            </TouchableOpacity>
           ) : null}
         </View>
       </TouchableOpacity>
@@ -454,6 +533,8 @@ export default function TasksScreen() {
                     styles.sectionHeader,
                     item.title === 'Overdue' && styles.sectionHeaderOverdue,
                     item.title === 'Active Window' && styles.sectionHeaderActive,
+                    item.title === 'Urgent Requests' && styles.sectionHeaderUrgent,
+                    item.title === 'HOA Requests' && styles.sectionHeaderHoa,
                   ]}>
                     {item.title}
                   </Text>
@@ -604,4 +685,68 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   syncButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  sectionHeaderUrgent: { color: '#c62828' },
+  sectionHeaderHoa: { color: '#6a1b9a' },
+  hoaTaskCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#7c4dff',
+  },
+  hoaBadge: {
+    backgroundColor: '#ede7f6',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  hoaBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#6a1b9a',
+    letterSpacing: 0.5,
+  },
+  hoaMetaRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    marginTop: 6,
+  },
+  hoaPriorityChip: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: '#e8eaed',
+  },
+  hoaPriorityUrgent: {
+    backgroundColor: '#ffebee',
+  },
+  hoaPriorityText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#666',
+  },
+  hoaPriorityUrgentText: {
+    color: '#c62828',
+  },
+  hoaStatusChip: {
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  hoaStatusText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  acknowledgeButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: '#1565c0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginLeft: 'auto' as const,
+  },
+  acknowledgeButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
 });

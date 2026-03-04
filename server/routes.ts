@@ -402,6 +402,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof version !== "number") {
         return res.status(400).json({ error: "version is required" });
       }
+
+      if (task!.origin === "HOA") {
+        const updatingUser = await storage.getUserById(req.session.userId!);
+        if (updatingUser?.role === "contractor" && data.priority !== undefined) {
+          return res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
+        }
+        if (data.status) {
+          const currentStatus = task!.status;
+          const newStatus = data.status;
+          const validTransitions: Record<string, string[]> = {
+            submitted: ["acknowledged"],
+          };
+          const allowedStatuses = validTransitions[currentStatus];
+          if (!allowedStatuses || !allowedStatuses.includes(newStatus)) {
+            if (newStatus === "completed") {
+              return res.status(400).json({ error: "HOA requests must be completed via the completion form, not status update" });
+            }
+            return res.status(400).json({ error: `Invalid HOA request status transition: ${currentStatus} → ${newStatus}` });
+          }
+        }
+      }
+
       if (data.startDate) {
         data.startDate = new Date(data.startDate);
       }
@@ -445,6 +467,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if (!allowed) {
         return res.status(403).json({ error: "You do not have access to this task" });
+      }
+
+      if (existingTask.origin === "HOA" && existingTask.status !== "acknowledged") {
+        return res.status(400).json({ error: "HOA requests must be acknowledged before completing" });
       }
 
       const parsed = completeTaskSchema.safeParse(req.body);

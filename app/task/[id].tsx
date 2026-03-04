@@ -21,7 +21,7 @@ type Task = {
   communityId: string;
   title: string;
   description: string | null;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'submitted' | 'acknowledged';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   latitude: number | null;
   longitude: number | null;
@@ -32,6 +32,7 @@ type Task = {
   windowStart: string | null;
   windowEnd: string | null;
   version: number;
+  origin: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -83,6 +84,8 @@ const statusLabels: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
   completed: 'Completed',
+  submitted: 'Submitted',
+  acknowledged: 'Acknowledged',
 };
 
 function getTodayDenver(): Date {
@@ -125,6 +128,7 @@ export default function TaskDetailScreen() {
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [photoViewerImages, setPhotoViewerImages] = useState<{ id: string; url: string }[]>([]);
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
+  const [acknowledging, setAcknowledging] = useState(false);
 
   const { data: task, isLoading } = useQuery<Task>({
     queryKey: [`/api/tasks/${id}`],
@@ -270,6 +274,31 @@ export default function TaskDetailScreen() {
     }
   };
 
+  const isHoaRequest = task?.origin === 'HOA';
+
+  const handleAcknowledge = async () => {
+    if (!task) return;
+    setAcknowledging(true);
+    try {
+      await apiRequest('PUT', `/api/tasks/${task.id}`, {
+        status: 'acknowledged',
+        version: task.version,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+      Alert.alert('Acknowledged', 'This HOA request has been acknowledged.');
+    } catch (e: any) {
+      if (e.message?.includes('409')) {
+        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+        Alert.alert('Update Conflict', 'This task was modified. Please try again.');
+      } else {
+        Alert.alert('Error', e.message || 'Failed to acknowledge request');
+      }
+    } finally {
+      setAcknowledging(false);
+    }
+  };
+
   if (isLoading || !task) {
     return (
       <View style={styles.container}>
@@ -298,7 +327,7 @@ export default function TaskDetailScreen() {
           <Ionicons name="arrow-back" size={22} color="#0C1D31" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{task.title}</Text>
-        {task.status !== 'completed' && !pendingForTask ? (
+        {task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') ? (
           <TouchableOpacity onPress={() => setShowCompleteForm(true)} style={styles.headerActionBtn}>
             <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
           </TouchableOpacity>
@@ -358,6 +387,50 @@ export default function TaskDetailScreen() {
                 <Text style={styles.dismissButtonText}>Discard</Text>
               </TouchableOpacity>
             </View>
+          )}
+        </View>
+      )}
+
+      {isHoaRequest && (
+        <View style={styles.hoaBanner}>
+          <View style={styles.hoaBannerTop}>
+            <View style={styles.hoaBadge}>
+              <Ionicons name="home-outline" size={14} color="#fff" />
+              <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
+            </View>
+            <View style={[
+              styles.hoaStatusChip,
+              { backgroundColor: task.status === 'submitted' ? '#fff3e0' : task.status === 'acknowledged' ? '#e3f2fd' : '#E6F9F6' },
+            ]}>
+              <Text style={[
+                styles.hoaStatusChipText,
+                { color: task.status === 'submitted' ? '#e65100' : task.status === 'acknowledged' ? '#1565c0' : '#25C1AC' },
+              ]}>
+                {statusLabels[task.status]}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.hoaPriorityRow}>
+            <Text style={styles.hoaPriorityLabel}>Priority:</Text>
+            <Text style={[styles.hoaPriorityValue, { color: task.priority === 'urgent' ? '#c62828' : '#555' }]}>
+              {task.priority === 'urgent' ? 'Urgent' : 'Normal'}
+            </Text>
+          </View>
+          {task.status === 'submitted' && (
+            <TouchableOpacity
+              style={[styles.acknowledgeButton, acknowledging && styles.buttonDisabled]}
+              onPress={handleAcknowledge}
+              disabled={acknowledging}
+            >
+              {acknowledging ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+                  <Text style={styles.acknowledgeButtonText}>Acknowledge Request</Text>
+                </>
+              )}
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -635,7 +708,7 @@ export default function TaskDetailScreen() {
         </View>
       </Modal>
 
-      {showCompleteForm && task.status !== 'completed' && !pendingForTask && (
+      {showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Complete Task</Text>
 
@@ -732,7 +805,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && (() => {
+      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (() => {
         const windowStatus = isInWindow(task);
         const blocked = windowStatus !== null && windowStatus !== 'in' && user?.role !== 'admin';
         if (blocked) return null;
@@ -1051,5 +1124,78 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#25C1AC',
+  },
+  hoaBanner: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#7c4dff',
+    shadowColor: '#7c4dff',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  hoaBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  hoaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#7c4dff',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  hoaBadgeText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#fff',
+    letterSpacing: 0.8,
+  },
+  hoaStatusChip: {
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  hoaStatusChipText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  hoaPriorityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  hoaPriorityLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#888',
+  },
+  hoaPriorityValue: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  acknowledgeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#1565c0',
+    borderRadius: 999,
+    padding: 14,
+    marginTop: 12,
+  },
+  acknowledgeButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700' as const,
   },
 });
