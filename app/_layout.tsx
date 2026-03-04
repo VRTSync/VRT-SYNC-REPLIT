@@ -36,11 +36,13 @@ function AuthNavigator() {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inAppGroup = segments[0] === "(tabs)" || segments[0] === "(hoa-tabs)";
 
     if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
-      router.replace("/(tabs)");
+      const isHoa = user.role === 'hoa_admin' || user.role === 'hoa_member';
+      router.replace(isHoa ? "/(hoa-tabs)" : "/(tabs)");
     }
   }, [user, isLoading, segments]);
 
@@ -80,6 +82,7 @@ function AuthNavigator() {
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(hoa-tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="task" options={{ headerShown: false }} />
     </Stack>
   );
