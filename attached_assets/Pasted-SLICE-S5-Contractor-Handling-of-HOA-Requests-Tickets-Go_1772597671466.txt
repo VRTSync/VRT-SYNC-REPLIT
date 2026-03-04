@@ -1,0 +1,152 @@
+SLICE S5 — Contractor Handling of HOA Requests (Tickets)
+
+Goal
+Make HOA Requests operational for contractors:
+- HOA Requests appear as “tickets” in the contractor task list
+- Urgent HOA requests are surfaced at the very top
+- Contractors must manually acknowledge before they can complete
+- Contractors cannot change HOA request priority
+- Preserve all existing contractor task behavior for non-HOA tasks
+
+Locked Rules (must follow)
+- HOA Request = Task with origin = "HOA"
+- Only HOA requests can be Urgent
+- Priority values for HOA requests: Normal | Urgent
+- HOA sets priority at creation; contractor cannot change it
+- Status flow enforced:
+  Submitted → Acknowledged → Completed (no skipping)
+- Contractors must explicitly click Acknowledge (manual)
+- "Complete" action disabled unless status == Acknowledged
+- Requests remain in request sections until Completed
+- No task pins on the asset map; map work is separate (not in this slice)
+
+------------------------------------------------------------
+
+Scope (IN)
+
+A) Backend: Enforce contractor restrictions for HOA requests
+1) Priority immutability (contractor cannot change)
+- If an update endpoint exists for tasks (PATCH /api/tasks/:id or similar):
+  - When task.origin == "HOA":
+    - if user.role == CONTRACTOR:
+      - reject any attempt to modify priority (403 or ignore field)
+  - Admin may still modify (optional), but contractor must not.
+
+2) Status transition rules (server-side)
+- When task.origin == "HOA" and user.role == CONTRACTOR:
+  - status can only transition:
+    Submitted -> Acknowledged
+    Acknowledged -> Completed
+  - Reject:
+    Submitted -> Completed
+    Completed -> any other
+    Acknowledged -> Submitted
+- Implement validation in the task status update endpoint.
+- Ensure optimistic locking behavior is preserved.
+
+B) Mobile (Contractor Portal): Task List UI changes (Tickets sections)
+Add 3 top-level sections to the contractor task list screen:
+
+1) URGENT REQUESTS
+- Filter: origin="HOA" AND priority="Urgent" AND status IN ("Submitted","Acknowledged")
+- Sort: createdAt oldest first
+- Section visible only if at least 1 item exists
+
+2) HOA REQUESTS
+- Filter: origin="HOA" AND priority="Normal" AND status IN ("Submitted","Acknowledged")
+- Sort: createdAt oldest first
+- Section visible only if at least 1 item exists
+
+3) TASKS (existing)
+- Filter: origin != "HOA" (or origin is null)
+- Existing grouping remains (Overdue/Active/Upcoming) exactly as before
+
+Both request sections must be expanded by default.
+
+C) Contractor Ticket Row (Visual + Actions)
+Request/ticket rows must be visually distinct:
+- "REQUEST" or "HOA REQUEST" badge
+- Flag/color indicator
+- Priority label (Urgent / Normal)
+- Status chip (Submitted/Acknowledged)
+- Submitted date/time
+- Location reference (asset name if present, else "Pinned location")
+- Photo indicator if attachments exist
+
+Row actions:
+- For Submitted tickets: show "Acknowledge" button directly on the row (one tap)
+- For Acknowledged tickets: no row action (open detail to complete)
+- For normal tasks: no row action (unchanged)
+
+Tap behavior:
+- Tapping any ticket row opens Task Detail screen.
+
+D) Contractor Task Detail (HOA Request gating)
+On Task Detail for origin="HOA":
+- Show REQUEST badge/flag + priority
+- If status == Submitted:
+  - Show Acknowledge button
+  - Hide/disable Complete button
+- If status == Acknowledged:
+  - Show Complete button
+- If status == Completed:
+  - Show completed state as normal (read-only)
+
+Completion fields:
+- Notes and photos remain OPTIONAL (do not enforce required yet)
+
+Scope (OUT)
+- Request Map (single-pin map) — next slice
+- HOA Requests tab and archive UI — later slice
+- HOA notifications — later slice
+- Any asset map changes
+
+------------------------------------------------------------
+
+Acceptance Criteria (must pass)
+
+1) Contractor sees HOA tickets in two dedicated sections:
+- Urgent Requests at top (if any)
+- HOA Requests next
+- Normal tasks below (existing behavior unchanged)
+
+2) Sorting:
+- Within each request section: oldest first
+
+3) Contractor must acknowledge before completing:
+- Submitted ticket cannot be completed
+- Acknowledge is required (manual button)
+- Server rejects skipping Submitted->Completed
+
+4) Contractor cannot change HOA request priority:
+- Any attempt to patch priority as contractor is rejected/ignored
+- Priority remains what HOA set at creation
+
+5) Requests remain in request sections until completed:
+- Submitted and Acknowledged requests show in request sections
+- Completed requests disappear from these sections (they’ll exist in history elsewhere later)
+
+6) No regressions:
+- Non-HOA tasks display and operate exactly as before
+- Admin behavior unchanged unless explicitly modified
+
+------------------------------------------------------------
+
+Testing Checklist
+
+- Create an HOA request (Normal and Urgent) via HOA Admin (from Slice S4)
+- Login as contractor:
+  - Verify Urgent request appears in URGENT REQUESTS
+  - Verify Normal request appears in HOA REQUESTS
+- Tap Submitted request:
+  - Acknowledge button present
+  - Complete disabled
+- Acknowledge:
+  - Status becomes Acknowledged
+- Complete:
+  - Status becomes Completed
+- Attempt invalid transitions via API:
+  - Submitted -> Completed should fail
+- Attempt to patch priority as contractor:
+  - Should be rejected/ignored
+- Verify normal contractor tasks unaffected
