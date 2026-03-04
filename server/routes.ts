@@ -2572,6 +2572,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/hoa/requests/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const task = await storage.getTaskById(req.params.id as string);
+      if (!task) {
+        return res.status(404).json({ error: "Request not found" });
+      }
+      if (task.origin !== "HOA") {
+        return res.status(404).json({ error: "Request not found" });
+      }
+
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      if (isHoaRole(user.role)) {
+        if (user.hoaCommunityId !== task.communityId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (user.role === "admin") {
+      } else {
+        const { allowed } = await storage.canUserAccessTask(user.id, task.id);
+        if (!allowed) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      let pinLocation: { lat: number; lng: number } | null = null;
+
+      const taskLink = await storage.getTaskLink(task.id);
+      if (taskLink?.assetId) {
+        const asset = await storage.getAssetById(taskLink.assetId);
+        if (asset?.latitude != null && asset?.longitude != null) {
+          pinLocation = { lat: asset.latitude, lng: asset.longitude };
+        }
+      }
+
+      if (!pinLocation && task.latitude != null && task.longitude != null) {
+        pinLocation = { lat: task.latitude, lng: task.longitude };
+      }
+
+      res.json({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        origin: task.origin,
+        pinLocation,
+        assetId: taskLink?.assetId ?? task.assetId ?? null,
+        category: task.category,
+        createdAt: task.createdAt,
+      });
+    } catch (error) {
+      console.error("Get HOA request error:", error);
+      res.status(500).json({ error: "Failed to fetch HOA request" });
+    }
+  });
+
   app.post("/api/hoa/requests", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);

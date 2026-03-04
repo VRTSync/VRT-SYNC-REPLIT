@@ -84,6 +84,7 @@ function AuthNavigator() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(hoa-tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="task" options={{ headerShown: false }} />
+      <Stack.Screen name="request-map" options={{ headerShown: false }} />
     </Stack>
   );
 }

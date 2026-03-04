@@ -435,6 +435,16 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
+      {isHoaRequest && (task.latitude != null && task.longitude != null) && (
+        <TouchableOpacity
+          style={styles.viewOnMapButton}
+          onPress={() => router.push(`/request-map/${task.id}` as any)}
+        >
+          <Ionicons name="map-outline" size={18} color="#fff" />
+          <Text style={styles.viewOnMapButtonText}>View on Map</Text>
+        </TouchableOpacity>
+      )}
+
       <View style={styles.card}>
         <View style={styles.titleRow}>
           <View style={[styles.priorityBadge, { backgroundColor: priorityColors[task.priority] }]}>
@@ -1194,6 +1204,21 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   acknowledgeButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  viewOnMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#25C1AC',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+  },
+  viewOnMapButtonText: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '700' as const,

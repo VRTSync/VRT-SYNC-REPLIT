@@ -1,26 +1,16 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiRequest, getQueryFn } from '@/lib/query-client';
+import { apiRequest } from '@/lib/query-client';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
-
-type Task = {
-  id: string;
-  title: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  latitude: number | null;
-  longitude: number | null;
-  address: string | null;
-};
 
 type MapLayerMeta = {
   id: string;
@@ -59,20 +49,12 @@ const CATEGORY_TABS = [
   { key: 'trees', label: 'Trees', icon: 'leaf-outline' as const },
 ];
 
-const priorityColors: Record<string, string> = {
-  low: '#4caf50',
-  medium: '#ff9800',
-  high: '#f44336',
-  urgent: '#9c27b0',
-};
-
 const layerColors = [
   '#25C1AC', '#3498db', '#e74c3c', '#f39c12', '#9b59b6',
   '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
 ];
 
 export default function MapScreen() {
-  const router = useRouter();
   const params = useLocalSearchParams<{ targetLat?: string; targetLng?: string; targetLabel?: string; category?: string }>();
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
@@ -93,16 +75,6 @@ export default function MapScreen() {
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
   const offlineNoPack = !isOnline && !localPack;
-
-  const { data: tasks = [] } = useQuery<Task[]>({
-    queryKey: ['/api/tasks', { communityId }],
-    queryFn: async () => {
-      const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
-      const res = await apiRequest('GET', route);
-      return res.json();
-    },
-    enabled: !!activeCommunity,
-  });
 
   const { data: controllers = [] } = useQuery<ControllerInfo[]>({
     queryKey: ['/api/communities', communityId, 'controllers'],
@@ -144,8 +116,6 @@ export default function MapScreen() {
   }, [useOfflineData, localPack]);
 
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
-  const geoTasks = tasks.filter((t) => t.latitude != null && t.longitude != null && t.status !== 'completed');
-
   useEffect(() => {
     if (params.targetLat && params.targetLng) {
       const lat = parseFloat(params.targetLat);
@@ -328,19 +298,6 @@ export default function MapScreen() {
     return parts.join('|');
   }, [enabledControllers, disabledLayerIds, allLayers]);
 
-  const mappedTasks = useMemo(() => geoTasks.map((t) => ({
-    id: t.id,
-    title: t.title,
-    priority: t.priority,
-    latitude: t.latitude!,
-    longitude: t.longitude!,
-    address: t.address,
-  })), [geoTasks]);
-
-  const handleTaskPress = useCallback((taskId: string) => {
-    router.push(`/task/${taskId}`);
-  }, [router]);
-
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
 
   const handleViewAssetDetail = useCallback(async (featureRef: string, _layerKey: string, _meta?: { label?: string; assetType?: string; layerName?: string }) => {
@@ -453,9 +410,9 @@ export default function MapScreen() {
       )}
 
       <LeafletMap
-        tasks={mappedTasks}
+        tasks={[]}
         userLocation={userLocation}
-        onTaskPress={handleTaskPress}
+        onTaskPress={() => {}}
         layers={activeLayers}
         onViewAssetDetail={handleViewAssetDetail}
         targetRegion={targetRegion}

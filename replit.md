@@ -43,6 +43,9 @@ The Tasks screen (`app/(tabs)/tasks.tsx`) includes a calendar/list view toggle. 
 - **Offline support**: Reuses cached tasks, service schedules, and visits from OfflineContext — no new API calls. Works fully offline.
 - **Interactions**: Tap task bar → navigate to task detail. Tap mowing dot → LogVisitModal. Tap "+X more" → week items modal listing all tasks and service days for that week.
 
+### Request Map
+The Request Map (`app/request-map/[id].tsx`) is a dedicated single-pin map screen for viewing individual HOA request locations. It shows exactly one pin at the request's pinLocation with a distinctive marker style. No asset layers, no other pins. Pin popup shows HOA REQUEST label, title, priority, and status. Accessed via "View on Map" button on the task detail screen for HOA requests. The Asset Map (`app/(tabs)/map.tsx`) shows only assets — no task or request pins.
+
 ### Map Popups & Asset Detail
 The map uses Leaflet HTML popups (inside the iframe/WebView) as the single popup system. Each feature popup shows the asset type, label, and a "View Details" button. The "View Details" button sends a `viewAssetDetail` bridge message which resolves the feature's database asset by featureRef and opens the `AssetDetailPanel`. There is no React Native overlay popup — all popup interaction happens inside Leaflet.
 
