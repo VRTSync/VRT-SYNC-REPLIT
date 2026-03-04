@@ -219,7 +219,7 @@ export default function HoaRequestsScreen() {
 
       {isHoaAdmin && (
         <TouchableOpacity
-          style={[styles.fab, { bottom: Platform.OS === 'web' ? 50 : insets.bottom + 90 }]}
+          style={[styles.fab, { bottom: Platform.OS === 'web' ? 100 : insets.bottom + 90 }]}
           onPress={() => setShowCreateRequest(true)}
           activeOpacity={0.8}
         >
@@ -406,5 +406,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 6,
+    zIndex: 999,
   },
 });
