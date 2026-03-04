@@ -1,0 +1,134 @@
+SLICE S7 — Notifications (HOA Admin Only)
+
+Goal
+Implement low-noise, high-signal notifications for the HOA experience. Only HOA Admin receives notifications. HOA Members receive none. Contractors receive a notification when a new HOA Request is submitted.
+
+This slice must NOT introduce notifications for acknowledgement, mow-day completion, or task-window opening.
+
+------------------------------------------------
+
+Notification Rules (Locked)
+
+Recipients:
+- HOA_ADMIN: YES (limited set below)
+- HOA_MEMBER: NO notifications at all
+- CONTRACTOR: YES (new HOA request submitted)
+
+------------------------------------------------
+
+Events to Notify (HOA_ADMIN)
+
+Send notification to HOA_ADMIN when:
+
+1) HOA Request Completed
+- Trigger: task.origin = HOA AND task.status transitions to Completed
+- Message example: "Request completed: {task.title}"
+
+2) Any Task Completed (general transparency)
+- Trigger: ANY task.status transitions to Completed for the HOA Admin's community
+- Message example: "Task completed: {task.title}"
+
+Notes:
+- This includes HOA requests (they will also qualify for #1). To avoid duplicates:
+  - If origin=HOA, send ONLY the “Request Completed” notification (not both).
+
+------------------------------------------------
+
+Events NOT to Notify (explicitly excluded)
+
+Do NOT send HOA notifications for:
+
+- HOA Request Acknowledged
+- Mow day / service visit logged
+- Task execution window opening
+- Task scheduled / in-progress states (these states do not exist in this model)
+
+------------------------------------------------
+
+Events to Notify (CONTRACTOR)
+
+Send notification to contractors when:
+
+- New HOA Request Submitted
+  - Trigger: task.origin = HOA AND task.status = Submitted on creation
+  - Message example: "New HOA request: {task.title}"
+
+Recipient scope:
+- Notify contractor users who are members of that community (existing membership logic)
+- (If multiple contractors exist, notify all or your current “assigned contractor group” pattern.)
+
+------------------------------------------------
+
+Delivery Mechanism (Implementation Choice)
+
+Use your existing notification channel(s). If push notifications are already implemented:
+- Add push notifications per event rules above.
+
+If push is not yet implemented:
+- Implement an in-app notification feed (DB table) as the source of truth, and optionally wire push later.
+
+Minimum acceptable for this slice:
+- Persist notifications and display them in-app for HOA Admin and Contractors.
+
+Recommended structure:
+
+notifications table:
+- id
+- communityId
+- recipientUserId
+- type (TASK_COMPLETED | HOA_REQUEST_COMPLETED | HOA_REQUEST_SUBMITTED)
+- title
+- body
+- relatedTaskId
+- createdAt
+- readAt (nullable)
+
+------------------------------------------------
+
+Where Notifications Appear (Mobile)
+
+HOA Admin:
+- Show notification badge/count somewhere consistent (header or settings)
+- Provide a simple notifications list screen OR integrate into existing notifications UI if it exists
+
+HOA Member:
+- No notification UI needed (or show empty state)
+
+Contractor:
+- Show notification for new HOA request in existing contractor notification UI if present
+- If none exists, include in the same notifications feed/list
+
+------------------------------------------------
+
+API / Permissions
+
+- Notifications query endpoint must be scoped by user:
+  - HOA_ADMIN can only fetch notifications for themselves (their userId)
+  - HOA_MEMBER should fetch none (or return empty)
+  - CONTRACTOR fetches theirs
+- Notifications creation happens server-side on relevant task status transitions and HOA request creation.
+- Enforce that HOA requests do not generate duplicate completion notifications.
+
+------------------------------------------------
+
+Acceptance Criteria
+
+1) HOA Admin receives a notification when any task is completed in their community
+- Exactly one notification per completion event
+
+2) HOA Admin receives a notification when an HOA Request is completed
+- And does NOT receive a second duplicate "task completed" notification for the same event
+
+3) HOA Admin does NOT receive notifications for:
+- Acknowledged
+- Mow day completion
+- Task-window opening
+
+4) HOA Members receive no notifications and no alerts
+- Notification feed is empty or inaccessible
+
+5) Contractors receive a notification when a new HOA Request is submitted
+- Correct community scoping
+- Fires immediately on request creation
+
+6) Existing contractor functionality remains unchanged apart from receiving the new HOA request alert
