@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "FieldWork",
-    "slug": "fieldwork",
+    "name": "VRTSync Mobile",
+    "slug": "vrtsyncmobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "vrtsyncmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp"
+      "bundleIdentifier": "com.vrtsyncmobile.app"
     },
     "android": {
-      "package": "com.myapp",
+      "package": "com.vrtsyncmobile.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
