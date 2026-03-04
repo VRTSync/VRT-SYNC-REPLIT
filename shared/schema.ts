@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member"]);
-export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed"]);
+export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed", "submitted", "acknowledged"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
@@ -65,6 +65,9 @@ export const tasks = pgTable("tasks", {
   version: integer("version").notNull().default(1),
   scheduleInstanceKey: varchar("schedule_instance_key"),
   importFingerprint: varchar("import_fingerprint"),
+  origin: varchar("origin"),
+  assetId: varchar("asset_id").references(() => assets.id, { onDelete: 'set null' }),
+  category: varchar("category"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -484,6 +487,19 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   ticketType: true,
   windowStart: true,
   windowEnd: true,
+  origin: true,
+  assetId: true,
+  category: true,
+});
+
+export const createHoaRequestSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  description: z.string().min(1, "Description is required"),
+  priority: z.enum(["Normal", "Urgent"]),
+  category: z.enum(["Irrigation", "Landscape", "Snow", "Other"]).optional(),
+  assetId: z.string().optional(),
+  pinLat: z.number().min(-90).max(90).optional(),
+  pinLng: z.number().min(-180).max(180).optional(),
 });
 
 export const completeTaskSchema = z.object({

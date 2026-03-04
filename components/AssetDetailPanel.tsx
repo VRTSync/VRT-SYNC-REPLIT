@@ -13,6 +13,8 @@ import { getQueryFn, apiRequest } from '@/lib/query-client';
 import { useOffline, type PendingAssetNote } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import { ASSET_FIELD_TEMPLATES, getRequiredFieldsMissing, getTemplateKeys } from '@shared/assetFieldTemplates';
+import { useAuth } from '@/client/contexts/AuthContext';
+import CreateRequestSheet from '@/components/CreateRequestSheet';
 
 type AssetDetail = {
   id: string;
@@ -98,13 +100,16 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [fullScreenPhoto, setFullScreenPhoto] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showCreateRequest, setShowCreateRequest] = useState(false);
   const { isOnline, addPendingAssetNote, syncPendingAssetNotes, getPendingNotesForAsset, retryAssetNote, dismissAssetNote } = useOffline();
   const { localPack, getOfflineWorkHistory } = useOfflinePack();
   const useOfflineData = !isOnline && !!localPack;
+  const isHoaAdmin = user?.role === 'hoa_admin';
 
   const { data: asset, isLoading: assetLoading, error: assetError } = useQuery<AssetDetail>({
     queryKey: [`/api/assets/${assetId}`],
@@ -589,6 +594,14 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
               <Text style={styles.offlineBadgeText}>Offline</Text>
             </View>
           )}
+          {isHoaAdmin && (
+            <TouchableOpacity
+              onPress={() => setShowCreateRequest(true)}
+              style={styles.createRequestBtn}
+            >
+              <Ionicons name="add-circle-outline" size={22} color="#25C1AC" />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.tabBar}>
@@ -634,6 +647,12 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
             )}
           </View>
         </Modal>
+        <CreateRequestSheet
+          visible={showCreateRequest}
+          onClose={() => setShowCreateRequest(false)}
+          assetId={assetId}
+          assetName={asset?.label}
+        />
       </View>
     </Modal>
   );
@@ -671,6 +690,14 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   offlineBadgeText: { fontSize: 11, color: '#f39c12', fontWeight: '600' },
+  createRequestBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(37,193,172,0.15)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#fff',

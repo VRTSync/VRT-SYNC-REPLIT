@@ -18,7 +18,7 @@ import {
   insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
   insertTaskTemplateSchema, generateFromTemplateSchema, insertTaskScheduleSchema,
   insertServiceScheduleSchema, updateServiceScheduleSchema, logServiceVisitSchema,
-  insertAssetNoteSchema,
+  insertAssetNoteSchema, createHoaRequestSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -2543,6 +2543,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Commit error:", error);
       res.status(500).json({ error: error.message || "Failed to commit import" });
+    }
+  });
+
+  app.post("/api/hoa/requests", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user || user.role !== "hoa_admin") {
+        return res.status(403).json({ error: "Only HOA Admins can create requests" });
+      }
+
+      const communityId = req.session.hoaCommunityId;
+      if (!communityId) {
+        return res.status(400).json({ error: "No HOA community associated with this user" });
+      }
+
+      const parsed = createHoaRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+
+      const { title, description, priority, category, assetId, pinLat, pinLng } = parsed.data;
+
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      let resolvedAssetId: string | undefined;
+
+      if (assetId) {
+        const asset = await storage.getAssetById(assetId);
+        if (!asset) {
+          return res.status(404).json({ error: "Asset not found" });
+        }
+        if (asset.communityId !== communityId) {
+          return res.status(403).json({ error: "Asset does not belong to your community" });
+        }
+        latitude = asset.latitude ?? undefined;
+        longitude = asset.longitude ?? undefined;
+        resolvedAssetId = asset.id;
+      } else {
+        if (pinLat == null || pinLng == null) {
+          return res.status(400).json({ error: "pinLat and pinLng are required when no asset is selected" });
+        }
+        latitude = pinLat;
+        longitude = pinLng;
+      }
+
+      const mappedPriority = priority === "Urgent" ? "urgent" as const : "medium" as const;
+
+      const task = await storage.createTask({
+        communityId,
+        title,
+        description,
+        priority: mappedPriority,
+        status: "submitted",
+        origin: "HOA",
+        category: category ?? undefined,
+        latitude,
+        longitude,
+        createdBy: req.session.userId!,
+      });
+
+      if (resolvedAssetId) {
+        await storage.setTaskLink(task.id, {
+          linkType: "asset",
+          assetId: resolvedAssetId,
+          latitude,
+          longitude,
+        });
+      }
+
+      res.status(201).json(task);
+    } catch (error) {
+      console.error("Create HOA request error:", error);
+      res.status(500).json({ error: "Failed to create HOA request" });
     }
   });
 

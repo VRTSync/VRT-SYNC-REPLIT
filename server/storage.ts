@@ -79,6 +79,7 @@ export async function createTask(data: {
   communityId: string;
   title: string;
   description?: string;
+  status?: "pending" | "in_progress" | "completed" | "submitted" | "acknowledged";
   priority?: "low" | "medium" | "high" | "urgent";
   latitude?: number;
   longitude?: number;
@@ -90,6 +91,8 @@ export async function createTask(data: {
   ticketType?: string;
   windowStart?: string;
   windowEnd?: string;
+  origin?: string;
+  category?: string;
 }): Promise<Task> {
   const [task] = await db.insert(tasks).values(data).returning();
   return task;
@@ -134,7 +137,7 @@ export async function getTasksForUser(userId: string, communityId?: string): Pro
 export async function updateTask(id: string, expectedVersion: number, data: Partial<{
   title: string;
   description: string;
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "completed" | "submitted" | "acknowledged";
   priority: "low" | "medium" | "high" | "urgent";
   latitude: number;
   longitude: number;

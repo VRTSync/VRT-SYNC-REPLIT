@@ -1,16 +1,18 @@
-import React from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
+import CreateRequestSheet from '@/components/CreateRequestSheet';
 
 export default function HoaDashboardScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { activeCommunity } = useCommunity();
   const isHoaAdmin = user?.role === 'hoa_admin';
+  const [showCreateRequest, setShowCreateRequest] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -25,13 +27,21 @@ export default function HoaDashboardScreen() {
           <Text style={styles.placeholderTitle}>Dashboard</Text>
           <Text style={styles.placeholderText}>Coming soon</Text>
           {isHoaAdmin && (
-            <View style={styles.disabledButton}>
-              <Ionicons name="add-circle-outline" size={18} color="#999" />
-              <Text style={styles.disabledButtonText}>Create Request</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => setShowCreateRequest(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.createButtonText}>Create Request</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
+      <CreateRequestSheet
+        visible={showCreateRequest}
+        onClose={() => setShowCreateRequest(false)}
+      />
     </View>
   );
 }
@@ -67,20 +77,19 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 4,
   },
-  disabledButton: {
+  createButton: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    backgroundColor: '#e5e5e5',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: '#25C1AC',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
     marginTop: 20,
-    opacity: 0.6,
+    gap: 6,
   },
-  disabledButtonText: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '500' as const,
-    marginLeft: 6,
+  createButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600' as const,
   },
 });

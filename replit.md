@@ -20,7 +20,7 @@ The system employs session-based authentication using `express-session` with a P
 The PostgreSQL database, managed with Drizzle ORM, includes tables for:
 - **Users**: Contractors, Admins, HOA Admins, and HOA Members. HOA users have a `hoaCommunityId` column for single-community scoping.
 - **Communities**: Core organizational units.
-- **Tasks**: Community-scoped tasks with status, priority, geolocation, assignee, and versioning. Supports CSV import and bulk assignment.
+- **Tasks**: Community-scoped tasks with status, priority, geolocation, assignee, and versioning. Supports CSV import and bulk assignment. HOA Request fields: `origin` (varchar, "HOA" for HOA-created requests), `assetId` (FK to assets, nullable), `category` (varchar, nullable: Irrigation/Landscape/Snow/Other). Status enum includes "submitted" and "acknowledged" for HOA request flow. HOA requests are created via `POST /api/hoa/requests` (hoa_admin only).
 - **Task Completions**: Records task completion details including notes, sign-off, time, materials, and follow-up.
 - **Attachments**: References to files stored in Google Cloud Storage.
 - **Assets**: Community-scoped physical assets with types (e.g., controller, backflow, tree) and properties. Features auto-sync from GeoJSON map layers, KML ingestion for irrigation systems, and bulk property completion. Includes `tags[]` text array, `createdBy`/`updatedBy` audit fields (FK to users), and auto-computed `sqFt` property for polygon assets via @turf/area.
