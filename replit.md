@@ -43,6 +43,9 @@ The Tasks screen (`app/(tabs)/tasks.tsx`) includes a calendar/list view toggle. 
 - **Offline support**: Reuses cached tasks, service schedules, and visits from OfflineContext — no new API calls. Works fully offline.
 - **Interactions**: Tap task bar → navigate to task detail. Tap mowing dot → LogVisitModal. Tap "+X more" → week items modal listing all tasks and service days for that week.
 
+### HOA Requests Tab
+The Requests tab (`app/(hoa-tabs)/requests.tsx`) provides a unified request history for HOA users. Both `hoa_admin` and `hoa_member` can view the tab (read-only for members). Features filter chips (All/Submitted/Acknowledged/Completed/Archived) with "Submitted" as default. Each request card shows title, priority badge, status chip, date, location reference, and photo indicator. Completed requests auto-archive after 60 days (computed via `task_completions.completedAt`). Archived requests are hidden from active filters but accessible via Archived/All filter. `hoa_admin` gets a FAB to create requests. Tap navigates to task detail. API: `GET /api/hoa/requests` (HOA users only, scoped to `hoaCommunityId`).
+
 ### Request Map
 The Request Map (`app/request-map/[id].tsx`) is a dedicated single-pin map screen for viewing individual HOA request locations. It shows exactly one pin at the request's pinLocation with a distinctive marker style. No asset layers, no other pins. Pin popup shows HOA REQUEST label, title, priority, and status. Accessed via "View on Map" button on the task detail screen for HOA requests. The Asset Map (`app/(tabs)/map.tsx`) shows only assets — no task or request pins.
 

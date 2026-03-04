@@ -2572,6 +2572,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/hoa/requests", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      if (!isHoaRole(user.role) || !user.hoaCommunityId) {
+        return res.status(403).json({ error: "This endpoint is only available to HOA users" });
+      }
+      const requests = await storage.getHoaRequests(user.hoaCommunityId);
+      res.json(requests);
+    } catch (error) {
+      console.error("Get HOA requests error:", error);
+      res.status(500).json({ error: "Failed to fetch HOA requests" });
+    }
+  });
+
   app.get("/api/hoa/requests/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const task = await storage.getTaskById(req.params.id as string);

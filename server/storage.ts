@@ -271,7 +271,10 @@ export async function canUserAccessTask(userId: string, taskId: string): Promise
   const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) return { allowed: false, task };
   if (user.role === 'admin') return { allowed: true, task };
-  if (task.assignedTo !== userId) return { allowed: false, task };
+  if (user.role === 'hoa_admin' || user.role === 'hoa_member') {
+    return { allowed: user.hoaCommunityId === task.communityId, task };
+  }
+  if (task.assignedTo === userId) return { allowed: true, task };
   const isMember = await isUserMemberOfCommunity(userId, task.communityId);
   return { allowed: isMember, task };
 }
@@ -1514,6 +1517,91 @@ export async function getAssetNotes(assetId: string) {
     .leftJoin(users, eq(assetNotes.createdBy, users.id))
     .where(eq(assetNotes.assetId, assetId))
     .orderBy(desc(assetNotes.createdAt));
+}
+
+export async function getHoaRequests(communityId: string) {
+  const hoaTasks = await db.select().from(tasks)
+    .where(and(eq(tasks.communityId, communityId), eq(tasks.origin, 'HOA')))
+    .orderBy(desc(tasks.createdAt));
+
+  if (hoaTasks.length === 0) return [];
+
+  const taskIds = hoaTasks.map(t => t.id);
+
+  const completionsRows = await db.select({
+    taskId: taskCompletions.taskId,
+    completedAt: taskCompletions.completedAt,
+  }).from(taskCompletions)
+    .where(inArray(taskCompletions.taskId, taskIds));
+
+  const latestCompletionMap = new Map<string, Date>();
+  for (const row of completionsRows) {
+    const existing = latestCompletionMap.get(row.taskId);
+    if (!existing || row.completedAt > existing) {
+      latestCompletionMap.set(row.taskId, row.completedAt);
+    }
+  }
+
+  const completionIds = await db.select({
+    id: taskCompletions.id,
+    taskId: taskCompletions.taskId,
+  }).from(taskCompletions)
+    .where(inArray(taskCompletions.taskId, taskIds));
+
+  let attachmentCounts = new Map<string, number>();
+  if (completionIds.length > 0) {
+    const attRows = await db.select({
+      taskCompletionId: attachments.taskCompletionId,
+      cnt: sql<number>`count(*)`,
+    }).from(attachments)
+      .where(inArray(attachments.taskCompletionId, completionIds.map(c => c.id)))
+      .groupBy(attachments.taskCompletionId);
+
+    const completionToTask = new Map<string, string>();
+    for (const c of completionIds) {
+      completionToTask.set(c.id, c.taskId);
+    }
+    for (const row of attRows) {
+      const tId = completionToTask.get(row.taskCompletionId);
+      if (tId) {
+        attachmentCounts.set(tId, (attachmentCounts.get(tId) || 0) + Number(row.cnt));
+      }
+    }
+  }
+
+  const assetIds = hoaTasks.map(t => t.assetId).filter((id): id is string => !!id);
+  let assetLabelMap = new Map<string, string>();
+  if (assetIds.length > 0) {
+    const assetRows = await db.select({ id: assets.id, label: assets.label })
+      .from(assets)
+      .where(inArray(assets.id, assetIds));
+    for (const a of assetRows) {
+      assetLabelMap.set(a.id, a.label);
+    }
+  }
+
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+  return hoaTasks.map(task => {
+    const latestCompletedAt = latestCompletionMap.get(task.id) ?? null;
+    const isArchived = task.status === 'completed' && latestCompletedAt != null && latestCompletedAt <= sixtyDaysAgo;
+    return {
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      createdAt: task.createdAt,
+      completedAt: latestCompletedAt,
+      isArchived,
+      assetId: task.assetId ?? null,
+      assetLabel: task.assetId ? (assetLabelMap.get(task.assetId) ?? null) : null,
+      latitude: task.latitude ?? null,
+      longitude: task.longitude ?? null,
+      attachmentCount: attachmentCounts.get(task.id) || 0,
+      category: task.category ?? null,
+    };
+  });
 }
 
 export async function createAssetNote(data: {
