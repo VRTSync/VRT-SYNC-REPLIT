@@ -378,15 +378,10 @@ function generateLeafletHTML(): string {
       post('targetReached', {});
     },
 
-    setCommunityBounds: function(coords) {
-      if (!coords || coords.length === 0) return;
-      communityBounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
-      map.fitBounds(communityBounds, { padding: [60, 40], maxZoom: 16 });
-    },
-
     fitBounds: function(coords) {
       if (!coords || coords.length === 0) return;
       var bounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
+      communityBounds = bounds;
       map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
     },
 
@@ -552,7 +547,7 @@ export default function LeafletMap({
         if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
           initialBoundsAppliedRef.current = true;
           const b = initialBoundsRef.current;
-          const js = `window.mapBridge.setCommunityBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`;
+          const js = `window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`;
           pendingRef.current.unshift(js);
         }
         flushPending();
@@ -608,7 +603,7 @@ export default function LeafletMap({
     if (!initialBoundsAppliedRef.current && initialBounds && mapReadyRef.current) {
       initialBoundsAppliedRef.current = true;
       const b = initialBounds;
-      runJS(`window.mapBridge.setCommunityBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`);
+      runJS(`window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`);
     }
   }, [initialBounds, runJS]);
 
@@ -691,7 +686,6 @@ export default function LeafletMap({
     const layersWithData = layers.filter(l => l.geojson);
     const layersPending = layers.length > 0 && layersWithData.length === 0;
     if (layersPending) return;
-    if (layersWithData.length === 0 && tasks.length === 0) return;
     const fitKey = layerCoordsKey + '|' + tasks.length;
     if (fitKey === lastFitKeyRef.current) return;
     lastFitKeyRef.current = fitKey;

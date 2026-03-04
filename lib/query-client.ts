@@ -67,7 +67,7 @@ export const getQueryFn: <T>(options: {
 function isAuthError(error: unknown): boolean {
   if (error instanceof Error) {
     const msg = error.message;
-    return msg.startsWith("401:") || msg.startsWith("403:");
+    return msg.startsWith("401:");
   }
   return false;
 }
