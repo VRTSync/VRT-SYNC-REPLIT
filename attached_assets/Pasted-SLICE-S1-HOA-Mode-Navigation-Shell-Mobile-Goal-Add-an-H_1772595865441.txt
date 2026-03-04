@@ -1,0 +1,71 @@
+SLICE S1 — HOA Mode Navigation Shell (Mobile)
+
+Goal
+Add an HOA-specific navigation experience inside the same mobile app, without changing existing Contractor UX. HOA users should land in HOA Mode (Dashboard/Calendar/Map/Requests/Settings). Contractors keep their current tabs. Admin tab remains visible only for ADMIN users.
+
+Scope (IN)
+
+1) Role-based App Shell Routing
+- Determine app mode at runtime based on logged-in user role:
+  - ADMIN -> existing app shell + Admin tab visible
+  - CONTRACTOR -> existing contractor app shell (unchanged)
+  - HOA_ADMIN / HOA_MEMBER -> HOA Mode app shell (new)
+
+2) HOA Mode Tab Bar (new)
+Create a new bottom tab navigator for HOA roles with these tabs:
+- Dashboard
+- Calendar
+- Map
+- Requests
+- Settings
+
+Notes:
+- These screens can be placeholders initially (simple “Coming soon” or skeleton UI).
+- The goal of this slice is correct routing + correct tabs + no contractor regression.
+
+3) Community Selection Handling (HOA)
+- HOA users are single-community.
+- Ensure HOA users:
+  - do NOT see community switcher UI
+  - do NOT see any “select community” flows
+- CommunityContext should automatically use the single community returned by /api/auth/me.
+
+4) Permission-based UI Controls (HOA)
+- In this slice, only implement basic role gating (no real request creation yet):
+  - HOA_MEMBER: read-only mode (no create buttons required yet)
+  - HOA_ADMIN: may show placeholder “Create Request” button on Dashboard/Map (button can be disabled or show “Coming soon”)
+- Contractors and admins should not see HOA-only tabs.
+
+5) Navigation Consistency
+- Ensure deep links or existing routes used by contractors still work.
+- Ensure there is no overlap between Contractor Map experience and HOA Map experience yet (placeholders are fine).
+
+Scope (OUT)
+- Implementing HOA dashboard content
+- Implementing request lifecycle, creation flow, status changes
+- Implementing request map (single-pin map)
+- Notifications
+- KML ingestion changes
+
+Acceptance Criteria
+
+A) Role-based tabs
+- ADMIN user: Admin tab visible; contractor tabs unchanged
+- CONTRACTOR user: contractor tabs unchanged; Admin tab not visible
+- HOA_ADMIN user: sees HOA Mode tabs only
+- HOA_MEMBER user: sees HOA Mode tabs only
+
+B) HOA community lock
+- HOA users cannot switch communities
+- No community selector shown for HOA users
+- HOA Mode uses the single community returned by the API
+
+C) No regressions
+- Contractor screens and flows behave exactly as before
+- Existing navigation routes for contractors still function
+
+Implementation Notes (guidance)
+- Prefer clean separation:
+  - getUserRole() -> choose navigator
+- Keep screens minimal; focus on stable nav scaffolding.
+- Add a simple HOA header pattern if needed, but do not spend time on UI polish in this slice.
