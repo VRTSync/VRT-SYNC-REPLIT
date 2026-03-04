@@ -1,0 +1,101 @@
+SLICE S6 — Request Map (Single-Pin Map for HOA Requests Only)
+
+Goal
+Implement the dedicated “Request Map” experience for HOA Requests (tickets). This map is a lightweight map instance that shows ONLY the request pin for a single HOA request. It must not show asset layers, must not show other requests, and must not show any task pins on the main Asset Map. Contractors and HOA users can open the Request Map from the Request/Task detail screen.
+
+Locked Rules (must follow)
+- Asset Map (main Map tab) shows assets only and MUST NOT show task pins or request pins.
+- Contractors tasks never have map pins anywhere.
+- Only HOA Requests have a pin, and they are shown ONLY in the Request Map.
+- Request Map is a single-pin map instance for one request.
+- Request pin is visually special (REQUEST badge/flag/color).
+- Status is NOT encoded into the pin style (status shown in popup/detail only).
+- Request always has pinLocation; if asset-linked, pinLocation follows the asset over time (server provides current pinLocation).
+
+------------------------------------------------------------
+
+Scope (IN)
+
+A) Backend: Retrieve a request’s pin + minimal map payload
+1) Add/confirm an endpoint to fetch a single HOA request with location:
+GET /api/hoa/requests/:id
+
+Response must include:
+- id
+- title
+- status
+- priority (Normal/Urgent)
+- origin ("HOA")
+- pinLocation (lat/lng)
+- assetId (nullable)
+- createdAt
+- (optional) attachments count / hasPhotos flag
+
+Authorization:
+- HOA roles: request must belong to their hoaCommunityId
+- Contractor/Admin: must be in a community they have access to (existing logic)
+- Must not leak cross-community data
+
+B) Mobile: “View on Map” entry point
+On the Task/Request detail screen for origin="HOA":
+- Add a “View on Map” button
+- Button opens Request Map screen/modal (new route)
+
+C) Request Map Screen (Mobile)
+Implement a dedicated map screen/view with:
+- A simple basemap map instance (same map tech you currently use is fine)
+- Only one pin placed at request.pinLocation
+- No layer toggles
+- No asset features rendered
+- Optional: show user location if already supported
+
+Pin styling:
+- Special request marker (flag/color)
+- Popup content (on tap):
+  - REQUEST label
+  - title
+  - priority
+  - status
+  - action button: “Open Request” (returns to detail screen) or just closes popup
+
+Primary actions on screen:
+- Back
+- Optional “Navigate” action (if you already have a standard way to open external maps; otherwise skip)
+
+D) Ensure separation from Asset Map
+- Confirm that the existing Map tab (Asset Map) does not render any task pins or request pins.
+- Request Map is the ONLY place request pins appear.
+
+Scope (OUT)
+- Showing multiple requests on one map
+- Clustering
+- Layer toggles on Request Map
+- Any changes to KML ingestion
+- HOA requests tab/history UI
+
+------------------------------------------------------------
+
+Acceptance Criteria
+
+1) From an HOA request detail screen, “View on Map” opens a map showing only that request pin.
+2) Request Map shows:
+- 1 request pin at pinLocation
+- No asset layers
+- No other pins
+3) Tapping the pin shows a popup with REQUEST + title + priority + status.
+4) Asset Map continues to show assets only (no request/task pins).
+5) Authorization is enforced:
+- HOA users cannot open requests from other communities
+- Contractors/Admins follow existing access rules
+
+------------------------------------------------------------
+
+Testing Checklist
+
+- Create HOA request attached to an asset and a pin-only request
+- As contractor:
+  - Open each request detail -> View on Map -> confirm single pin renders
+- As HOA Admin/Member:
+  - Open request -> View on Map -> confirm single pin renders
+- Attempt cross-community request open as HOA user -> should fail (403/404)
+- Verify Asset Map tab still shows only assets
