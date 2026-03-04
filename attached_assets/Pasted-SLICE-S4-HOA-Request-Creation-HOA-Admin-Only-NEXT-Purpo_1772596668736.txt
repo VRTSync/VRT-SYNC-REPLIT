@@ -1,0 +1,132 @@
+SLICE S4 — HOA Request Creation (HOA Admin Only)  ✅ NEXT
+
+Purpose
+Enable HOA Admins to submit HOA Requests (tickets) that are stored as Tasks. This establishes the canonical “requests = tasks” data model and unlocks later slices (contractor handling, request map, requests tab, dashboard counts). Preserve existing contractor behavior.
+
+Locked Rules (must follow)
+- HOA Request = Task with origin = "HOA"
+- Only HOA requests can be Urgent
+- HOA sets priority at creation; contractor cannot change it (enforced later, but store correctly now)
+- On create: status = "Submitted"
+- HOA request status flow (later): Submitted → Acknowledged → Completed (no skipping)
+- Every request MUST have pinLocation (lat/lng)
+- Request may optionally attach to an asset via assetId
+- If assetId is provided, pinLocation is derived from asset geometry:
+  - Point → point
+  - Polygon → centroid/label point
+  - Line → midpoint
+- pin follows asset over time (live truth) — do NOT store originalPinLocation
+- No billing, no invoicing
+- Web hub handles user management; mobile does not
+
+------------------------------------------------------------
+
+Implementation Scope
+
+A) Database / Types
+1) Extend tasks to support HOA request fields (if not already present):
+- origin (nullable string/enum)
+- priority (string/enum; MUST support "Normal" and "Urgent")
+- status (string/enum; MUST support at least "Submitted", "Acknowledged", "Completed")
+- pinLat (float) and pinLng (float) OR a single pinLocation JSON (lat/lng)
+- assetId (nullable FK)
+- category (optional string)  [Irrigation/Landscape/Snow/Other]
+Notes:
+- Keep this minimal; use existing tasks table if possible.
+- Do NOT create a new requests/tickets table.
+
+2) Add any needed Drizzle schema updates and migrations.
+
+B) Backend API
+Create a dedicated endpoint for HOA request creation:
+
+POST /api/hoa/requests
+
+Request body:
+- title (required)
+- description (required)
+- priority (required: "Normal" | "Urgent")
+- category (optional: "Irrigation" | "Landscape" | "Snow" | "Other")
+- assetId (optional)
+- pinLocation (optional if assetId is present; required if no assetId)
+  - pinLat, pinLng OR {lat,lng}
+
+Server-side rules:
+- Only role HOA_ADMIN may call this endpoint (403 otherwise)
+- communityId must be the user's hoaCommunityId (do NOT accept arbitrary communityId from client)
+- Set canonical fields on insert:
+  - origin = "HOA"
+  - status = "Submitted"
+  - priority = request.priority
+- Determine pinLocation:
+  - If assetId provided:
+      derive pinLocation from current asset geometry (point/centroid/midpoint)
+      ignore any provided pinLocation from client (server is source of truth)
+  - Else:
+      require pinLocation from client (validate lat/lng)
+
+Optional photos:
+- Include attachment upload support only if it already exists cleanly for tasks.
+- If task attachments already exist, allow HOA_ADMIN to attach photos to the created task using the existing upload flow.
+- If this complicates the slice, defer photo upload to the next slice—BUT still create the task correctly.
+
+Response:
+Return created task object (id, title, status, priority, origin, assetId, pinLocation, createdAt).
+
+C) Mobile App (HOA Mode)
+1) Entry points (HOA Admin only):
+- Dashboard: "Create Request" button
+- Asset detail: "Create Request" button
+
+HOA Member:
+- must not see create buttons
+
+2) Create Request flow:
+- Form fields:
+  - Title (required)
+  - Description (required)
+  - Priority (required: Normal/Urgent)
+  - Category (optional)
+  - Location:
+      - If launched from asset: assetId prefilled, location implied
+      - If launched globally: user must set a pin on a lightweight picker map OR choose asset (MVP: pin picker only is acceptable)
+  - Photos optional (only if backend already supports it easily; otherwise show placeholder “photos coming soon”)
+
+3) Submit calls POST /api/hoa/requests
+- On success:
+  - route user to Request Detail (or Requests list placeholder if detail not built yet)
+  - show status Submitted
+
+D) Validation / Security
+- Must be impossible for HOA_ADMIN to create requests for a different community
+- Must be impossible for HOA_MEMBER to create requests
+- Ensure existing contractor task creation/edit flows remain unchanged
+
+------------------------------------------------------------
+
+Acceptance Criteria (must pass)
+
+1) HOA_ADMIN can create an HOA request from mobile:
+- Creates a task with:
+  origin = "HOA"
+  status = "Submitted"
+  priority = "Normal" or "Urgent"
+  pinLocation always present
+  assetId optional
+2) If assetId is supplied:
+- pinLocation is derived server-side from asset geometry
+3) If assetId is not supplied:
+- pinLocation required from client
+4) HOA_MEMBER cannot create requests (no UI button + API returns 403)
+5) Created HOA requests are visible via existing task retrieval endpoints (since requests are tasks)
+6) No regressions for contractor/admin task flows
+
+------------------------------------------------------------
+
+Deliverable
+- Implement endpoint, DB changes, and minimal HOA Admin request creation UI in mobile.
+- Provide a short summary of files changed and how to test end-to-end:
+  - Create request (asset-attached)
+  - Create request (pin-only)
+  - Verify stored fields in DB/API response
+  - Verify HOA Member blocked
