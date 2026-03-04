@@ -1604,6 +1604,129 @@ export async function getHoaRequests(communityId: string) {
   });
 }
 
+export async function getHoaDashboardData(communityId: string) {
+  const community = await getCommunityById(communityId);
+
+  const upcomingTasks = await db.select().from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      ne(tasks.status, "completed"),
+    ))
+    .orderBy(asc(tasks.windowStart), asc(tasks.dueDate))
+    .limit(10);
+
+  const completedTaskRows = await db.select().from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      eq(tasks.status, "completed"),
+    ))
+    .orderBy(desc(tasks.updatedAt))
+    .limit(8);
+
+  const completedTaskIds = completedTaskRows.map(t => t.id);
+
+  let completionMap = new Map<string, Date>();
+  let attachmentCountMap = new Map<string, number>();
+
+  if (completedTaskIds.length > 0) {
+    const completionRows = await db.select({
+      taskId: taskCompletions.taskId,
+      completedAt: taskCompletions.completedAt,
+      id: taskCompletions.id,
+    }).from(taskCompletions)
+      .where(inArray(taskCompletions.taskId, completedTaskIds))
+      .orderBy(desc(taskCompletions.completedAt));
+
+    for (const c of completionRows) {
+      if (!completionMap.has(c.taskId)) {
+        completionMap.set(c.taskId, c.completedAt);
+      }
+    }
+
+    const completionIds = completionRows.map(c => c.id);
+    if (completionIds.length > 0) {
+      const attRows = await db.select({
+        taskCompletionId: attachments.taskCompletionId,
+        cnt: sql<number>`count(*)`,
+      }).from(attachments)
+        .where(inArray(attachments.taskCompletionId, completionIds))
+        .groupBy(attachments.taskCompletionId);
+
+      const completionToTask = new Map<string, string>();
+      for (const c of completionRows) {
+        completionToTask.set(c.id, c.taskId);
+      }
+      for (const row of attRows) {
+        const tId = completionToTask.get(row.taskCompletionId);
+        if (tId) {
+          attachmentCountMap.set(tId, (attachmentCountMap.get(tId) || 0) + Number(row.cnt));
+        }
+      }
+    }
+  }
+
+  const recentCompletions = completedTaskRows.map(t => ({
+    id: t.id,
+    title: t.title,
+    completedAt: completionMap.get(t.id) ?? t.updatedAt,
+    origin: t.origin,
+    priority: t.priority,
+    hasPhotos: (attachmentCountMap.get(t.id) || 0) > 0,
+  }));
+
+  const hoaRequests = await db.select().from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      eq(tasks.origin, "HOA"),
+      or(eq(tasks.status, "submitted"), eq(tasks.status, "acknowledged")),
+    ))
+    .orderBy(desc(tasks.createdAt));
+
+  const submittedCount = hoaRequests.filter(r => r.status === "submitted").length;
+  const acknowledgedCount = hoaRequests.filter(r => r.status === "acknowledged").length;
+  const topRequests = hoaRequests.slice(0, 5).map(r => ({
+    id: r.id,
+    title: r.title,
+    priority: r.priority,
+    status: r.status,
+    createdAt: r.createdAt,
+  }));
+
+  const mowingSchedules = await db.select().from(serviceSchedules)
+    .where(and(
+      eq(serviceSchedules.communityId, communityId),
+      eq(serviceSchedules.isActive, true),
+    ));
+
+  return {
+    community: community ? { id: community.id, name: community.name } : null,
+    upcomingTasks: upcomingTasks.map(t => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      windowStart: t.windowStart,
+      windowEnd: t.windowEnd,
+      dueDate: t.dueDate,
+      origin: t.origin,
+      priority: t.priority,
+      assetId: t.assetId,
+    })),
+    recentCompletions,
+    requestsSummary: {
+      submittedCount,
+      acknowledgedCount,
+      topRequests,
+    },
+    mowingSchedules: mowingSchedules.map(s => ({
+      id: s.id,
+      serviceType: s.serviceType,
+      dayOfWeek: s.dayOfWeek,
+      seasonStart: s.seasonStart,
+      seasonEnd: s.seasonEnd,
+    })),
+  };
+}
+
 export async function createAssetNote(data: {
   assetId: string;
   communityId: string;
