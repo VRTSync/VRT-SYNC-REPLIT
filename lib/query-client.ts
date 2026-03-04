@@ -1,5 +1,5 @@
 import { fetch } from "expo/fetch";
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -64,6 +64,14 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+function isAuthError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message;
+    return msg.startsWith("401:") || msg.startsWith("403:");
+  }
+  return false;
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -75,6 +83,19 @@ export const queryClient = new QueryClient({
     },
     mutations: {
       retry: false,
+      onError: (error: Error) => {
+        if (isAuthError(error)) {
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        }
+      },
     },
   },
+  queryCache: new QueryCache({
+    onError: (error: Error, query) => {
+      if (query.queryKey[0] === "/api/auth/me") return;
+      if (isAuthError(error)) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      }
+    },
+  }),
 });
