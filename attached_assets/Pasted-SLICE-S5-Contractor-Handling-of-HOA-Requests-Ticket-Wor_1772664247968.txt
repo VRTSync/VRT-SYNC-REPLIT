@@ -1,0 +1,148 @@
+SLICE S5 — Contractor Handling of HOA Requests (Ticket Workflow + Dashboard Visibility)
+
+Goal
+Make HOA Requests (tickets) impossible for contractors to miss, and enforce the step-through workflow:
+Submitted → Acknowledged → Completed (no skipping).
+
+Contractors must have:
+1) A clear place to view requests on their dashboard
+2) A clear place to view and act on requests in their task list
+3) Acknowledge must be required before Complete
+4) Priority is set by HOA (Normal/Urgent) and contractors cannot change it
+5) Only HOA Requests can be marked Urgent
+
+------------------------------------------------
+
+Definitions
+
+HOA Request = Task where:
+- origin/source = HOA
+- priority = Normal | Urgent
+- status lifecycle (enforced): Submitted -> Acknowledged -> Completed
+
+Contractor Tasks (non-HOA) remain unchanged.
+
+------------------------------------------------
+
+Contractor Dashboard — Requests Card (Required)
+
+Add a “Requests” card to the Contractor dashboard (high on screen).
+
+Card content:
+- Urgent request count
+- Normal request count
+- CTA button: “View Requests”
+
+Counts must include only open requests:
+- origin = HOA
+- status IN (Submitted, Acknowledged)
+
+Urgent count:
+- priority = Urgent
+
+Normal count:
+- priority = Normal
+
+Behavior:
+- If urgentCount > 0, visually emphasize the card
+- Tapping “View Requests” navigates to Tasks screen pre-filtered to HOA requests (or scrolls to the Requests section)
+
+------------------------------------------------
+
+Contractor Tasks Screen — Request Sections (Required)
+
+At the top of the contractor task list, add two request sections:
+
+1) URGENT REQUESTS
+Inclusion:
+- origin = HOA
+- priority = Urgent
+- status IN (Submitted, Acknowledged)
+
+2) HOA REQUESTS
+Inclusion:
+- origin = HOA
+- priority = Normal
+- status IN (Submitted, Acknowledged)
+
+Then the existing normal tasks list continues below:
+
+3) TASKS
+Inclusion:
+- origin != HOA
+
+Display rules:
+- Both request sections should be visible without needing a filter toggle
+- Both request sections are expanded by default
+- Requests must have clear visual distinction:
+  - REQUEST badge
+  - flag/color indicator
+  - priority label
+
+Sorting:
+- Within each request section: CreatedAt oldest first
+
+Row content for request items:
+- REQUEST badge + flag/color
+- Title
+- Priority (Normal/Urgent)
+- Status chip (Submitted/Acknowledged)
+- Submitted date/time
+- Location reference (asset name or "Pinned location")
+- Photo indicator if attachments exist
+
+Row actions:
+- If status == Submitted: show “Acknowledge” button directly on the row (one tap)
+- If status == Acknowledged: no row action (open detail to complete)
+
+------------------------------------------------
+
+Workflow Enforcement (No Skipping)
+
+Contractor must explicitly acknowledge before completing.
+
+Rules:
+- Task Detail “Complete” action must be disabled unless status == Acknowledged
+- The only way to move from Submitted to Completed is:
+  Submitted -> (Acknowledge) -> Acknowledged -> (Complete) -> Completed
+
+Acknowledge behavior:
+- Manual button press
+- No note required
+- Does NOT trigger HOA notification (per notification rules)
+
+------------------------------------------------
+
+Priority Rules (Locked)
+
+- HOA sets priority at creation (Normal/Urgent)
+- Contractors cannot change priority on HOA Requests
+- Only HOA Requests can have Urgent priority
+
+Enforcement:
+- API rejects any attempt by contractors to update priority on origin=HOA tasks
+- API rejects any attempt to set Urgent on origin != HOA tasks
+
+------------------------------------------------
+
+Acceptance Criteria
+
+1) Contractor dashboard shows Requests card:
+- Displays urgent + normal counts for open requests
+- “View Requests” navigates to the tasks list and surfaces request sections
+
+2) Contractor task list shows request sections:
+- URGENT REQUESTS and HOA REQUESTS present at top
+- Both expanded by default
+- Requests visually distinct from normal tasks
+
+3) Acknowledge required:
+- Submitted requests can be acknowledged from row or detail
+- Complete is disabled until Acknowledged
+- No ability to skip directly to Completed
+
+4) Priority locked:
+- HOA Request priority cannot be changed by contractor
+- Only HOA Requests can be urgent
+
+5) Existing contractor task behavior remains unchanged for non-HOA tasks
