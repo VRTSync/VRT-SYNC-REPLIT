@@ -86,6 +86,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
+  const [assignedTo, setAssignedTo] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +99,16 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
     queryKey: [`/api/communities/${communityId}/assets`],
     enabled: visible && !!communityId && !assetId,
   });
+
+  const { data: membersData } = useQuery<any[]>({
+    queryKey: [`/api/communities/${communityId}/members`],
+    enabled: visible && !!communityId,
+  });
+
+  const contractors = React.useMemo(() => {
+    if (!membersData) return [];
+    return membersData.filter((m: any) => m.role === 'contractor' || m.role === 'admin');
+  }, [membersData]);
 
   const center = React.useMemo(() => {
     if (assetsData && assetsData.length > 0) {
@@ -119,6 +130,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
     setDescription('');
     setPriority('Normal');
     setCategory(undefined);
+    setAssignedTo(undefined);
     setPinLat(null);
     setPinLng(null);
     setError(null);
@@ -172,6 +184,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         priority,
       };
       if (category) body.category = category;
+      if (assignedTo) body.assignedTo = assignedTo;
       if (assetId) {
         body.assetId = assetId;
       } else {
@@ -289,6 +302,38 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
               ))}
             </View>
           </View>
+
+          {contractors.length > 0 && (
+            <View style={styles.field}>
+              <Text style={styles.label}>Assign To (optional)</Text>
+              <View style={styles.contractorList}>
+                <TouchableOpacity
+                  style={[styles.contractorChip, !assignedTo && styles.contractorChipActive]}
+                  onPress={() => setAssignedTo(undefined)}
+                >
+                  <Text style={[styles.contractorChipText, !assignedTo && styles.contractorChipTextActive]}>
+                    Unassigned
+                  </Text>
+                </TouchableOpacity>
+                {contractors.map((c: any) => (
+                  <TouchableOpacity
+                    key={c.userId}
+                    style={[styles.contractorChip, assignedTo === c.userId && styles.contractorChipActive]}
+                    onPress={() => setAssignedTo(c.userId)}
+                  >
+                    <Ionicons
+                      name="person-outline"
+                      size={14}
+                      color={assignedTo === c.userId ? '#fff' : '#666'}
+                    />
+                    <Text style={[styles.contractorChipText, assignedTo === c.userId && styles.contractorChipTextActive]}>
+                      {c.displayName || c.username}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
 
           <View style={styles.field}>
             <Text style={styles.label}>Location</Text>
@@ -513,5 +558,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#25C1AC',
     fontWeight: '500' as const,
+  },
+  contractorList: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+  },
+  contractorChip: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  contractorChipActive: {
+    backgroundColor: '#0C1D31',
+    borderColor: '#0C1D31',
+  },
+  contractorChipText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#666',
+  },
+  contractorChipTextActive: {
+    color: '#fff',
   },
 });

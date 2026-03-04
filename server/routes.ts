@@ -2692,7 +2692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
-      const { title, description, priority, category, assetId, pinLat, pinLng } = parsed.data;
+      const { title, description, priority, category, assetId, assignedTo, pinLat, pinLng } = parsed.data;
 
       let latitude: number | undefined;
       let longitude: number | undefined;
@@ -2717,6 +2717,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         longitude = pinLng;
       }
 
+      let validatedAssignedTo: string | undefined;
+      if (assignedTo) {
+        const members = await storage.getCommunityMembers(communityId);
+        const match = members.find((m: any) => m.userId === assignedTo && (m.user.role === 'contractor' || m.user.role === 'admin'));
+        if (!match) {
+          return res.status(400).json({ error: "Selected contractor is not a member of this community" });
+        }
+        validatedAssignedTo = assignedTo;
+      }
+
       const mappedPriority = priority === "Urgent" ? "urgent" as const : "medium" as const;
 
       const task = await storage.createTask({
@@ -2727,6 +2737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "submitted",
         origin: "HOA",
         category: category ?? undefined,
+        assignedTo: validatedAssignedTo,
         latitude,
         longitude,
         createdBy: req.session.userId!,

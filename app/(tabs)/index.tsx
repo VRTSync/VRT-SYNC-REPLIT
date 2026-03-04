@@ -41,6 +41,8 @@ type DashboardData = {
   upcomingTasks: Task[];
   overdueTasks: Task[];
   followUpTasks: FollowUpTask[];
+  urgentRequestCount: number;
+  normalRequestCount: number;
 };
 
 const priorityColors: Record<string, string> = {
@@ -301,6 +303,57 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
+            {(() => {
+              const urgentCount = dashboard?.urgentRequestCount ?? 0;
+              const normalCount = dashboard?.normalRequestCount ?? 0;
+              const totalCount = urgentCount + normalCount;
+              const hasUrgent = urgentCount > 0;
+              return (
+                <View style={[styles.section, hasUrgent && styles.requestCardUrgent]}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="mail-outline" size={18} color={hasUrgent ? '#e74c3c' : '#0C1D31'} />
+                    <Text style={[styles.sectionTitle, hasUrgent && { color: '#e74c3c' }]}>Requests</Text>
+                    {totalCount > 0 && (
+                      <View style={[styles.countBadge, hasUrgent && { backgroundColor: '#e74c3c20' }]}>
+                        <Text style={[styles.countBadgeText, hasUrgent && { color: '#e74c3c' }]}>{totalCount}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {totalCount === 0 ? (
+                    <View style={styles.emptySection}>
+                      <Ionicons name="checkmark-circle-outline" size={24} color="#ccc" />
+                      <Text style={styles.emptySectionText}>No open requests</Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 8 }}>
+                      {hasUrgent && (
+                        <View style={styles.requestCountRow}>
+                          <View style={[styles.requestDot, { backgroundColor: '#e74c3c' }]} />
+                          <Text style={[styles.requestCountLabel, { color: '#e74c3c' }]}>Urgent</Text>
+                          <Text style={[styles.requestCountValue, { color: '#e74c3c' }]}>{urgentCount}</Text>
+                        </View>
+                      )}
+                      {normalCount > 0 && (
+                        <View style={styles.requestCountRow}>
+                          <View style={[styles.requestDot, { backgroundColor: '#ff9800' }]} />
+                          <Text style={styles.requestCountLabel}>Normal</Text>
+                          <Text style={styles.requestCountValue}>{normalCount}</Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        style={styles.viewRequestsBtn}
+                        onPress={() => router.push('/(tabs)/tasks')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.viewRequestsBtnText}>View Requests</Text>
+                        <Ionicons name="chevron-forward" size={14} color="#25C1AC" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
             {dashboard?.overdueTasks && dashboard.overdueTasks.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeaderRow}>
@@ -686,4 +739,46 @@ const styles = StyleSheet.create({
     borderColor: '#25C1AC30',
   },
   viewAllBtnText: { fontSize: 15, fontWeight: '600', color: '#25C1AC' },
+  requestCardUrgent: {
+    borderWidth: 1,
+    borderColor: '#e74c3c40',
+    backgroundColor: '#fff5f5',
+  },
+  requestCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  requestDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  requestCountLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#555',
+    flex: 1,
+  },
+  requestCountValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333',
+  },
+  viewRequestsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 8,
+    paddingVertical: 10,
+    backgroundColor: '#25C1AC10',
+    borderRadius: 10,
+  },
+  viewRequestsBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#25C1AC',
+  },
 });

@@ -1060,10 +1060,33 @@ export async function getDashboardData(userId: string, communityId: string, isAd
         .limit(5)
     : [];
 
+  const hoaRequestCounts = await db.select({
+    priority: tasks.priority,
+    count: sql<number>`count(*)::int`,
+  }).from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      eq(tasks.origin, "HOA"),
+      inArray(tasks.status, ["submitted", "acknowledged"]),
+    ))
+    .groupBy(tasks.priority);
+
+  let urgentRequestCount = 0;
+  let normalRequestCount = 0;
+  for (const row of hoaRequestCounts) {
+    if (row.priority === "urgent") {
+      urgentRequestCount = row.count;
+    } else {
+      normalRequestCount += row.count;
+    }
+  }
+
   return {
     dueTodayTasks,
     upcomingTasks,
     overdueTasks,
+    urgentRequestCount,
+    normalRequestCount,
     followUpTasks: followUpResults.map(r => ({
       id: r.id,
       taskId: r.taskId,

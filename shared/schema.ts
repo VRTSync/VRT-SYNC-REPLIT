@@ -498,6 +498,7 @@ export const createHoaRequestSchema = z.object({
   priority: z.enum(["Normal", "Urgent"]),
   category: z.enum(["Irrigation", "Landscape", "Snow", "Other"]).optional(),
   assetId: z.string().optional(),
+  assignedTo: z.string().optional(),
   pinLat: z.number().min(-90).max(90).optional(),
   pinLng: z.number().min(-180).max(180).optional(),
 });
