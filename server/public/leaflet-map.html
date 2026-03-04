@@ -87,6 +87,7 @@
   }).addTo(map);
 
   var geoLayers = {};
+  var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup().addTo(map);
   var zoneClusterGroup = L.markerClusterGroup({
@@ -127,12 +128,6 @@
 
   function clearGroup(group) {
     group.clearLayers();
-  }
-
-  function escHtml(s) {
-    if (!s && s !== 0) return '';
-    s = String(s);
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   window.mapBridge = {
@@ -307,6 +302,7 @@
     fitBounds: function(coords) {
       if (!coords || coords.length === 0) return;
       var bounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
+      communityBounds = bounds;
       map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
     },
 
@@ -348,6 +344,8 @@
       }
       if (bounds && bounds.isValid()) {
         map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+      } else if (communityBounds && communityBounds.isValid()) {
+        map.fitBounds(communityBounds, { padding: [60, 40], maxZoom: 16 });
       }
     },
 
@@ -361,6 +359,12 @@
       else { if (map.hasLayer(zoneClusterGroup)) map.removeLayer(zoneClusterGroup); }
     }
   };
+
+  function escHtml(s) {
+    if (!s && s !== 0) return '';
+    s = String(s);
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
 
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'eval' && e.data.code) {

@@ -600,7 +600,7 @@ export default function LeafletMap({
   }, [isWeb, processMsg, flushPending]);
 
   useEffect(() => {
-    if (!initialBoundsAppliedRef.current && initialBounds && mapReadyRef.current) {
+    if (!initialBoundsAppliedRef.current && initialBounds) {
       initialBoundsAppliedRef.current = true;
       const b = initialBounds;
       runJS(`window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`);
@@ -682,7 +682,6 @@ export default function LeafletMap({
   const lastFitKeyRef = useRef('');
 
   useEffect(() => {
-    if (!mapReadyRef.current) return;
     const layersWithData = layers.filter(l => l.geojson);
     const layersPending = layers.length > 0 && layersWithData.length === 0;
     if (layersPending) return;

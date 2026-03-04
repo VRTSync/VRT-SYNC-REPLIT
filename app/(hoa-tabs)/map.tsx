@@ -180,6 +180,25 @@ export default function HoaMapScreen() {
     }
   }, [params.category]);
 
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current || allLayers.length === 0) return;
+    if (params.category) return;
+    const currentHasLayers = allLayers.some(l => l.layerKey === activeCategory);
+    if (currentHasLayers) {
+      autoSelectedRef.current = true;
+      return;
+    }
+    for (const tab of CATEGORY_TABS) {
+      if (allLayers.some(l => l.layerKey === tab.key)) {
+        autoSelectedRef.current = true;
+        handleCategorySelect(tab.key);
+        return;
+      }
+    }
+    autoSelectedRef.current = true;
+  }, [allLayers]);
+
   const controllerColorMap = React.useMemo(() => {
     const map = new Map<string, string>();
     controllers.forEach(c => {
