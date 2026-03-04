@@ -1744,3 +1744,51 @@ export async function createAssetNote(data: {
   const [note] = await db.insert(assetNotes).values(data).returning();
   return note;
 }
+
+export async function getCommunityBounds(communityId: string): Promise<{ bounds: [[number, number], [number, number]]; center: [number, number] } | null> {
+  const layers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, communityId));
+  if (layers.length === 0) return null;
+
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  let hasCoords = false;
+
+  function extractCoords(coords: any): void {
+    if (!Array.isArray(coords)) return;
+    if (typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+      const lng = coords[0];
+      const lat = coords[1];
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        minLat = Math.min(minLat, lat);
+        maxLat = Math.max(maxLat, lat);
+        minLng = Math.min(minLng, lng);
+        maxLng = Math.max(maxLng, lng);
+        hasCoords = true;
+      }
+      return;
+    }
+    for (const item of coords) {
+      extractCoords(item);
+    }
+  }
+
+  for (const layer of layers) {
+    if (!layer.geojsonData) continue;
+    try {
+      const geojson = JSON.parse(layer.geojsonData);
+      const features = geojson.features || (geojson.type === 'Feature' ? [geojson] : []);
+      for (const feature of features) {
+        if (feature.geometry && feature.geometry.coordinates) {
+          extractCoords(feature.geometry.coordinates);
+        }
+      }
+    } catch {
+    }
+  }
+
+  if (!hasCoords) return null;
+
+  return {
+    bounds: [[minLat, minLng], [maxLat, maxLng]],
+    center: [(minLat + maxLat) / 2, (minLng + maxLng) / 2],
+  };
+}

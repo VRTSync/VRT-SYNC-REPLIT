@@ -69,6 +69,11 @@ export default function HoaMapScreen() {
 
   const communityId = activeCommunity?.id;
 
+  const { data: boundsData } = useQuery<{ bounds: [[number, number], [number, number]]; center: [number, number] } | null>({
+    queryKey: ['/api/communities', communityId, 'bounds'],
+    enabled: !!communityId,
+  });
+
   const { data: controllers = [] } = useQuery<ControllerInfo[]>({
     queryKey: ['/api/communities', communityId, 'controllers'],
     queryFn: async () => {
@@ -345,6 +350,7 @@ export default function HoaMapScreen() {
         showZones={showZoneLayer}
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
+        initialBounds={boundsData?.bounds ?? null}
       />
 
       {showLayerPanel && (

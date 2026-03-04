@@ -163,6 +163,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/communities/:id/bounds", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const bounds = await storage.getCommunityBounds(req.params.id as string);
+      res.json(bounds);
+    } catch (error) {
+      console.error("Get community bounds error:", error);
+      res.status(500).json({ error: "Failed to compute community bounds" });
+    }
+  });
+
   app.get("/api/communities/:id/members", requireAuth, async (req: Request, res: Response) => {
     try {
       const members = await storage.getCommunityMembers(req.params.id as string);

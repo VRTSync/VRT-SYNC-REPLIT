@@ -66,6 +66,7 @@ type LeafletMapProps = {
   showZones?: boolean;
   activeCategory?: string;
   fitToContentKey?: string;
+  initialBounds?: [[number, number], [number, number]] | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -493,6 +494,7 @@ export default function LeafletMap({
   showZones = false,
   activeCategory = 'community',
   fitToContentKey,
+  initialBounds,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -530,10 +532,20 @@ export default function LeafletMap({
     }
   }, [isWeb]);
 
+  const initialBoundsRef = useRef(initialBounds);
+  initialBoundsRef.current = initialBounds;
+  const initialBoundsAppliedRef = useRef(false);
+
   const processMsg = useCallback((msg: any) => {
     switch (msg.type) {
       case 'mapReady':
         mapReadyRef.current = true;
+        if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
+          initialBoundsAppliedRef.current = true;
+          const b = initialBoundsRef.current;
+          const js = `window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`;
+          pendingRef.current.unshift(js);
+        }
         flushPending();
         break;
       case 'taskPress':
@@ -582,6 +594,14 @@ export default function LeafletMap({
     }
     return () => window.removeEventListener('message', handler);
   }, [isWeb, processMsg, flushPending]);
+
+  useEffect(() => {
+    if (!initialBoundsAppliedRef.current && initialBounds && mapReadyRef.current) {
+      initialBoundsAppliedRef.current = true;
+      const b = initialBounds;
+      runJS(`window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`);
+    }
+  }, [initialBounds, runJS]);
 
   useEffect(() => {
     if (userLocation) {

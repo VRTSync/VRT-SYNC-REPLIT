@@ -52,6 +52,9 @@ The Requests tab (`app/(hoa-tabs)/requests.tsx`) provides a unified request hist
 ### Request Map
 The Request Map (`app/request-map/[id].tsx`) is a dedicated single-pin map screen for viewing individual HOA request locations. It shows exactly one pin at the request's pinLocation with a distinctive marker style. No asset layers, no other pins. Pin popup shows HOA REQUEST label, title, priority, and status. Accessed via "View on Map" button on the task detail screen for HOA requests. The Asset Map (`app/(tabs)/map.tsx`) shows only assets — no task or request pins.
 
+### Map Initial Centering
+Both the contractor map (`app/(tabs)/map.tsx`) and HOA map (`app/(hoa-tabs)/map.tsx`) fetch community bounds via `GET /api/communities/:id/bounds` on load. The backend computes a bounding box from all map layer GeoJSON for the community and returns `{ bounds: [[south, west], [north, east]], center: [lat, lng] }`. `LeafletMap` accepts an `initialBounds` prop and uses `map.fitBounds()` on map ready to center the view on the community's geographic extent instead of the default US-wide view.
+
 ### Map Popups & Asset Detail
 The map uses Leaflet HTML popups (inside the iframe/WebView) as the single popup system. Each feature popup shows the asset type, label, and a "View Details" button. The "View Details" button sends a `viewAssetDetail` bridge message which resolves the feature's database asset by featureRef and opens the `AssetDetailPanel`. There is no React Native overlay popup — all popup interaction happens inside Leaflet.
 
