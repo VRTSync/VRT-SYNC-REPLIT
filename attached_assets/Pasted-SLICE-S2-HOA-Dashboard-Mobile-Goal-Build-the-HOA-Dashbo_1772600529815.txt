@@ -1,0 +1,135 @@
+SLICE S2 — HOA Dashboard (Mobile)
+
+Goal
+Build the HOA Dashboard experience for HOA_ADMIN and HOA_MEMBER. This dashboard is board-friendly and provides transparency: upcoming contractor tasks, recent completions (with photos), a Requests preview, and Quick Map Layer buttons. No billing. HOA Members are read-only. HOA Admin may see create entry points.
+
+Locked Rules (must follow)
+- HOA Mode exists (S1)
+- Requests are tasks with origin="HOA" (S4/S5/S3)
+- Asset Map shows assets only; Request Map is separate (S6)
+- Dashboard must include Quick Map Layers buttons for BOTH HOA roles
+- Mowing card must NOT show "last logged visit day"
+- HOA_MEMBER cannot create requests, cannot upload photos, no notifications
+- HOA_ADMIN can create requests (already implemented) and may see Create Request entry point
+- Calendar view shows contractor tasks only (the only tasks in system)
+
+------------------------------------------------------------
+
+Scope (IN)
+
+A) Backend: Dashboard summary endpoints (or reuse existing)
+Provide data needed for the dashboard. Prefer one endpoint for efficiency:
+
+GET /api/hoa/dashboard
+
+Authorization:
+- HOA roles only (HOA_ADMIN/HOA_MEMBER)
+- server scopes to user.hoaCommunityId
+
+Response payload:
+1) community summary
+- communityId
+- communityName
+
+2) upcoming tasks (non-request tasks AND requests are okay, but label requests)
+- next N tasks sorted by windowStart (or due date if you use that)
+- include: id, title, status, windowStart, windowEnd, origin, priority (if HOA), assetId (optional)
+
+3) recent completions
+- last N completed tasks (including HOA requests)
+- include: id, title, completedAt, origin, priority, photoThumbnails or hasPhotos
+
+4) requests preview
+- counts:
+  - submittedCount
+  - acknowledgedCount
+  - (optional) completedCount
+- list of top N submitted/acknowledged requests with id/title/priority/status/createdAt
+
+5) mowing day card data (read-only)
+- service schedule summary for mowing (if exists):
+  - dayOfWeek and/or nextServiceDate (season-aware if already implemented)
+- IMPORTANT: do NOT include "last logged visit day" in the UI.
+
+If a dedicated endpoint is too heavy, reuse existing tasks + requests endpoints and compute client-side, but keep it stable and scoped.
+
+B) Mobile: HOA Dashboard UI
+
+Dashboard sections (in this order):
+
+1) Header
+- Community name
+- optional greeting
+
+2) Upcoming Tasks
+- list of upcoming tasks (show execution windows)
+- button: "Calendar View" (navigates to HOA Calendar tab)
+- If task.origin == "HOA", display REQUEST badge
+
+3) Quick Map Layers (button grid) — BOTH HOA roles
+Buttons:
+- Community
+- Irrigation
+- Trees
+- Snow
+
+Behavior:
+- tapping a button navigates to HOA Map tab and preselects that category (toggle state)
+- no request pins appear on this map (asset map only)
+
+4) Mowing Day Card (read-only)
+- show mowing cadence / day-of-week and/or nextServiceDate
+- do NOT show last logged visit
+- no "log visit" actions for HOA
+
+5) Recent Completions
+- list last N completed items
+- show photo indicator/thumbnails if available
+- include REQUEST badge for HOA requests
+
+6) Requests Preview
+- show Submitted and Acknowledged counts
+- list top few active requests
+- tap "View All" goes to Requests tab
+- HOA_ADMIN: may show "Create Request" CTA here (optional)
+- HOA_MEMBER: no create CTA
+
+C) Role-based controls
+- HOA_MEMBER:
+  - no create buttons anywhere
+- HOA_ADMIN:
+  - show Create Request button on dashboard (at least one entry point)
+  - routes to existing create request flow (S4)
+
+Scope (OUT)
+- Notifications changes (S7)
+- Contractor UI changes (already done)
+- KML ingestion changes (S8)
+- Adding new workflows beyond dashboard display
+
+------------------------------------------------------------
+
+Acceptance Criteria
+
+1) HOA_ADMIN and HOA_MEMBER see the HOA Dashboard with all required sections.
+2) Upcoming Tasks list renders and “Calendar View” button navigates to HOA Calendar.
+3) Quick Map Layers buttons navigate to HOA Map and preselect category.
+4) Mowing card is present but does not display last logged visit day.
+5) Recent Completions shows completed items and photo indicators if available.
+6) Requests preview shows counts and links to Requests tab.
+7) HOA_MEMBER sees no create request CTA/buttons.
+8) HOA_ADMIN can access Create Request from dashboard and create a request.
+
+------------------------------------------------------------
+
+Testing Checklist
+
+- Login as HOA_MEMBER:
+  - verify dashboard sections render
+  - verify no create buttons
+  - verify requests preview and view-all navigation
+- Login as HOA_ADMIN:
+  - verify create request entry works
+- Verify upcoming tasks show correct scoped community data
+- Verify quick map layer buttons open map with correct category selected
+- Verify mowing card does not show last visit day
