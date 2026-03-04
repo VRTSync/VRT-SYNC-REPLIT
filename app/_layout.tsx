@@ -31,26 +31,37 @@ function AuthNavigator() {
   const segments = useSegments();
   const router = useRouter();
   const notificationResponseListener = useRef<Notifications.EventSubscription | null>(null);
+  const hasNavigated = useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
+    if (!segments[0]) return;
 
     const inAuthGroup = segments[0] === "(auth)";
-    const inAppGroup = segments[0] === "(tabs)" || segments[0] === "(hoa-tabs)";
+    const isHoa = user?.role === 'hoa_admin' || user?.role === 'hoa_member';
+    const correctStack = isHoa ? "(hoa-tabs)" : "(tabs)";
+    const wrongStack = isHoa ? "(tabs)" : "(hoa-tabs)";
+    let didRedirect = false;
 
     if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
+      didRedirect = true;
     } else if (user && inAuthGroup) {
-      const isHoa = user.role === 'hoa_admin' || user.role === 'hoa_member';
       router.replace(isHoa ? "/(hoa-tabs)" : "/(tabs)");
+      didRedirect = true;
+    } else if (user && segments[0] === wrongStack) {
+      router.replace(`/${correctStack}` as any);
+      didRedirect = true;
+    }
+
+    if (!didRedirect && !hasNavigated.current) {
+      hasNavigated.current = true;
+      SplashScreen.hideAsync();
+    } else if (didRedirect && !hasNavigated.current) {
+      hasNavigated.current = true;
+      setTimeout(() => SplashScreen.hideAsync(), 150);
     }
   }, [user, isLoading, segments]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      SplashScreen.hideAsync();
-    }
-  }, [isLoading]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;

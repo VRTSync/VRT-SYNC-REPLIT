@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Alert, ActivityIndicator, Platform, Modal, FlatList, Image, ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import StatusBarFill from '@/components/StatusBarFill';
 import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -130,6 +131,14 @@ export default function AdminScreen() {
   const { user } = useAuth();
   const { activeCommunity, communities } = useCommunity();
   const queryClient = useQueryClient();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user && user.role !== 'admin') {
+      const isHoa = user.role === 'hoa_admin' || user.role === 'hoa_member';
+      router.replace(isHoa ? '/(hoa-tabs)' : '/(tabs)');
+    }
+  }, [user]);
 
   const [activeTab, setActiveTab] = useState<TabId>('actions');
 
