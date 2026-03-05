@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
+import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 
@@ -115,6 +116,7 @@ export default function HoaRequestsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const { activeCommunity } = useCommunity();
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('submitted');
   const [showCreateRequest, setShowCreateRequest] = useState(false);
@@ -150,8 +152,11 @@ export default function HoaRequestsScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Requests</Text>
+      <View style={styles.titleBar}>
+        <Text style={styles.communityName}>{activeCommunity?.name || 'Community'}</Text>
+      </View>
+      <View style={styles.subtitleRow}>
+        <Text style={styles.subtitleText}>REQUESTS</Text>
       </View>
 
       <View style={styles.filterContainer}>
@@ -240,13 +245,25 @@ export default function HoaRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: {
+  titleBar: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: 12,
+    paddingBottom: 14,
+    alignItems: 'center' as const,
   },
-  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '700' as const },
+  communityName: { fontSize: 20, fontWeight: '700' as const, color: '#fff', textAlign: 'center' as const },
+  subtitleRow: {
+    backgroundColor: '#fff',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
   filterContainer: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,

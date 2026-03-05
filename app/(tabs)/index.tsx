@@ -229,38 +229,17 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.greeting}>
-                {user?.displayName ? `Hi, ${user.displayName}` : 'Dashboard'}
-              </Text>
-              <TouchableOpacity
-                style={styles.communitySelector}
-                onPress={() => setShowCommunitySwitcher(!showCommunitySwitcher)}
-              >
-                <Ionicons name="business" size={14} color="#25C1AC" />
-                <Text style={styles.communitySelectorText} numberOfLines={1}>
-                  {activeCommunity?.name || 'Select Community'}
-                </Text>
-                <Ionicons name="chevron-down" size={14} color="#25C1AC" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.headerRight}>
-              <NotificationBell />
-              <TouchableOpacity
-                onPress={() => setSearchVisible(true)}
-                style={styles.searchButton}
-                testID="home-search-button"
-              >
-                <Ionicons name="search" size={20} color="#fff" />
-              </TouchableOpacity>
-              <View style={[styles.onlineDot, { backgroundColor: isOnline ? '#25C1AC' : '#f44336' }]} />
-              <Text style={styles.onlineLabel}>{isOnline ? 'Online' : 'Offline'}</Text>
-            </View>
-          </View>
-
+        <View style={styles.titleBar}>
+          <Text style={styles.communityName}>{activeCommunity?.name || 'Select Community'}</Text>
+          {communities.length > 1 && (
+            <TouchableOpacity
+              style={styles.communitySelector}
+              onPress={() => setShowCommunitySwitcher(!showCommunitySwitcher)}
+            >
+              <Ionicons name="swap-horizontal" size={14} color="#25C1AC" />
+              <Text style={styles.communitySelectorText} numberOfLines={1}>Switch</Text>
+            </TouchableOpacity>
+          )}
           {showCommunitySwitcher && communities.length > 1 && (
             <View style={styles.communitySwitcherPanel}>
               {communities.map(c => (
@@ -277,20 +256,32 @@ export default function DashboardScreen() {
               ))}
             </View>
           )}
-
-          <TouchableOpacity
-            style={[styles.syncChip, { borderColor: getSyncColor() + '40', backgroundColor: getSyncColor() + '10' }]}
-            onPress={hasPending && isOnline ? handleSyncNow : undefined}
-            disabled={!hasPending || !isOnline || syncing}
-          >
-            <View style={[styles.syncDot, { backgroundColor: getSyncColor() }]} />
-            <Text style={[styles.syncChipText, { color: getSyncColor() }]}>
-              {syncing ? 'Syncing...' : getSyncLabel()}
-            </Text>
-            {hasPending && isOnline && !syncing && (
-              <Ionicons name="refresh-outline" size={14} color={getSyncColor()} />
-            )}
-          </TouchableOpacity>
+        </View>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>DASHBOARD</Text>
+          <View style={styles.subtitleActions}>
+            <TouchableOpacity
+              style={[styles.syncChip, { borderColor: getSyncColor() + '40', backgroundColor: getSyncColor() + '10' }]}
+              onPress={hasPending && isOnline ? handleSyncNow : undefined}
+              disabled={!hasPending || !isOnline || syncing}
+            >
+              <View style={[styles.syncDot, { backgroundColor: getSyncColor() }]} />
+              <Text style={[styles.syncChipText, { color: getSyncColor() }]}>
+                {syncing ? 'Syncing...' : getSyncLabel()}
+              </Text>
+              {hasPending && isOnline && !syncing && (
+                <Ionicons name="refresh-outline" size={14} color={getSyncColor()} />
+              )}
+            </TouchableOpacity>
+            <NotificationBell />
+            <TouchableOpacity
+              onPress={() => setSearchVisible(true)}
+              style={styles.headerIconBtn}
+              testID="home-search-button"
+            >
+              <Ionicons name="search" size={20} color="#555" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {!communityId ? (
@@ -521,56 +512,49 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   scrollContent: { paddingBottom: 100 },
-  header: {
+  titleBar: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    alignItems: 'center',
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  greeting: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#fff',
-  },
+  communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
   communitySelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     marginTop: 6,
     backgroundColor: 'rgba(37,193,172,0.12)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 8,
-    alignSelf: 'flex-start',
   },
   communitySelectorText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#25C1AC',
-    maxWidth: 180,
   },
-  headerRight: {
+  subtitleRow: {
+    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
-  searchButton: {
+  subtitleText: { fontSize: 13, fontWeight: '700', color: '#0C1D31', letterSpacing: 1.5 },
+  subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#f0f2f5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
   },
-  onlineDot: { width: 8, height: 8, borderRadius: 4 },
-  onlineLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
   communitySwitcherPanel: {
     marginTop: 10,
     backgroundColor: 'rgba(255,255,255,0.1)',

@@ -158,9 +158,12 @@ export default function HoaDashboardScreen() {
     return (
       <View style={styles.container}>
         <StatusBarFill />
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>{activeCommunity?.name ?? 'Community'}</Text>
-          <Text style={styles.headerSubtitle}>HOA Dashboard</Text>
+        <View style={styles.titleBar}>
+          <Text style={styles.communityName}>{activeCommunity?.name ?? 'Community'}</Text>
+        </View>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>DASHBOARD</Text>
+          <View style={styles.subtitleActions} />
         </View>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#25C1AC" />
@@ -173,9 +176,12 @@ export default function HoaDashboardScreen() {
     return (
       <View style={styles.container}>
         <StatusBarFill />
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>{activeCommunity?.name ?? 'Community'}</Text>
-          <Text style={styles.headerSubtitle}>HOA Dashboard</Text>
+        <View style={styles.titleBar}>
+          <Text style={styles.communityName}>{activeCommunity?.name ?? 'Community'}</Text>
+        </View>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>DASHBOARD</Text>
+          <View style={styles.subtitleActions} />
         </View>
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={48} color="#e74c3c" />
@@ -194,12 +200,14 @@ export default function HoaDashboardScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{data.community?.name ?? activeCommunity?.name ?? 'Community'}</Text>
-          <Text style={styles.headerSubtitle}>HOA Dashboard</Text>
+      <View style={styles.titleBar}>
+        <Text style={styles.communityName}>{data.community?.name ?? activeCommunity?.name ?? 'Community'}</Text>
+      </View>
+      <View style={styles.subtitleRow}>
+        <Text style={styles.subtitleText}>DASHBOARD</Text>
+        <View style={styles.subtitleActions}>
+          {isHoaAdmin && <NotificationBell />}
         </View>
-        {isHoaAdmin && <NotificationBell />}
       </View>
 
       <ScrollView
@@ -463,24 +471,26 @@ export default function HoaDashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: {
+  titleBar: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
-    flexDirection: 'row' as const,
+    paddingTop: 12,
+    paddingBottom: 14,
     alignItems: 'center' as const,
   },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: '700' as const,
+  communityName: { fontSize: 20, fontWeight: '700' as const, color: '#fff', textAlign: 'center' as const },
+  subtitleRow: {
+    backgroundColor: '#fff',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
-  headerSubtitle: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 13,
-    marginTop: 2,
-  },
+  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
+  subtitleActions: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
   centered: {
     flex: 1,
     justifyContent: 'center' as const,

@@ -25,8 +25,11 @@ export default function HoaSettingsScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
+      <View style={styles.titleBar}>
+        <Text style={styles.communityName}>{activeCommunity?.name || 'Community'}</Text>
+      </View>
+      <View style={styles.subtitleRow}>
+        <Text style={styles.subtitleText}>SETTINGS</Text>
       </View>
       <View style={styles.content}>
         <View style={styles.card}>
@@ -66,13 +69,25 @@ export default function HoaSettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  header: {
+  titleBar: {
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 20,
+    paddingTop: 12,
+    paddingBottom: 14,
+    alignItems: 'center' as const,
   },
-  headerTitle: { color: '#fff', fontSize: 22, fontWeight: '700' as const },
+  communityName: { fontSize: 20, fontWeight: '700' as const, color: '#fff', textAlign: 'center' as const },
+  subtitleRow: {
+    backgroundColor: '#fff',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
   content: { flex: 1, padding: 16 },
   card: {
     backgroundColor: '#fff',
