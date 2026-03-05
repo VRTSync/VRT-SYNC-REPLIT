@@ -230,49 +230,53 @@ export default function DashboardScreen() {
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
         <View style={styles.titleBar}>
-          <Text style={styles.communityName}>{activeCommunity?.name || 'Select Community'}</Text>
-          {communities.length > 1 && (
-            <TouchableOpacity
-              style={styles.communitySelector}
-              onPress={() => setShowCommunitySwitcher(!showCommunitySwitcher)}
-            >
-              <Ionicons name="swap-horizontal" size={14} color="#25C1AC" />
-              <Text style={styles.communitySelectorText} numberOfLines={1}>Switch</Text>
-            </TouchableOpacity>
-          )}
-          {showCommunitySwitcher && communities.length > 1 && (
-            <View style={styles.communitySwitcherPanel}>
-              {communities.map(c => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.communityOption, c.id === activeCommunity?.id && styles.communityOptionActive]}
-                  onPress={() => { setActiveCommunity(c); setShowCommunitySwitcher(false); }}
-                >
-                  <Text style={[styles.communityOptionText, c.id === activeCommunity?.id && styles.communityOptionTextActive]}>
-                    {c.name}
-                  </Text>
-                  {c.id === activeCommunity?.id && <Ionicons name="checkmark" size={16} color="#25C1AC" />}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+          <TouchableOpacity
+            style={styles.communityNameRow}
+            onPress={communities.length > 1 ? () => setShowCommunitySwitcher(!showCommunitySwitcher) : undefined}
+            activeOpacity={communities.length > 1 ? 0.7 : 1}
+          >
+            {communities.length > 1 && (
+              <Ionicons
+                name={showCommunitySwitcher ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color="rgba(255,255,255,0.5)"
+              />
+            )}
+            <Text style={styles.communityName} numberOfLines={1}>
+              {activeCommunity?.name || 'Select Community'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.syncBadge}
+            onPress={hasPending && isOnline ? handleSyncNow : undefined}
+            disabled={!hasPending || !isOnline || syncing}
+            activeOpacity={hasPending && isOnline ? 0.7 : 1}
+          >
+            <View style={[styles.syncDot, { backgroundColor: getSyncColor() }]} />
+            <Text style={styles.syncBadgeText}>
+              {syncing ? 'Syncing' : getSyncLabel()}
+            </Text>
+          </TouchableOpacity>
         </View>
+        {showCommunitySwitcher && communities.length > 1 && (
+          <View style={styles.communitySwitcherPanel}>
+            {communities.map(c => (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.communityOption, c.id === activeCommunity?.id && styles.communityOptionActive]}
+                onPress={() => { setActiveCommunity(c); setShowCommunitySwitcher(false); }}
+              >
+                <Text style={[styles.communityOptionText, c.id === activeCommunity?.id && styles.communityOptionTextActive]}>
+                  {c.name}
+                </Text>
+                {c.id === activeCommunity?.id && <Ionicons name="checkmark" size={16} color="#25C1AC" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         <View style={styles.subtitleRow}>
           <Text style={styles.subtitleText}>DASHBOARD</Text>
           <View style={styles.subtitleActions}>
-            <TouchableOpacity
-              style={[styles.syncChip, { borderColor: getSyncColor() + '40', backgroundColor: getSyncColor() + '10' }]}
-              onPress={hasPending && isOnline ? handleSyncNow : undefined}
-              disabled={!hasPending || !isOnline || syncing}
-            >
-              <View style={[styles.syncDot, { backgroundColor: getSyncColor() }]} />
-              <Text style={[styles.syncChipText, { color: getSyncColor() }]}>
-                {syncing ? 'Syncing...' : getSyncLabel()}
-              </Text>
-              {hasPending && isOnline && !syncing && (
-                <Ionicons name="refresh-outline" size={14} color={getSyncColor()} />
-              )}
-            </TouchableOpacity>
             <NotificationBell />
             <TouchableOpacity
               onPress={() => setSearchVisible(true)}
@@ -517,23 +521,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
-  communitySelector: {
+  communityNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  communityName: { fontSize: 20, fontWeight: '700', color: '#fff' },
+  syncBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 6,
-    backgroundColor: 'rgba(37,193,172,0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    marginLeft: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  communitySelectorText: {
-    fontSize: 12,
+  syncBadgeText: {
+    fontSize: 11,
     fontWeight: '600',
-    color: '#25C1AC',
+    color: 'rgba(255,255,255,0.5)',
   },
   subtitleRow: {
     backgroundColor: '#fff',
@@ -556,10 +568,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   communitySwitcherPanel: {
-    marginTop: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 10,
-    overflow: 'hidden',
+    backgroundColor: '#0C1D31',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
   communityOption: {
     flexDirection: 'row',
@@ -567,8 +578,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    marginBottom: 4,
   },
   communityOptionActive: {
     backgroundColor: 'rgba(37,193,172,0.1)',
@@ -581,19 +593,7 @@ const styles = StyleSheet.create({
     color: '#25C1AC',
     fontWeight: '600',
   },
-  syncChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginTop: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
   syncDot: { width: 6, height: 6, borderRadius: 3 },
-  syncChipText: { fontSize: 12, fontWeight: '600' },
   section: {
     marginTop: 16,
     marginHorizontal: 16,
