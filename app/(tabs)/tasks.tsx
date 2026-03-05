@@ -439,33 +439,31 @@ export default function TasksScreen() {
           )}
         </View>
       )}
-      <View style={styles.headerBar}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
-          <Text style={styles.taskCount}>
-            {filterMode === 'tasks' ? `${contractTasks.length} task${contractTasks.length !== 1 ? 's' : ''}`
-              : filterMode === 'requests' ? `${requestTasks.length} request${requestTasks.length !== 1 ? 's' : ''}`
-              : `${completedTasks.length} completed`}
-          </Text>
+      <View style={styles.titleBar}>
+        <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
+      </View>
+      <View style={styles.subtitleRow}>
+        <Text style={styles.subtitleText}>TASKS</Text>
+        <View style={styles.subtitleActions}>
+          <TouchableOpacity
+            onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
+            style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
+            testID="view-toggle"
+          >
+            <Ionicons
+              name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
+              size={20}
+              color={viewMode === 'calendar' ? '#fff' : 'rgba(255,255,255,0.7)'}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setSearchVisible(true)}
+            style={styles.headerIconBtn}
+            testID="search-button"
+          >
+            <Ionicons name="search" size={20} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-          style={[styles.viewToggle, viewMode === 'calendar' && styles.viewToggleActive]}
-          testID="view-toggle"
-        >
-          <Ionicons
-            name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-            size={20}
-            color="#fff"
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => setSearchVisible(true)}
-          style={styles.searchButton}
-          testID="search-button"
-        >
-          <Ionicons name="search" size={22} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       {viewMode === 'list' && (
@@ -476,7 +474,7 @@ export default function TasksScreen() {
             testID="filter-tasks"
           >
             <Text style={[styles.filterTabText, filterMode === 'tasks' && styles.filterTabTextActive]}>
-              Contract Tasks ({contractTasks.length})
+              Contract
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -485,7 +483,7 @@ export default function TasksScreen() {
             testID="filter-requests"
           >
             <Text style={[styles.filterTabText, filterMode === 'requests' && styles.filterTabTextActive]}>
-              Requests ({requestTasks.length})
+              Requests
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -494,7 +492,7 @@ export default function TasksScreen() {
             testID="filter-completed"
           >
             <Text style={[styles.filterTabText, filterMode === 'completed' && styles.filterTabTextActive]}>
-              Completed ({completedTasks.length})
+              Completed
             </Text>
           </TouchableOpacity>
         </View>
@@ -592,25 +590,39 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  headerBar: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', backgroundColor: '#0C1D31' },
-  searchButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  viewToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+  titleBar: {
+    backgroundColor: '#0C1D31',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 4,
+    alignItems: 'center',
+  },
+  communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
+  subtitleRow: {
+    backgroundColor: '#0C1D31',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  subtitleText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
+  subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
   },
-  viewToggleActive: {
+  headerIconBtnActive: {
     backgroundColor: '#25C1AC',
   },
-  communityName: { fontSize: 22, fontWeight: '700', color: '#fff' },
-  taskCount: { fontSize: 14, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
   filterRow: {
     flexDirection: 'row',
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
     backgroundColor: '#e8eaed',
