@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, ilike, or, sql, count } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -175,7 +175,8 @@ export async function getTaskCompletions(taskId: string): Promise<TaskCompletion
 }
 
 export async function createAttachment(data: {
-  taskCompletionId: string;
+  taskCompletionId?: string | null;
+  taskId?: string | null;
   fileRef: string;
   url: string;
   uploadedBy: string;
@@ -185,9 +186,22 @@ export async function createAttachment(data: {
   return attachment;
 }
 
+export async function getAttachmentsByTaskId(taskId: string): Promise<Attachment[]> {
+  return db.select().from(attachments)
+    .where(and(eq(attachments.taskId, taskId), isNull(attachments.taskCompletionId)))
+    .orderBy(desc(attachments.createdAt));
+}
+
 export async function getAttachmentByIdempotencyKey(taskCompletionId: string, idempotencyKey: string): Promise<Attachment | null> {
   const [row] = await db.select().from(attachments).where(
     and(eq(attachments.taskCompletionId, taskCompletionId), eq(attachments.idempotencyKey, idempotencyKey))
+  );
+  return row || null;
+}
+
+export async function getAttachmentByTaskIdAndIdempotencyKey(taskId: string, idempotencyKey: string): Promise<Attachment | null> {
+  const [row] = await db.select().from(attachments).where(
+    and(eq(attachments.taskId, taskId), eq(attachments.idempotencyKey, idempotencyKey))
   );
   return row || null;
 }

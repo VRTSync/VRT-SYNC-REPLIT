@@ -149,6 +149,12 @@ export default function TaskDetailScreen() {
     enabled: !!id,
   });
 
+  const { data: taskAttachments = [] } = useQuery<{ id: string; url: string; fileRef: string; createdAt: string }[]>({
+    queryKey: [`/api/tasks/${id}/task-attachments`],
+    queryFn: getQueryFn({ on401: 'throw' }),
+    enabled: !!id,
+  });
+
   const pickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -571,6 +577,35 @@ export default function TaskDetailScreen() {
               </Text>
             </View>
           ) : null}
+        </View>
+      )}
+
+      {taskAttachments.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Request Photos</Text>
+          <View style={styles.completionPhotosSection}>
+            <View style={styles.completionDetailRow}>
+              <Ionicons name="camera-outline" size={16} color="#25C1AC" />
+              <Text style={styles.completionDetailLabel}>Photos ({taskAttachments.length})</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.completionPhotoScroll}>
+              {taskAttachments.map((a, aIdx) => (
+                <TouchableOpacity
+                  key={a.id}
+                  onPress={() => {
+                    setPhotoViewerImages(taskAttachments.map(att => ({ id: att.id, url: `${getApiUrl()}${att.url}` })));
+                    setPhotoViewerIndex(aIdx);
+                    setPhotoViewerVisible(true);
+                  }}
+                >
+                  <Image
+                    source={{ uri: `${getApiUrl()}${a.url}` }}
+                    style={styles.completionPhotoThumb}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         </View>
       )}
 

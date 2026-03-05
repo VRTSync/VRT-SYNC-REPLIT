@@ -548,18 +548,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks/:id/attachments", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { allowed } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
+      const taskId = req.params.id as string;
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, taskId);
       if (!allowed) {
         return res.status(403).json({ error: "You do not have access to this task" });
       }
       const { taskCompletionId, uploadURL, idempotencyKey } = req.body;
-      if (!taskCompletionId || !uploadURL || !idempotencyKey) {
-        return res.status(400).json({ error: "taskCompletionId, uploadURL, and idempotencyKey are required" });
+      if (!uploadURL || !idempotencyKey) {
+        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
       }
 
-      const existing = await storage.getAttachmentByIdempotencyKey(taskCompletionId, idempotencyKey);
-      if (existing) {
-        return res.status(200).json(existing);
+      if (taskCompletionId) {
+        const existing = await storage.getAttachmentByIdempotencyKey(taskCompletionId, idempotencyKey);
+        if (existing) {
+          return res.status(200).json(existing);
+        }
+      } else {
+        const existing = await storage.getAttachmentByTaskIdAndIdempotencyKey(taskId, idempotencyKey);
+        if (existing) {
+          return res.status(200).json(existing);
+        }
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -569,7 +577,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const attachment = await storage.createAttachment({
-        taskCompletionId,
+        taskCompletionId: taskCompletionId || null,
+        taskId: taskCompletionId ? null : taskId,
         fileRef: objectPath,
         url: objectPath,
         uploadedBy: req.session.userId!,
@@ -655,6 +664,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get completions error:", error);
       res.status(500).json({ error: "Failed to fetch completions" });
+    }
+  });
+
+  app.get("/api/tasks/:id/task-attachments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const taskId = req.params.id as string;
+      const { allowed } = await storage.canUserAccessTask(req.session.userId!, taskId);
+      if (!allowed) {
+        return res.status(403).json({ error: "You do not have access to this task" });
+      }
+      const atts = await storage.getAttachmentsByTaskId(taskId);
+      res.json(atts);
+    } catch (error) {
+      console.error("Get task attachments error:", error);
+      res.status(500).json({ error: "Failed to fetch task attachments" });
     }
   });
 

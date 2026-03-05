@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity,
-  TextInput, ScrollView, ActivityIndicator, Alert, Platform,
+  TextInput, ScrollView, ActivityIndicator, Alert, Platform, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/query-client';
+import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import * as ImagePicker from 'expo-image-picker';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -87,7 +88,9 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
   const [assignedTo, setAssignedTo] = useState<string | undefined>(undefined);
+  const [photos, setPhotos] = useState<{ uri: string; fileName: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
@@ -133,7 +136,44 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
     setAssignedTo(undefined);
     setPinLat(null);
     setPinLng(null);
+    setPhotos([]);
+    setUploadProgress(null);
     setError(null);
+  };
+
+  const pickPhoto = async (useCamera: boolean) => {
+    try {
+      if (useCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission needed', 'Camera access is required to take photos.');
+          return;
+        }
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          Alert.alert('Permission needed', 'Photo library access is required to select photos.');
+          return;
+        }
+      }
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, allowsMultipleSelection: true });
+
+      if (!result.canceled && result.assets) {
+        const newPhotos = result.assets.map((a) => ({
+          uri: a.uri,
+          fileName: a.fileName || `photo_${Date.now()}.jpg`,
+        }));
+        setPhotos((prev) => [...prev, ...newPhotos]);
+      }
+    } catch (e) {
+      console.error('Photo picker error:', e);
+    }
+  };
+
+  const removePhoto = (idx: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleClose = () => {
@@ -177,6 +217,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
 
     setSubmitting(true);
     setError(null);
+    setUploadProgress(null);
     try {
       const body: any = {
         title: title.trim(),
@@ -191,7 +232,53 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         body.pinLat = pinLat;
         body.pinLng = pinLng;
       }
-      await apiRequest('POST', '/api/hoa/requests', body);
+      const response = await apiRequest('POST', '/api/hoa/requests', body);
+      const result = await response.json();
+
+      if (photos.length > 0 && result?.id) {
+        const apiUrl = getApiUrl();
+        for (let i = 0; i < photos.length; i++) {
+          setUploadProgress(`Uploading photo ${i + 1} of ${photos.length}...`);
+          try {
+            const presignRes = await fetch(new URL('/api/objects/upload', apiUrl).toString(), {
+              method: 'POST',
+              credentials: 'include',
+            });
+            if (!presignRes.ok) throw new Error('Failed to get upload URL');
+            const { uploadURL } = await presignRes.json();
+
+            if (Platform.OS === 'web') {
+              const blob = await fetch(photos[i].uri).then(r => r.blob());
+              const uploadRes = await fetch(uploadURL, {
+                method: 'PUT',
+                body: blob,
+                headers: { 'Content-Type': 'image/jpeg' },
+              });
+              if (!uploadRes.ok) throw new Error('Upload failed');
+            } else {
+              const { File: ExpoFile } = await import('expo-file-system');
+              const file = new ExpoFile(photos[i].uri);
+              const { fetch: expoFetch } = await import('expo/fetch');
+              const uploadRes = await expoFetch(uploadURL, {
+                method: 'PUT',
+                body: file,
+                headers: { 'Content-Type': file.type || 'image/jpeg' },
+              });
+              if (!uploadRes.ok) throw new Error('Upload failed');
+            }
+
+            const idempotencyKey = `req_${result.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            await apiRequest('POST', `/api/tasks/${result.id}/attachments`, {
+              uploadURL,
+              idempotencyKey,
+            });
+          } catch (photoErr) {
+            console.error(`Photo ${i + 1} upload failed:`, photoErr);
+          }
+        }
+        setUploadProgress(null);
+      }
+
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/hoa'] });
       Alert.alert('Success', 'Your request has been submitted.');
@@ -200,6 +287,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
       setError(e.message || 'Failed to submit request');
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   };
 
@@ -332,6 +420,39 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+          )}
+
+          <View style={styles.field}>
+            <Text style={styles.label}>Photos (optional)</Text>
+            <View style={styles.photoPickerRow}>
+              <TouchableOpacity style={styles.photoPickerBtn} onPress={() => pickPhoto(true)}>
+                <Ionicons name="camera-outline" size={22} color="#25C1AC" />
+                <Text style={styles.photoPickerBtnText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoPickerBtn} onPress={() => pickPhoto(false)}>
+                <Ionicons name="images-outline" size={22} color="#25C1AC" />
+                <Text style={styles.photoPickerBtnText}>Gallery</Text>
+              </TouchableOpacity>
+            </View>
+            {photos.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoPreviewScroll}>
+                {photos.map((p, idx) => (
+                  <View key={`${p.uri}-${idx}`} style={styles.photoPreviewWrap}>
+                    <Image source={{ uri: p.uri }} style={styles.photoPreviewThumb} />
+                    <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removePhoto(idx)}>
+                      <Ionicons name="close-circle" size={20} color="#e74c3c" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+
+          {uploadProgress && (
+            <View style={styles.uploadProgressBanner}>
+              <ActivityIndicator size="small" color="#25C1AC" />
+              <Text style={styles.uploadProgressText}>{uploadProgress}</Text>
             </View>
           )}
 
@@ -586,5 +707,61 @@ const styles = StyleSheet.create({
   },
   contractorChipTextActive: {
     color: '#fff',
+  },
+  photoPickerRow: {
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  photoPickerBtn: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed' as const,
+  },
+  photoPickerBtnText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: '#25C1AC',
+  },
+  photoPreviewScroll: {
+    marginTop: 12,
+  },
+  photoPreviewWrap: {
+    marginRight: 10,
+    position: 'relative' as const,
+  },
+  photoPreviewThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: '#e0e0e0',
+  },
+  photoRemoveBtn: {
+    position: 'absolute' as const,
+    top: -6,
+    right: -6,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+  },
+  uploadProgressBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    backgroundColor: '#E8F8F5',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  uploadProgressText: {
+    fontSize: 13,
+    color: '#25C1AC',
+    fontWeight: '500' as const,
   },
 });

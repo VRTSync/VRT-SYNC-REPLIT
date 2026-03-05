@@ -93,7 +93,8 @@ export const attachments = pgTable("attachments", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  taskCompletionId: varchar("task_completion_id").notNull().references(() => taskCompletions.id, { onDelete: 'cascade' }),
+  taskCompletionId: varchar("task_completion_id").references(() => taskCompletions.id, { onDelete: 'cascade' }),
+  taskId: varchar("task_id").references(() => tasks.id, { onDelete: 'cascade' }),
   fileRef: text("file_ref").notNull(),
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
@@ -423,6 +424,7 @@ export const taskCompletionsRelations = relations(taskCompletions, ({ one, many 
 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   taskCompletion: one(taskCompletions, { fields: [attachments.taskCompletionId], references: [taskCompletions.id] }),
+  task: one(tasks, { fields: [attachments.taskId], references: [tasks.id] }),
   uploader: one(users, { fields: [attachments.uploadedBy], references: [users.id] }),
 }));
 

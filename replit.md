@@ -21,6 +21,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for Users, Co
 - **Assets**: Community-scoped physical assets with types, properties, tags, and audit fields. Features auto-sync from GeoJSON, KML ingestion, and bulk property completion.
 - **Service Schedules & Visits**: Recurring service schedules per community with seasonal bounds and individual visit logs, supporting idempotent upsert.
 - **Asset Notes**: Contractor-specific notes on assets with offline queue support.
+- **Attachments**: Support both task-completion-level and task-level attachments. The `attachments` table has nullable `taskCompletionId` and `taskId` columns. Task-level attachments are used for HOA request photos submitted during creation. Idempotency enforced via unique indexes on both `(taskCompletionId, idempotencyKey)` and `(taskId, idempotencyKey)`.
 - **Notifications**: In-app notification feed for HOA admins and contractors. Stores notification type, title, body, read status, and related task. Push notifications sent via Expo push tokens.
 
 ### Mobile Features
