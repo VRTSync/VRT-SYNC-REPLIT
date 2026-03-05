@@ -668,13 +668,6 @@ export default function LeafletMap({
     }
   }, [targetRegion, runJS]);
 
-  useEffect(() => {
-    if (!fitToContentKey) return;
-    const taskCoords = tasks.map(t => [t.latitude, t.longitude] as [number, number]);
-    const userLoc = userLocation ? [userLocation.latitude, userLocation.longitude] : null;
-    runJS(`window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`);
-  }, [fitToContentKey, runJS]);
-
   const layerCoordsKey = useMemo(() => {
     return layers.filter(l => l.geojson).map(l => l.id).sort().join(',');
   }, [layers]);
@@ -690,7 +683,8 @@ export default function LeafletMap({
     initialFitDoneRef.current = true;
     const taskCoords = tasks.map(t => [t.latitude, t.longitude] as [number, number]);
     const userLoc = userLocation ? [userLocation.latitude, userLocation.longitude] : null;
-    runJS(`window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`);
+    const fitCmd = `window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`;
+    setTimeout(() => runJS(fitCmd), 300);
   }, [tasks, layerCoordsKey, layers.length, userLocation, runJS]);
 
   const htmlContent = useMemo(() => generateLeafletHTML(), []);
