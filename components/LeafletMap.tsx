@@ -739,11 +739,10 @@ export default function LeafletMap({
         </View>
       );
     }
-    const mapUrl = `${getApiUrl()}leaflet-map.html?v=${Date.now()}`;
     return (
       <WebView
         ref={webViewRef}
-        source={{ uri: mapUrl }}
+        source={{ html: htmlContent }}
         style={styles.webview}
         onMessage={handleMessage}
         onError={handleWebViewError}
