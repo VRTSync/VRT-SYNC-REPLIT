@@ -47,9 +47,9 @@ export default function HoaTabLayout() {
       <Tabs.Screen
         name="calendar"
         options={{
-          title: "Calendar",
+          title: "Tasks",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" color={color} size={size || 24} />
+            <Ionicons name="clipboard-outline" color={color} size={size || 24} />
           ),
         }}
       />

@@ -26,6 +26,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for Users, Co
 ### Mobile Features
 - **Service Schedule Widget**: Displays active service schedules, next service date, and allows logging visits via a modal, with full offline support.
 - **Calendar View**: Provides a calendar/list toggle on the Tasks screen, displaying tasks with window bars, color-coded by priority, and mowing day indicators. Features month navigation and works fully offline by reusing cached data.
+- **HOA Tasks Page**: The HOA "Tasks" tab (formerly "Calendar") mirrors the contractor tasks page layout with list/calendar toggle, search, and filter tabs (All/Requests/Non-Requests). List view groups tasks by window classification (Overdue/Active/Upcoming/Other) with urgency chips. Read-only — no complete or acknowledge actions.
 - **HOA Dashboard**: Landing page for HOA users, displaying upcoming tasks, quick map layers, read-only mowing day card, recent completions, and requests preview.
 - **HOA Requests Tab**: Provides a unified request history for HOA users with filter chips and a create request option for `hoa_admin`.
 - **Request Map**: A dedicated single-pin map screen for viewing individual HOA request locations.
