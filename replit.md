@@ -38,6 +38,9 @@ The project uses a Leaflet-based map. Both contractor and HOA maps fetch communi
 ### Frontend Architecture
 Built with Expo SDK and Expo Router for file-based routing. Uses React Query for server state management. Features context providers for authentication, active community selection, and offline support. Supports iOS, Android, and web. All screens utilize a `StatusBarFill` component for consistent header styling.
 
+### Shared NavyHeader Component
+`components/NavyHeader.tsx` is a prop-based shared component used across all contractor and HOA tab screens. It renders a navy bar (#0C1D31) with community name (left), optional chevron dropdown for multi-community users, and sync badge pill (right). Below the navy bar, each screen provides its own subtitle row (white bar with page title and actions) via `children`. The `components/useNavyHeaderProps.ts` hook computes sync state from `useOffline()` and community data from `useCommunity()`, returning all props NavyHeader needs. Used in: `app/(tabs)/index.tsx`, `app/(tabs)/tasks.tsx`, `app/(hoa-tabs)/index.tsx`, `app/(hoa-tabs)/calendar.tsx`, `app/(hoa-tabs)/requests.tsx`, `app/(hoa-tabs)/settings.tsx`.
+
 ### API Design
 A RESTful JSON API (`/api/`) provides endpoints for authentication, communities, tasks, user management, and object storage. Data is filtered by the selected community.
 

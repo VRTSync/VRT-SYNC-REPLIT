@@ -11,6 +11,8 @@ import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline, ServiceSchedule } from '@/client/contexts/OfflineContext';
 import StatusBarFill from '@/components/StatusBarFill';
+import NavyHeader from '@/components/NavyHeader';
+import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import MowingDayCard from '@/components/MowingDayCard';
 import LogVisitModal from '@/components/LogVisitModal';
@@ -74,8 +76,9 @@ const MAP_JUMPS = [
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { activeCommunity, communities, setActiveCommunity } = useCommunity();
+  const { activeCommunity } = useCommunity();
   const { user } = useAuth();
+  const navyHeaderProps = useNavyHeaderProps();
   const {
     isOnline, pendingCompletions, syncPendingCompletions,
     cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
@@ -83,7 +86,6 @@ export default function DashboardScreen() {
     syncPendingServiceVisits,
   } = useOffline();
   const [syncing, setSyncing] = useState(false);
-  const [showCommunitySwitcher, setShowCommunitySwitcher] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const [logVisitSchedule, setLogVisitSchedule] = useState<ServiceSchedule | null>(null);
 
@@ -158,26 +160,8 @@ export default function DashboardScreen() {
     }
   };
 
-  const queuedCount = pendingCompletions.filter(c => c.state === 'queued').length
-    + pendingServiceVisits.filter(v => v.state === 'queued').length;
-  const failedCount = pendingCompletions.filter(c => c.state === 'failed').length
-    + pendingServiceVisits.filter(v => v.state === 'failed').length;
-  const syncingCount = pendingCompletions.filter(c => c.state === 'syncing').length
-    + pendingServiceVisits.filter(v => v.state === 'syncing').length;
-  const hasPending = queuedCount + failedCount + syncingCount > 0;
 
-  const getSyncLabel = () => {
-    if (failedCount > 0) return `Sync error (${failedCount})`;
-    if (syncingCount > 0) return 'Syncing...';
-    if (queuedCount > 0) return `Queued (${queuedCount})`;
-    return 'All synced';
-  };
-
-  const getSyncColor = () => {
-    if (failedCount > 0) return '#f44336';
-    if (syncingCount > 0 || queuedCount > 0) return '#f39c12';
-    return '#25C1AC';
-  };
+  const failedCount = pendingCompletions.filter(c => c.state === 'failed').length;
 
   const handleMapJump = (categoryKey: string) => {
     router.push({ pathname: '/(tabs)/map', params: { category: categoryKey } });
@@ -229,64 +213,21 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
-        <View style={styles.titleBar}>
-          <TouchableOpacity
-            style={styles.communityNameRow}
-            onPress={communities.length > 1 ? () => setShowCommunitySwitcher(!showCommunitySwitcher) : undefined}
-            activeOpacity={communities.length > 1 ? 0.7 : 1}
-          >
-            {communities.length > 1 && (
-              <Ionicons
-                name={showCommunitySwitcher ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color="rgba(255,255,255,0.5)"
-              />
-            )}
-            <Text style={styles.communityName} numberOfLines={1}>
-              {activeCommunity?.name || 'Select Community'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.syncBadge}
-            onPress={hasPending && isOnline ? handleSyncNow : undefined}
-            disabled={!hasPending || !isOnline || syncing}
-            activeOpacity={hasPending && isOnline ? 0.7 : 1}
-          >
-            <View style={[styles.syncDot, { backgroundColor: getSyncColor() }]} />
-            <Text style={styles.syncBadgeText}>
-              {syncing ? 'Syncing' : getSyncLabel()}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        {showCommunitySwitcher && communities.length > 1 && (
-          <View style={styles.communitySwitcherPanel}>
-            {communities.map(c => (
+        <NavyHeader {...navyHeaderProps}>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitleText}>DASHBOARD</Text>
+            <View style={styles.subtitleActions}>
+              <NotificationBell />
               <TouchableOpacity
-                key={c.id}
-                style={[styles.communityOption, c.id === activeCommunity?.id && styles.communityOptionActive]}
-                onPress={() => { setActiveCommunity(c); setShowCommunitySwitcher(false); }}
+                onPress={() => setSearchVisible(true)}
+                style={styles.headerIconBtn}
+                testID="home-search-button"
               >
-                <Text style={[styles.communityOptionText, c.id === activeCommunity?.id && styles.communityOptionTextActive]}>
-                  {c.name}
-                </Text>
-                {c.id === activeCommunity?.id && <Ionicons name="checkmark" size={16} color="#25C1AC" />}
+                <Ionicons name="search" size={20} color="#555" />
               </TouchableOpacity>
-            ))}
+            </View>
           </View>
-        )}
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>DASHBOARD</Text>
-          <View style={styles.subtitleActions}>
-            <NotificationBell />
-            <TouchableOpacity
-              onPress={() => setSearchVisible(true)}
-              style={styles.headerIconBtn}
-              testID="home-search-button"
-            >
-              <Ionicons name="search" size={20} color="#555" />
-            </TouchableOpacity>
-          </View>
-        </View>
+        </NavyHeader>
 
         {!communityId ? (
           <View style={styles.emptyState}>
@@ -516,37 +457,6 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   scrollContent: { paddingBottom: 100 },
-  titleBar: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  communityNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-  },
-  communityName: { fontSize: 20, fontWeight: '700', color: '#fff' },
-  syncBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginLeft: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  syncBadgeText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.5)',
-  },
   subtitleRow: {
     backgroundColor: '#fff',
     flexDirection: 'row',
@@ -567,33 +477,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  communitySwitcherPanel: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  communityOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 8,
-    marginBottom: 4,
-  },
-  communityOptionActive: {
-    backgroundColor: 'rgba(37,193,172,0.1)',
-  },
-  communityOptionText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  communityOptionTextActive: {
-    color: '#25C1AC',
-    fontWeight: '600',
-  },
-  syncDot: { width: 6, height: 6, borderRadius: 3 },
   section: {
     marginTop: 16,
     marginHorizontal: 16,

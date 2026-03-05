@@ -10,6 +10,8 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
+import NavyHeader from '@/components/NavyHeader';
+import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import NotificationBell from '@/components/NotificationBell';
 
@@ -141,6 +143,7 @@ export default function HoaDashboardScreen() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { activeCommunity } = useCommunity();
+  const navyHeaderProps = useNavyHeaderProps();
   const isHoaAdmin = user?.role === 'hoa_admin';
   const [showCreateRequest, setShowCreateRequest] = useState(false);
 
@@ -158,13 +161,12 @@ export default function HoaDashboardScreen() {
     return (
       <View style={styles.container}>
         <StatusBarFill />
-        <View style={styles.titleBar}>
-          <Text style={styles.communityName}>{activeCommunity?.name ?? 'Community'}</Text>
-        </View>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>DASHBOARD</Text>
-          <View style={styles.subtitleActions} />
-        </View>
+        <NavyHeader {...navyHeaderProps}>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitleText}>DASHBOARD</Text>
+            <View style={styles.subtitleActions} />
+          </View>
+        </NavyHeader>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#25C1AC" />
         </View>
@@ -176,13 +178,12 @@ export default function HoaDashboardScreen() {
     return (
       <View style={styles.container}>
         <StatusBarFill />
-        <View style={styles.titleBar}>
-          <Text style={styles.communityName}>{activeCommunity?.name ?? 'Community'}</Text>
-        </View>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>DASHBOARD</Text>
-          <View style={styles.subtitleActions} />
-        </View>
+        <NavyHeader {...navyHeaderProps}>
+          <View style={styles.subtitleRow}>
+            <Text style={styles.subtitleText}>DASHBOARD</Text>
+            <View style={styles.subtitleActions} />
+          </View>
+        </NavyHeader>
         <View style={styles.centered}>
           <Ionicons name="alert-circle-outline" size={48} color="#e74c3c" />
           <Text style={styles.errorText}>Failed to load dashboard</Text>
@@ -200,15 +201,14 @@ export default function HoaDashboardScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.titleBar}>
-        <Text style={styles.communityName}>{data.community?.name ?? activeCommunity?.name ?? 'Community'}</Text>
-      </View>
-      <View style={styles.subtitleRow}>
-        <Text style={styles.subtitleText}>DASHBOARD</Text>
-        <View style={styles.subtitleActions}>
-          {isHoaAdmin && <NotificationBell />}
+      <NavyHeader {...navyHeaderProps}>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>DASHBOARD</Text>
+          <View style={styles.subtitleActions}>
+            {isHoaAdmin && <NotificationBell />}
+          </View>
         </View>
-      </View>
+      </NavyHeader>
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: bottomPad }}
@@ -471,14 +471,6 @@ export default function HoaDashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  titleBar: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-    alignItems: 'center' as const,
-  },
-  communityName: { fontSize: 20, fontWeight: '700' as const, color: '#fff', textAlign: 'center' as const },
   subtitleRow: {
     backgroundColor: '#fff',
     flexDirection: 'row' as const,

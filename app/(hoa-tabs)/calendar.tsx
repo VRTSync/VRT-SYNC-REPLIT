@@ -7,6 +7,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
+import NavyHeader from '@/components/NavyHeader';
+import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CalendarView from '@/components/CalendarView';
 import SearchModal from '@/components/SearchModal';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -115,6 +117,7 @@ const GROUP_LABELS: Record<WindowGroup, string> = {
 export default function HoaTasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
+  const navyHeaderProps = useNavyHeaderProps();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchVisible, setSearchVisible] = useState(false);
@@ -257,30 +260,29 @@ export default function HoaTasksScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.titleBar}>
-        <Text style={styles.communityName}>{activeCommunity?.name || 'Community'}</Text>
-      </View>
-      <View style={styles.subtitleRow}>
-        <Text style={styles.subtitleText}>TASKS</Text>
-        <View style={styles.subtitleActions}>
-          <TouchableOpacity
-            onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-            style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
-          >
-            <Ionicons
-              name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-              size={20}
-              color={viewMode === 'calendar' ? '#fff' : '#555'}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setSearchVisible(true)}
-            style={styles.headerIconBtn}
-          >
-            <Ionicons name="search" size={20} color="#555" />
-          </TouchableOpacity>
+      <NavyHeader {...navyHeaderProps}>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>TASKS</Text>
+          <View style={styles.subtitleActions}>
+            <TouchableOpacity
+              onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
+              style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
+            >
+              <Ionicons
+                name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
+                size={20}
+                color={viewMode === 'calendar' ? '#fff' : '#555'}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSearchVisible(true)}
+              style={styles.headerIconBtn}
+            >
+              <Ionicons name="search" size={20} color="#555" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </NavyHeader>
 
       {viewMode === 'list' && (
         <View style={styles.filterRow}>
@@ -379,14 +381,6 @@ export default function HoaTasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  titleBar: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-    alignItems: 'center',
-  },
-  communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
   subtitleRow: {
     backgroundColor: '#fff',
     flexDirection: 'row',

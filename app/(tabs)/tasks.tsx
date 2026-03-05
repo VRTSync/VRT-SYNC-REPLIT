@@ -6,6 +6,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
+import NavyHeader from '@/components/NavyHeader';
+import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import CalendarView from '@/components/CalendarView';
 import LogVisitModal from '@/components/LogVisitModal';
@@ -119,6 +121,7 @@ export default function TasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
+  const navyHeaderProps = useNavyHeaderProps();
   const {
     isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions,
     cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
@@ -414,57 +417,31 @@ export default function TasksScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      {!isOnline && (
-        <View style={styles.offlineBanner}>
-          <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
-          <Text style={styles.offlineBannerText}>Offline Mode</Text>
-        </View>
-      )}
-      {pendingCompletions.length > 0 && (
-        <View style={styles.syncBanner}>
-          <View style={styles.syncInfo}>
-            <Text style={styles.syncBannerText}>
-              {pendingCompletions.filter(c => c.state === 'queued').length > 0 &&
-                `${pendingCompletions.filter(c => c.state === 'queued').length} queued`}
-              {pendingCompletions.filter(c => c.state === 'failed').length > 0 &&
-                `${pendingCompletions.filter(c => c.state === 'queued').length > 0 ? ', ' : ''}${pendingCompletions.filter(c => c.state === 'failed').length} failed`}
-              {pendingCompletions.filter(c => c.state === 'syncing').length > 0 &&
-                ` syncing...`}
-            </Text>
-          </View>
-          {isOnline && (
-            <TouchableOpacity style={styles.syncButton} onPress={handleSyncNow} disabled={syncing}>
-              <Text style={styles.syncButtonText}>{syncing ? 'Syncing...' : 'Sync Now'}</Text>
+      <NavyHeader {...navyHeaderProps}>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>TASKS</Text>
+          <View style={styles.subtitleActions}>
+            <TouchableOpacity
+              onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
+              style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
+              testID="view-toggle"
+            >
+              <Ionicons
+                name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
+                size={20}
+                color={viewMode === 'calendar' ? '#fff' : '#555'}
+              />
             </TouchableOpacity>
-          )}
+            <TouchableOpacity
+              onPress={() => setSearchVisible(true)}
+              style={styles.headerIconBtn}
+              testID="search-button"
+            >
+              <Ionicons name="search" size={20} color="#555" />
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
-      <View style={styles.titleBar}>
-        <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
-      </View>
-      <View style={styles.subtitleRow}>
-        <Text style={styles.subtitleText}>TASKS</Text>
-        <View style={styles.subtitleActions}>
-          <TouchableOpacity
-            onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-            style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
-            testID="view-toggle"
-          >
-            <Ionicons
-              name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-              size={20}
-              color={viewMode === 'calendar' ? '#fff' : '#555'}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setSearchVisible(true)}
-            style={styles.headerIconBtn}
-            testID="search-button"
-          >
-            <Ionicons name="search" size={20} color="#555" />
-          </TouchableOpacity>
-        </View>
-      </View>
+      </NavyHeader>
 
       {viewMode === 'list' && (
         <View style={styles.filterRow}>
@@ -590,14 +567,6 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  titleBar: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-    alignItems: 'center',
-  },
-  communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
   subtitleRow: {
     backgroundColor: '#fff',
     flexDirection: 'row',
@@ -694,34 +663,6 @@ const styles = StyleSheet.create({
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#999' },
   emptySubtitle: { fontSize: 14, color: '#bbb', textAlign: 'center', paddingHorizontal: 40 },
-  offlineBanner: {
-    backgroundColor: '#f44336',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 6,
-  },
-  offlineBannerText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  syncBanner: {
-    backgroundColor: '#fff3e0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ffe0b2',
-  },
-  syncInfo: { flex: 1 },
-  syncBannerText: { fontSize: 13, fontWeight: '500', color: '#e65100' },
-  syncButton: {
-    backgroundColor: '#25C1AC',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  syncButtonText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   sectionHeaderUrgent: { color: '#c62828' },
   sectionHeaderHoa: { color: '#6a1b9a' },
   hoaTaskCard: {

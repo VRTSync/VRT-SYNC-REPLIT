@@ -10,6 +10,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
+import NavyHeader from '@/components/NavyHeader';
+import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 
 type HoaRequest = {
@@ -117,6 +119,7 @@ export default function HoaRequestsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { activeCommunity } = useCommunity();
+  const navyHeaderProps = useNavyHeaderProps();
   const queryClient = useQueryClient();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('submitted');
   const [showCreateRequest, setShowCreateRequest] = useState(false);
@@ -152,12 +155,11 @@ export default function HoaRequestsScreen() {
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={styles.titleBar}>
-        <Text style={styles.communityName}>{activeCommunity?.name || 'Community'}</Text>
-      </View>
-      <View style={styles.subtitleRow}>
-        <Text style={styles.subtitleText}>REQUESTS</Text>
-      </View>
+      <NavyHeader {...navyHeaderProps}>
+        <View style={styles.subtitleRow}>
+          <Text style={styles.subtitleText}>REQUESTS</Text>
+        </View>
+      </NavyHeader>
 
       <View style={styles.filterContainer}>
         <ScrollView
@@ -245,14 +247,6 @@ export default function HoaRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  titleBar: {
-    backgroundColor: '#0C1D31',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 14,
-    alignItems: 'center' as const,
-  },
-  communityName: { fontSize: 20, fontWeight: '700' as const, color: '#fff', textAlign: 'center' as const },
   subtitleRow: {
     backgroundColor: '#fff',
     flexDirection: 'row' as const,
