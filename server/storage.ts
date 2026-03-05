@@ -4,12 +4,13 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
+  notifications,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
-  type ServiceSchedule, type ServiceVisit, type AssetNote
+  type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1814,4 +1815,75 @@ export async function getCommunityBounds(communityId: string): Promise<{ bounds:
     bounds: [[minLat, minLng], [maxLat, maxLng]],
     center: [(minLat + maxLat) / 2, (minLng + maxLng) / 2],
   };
+}
+
+export async function createNotification(data: {
+  communityId: string;
+  recipientUserId: string;
+  type: string;
+  title: string;
+  body: string;
+  relatedTaskId?: string;
+}): Promise<Notification> {
+  const [notif] = await db.insert(notifications).values(data).returning();
+  return notif;
+}
+
+export async function getNotificationsForUser(userId: string, limit = 50, offset = 0): Promise<Notification[]> {
+  return db.select().from(notifications)
+    .where(eq(notifications.recipientUserId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const [result] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(notifications)
+    .where(and(
+      eq(notifications.recipientUserId, userId),
+      sql`${notifications.readAt} IS NULL`,
+    ));
+  return result?.count ?? 0;
+}
+
+export async function markNotificationRead(id: string, userId: string): Promise<Notification | null> {
+  const [notif] = await db.update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(
+      eq(notifications.id, id),
+      eq(notifications.recipientUserId, userId),
+    ))
+    .returning();
+  return notif ?? null;
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  await db.update(notifications)
+    .set({ readAt: new Date() })
+    .where(and(
+      eq(notifications.recipientUserId, userId),
+      sql`${notifications.readAt} IS NULL`,
+    ));
+}
+
+export async function getHoaAdminForCommunity(communityId: string): Promise<User | null> {
+  const members = await db.select().from(communityMembers)
+    .innerJoin(users, eq(communityMembers.userId, users.id))
+    .where(and(
+      eq(communityMembers.communityId, communityId),
+      eq(users.role, "hoa_admin"),
+    ))
+    .limit(1);
+  return members.length > 0 ? members[0].users : null;
+}
+
+export async function getContractorsForCommunity(communityId: string): Promise<User[]> {
+  const members = await db.select().from(communityMembers)
+    .innerJoin(users, eq(communityMembers.userId, users.id))
+    .where(and(
+      eq(communityMembers.communityId, communityId),
+      inArray(users.role, ["contractor", "admin"]),
+    ));
+  return members.map(m => m.users);
 }

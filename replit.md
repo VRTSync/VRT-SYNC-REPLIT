@@ -21,6 +21,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for Users, Co
 - **Assets**: Community-scoped physical assets with types, properties, tags, and audit fields. Features auto-sync from GeoJSON, KML ingestion, and bulk property completion.
 - **Service Schedules & Visits**: Recurring service schedules per community with seasonal bounds and individual visit logs, supporting idempotent upsert.
 - **Asset Notes**: Contractor-specific notes on assets with offline queue support.
+- **Notifications**: In-app notification feed for HOA admins and contractors. Stores notification type, title, body, read status, and related task. Push notifications sent via Expo push tokens.
 
 ### Mobile Features
 - **Service Schedule Widget**: Displays active service schedules, next service date, and allows logging visits via a modal, with full offline support.
@@ -28,6 +29,7 @@ The PostgreSQL database, managed with Drizzle ORM, includes tables for Users, Co
 - **HOA Dashboard**: Landing page for HOA users, displaying upcoming tasks, quick map layers, read-only mowing day card, recent completions, and requests preview.
 - **HOA Requests Tab**: Provides a unified request history for HOA users with filter chips and a create request option for `hoa_admin`.
 - **Request Map**: A dedicated single-pin map screen for viewing individual HOA request locations.
+- **Notification Bell**: Badge with unread count on both HOA admin and contractor dashboards. Taps open a shared notification list screen with mark-read and mark-all-read support.
 
 ### Map Implementation
 The project uses a Leaflet-based map. Both contractor and HOA maps fetch community bounds on load to center the view. Map popups are Leaflet HTML popups, sending bridge messages to open a full-screen `AssetDetailPanel` modal. The `AssetDetailPanel` has tabs for Details, Work History, and Contractor Notes (with offline queue support). The Leaflet HTML for web iframe and native WebView must be kept in sync.

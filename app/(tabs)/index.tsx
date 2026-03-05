@@ -14,6 +14,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import SearchModal from '@/components/SearchModal';
 import MowingDayCard from '@/components/MowingDayCard';
 import LogVisitModal from '@/components/LogVisitModal';
+import NotificationBell from '@/components/NotificationBell';
 
 type Task = {
   id: string;
@@ -247,6 +248,7 @@ export default function DashboardScreen() {
             </View>
 
             <View style={styles.headerRight}>
+              <NotificationBell />
               <TouchableOpacity
                 onPress={() => setSearchVisible(true)}
                 style={styles.searchButton}

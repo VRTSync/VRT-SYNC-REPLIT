@@ -670,6 +670,25 @@ export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
 export type ServiceVisit = typeof serviceVisits.$inferSelect;
 export type AssetNote = typeof assetNotes.$inferSelect;
 
+export const notifications = pgTable("notifications", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  recipientUserId: varchar("recipient_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: varchar("type").notNull(),
+  title: varchar("title").notNull(),
+  body: text("body").notNull(),
+  relatedTaskId: varchar("related_task_id").references(() => tasks.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  readAt: timestamp("read_at"),
+}, (table) => [
+  index("notifications_recipient_idx").on(table.recipientUserId),
+  index("notifications_created_at_idx").on(table.createdAt),
+]);
+
+export type Notification = typeof notifications.$inferSelect;
+
 export const insertAssetNoteSchema = z.object({
   noteText: z.string().min(1, "Note text is required"),
   idempotencyKey: z.string().optional(),

@@ -6,7 +6,7 @@ import { requireAuth, requireAdmin, registerAuthRoutes, setupSession, enforceHoa
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
-import { notifyTaskAssigned, sendDueReminders } from "./pushNotifications";
+import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted } from "./pushNotifications";
 import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "./assetSync";
 import { parseIrrigationKml } from "./kmlIrrigationParser";
 import { validateLayerGeoJSON } from "./layerValidation";
@@ -536,6 +536,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         materialsUsed: parsed.data.materialsUsed,
         followUpNeeded: parsed.data.followUpNeeded,
       });
+
+      notifyTaskCompleted(updated).catch(err => console.error("notifyTaskCompleted error:", err));
 
       res.json({ task: updated, completion });
     } catch (error) {
@@ -2752,10 +2754,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      notifyHoaRequestSubmitted(task).catch(err => console.error("notifyHoaRequestSubmitted error:", err));
+
       res.status(201).json(task);
     } catch (error) {
       console.error("Create HOA request error:", error);
       res.status(500).json({ error: "Failed to create HOA request" });
+    }
+  });
+
+  app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+      if (user.role === "hoa_member") {
+        return res.json([]);
+      }
+
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const notifs = await storage.getNotificationsForUser(user.id, limit, offset);
+      res.json(notifs);
+    } catch (error) {
+      console.error("Get notifications error:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
+  });
+
+  app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+      if (user.role === "hoa_member") {
+        return res.json({ count: 0 });
+      }
+
+      const count = await storage.getUnreadNotificationCount(user.id);
+      res.json({ count });
+    } catch (error) {
+      console.error("Get unread count error:", error);
+      res.status(500).json({ error: "Failed to get unread count" });
+    }
+  });
+
+  app.put("/api/notifications/read-all", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.markAllNotificationsRead(req.session.userId!);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark all read error:", error);
+      res.status(500).json({ error: "Failed to mark all read" });
+    }
+  });
+
+  app.put("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const notif = await storage.markNotificationRead(req.params.id, req.session.userId!);
+      if (!notif) return res.status(404).json({ error: "Notification not found" });
+      res.json(notif);
+    } catch (error) {
+      console.error("Mark read error:", error);
+      res.status(500).json({ error: "Failed to mark notification read" });
     }
   });
 

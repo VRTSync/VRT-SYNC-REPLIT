@@ -11,6 +11,7 @@ import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import NotificationBell from '@/components/NotificationBell';
 
 type UpcomingTask = {
   id: string;
@@ -194,8 +195,11 @@ export default function HoaDashboardScreen() {
     <View style={styles.container}>
       <StatusBarFill />
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{data.community?.name ?? activeCommunity?.name ?? 'Community'}</Text>
-        <Text style={styles.headerSubtitle}>HOA Dashboard</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>{data.community?.name ?? activeCommunity?.name ?? 'Community'}</Text>
+          <Text style={styles.headerSubtitle}>HOA Dashboard</Text>
+        </View>
+        {isHoaAdmin && <NotificationBell />}
       </View>
 
       <ScrollView
@@ -464,6 +468,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 20,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
   },
   headerTitle: {
     color: '#fff',

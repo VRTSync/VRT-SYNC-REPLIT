@@ -1,4 +1,5 @@
 import * as storage from "./storage";
+import type { Task } from "@shared/schema";
 
 type PushPayload = {
   title: string;
@@ -77,5 +78,63 @@ export async function sendDueReminders(): Promise<void> {
       body: `You have ${info.count} task${info.count > 1 ? 's' : ''} due today`,
       data: { type: "task_due", communityId: info.communityId },
     });
+  }
+}
+
+export async function notifyTaskCompleted(task: Task): Promise<void> {
+  try {
+    const hoaAdmin = await storage.getHoaAdminForCommunity(task.communityId);
+    if (!hoaAdmin) return;
+
+    const isHoaRequest = task.origin === "HOA";
+    const type = isHoaRequest ? "HOA_REQUEST_COMPLETED" : "TASK_COMPLETED";
+    const title = isHoaRequest ? "Request completed" : "Task completed";
+    const body = task.title;
+
+    await storage.createNotification({
+      communityId: task.communityId,
+      recipientUserId: hoaAdmin.id,
+      type,
+      title,
+      body,
+      relatedTaskId: task.id,
+    });
+
+    await sendPushToUser(hoaAdmin.id, {
+      title,
+      body,
+      data: { type, taskId: task.id },
+    });
+  } catch (error) {
+    console.error("notifyTaskCompleted error:", error);
+  }
+}
+
+export async function notifyHoaRequestSubmitted(task: Task): Promise<void> {
+  try {
+    const contractors = await storage.getContractorsForCommunity(task.communityId);
+    if (contractors.length === 0) return;
+
+    const title = "New HOA request";
+    const body = task.title;
+
+    for (const contractor of contractors) {
+      await storage.createNotification({
+        communityId: task.communityId,
+        recipientUserId: contractor.id,
+        type: "HOA_REQUEST_SUBMITTED",
+        title,
+        body,
+        relatedTaskId: task.id,
+      });
+
+      await sendPushToUser(contractor.id, {
+        title,
+        body,
+        data: { type: "HOA_REQUEST_SUBMITTED", taskId: task.id },
+      });
+    }
+  } catch (error) {
+    console.error("notifyHoaRequestSubmitted error:", error);
   }
 }
