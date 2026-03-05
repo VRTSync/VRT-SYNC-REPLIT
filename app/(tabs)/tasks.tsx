@@ -453,7 +453,7 @@ export default function TasksScreen() {
             <Ionicons
               name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
               size={20}
-              color={viewMode === 'calendar' ? '#fff' : 'rgba(255,255,255,0.7)'}
+              color={viewMode === 'calendar' ? '#fff' : '#555'}
             />
           </TouchableOpacity>
           <TouchableOpacity
@@ -461,7 +461,7 @@ export default function TasksScreen() {
             style={styles.headerIconBtn}
             testID="search-button"
           >
-            <Ionicons name="search" size={20} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="search" size={20} color="#555" />
           </TouchableOpacity>
         </View>
       </View>
@@ -594,26 +594,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#0C1D31',
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 4,
+    paddingBottom: 14,
     alignItems: 'center',
   },
   communityName: { fontSize: 20, fontWeight: '700', color: '#fff', textAlign: 'center' },
   subtitleRow: {
-    backgroundColor: '#0C1D31',
+    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
-  subtitleText: { fontSize: 13, fontWeight: '700', color: 'rgba(255,255,255,0.5)', letterSpacing: 1.5 },
+  subtitleText: { fontSize: 13, fontWeight: '700', color: '#0C1D31', letterSpacing: 1.5 },
   subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerIconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#f0f2f5',
     alignItems: 'center',
     justifyContent: 'center',
   },
