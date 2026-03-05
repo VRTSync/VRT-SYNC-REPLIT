@@ -11,7 +11,7 @@ import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline, ServiceSchedule } from '@/client/contexts/OfflineContext';
 import StatusBarFill from '@/components/StatusBarFill';
-import NavyHeader from '@/components/NavyHeader';
+import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import MowingDayCard from '@/components/MowingDayCard';
@@ -214,13 +214,13 @@ export default function DashboardScreen() {
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} />}
       >
         <NavyHeader {...navyHeaderProps}>
-          <View style={styles.subtitleRow}>
-            <Text style={styles.subtitleText}>DASHBOARD</Text>
-            <View style={styles.subtitleActions}>
+          <View style={ss.subtitleRow}>
+            <Text style={ss.subtitleText}>DASHBOARD</Text>
+            <View style={ss.subtitleActions}>
               <NotificationBell />
               <TouchableOpacity
                 onPress={() => setSearchVisible(true)}
-                style={styles.headerIconBtn}
+                style={ss.headerIconBtn}
                 testID="home-search-button"
               >
                 <Ionicons name="search" size={20} color="#555" />
@@ -457,26 +457,6 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   scrollContent: { paddingBottom: 100 },
-  subtitleRow: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitleText: { fontSize: 13, fontWeight: '700', color: '#0C1D31', letterSpacing: 1.5 },
-  subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f0f2f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   section: {
     marginTop: 16,
     marginHorizontal: 16,

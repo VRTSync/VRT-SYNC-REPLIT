@@ -74,6 +74,32 @@ export default function NavyHeader({
   );
 }
 
+export const subtitleStyles = StyleSheet.create({
+  subtitleRow: {
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  subtitleText: { fontSize: 13, fontWeight: '700', color: '#0C1D31', letterSpacing: 1.5 },
+  subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f0f2f5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIconBtnActive: {
+    backgroundColor: '#25C1AC',
+  },
+});
+
 const styles = StyleSheet.create({
   titleBar: {
     backgroundColor: '#0C1D31',

@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
-import NavyHeader from '@/components/NavyHeader';
+import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import CalendarView from '@/components/CalendarView';
@@ -418,12 +418,12 @@ export default function TasksScreen() {
     <View style={styles.container}>
       <StatusBarFill />
       <NavyHeader {...navyHeaderProps}>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>TASKS</Text>
-          <View style={styles.subtitleActions}>
+        <View style={ss.subtitleRow}>
+          <Text style={ss.subtitleText}>TASKS</Text>
+          <View style={ss.subtitleActions}>
             <TouchableOpacity
               onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-              style={[styles.headerIconBtn, viewMode === 'calendar' && styles.headerIconBtnActive]}
+              style={[ss.headerIconBtn, viewMode === 'calendar' && ss.headerIconBtnActive]}
               testID="view-toggle"
             >
               <Ionicons
@@ -434,7 +434,7 @@ export default function TasksScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSearchVisible(true)}
-              style={styles.headerIconBtn}
+              style={ss.headerIconBtn}
               testID="search-button"
             >
               <Ionicons name="search" size={20} color="#555" />
@@ -567,29 +567,6 @@ export default function TasksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
-  subtitleRow: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitleText: { fontSize: 13, fontWeight: '700', color: '#0C1D31', letterSpacing: 1.5 },
-  subtitleActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  headerIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f0f2f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconBtnActive: {
-    backgroundColor: '#25C1AC',
-  },
   filterRow: {
     flexDirection: 'row',
     marginHorizontal: 16,

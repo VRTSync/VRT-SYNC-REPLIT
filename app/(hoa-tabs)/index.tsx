@@ -10,7 +10,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
-import NavyHeader from '@/components/NavyHeader';
+import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import NotificationBell from '@/components/NotificationBell';
@@ -162,9 +162,9 @@ export default function HoaDashboardScreen() {
       <View style={styles.container}>
         <StatusBarFill />
         <NavyHeader {...navyHeaderProps}>
-          <View style={styles.subtitleRow}>
-            <Text style={styles.subtitleText}>DASHBOARD</Text>
-            <View style={styles.subtitleActions} />
+          <View style={ss.subtitleRow}>
+            <Text style={ss.subtitleText}>DASHBOARD</Text>
+            <View style={ss.subtitleActions} />
           </View>
         </NavyHeader>
         <View style={styles.centered}>
@@ -179,9 +179,9 @@ export default function HoaDashboardScreen() {
       <View style={styles.container}>
         <StatusBarFill />
         <NavyHeader {...navyHeaderProps}>
-          <View style={styles.subtitleRow}>
-            <Text style={styles.subtitleText}>DASHBOARD</Text>
-            <View style={styles.subtitleActions} />
+          <View style={ss.subtitleRow}>
+            <Text style={ss.subtitleText}>DASHBOARD</Text>
+            <View style={ss.subtitleActions} />
           </View>
         </NavyHeader>
         <View style={styles.centered}>
@@ -202,9 +202,9 @@ export default function HoaDashboardScreen() {
     <View style={styles.container}>
       <StatusBarFill />
       <NavyHeader {...navyHeaderProps}>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>DASHBOARD</Text>
-          <View style={styles.subtitleActions}>
+        <View style={ss.subtitleRow}>
+          <Text style={ss.subtitleText}>DASHBOARD</Text>
+          <View style={ss.subtitleActions}>
             {isHoaAdmin && <NotificationBell />}
           </View>
         </View>
@@ -471,18 +471,6 @@ export default function HoaDashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  subtitleRow: {
-    backgroundColor: '#fff',
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
-  subtitleActions: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 },
   centered: {
     flex: 1,
     justifyContent: 'center' as const,

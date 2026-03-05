@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
-import NavyHeader from '@/components/NavyHeader';
+import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 
@@ -156,8 +156,8 @@ export default function HoaRequestsScreen() {
     <View style={styles.container}>
       <StatusBarFill />
       <NavyHeader {...navyHeaderProps}>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>REQUESTS</Text>
+        <View style={ss.subtitleRow}>
+          <Text style={ss.subtitleText}>REQUESTS</Text>
         </View>
       </NavyHeader>
 
@@ -247,17 +247,6 @@ export default function HoaRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  subtitleRow: {
-    backgroundColor: '#fff',
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
   filterContainer: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,

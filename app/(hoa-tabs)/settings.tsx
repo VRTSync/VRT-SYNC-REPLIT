@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import StatusBarFill from '@/components/StatusBarFill';
-import NavyHeader from '@/components/NavyHeader';
+import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 
 export default function HoaSettingsScreen() {
@@ -29,8 +29,8 @@ export default function HoaSettingsScreen() {
     <View style={styles.container}>
       <StatusBarFill />
       <NavyHeader {...navyHeaderProps}>
-        <View style={styles.subtitleRow}>
-          <Text style={styles.subtitleText}>SETTINGS</Text>
+        <View style={ss.subtitleRow}>
+          <Text style={ss.subtitleText}>SETTINGS</Text>
         </View>
       </NavyHeader>
       <View style={styles.content}>
@@ -71,17 +71,6 @@ export default function HoaSettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  subtitleRow: {
-    backgroundColor: '#fff',
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  subtitleText: { fontSize: 13, fontWeight: '700' as const, color: '#0C1D31', letterSpacing: 1.5 },
   content: { flex: 1, padding: 16 },
   card: {
     backgroundColor: '#fff',
