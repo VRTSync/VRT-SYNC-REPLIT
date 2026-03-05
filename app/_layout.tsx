@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
 import React, { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -25,6 +25,49 @@ Notifications.setNotificationHandler({
 });
 
 SplashScreen.preventAutoHideAsync();
+
+function LoadingScreen() {
+  return (
+    <ImageBackground
+      source={require('@/assets/images/topography-texture-rotated.png')}
+      style={loadingStyles.background}
+      imageStyle={loadingStyles.imageStyle}
+      resizeMode="repeat"
+    >
+      <View style={loadingStyles.overlay} />
+      <View style={loadingStyles.content}>
+        <Image
+          source={require('@/assets/images/splash-icon.png')}
+          style={loadingStyles.logo}
+          resizeMode="contain"
+        />
+      </View>
+    </ImageBackground>
+  );
+}
+
+const loadingStyles = StyleSheet.create({
+  background: {
+    flex: 1,
+    backgroundColor: '#0C1D31',
+  },
+  imageStyle: {
+    opacity: 0.15,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(12, 29, 49, 0.4)',
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    width: 220,
+    height: 220,
+  },
+});
 
 function AuthNavigator() {
   const { user, isLoading } = useAuth();
@@ -88,6 +131,10 @@ function AuthNavigator() {
       }
     };
   }, [user]);
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
