@@ -87,6 +87,7 @@
   }).addTo(map);
 
   var geoLayers = {};
+  var layerCache = {};
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup().addTo(map);
@@ -170,13 +171,9 @@
       post('viewAssetDetail', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
     },
 
-    setLayers: function(layers) {
-      Object.keys(geoLayers).forEach(function(k) {
-        map.removeLayer(geoLayers[k]);
-        delete geoLayers[k];
-      });
+    addLayers: function(layers) {
       layers.forEach(function(layer) {
-        if (!layer.geojson) return;
+        if (!layer.geojson || layerCache[layer.id]) return;
         var colorMap = layer.controllerColorMap || {};
         var geoLayer = L.geoJSON(layer.geojson, {
           style: function(feature) {
@@ -230,9 +227,31 @@
             popupHtml += '</div></div>';
             l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
           }
-        }).addTo(map);
-        geoLayers[layer.id] = geoLayer;
+        });
+        layerCache[layer.id] = geoLayer;
       });
+    },
+
+    showLayerIds: function(ids) {
+      Object.keys(geoLayers).forEach(function(k) {
+        if (ids.indexOf(k) === -1) {
+          map.removeLayer(geoLayers[k]);
+          delete geoLayers[k];
+        }
+      });
+      ids.forEach(function(id) {
+        if (!geoLayers[id] && layerCache[id]) {
+          layerCache[id].addTo(map);
+          geoLayers[id] = layerCache[id];
+        }
+      });
+    },
+
+    setLayers: function(layers) {
+      this.addLayers(layers);
+      var ids = [];
+      layers.forEach(function(layer) { if (layer.geojson) ids.push(layer.id); });
+      this.showLayerIds(ids);
     },
 
     setControllerMarkers: function(markers) {

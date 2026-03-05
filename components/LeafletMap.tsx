@@ -166,6 +166,7 @@ function generateLeafletHTML(): string {
   }).addTo(map);
 
   var geoLayers = {};
+  var layerCache = {};
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup().addTo(map);
@@ -249,13 +250,9 @@ function generateLeafletHTML(): string {
       post('viewAssetDetail', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
     },
 
-    setLayers: function(layers) {
-      Object.keys(geoLayers).forEach(function(k) {
-        map.removeLayer(geoLayers[k]);
-        delete geoLayers[k];
-      });
+    addLayers: function(layers) {
       layers.forEach(function(layer) {
-        if (!layer.geojson) return;
+        if (!layer.geojson || layerCache[layer.id]) return;
         var colorMap = layer.controllerColorMap || {};
         var geoLayer = L.geoJSON(layer.geojson, {
           style: function(feature) {
@@ -309,9 +306,31 @@ function generateLeafletHTML(): string {
             popupHtml += '</div></div>';
             l.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
           }
-        }).addTo(map);
-        geoLayers[layer.id] = geoLayer;
+        });
+        layerCache[layer.id] = geoLayer;
       });
+    },
+
+    showLayerIds: function(ids) {
+      Object.keys(geoLayers).forEach(function(k) {
+        if (ids.indexOf(k) === -1) {
+          map.removeLayer(geoLayers[k]);
+          delete geoLayers[k];
+        }
+      });
+      ids.forEach(function(id) {
+        if (!geoLayers[id] && layerCache[id]) {
+          layerCache[id].addTo(map);
+          geoLayers[id] = layerCache[id];
+        }
+      });
+    },
+
+    setLayers: function(layers) {
+      this.addLayers(layers);
+      var ids = [];
+      layers.forEach(function(layer) { if (layer.geojson) ids.push(layer.id); });
+      this.showLayerIds(ids);
     },
 
     setControllerMarkers: function(markers) {
@@ -628,6 +647,8 @@ export default function LeafletMap({
     runJS(`window.mapBridge.setTasks(${JSON.stringify(taskData)})`);
   }, [taskData, runJS]);
 
+  const sentLayerIdsRef = useRef<Set<string>>(new Set());
+
   const layerData = useMemo(() => {
     return layers.map(l => ({
       id: l.id,
@@ -641,7 +662,13 @@ export default function LeafletMap({
   }, [layers]);
 
   useEffect(() => {
-    runJS(`window.mapBridge.setLayers(${JSON.stringify(layerData)})`);
+    const newLayers = layerData.filter(l => l.geojson && !sentLayerIdsRef.current.has(l.id));
+    if (newLayers.length > 0) {
+      runJS(`window.mapBridge.addLayers(${JSON.stringify(newLayers)})`);
+      newLayers.forEach(l => sentLayerIdsRef.current.add(l.id));
+    }
+    const activeIds = layerData.filter(l => l.geojson).map(l => l.id);
+    runJS(`window.mapBridge.showLayerIds(${JSON.stringify(activeIds)})`);
   }, [layerData, runJS]);
 
   useEffect(() => {
