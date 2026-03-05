@@ -114,6 +114,7 @@ export default function TaskDetailScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isHoaUser = user?.role === 'hoa_admin' || user?.role === 'hoa_member';
   const { activeCommunity } = useCommunity();
   const { isOnline, addPendingCompletion, getCompletionForTask, retryCompletion, dismissCompletion, syncPendingCompletions, pendingCompletions } = useOffline();
 
@@ -327,7 +328,7 @@ export default function TaskDetailScreen() {
           <Ionicons name="arrow-back" size={22} color="#0C1D31" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{task.title}</Text>
-        {task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') ? (
+        {!isHoaUser && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') ? (
           <TouchableOpacity onPress={() => setShowCompleteForm(true)} style={styles.headerActionBtn}>
             <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
           </TouchableOpacity>
@@ -815,7 +816,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {!showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (() => {
+      {!isHoaUser && !showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (() => {
         const windowStatus = isInWindow(task);
         const blocked = windowStatus !== null && windowStatus !== 'in' && user?.role !== 'admin';
         if (blocked) return null;

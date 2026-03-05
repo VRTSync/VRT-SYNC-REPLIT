@@ -27,6 +27,7 @@ type Task = {
   dueDate: string | null;
   version: number;
   createdAt: string;
+  origin?: string | null;
 };
 
 type Props = {
@@ -341,7 +342,7 @@ export default function CalendarView({
                     ]}
                     numberOfLines={1}
                   >
-                    {isCompleted && '\u2713 '}{seg.task.title}
+                    {isCompleted && '\u2713 '}{seg.task.origin === 'HOA' && '\u25CF '}{seg.task.title}
                   </Text>
                 </TouchableOpacity>
               );
@@ -484,6 +485,11 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsMod
                           {parseDate(task.windowEnd!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </Text>
                       </View>
+                      {task.origin === 'HOA' && (
+                        <View style={modalStyles.hoaBadge}>
+                          <Text style={modalStyles.hoaBadgeText}>REQ</Text>
+                        </View>
+                      )}
                       {isCompleted && <Ionicons name="checkmark-circle" size={18} color="#4caf50" />}
                       {isOverdue && <Ionicons name="alert-circle" size={18} color="#f44336" />}
                       <Ionicons name="chevron-forward" size={16} color="#ccc" />
@@ -802,5 +808,17 @@ const modalStyles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#fff',
+  },
+  hoaBadge: {
+    backgroundColor: '#e0f7f4',
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    marginRight: 4,
+  },
+  hoaBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#25C1AC',
   },
 });
