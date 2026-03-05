@@ -679,15 +679,15 @@ export default function LeafletMap({
     return layers.filter(l => l.geojson).map(l => l.id).sort().join(',');
   }, [layers]);
 
-  const lastFitKeyRef = useRef('');
+  const initialFitDoneRef = useRef(false);
 
   useEffect(() => {
+    if (initialFitDoneRef.current) return;
     const layersWithData = layers.filter(l => l.geojson);
     const layersPending = layers.length > 0 && layersWithData.length === 0;
     if (layersPending) return;
-    const fitKey = layerCoordsKey + '|' + tasks.length;
-    if (fitKey === lastFitKeyRef.current) return;
-    lastFitKeyRef.current = fitKey;
+    if (layersWithData.length === 0 && tasks.length === 0) return;
+    initialFitDoneRef.current = true;
     const taskCoords = tasks.map(t => [t.latitude, t.longitude] as [number, number]);
     const userLoc = userLocation ? [userLocation.latitude, userLocation.longitude] : null;
     runJS(`window.mapBridge.fitToContent(${JSON.stringify(taskCoords)}, ${JSON.stringify(userLoc)})`);
