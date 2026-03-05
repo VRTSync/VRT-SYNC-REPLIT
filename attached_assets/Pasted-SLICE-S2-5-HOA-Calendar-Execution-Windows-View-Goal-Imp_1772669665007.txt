@@ -1,0 +1,80 @@
+SLICE S2.5 — HOA Calendar (Execution Windows View)
+
+Goal
+Implement the HOA Calendar tab so HOA users (HOA_ADMIN and HOA_MEMBER) can view contractor tasks by execution windows in a month grid calendar view. HOA users cannot edit/complete tasks. Calendar is read-only transparency.
+
+This slice completes the missing Calendar portion of the HOA portal.
+
+------------------------------------------------
+
+Who Can Use
+- HOA_ADMIN: view-only
+- HOA_MEMBER: view-only
+(No create, no complete, no status changes from HOA users)
+
+------------------------------------------------
+
+Calendar Data Source
+Display contractor tasks for the HOA user’s community:
+
+Filter:
+- communityId = hoaCommunityId (from session)
+- Include tasks regardless of origin (includes HOA requests since they are tasks)
+- Exclude archived tasks if applicable (if tasks support archive; if not, ignore)
+
+Task fields needed:
+- id
+- title
+- status
+- origin (HOA vs normal)
+- priority (Normal/Urgent for HOA requests)
+- windowStart
+- windowEnd
+- createdAt
+- (optional) assetId / pinLocation for opening detail
+
+------------------------------------------------
+
+Calendar UI Requirements (Month Grid)
+- Month grid view with:
+  - month navigation (prev/next)
+  - today highlight
+- Display tasks as “window bars” spanning from windowStart to windowEnd
+- If a task has no windowStart/windowEnd:
+  - Do not show it on calendar (it should still be visible in lists)
+  - OR show it on createdAt day as a fallback (choose one approach and be consistent)
+
+Visual indicators:
+- HOA Request tasks must be visually indicated (badge/flag/color) on the calendar label
+- Urgent HOA Requests should be visually stronger than Normal (since only HOA requests can be urgent)
+
+Tap interactions:
+- Tapping a task bar opens Task Detail (read-only for HOA)
+- “View Details” should open the existing Task detail screen/modal used elsewhere in HOA mode
+
+------------------------------------------------
+
+Calendar Filtering (Optional but Recommended)
+Add a simple filter toggle row:
+- All
+- Requests (origin=HOA)
+- Non-Request tasks (origin!=HOA)
+
+Default:
+- All
+
+------------------------------------------------
+
+Permissions Enforcement
+- HOA users can only read tasks for hoaCommunityId
+- No mutations allowed from HOA Calendar screen
+
+------------------------------------------------
+
+Acceptance Criteria
+1) HOA Calendar tab renders month grid
+2) Tasks display across date windows correctly
+3) HOA Request tasks are clearly marked in the calendar UI
+4) Tapping a calendar item opens task detail
+5) HOA Member and HOA Admin both have access (read-only)
+6) No ability to complete/edit tasks from HOA Calendar
