@@ -1069,6 +1069,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       eq(tasks.communityId, communityId),
       eq(tasks.origin, "HOA"),
       inArray(tasks.status, ["submitted", "acknowledged"]),
+      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
     ))
     .groupBy(tasks.priority);
 
