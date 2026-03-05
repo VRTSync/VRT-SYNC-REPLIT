@@ -69,7 +69,7 @@ function diffDays(a: Date, b: Date): number {
 }
 
 type WindowGroup = 'overdue' | 'active_window' | 'upcoming' | 'no_window';
-type FilterMode = 'active' | 'completed';
+type FilterMode = 'tasks' | 'requests' | 'completed';
 type ViewMode = 'list' | 'calendar';
 
 function classifyTask(task: Task, today: Date): WindowGroup {
@@ -127,7 +127,7 @@ export default function TasksScreen() {
   } = useOffline();
   const [syncing, setSyncing] = React.useState(false);
   const [searchVisible, setSearchVisible] = React.useState(false);
-  const [filterMode, setFilterMode] = React.useState<FilterMode>('active');
+  const [filterMode, setFilterMode] = React.useState<FilterMode>('tasks');
   const [viewMode, setViewMode] = React.useState<ViewMode>('list');
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
@@ -194,6 +194,8 @@ export default function TasksScreen() {
 
   const activeTasks = tasks.filter((t) => t.status !== 'completed');
   const completedTasks = tasks.filter((t) => t.status === 'completed');
+  const contractTasks = activeTasks.filter(t => t.origin !== 'HOA');
+  const requestTasks = activeTasks.filter(t => t.origin === 'HOA');
 
   const handleLogVisit = async (data: any) => {
     if (isOnline) {
@@ -234,22 +236,39 @@ export default function TasksScreen() {
 
   const buildGroupedList = (): (Task | { type: 'header'; title: string; count: number })[] => {
     if (filterMode === 'completed') {
-      if (completedTasks.length === 0) return [];
-      return [
-        { type: 'header', title: 'Completed', count: completedTasks.length } as any,
-        ...completedTasks,
-      ];
+      const completedContract = completedTasks.filter(t => t.origin !== 'HOA');
+      const completedRequests = completedTasks.filter(t => t.origin === 'HOA');
+      const items: (Task | { type: 'header'; title: string; count: number })[] = [];
+      if (completedContract.length > 0) {
+        items.push({ type: 'header', title: 'Completed Tasks', count: completedContract.length } as any);
+        items.push(...completedContract);
+      }
+      if (completedRequests.length > 0) {
+        items.push({ type: 'header', title: 'Completed Requests', count: completedRequests.length } as any);
+        items.push(...completedRequests);
+      }
+      return items;
     }
 
-    const hoaStatuses = ['submitted', 'acknowledged'];
-    const urgentHoa = activeTasks
-      .filter(t => t.origin === 'HOA' && t.priority === 'urgent' && hoaStatuses.includes(t.status))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const normalHoa = activeTasks
-      .filter(t => t.origin === 'HOA' && t.priority !== 'urgent' && hoaStatuses.includes(t.status))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    if (filterMode === 'requests') {
+      const urgentReqs = requestTasks
+        .filter(t => t.priority === 'urgent')
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const normalReqs = requestTasks
+        .filter(t => t.priority !== 'urgent')
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const nonHoaTasks = activeTasks.filter(t => !(t.origin === 'HOA' && hoaStatuses.includes(t.status)));
+      const items: (Task | { type: 'header'; title: string; count: number })[] = [];
+      if (urgentReqs.length > 0) {
+        items.push({ type: 'header', title: 'Urgent Requests', count: urgentReqs.length } as any);
+        items.push(...urgentReqs);
+      }
+      if (normalReqs.length > 0) {
+        items.push({ type: 'header', title: 'HOA Requests', count: normalReqs.length } as any);
+        items.push(...normalReqs);
+      }
+      return items;
+    }
 
     const groups: Record<WindowGroup, Task[]> = {
       overdue: [],
@@ -257,7 +276,7 @@ export default function TasksScreen() {
       upcoming: [],
       no_window: [],
     };
-    for (const t of nonHoaTasks) {
+    for (const t of contractTasks) {
       const group = classifyTask(t, today);
       groups[group].push(t);
     }
@@ -279,16 +298,6 @@ export default function TasksScreen() {
     });
 
     const items: (Task | { type: 'header'; title: string; count: number })[] = [];
-
-    if (urgentHoa.length > 0) {
-      items.push({ type: 'header', title: 'Urgent Requests', count: urgentHoa.length } as any);
-      items.push(...urgentHoa);
-    }
-    if (normalHoa.length > 0) {
-      items.push({ type: 'header', title: 'HOA Requests', count: normalHoa.length } as any);
-      items.push(...normalHoa);
-    }
-
     for (const group of GROUP_ORDER) {
       if (groups[group].length > 0) {
         items.push({ type: 'header', title: GROUP_LABELS[group], count: groups[group].length } as any);
@@ -434,7 +443,9 @@ export default function TasksScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.communityName}>{activeCommunity?.name || 'No Community'}</Text>
           <Text style={styles.taskCount}>
-            {activeTasks.length} active task{activeTasks.length !== 1 ? 's' : ''}
+            {filterMode === 'tasks' ? `${contractTasks.length} task${contractTasks.length !== 1 ? 's' : ''}`
+              : filterMode === 'requests' ? `${requestTasks.length} request${requestTasks.length !== 1 ? 's' : ''}`
+              : `${completedTasks.length} completed`}
           </Text>
         </View>
         <TouchableOpacity
@@ -460,12 +471,21 @@ export default function TasksScreen() {
       {viewMode === 'list' && (
         <View style={styles.filterRow}>
           <TouchableOpacity
-            style={[styles.filterTab, filterMode === 'active' && styles.filterTabActive]}
-            onPress={() => setFilterMode('active')}
-            testID="filter-active"
+            style={[styles.filterTab, filterMode === 'tasks' && styles.filterTabActive]}
+            onPress={() => setFilterMode('tasks')}
+            testID="filter-tasks"
           >
-            <Text style={[styles.filterTabText, filterMode === 'active' && styles.filterTabTextActive]}>
-              Active ({activeTasks.length})
+            <Text style={[styles.filterTabText, filterMode === 'tasks' && styles.filterTabTextActive]}>
+              Contract Tasks ({contractTasks.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterTab, filterMode === 'requests' && styles.filterTabActive]}
+            onPress={() => setFilterMode('requests')}
+            testID="filter-requests"
+          >
+            <Text style={[styles.filterTabText, filterMode === 'requests' && styles.filterTabTextActive]}>
+              Requests ({requestTasks.length})
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -511,14 +531,18 @@ export default function TasksScreen() {
         <View style={styles.emptyState}>
           <Ionicons name="clipboard-outline" size={48} color="#ccc" />
           <Text style={styles.emptyTitle}>
-            {filterMode === 'completed' ? 'No Completed Tasks' : 'No Tasks'}
+            {filterMode === 'completed' ? 'No Completed Tasks'
+              : filterMode === 'requests' ? 'No Requests'
+              : 'No Contract Tasks'}
           </Text>
           <Text style={styles.emptySubtitle}>
             {filterMode === 'completed'
               ? 'Completed tasks will appear here'
-              : user?.role === 'admin'
-                ? 'Create a task to get started'
-                : 'No tasks assigned to you yet'}
+              : filterMode === 'requests'
+                ? 'HOA requests will appear here'
+                : user?.role === 'admin'
+                  ? 'Create a task to get started'
+                  : 'No tasks assigned to you yet'}
           </Text>
         </View>
       ) : (
