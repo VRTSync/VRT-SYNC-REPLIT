@@ -70,14 +70,21 @@ function formatDate(dateStr: string): string {
 function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void }) {
   const statusColor = STATUS_COLORS[item.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
   const isUrgent = item.priority === 'urgent' || item.priority === 'Urgent';
+  const isCompleted = item.status === 'completed';
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.card, isCompleted && styles.completedCard]} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.cardTop}>
         <Text style={styles.requestLabel}>REQUEST</Text>
         {item.isArchived && <Text style={styles.archivedLabel}>ARCHIVED</Text>}
       </View>
-      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+      {isCompleted && (
+        <View style={styles.completedBanner}>
+          <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+          <Text style={styles.completedBannerText}>COMPLETED</Text>
+        </View>
+      )}
+      <Text style={[styles.cardTitle, isCompleted && styles.completedTitle]} numberOfLines={2}>{item.title}</Text>
       <View style={styles.badgeRow}>
         <View style={[styles.priorityBadge, { backgroundColor: isUrgent ? '#FFEBEE' : '#E0F2F1' }]}>
           <Ionicons
@@ -89,11 +96,13 @@ function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void 
             {isUrgent ? 'Urgent' : 'Normal'}
           </Text>
         </View>
-        <View style={[styles.statusChip, { backgroundColor: statusColor.bg }]}>
-          <Text style={[styles.statusText, { color: statusColor.text }]}>
-            {item.status.replace('_', ' ')}
-          </Text>
-        </View>
+        {!isCompleted && (
+          <View style={[styles.statusChip, { backgroundColor: statusColor.bg }]}>
+            <Text style={[styles.statusText, { color: statusColor.text }]}>
+              {item.status.replace('_', ' ')}
+            </Text>
+          </View>
+        )}
       </View>
       <View style={styles.metaRow}>
         <Ionicons name="time-outline" size={13} color="#999" />
@@ -640,5 +649,30 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
     zIndex: 999,
+  },
+  completedCard: {
+    backgroundColor: '#E8F5E9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4caf50',
+  },
+  completedBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    backgroundColor: '#C8E6C9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    alignSelf: 'flex-start' as const,
+  },
+  completedBannerText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: '#2E7D32',
+    letterSpacing: 1,
+  },
+  completedTitle: {
+    color: '#2E7D32',
   },
 });

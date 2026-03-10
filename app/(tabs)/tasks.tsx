@@ -318,16 +318,24 @@ export default function TasksScreen() {
     const windowRange = formatWindowRange(item);
     const isHoa = item.origin === 'HOA';
 
+    const isCompleted = item.status === 'completed';
+
     return (
       <TouchableOpacity
-        style={[styles.taskCard, isHoa && styles.hoaTaskCard]}
+        style={[styles.taskCard, isHoa && styles.hoaTaskCard, isCompleted && styles.completedCard]}
         onPress={() => router.push(`/task/${item.id}`)}
         activeOpacity={0.7}
         testID={`task-${item.id}`}
       >
+        {isCompleted && (
+          <View style={styles.completedBanner}>
+            <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+            <Text style={styles.completedBannerText}>COMPLETED</Text>
+          </View>
+        )}
         <View style={styles.taskHeader}>
           <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
-          <Text style={styles.taskTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.taskTitle, isCompleted && styles.completedTitle]} numberOfLines={1}>{item.title}</Text>
           {isHoa ? (
             <View style={styles.hoaBadge}>
               <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
@@ -347,13 +355,13 @@ export default function TasksScreen() {
             <View style={[styles.statusBadge, { backgroundColor: urgency.bg }]}>
               <Text style={[styles.statusText, { color: urgency.color }]}>{urgency.label}</Text>
             </View>
-          ) : (
+          ) : !isCompleted ? (
             <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] + '20' }]}>
               <Text style={[styles.statusText, { color: statusColors[item.status] }]}>
                 {statusLabels[item.status]}
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
         {isHoa ? (
           <View style={styles.hoaMetaRow}>
@@ -703,5 +711,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  completedCard: {
+    backgroundColor: '#E8F5E9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4caf50',
+  },
+  completedBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    backgroundColor: '#C8E6C9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    alignSelf: 'flex-start' as const,
+  },
+  completedBannerText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: '#2E7D32',
+    letterSpacing: 1,
+  },
+  completedTitle: {
+    color: '#2E7D32',
   },
 });

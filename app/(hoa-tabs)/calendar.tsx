@@ -202,15 +202,23 @@ export default function HoaTasksScreen() {
     const windowRange = formatWindowRange(item);
     const isHoa = item.origin === 'HOA';
 
+    const isCompleted = item.status === 'completed';
+
     return (
       <TouchableOpacity
-        style={[styles.taskCard, isHoa && styles.hoaTaskCard]}
+        style={[styles.taskCard, isHoa && styles.hoaTaskCard, isCompleted && styles.completedCard]}
         onPress={() => handleTaskPress(item.id)}
         activeOpacity={0.7}
       >
+        {isCompleted && (
+          <View style={styles.completedBanner}>
+            <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+            <Text style={styles.completedBannerText}>COMPLETED</Text>
+          </View>
+        )}
         <View style={styles.taskHeader}>
           <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
-          <Text style={styles.taskTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.taskTitle, isCompleted && styles.completedTitle]} numberOfLines={1}>{item.title}</Text>
           {isHoa ? (
             <View style={styles.hoaBadge}>
               <Text style={styles.hoaBadgeText}>REQUEST</Text>
@@ -220,13 +228,13 @@ export default function HoaTasksScreen() {
             <View style={[styles.statusBadge, { backgroundColor: urgency.bg }]}>
               <Text style={[styles.statusText, { color: urgency.color }]}>{urgency.label}</Text>
             </View>
-          ) : (
+          ) : !isCompleted ? (
             <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] + '20' }]}>
               <Text style={[styles.statusText, { color: statusColors[item.status] }]}>
                 {statusLabels[item.status]}
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
         {item.description ? (
           <Text style={styles.taskDescription} numberOfLines={2}>{item.description}</Text>
@@ -516,5 +524,30 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 4,
     textAlign: 'center',
+  },
+  completedCard: {
+    backgroundColor: '#E8F5E9',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4caf50',
+  },
+  completedBanner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    backgroundColor: '#C8E6C9',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    alignSelf: 'flex-start' as const,
+  },
+  completedBannerText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: '#2E7D32',
+    letterSpacing: 1,
+  },
+  completedTitle: {
+    color: '#2E7D32',
   },
 });
