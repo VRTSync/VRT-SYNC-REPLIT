@@ -1097,12 +1097,51 @@ export async function getDashboardData(userId: string, communityId: string, isAd
     }
   }
 
+  const hoaStatusCounts = await db.select({
+    status: tasks.status,
+    count: sql<number>`count(*)::int`,
+  }).from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      eq(tasks.origin, "HOA"),
+      inArray(tasks.status, ["submitted", "acknowledged"]),
+      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+    ))
+    .groupBy(tasks.status);
+
+  let newRequestCount = 0;
+  let acknowledgedRequestCount = 0;
+  for (const row of hoaStatusCounts) {
+    if (row.status === "submitted") {
+      newRequestCount = row.count;
+    } else if (row.status === "acknowledged") {
+      acknowledgedRequestCount = row.count;
+    }
+  }
+
+  const todayDateStr = todayStart.toISOString().split("T")[0];
+  const inWindowTasks = await db.select().from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      ne(tasks.status, "completed"),
+      isNotNull(tasks.windowStart),
+      isNotNull(tasks.windowEnd),
+      lte(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+      gte(tasks.windowEnd, new Date(todayDateStr + "T00:00:00.000Z")),
+      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+    ))
+    .orderBy(asc(tasks.windowEnd), asc(tasks.priority))
+    .limit(20);
+
   return {
     dueTodayTasks,
     upcomingTasks,
     overdueTasks,
     urgentRequestCount,
     normalRequestCount,
+    newRequestCount,
+    acknowledgedRequestCount,
+    inWindowTasks,
     followUpTasks: followUpResults.map(r => ({
       id: r.id,
       taskId: r.taskId,

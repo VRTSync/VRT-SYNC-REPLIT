@@ -22,7 +22,7 @@ type Task = {
   id: string;
   title: string;
   description: string | null;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'submitted' | 'acknowledged';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   address: string | null;
   assignedTo: string | null;
@@ -43,9 +43,12 @@ type DashboardData = {
   dueTodayTasks: Task[];
   upcomingTasks: Task[];
   overdueTasks: Task[];
+  inWindowTasks: Task[];
   followUpTasks: FollowUpTask[];
   urgentRequestCount: number;
   normalRequestCount: number;
+  newRequestCount: number;
+  acknowledgedRequestCount: number;
 };
 
 const priorityColors: Record<string, string> = {
@@ -59,12 +62,16 @@ const statusLabels: Record<string, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
   completed: 'Completed',
+  submitted: 'New',
+  acknowledged: 'Acknowledged',
 };
 
 const statusColors: Record<string, string> = {
   pending: '#ff9800',
   in_progress: '#25C1AC',
   completed: '#4caf50',
+  submitted: '#e65100',
+  acknowledged: '#1565c0',
 };
 
 const MAP_JUMPS = [
@@ -241,57 +248,6 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
-            {(() => {
-              const urgentCount = dashboard?.urgentRequestCount ?? 0;
-              const normalCount = dashboard?.normalRequestCount ?? 0;
-              const totalCount = urgentCount + normalCount;
-              const hasUrgent = urgentCount > 0;
-              return (
-                <View style={[styles.section, hasUrgent && styles.requestCardUrgent]}>
-                  <View style={styles.sectionHeaderRow}>
-                    <Ionicons name="mail-outline" size={18} color={hasUrgent ? '#e74c3c' : '#0C1D31'} />
-                    <Text style={[styles.sectionTitle, hasUrgent && { color: '#e74c3c' }]}>Requests</Text>
-                    {totalCount > 0 && (
-                      <View style={[styles.countBadge, hasUrgent && { backgroundColor: '#e74c3c20' }]}>
-                        <Text style={[styles.countBadgeText, hasUrgent && { color: '#e74c3c' }]}>{totalCount}</Text>
-                      </View>
-                    )}
-                  </View>
-                  {totalCount === 0 ? (
-                    <View style={styles.emptySection}>
-                      <Ionicons name="checkmark-circle-outline" size={24} color="#ccc" />
-                      <Text style={styles.emptySectionText}>No open requests</Text>
-                    </View>
-                  ) : (
-                    <View style={{ gap: 8 }}>
-                      {hasUrgent && (
-                        <View style={styles.requestCountRow}>
-                          <View style={[styles.requestDot, { backgroundColor: '#e74c3c' }]} />
-                          <Text style={[styles.requestCountLabel, { color: '#e74c3c' }]}>Urgent</Text>
-                          <Text style={[styles.requestCountValue, { color: '#e74c3c' }]}>{urgentCount}</Text>
-                        </View>
-                      )}
-                      {normalCount > 0 && (
-                        <View style={styles.requestCountRow}>
-                          <View style={[styles.requestDot, { backgroundColor: '#ff9800' }]} />
-                          <Text style={styles.requestCountLabel}>Normal</Text>
-                          <Text style={styles.requestCountValue}>{normalCount}</Text>
-                        </View>
-                      )}
-                      <TouchableOpacity
-                        style={styles.viewRequestsBtn}
-                        onPress={() => router.push('/(tabs)/tasks')}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.viewRequestsBtnText}>View Requests</Text>
-                        <Ionicons name="chevron-forward" size={14} color="#25C1AC" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              );
-            })()}
-
             {dashboard?.overdueTasks && dashboard.overdueTasks.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeaderRow}>
@@ -305,25 +261,56 @@ export default function DashboardScreen() {
               </View>
             )}
 
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <Ionicons name="today-outline" size={18} color="#0C1D31" />
-                <Text style={styles.sectionTitle}>Due Today</Text>
-                {dashboard?.dueTodayTasks && dashboard.dueTodayTasks.length > 0 && (
-                  <View style={styles.countBadge}>
-                    <Text style={styles.countBadgeText}>{dashboard.dueTodayTasks.length}</Text>
+            {(() => {
+              const newCount = dashboard?.newRequestCount ?? 0;
+              const ackCount = dashboard?.acknowledgedRequestCount ?? 0;
+              const totalRequests = newCount + ackCount;
+              const inWindow = dashboard?.inWindowTasks ?? [];
+
+              return (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="today-outline" size={18} color="#0C1D31" />
+                    <Text style={styles.sectionTitle}>Today</Text>
+                    {(inWindow.length + totalRequests) > 0 && (
+                      <View style={styles.countBadge}>
+                        <Text style={styles.countBadgeText}>{inWindow.length + totalRequests}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-              {!dashboard?.dueTodayTasks || dashboard.dueTodayTasks.length === 0 ? (
-                <View style={styles.emptySection}>
-                  <Ionicons name="checkmark-circle-outline" size={24} color="#ccc" />
-                  <Text style={styles.emptySectionText}>No tasks due today</Text>
+
+                  <TouchableOpacity
+                    style={styles.todayRequestRow}
+                    onPress={() => router.push('/(tabs)/tasks')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.todayRequestLeft}>
+                      <Ionicons name="mail-outline" size={18} color="#0C1D31" />
+                      <Text style={styles.todayRequestTitle}>Requests</Text>
+                    </View>
+                    <View style={styles.todayRequestRight}>
+                      {totalRequests === 0 ? (
+                        <Text style={styles.todayRequestSubtext}>None</Text>
+                      ) : (
+                        <Text style={styles.todayRequestSubtext}>
+                          {newCount > 0 ? `New: ${newCount}` : ''}{newCount > 0 && ackCount > 0 ? '  ·  ' : ''}{ackCount > 0 ? `Acknowledged: ${ackCount}` : ''}
+                        </Text>
+                      )}
+                      <Ionicons name="chevron-forward" size={14} color="#bbb" />
+                    </View>
+                  </TouchableOpacity>
+
+                  {inWindow.length === 0 ? (
+                    <View style={styles.emptySection}>
+                      <Ionicons name="checkmark-circle-outline" size={24} color="#ccc" />
+                      <Text style={styles.emptySectionText}>No active tasks in window</Text>
+                    </View>
+                  ) : (
+                    inWindow.map(renderTaskRow)
+                  )}
                 </View>
-              ) : (
-                dashboard.dueTodayTasks.map(renderTaskRow)
-              )}
-            </View>
+              );
+            })()}
 
             <MowingDayCard
               schedules={displaySchedules || []}
@@ -588,46 +575,34 @@ const styles = StyleSheet.create({
     borderColor: '#25C1AC30',
   },
   viewAllBtnText: { fontSize: 15, fontWeight: '600', color: '#25C1AC' },
-  requestCardUrgent: {
-    borderWidth: 1,
-    borderColor: '#e74c3c40',
-    backgroundColor: '#fff5f5',
-  },
-  requestCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  requestDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  requestCountLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#555',
-    flex: 1,
-  },
-  requestCountValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#333',
-  },
-  viewRequestsBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    marginTop: 8,
-    paddingVertical: 10,
-    backgroundColor: '#25C1AC10',
+  todayRequestRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
     borderRadius: 10,
+    marginBottom: 8,
   },
-  viewRequestsBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#25C1AC',
+  todayRequestLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  todayRequestTitle: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#0C1D31',
+  },
+  todayRequestRight: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  todayRequestSubtext: {
+    fontSize: 13,
+    fontWeight: '400' as const,
+    color: '#999',
   },
 });
