@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Image, ImageBackground,
+  Platform, ActivityIndicator, Image, ImageBackground,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -38,63 +39,62 @@ export default function LoginScreen() {
       resizeMode="repeat"
     >
       <View style={styles.overlay} />
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollViewCompat
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        contentContainerStyle={[styles.inner, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
+        bottomOffset={40}
       >
-        <View style={[styles.inner, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
-          <View style={styles.header}>
-            <Image
-              source={require('@/assets/images/vrtsync-logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
+        <View style={styles.header}>
+          <Image
+            source={require('@/assets/images/vrtsync-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.subtitle}>Contractor Portal</Text>
+        </View>
+
+        <View style={styles.formCard}>
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor="#999"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="login-username"
             />
-            <Text style={styles.subtitle}>Contractor Portal</Text>
-          </View>
-
-          <View style={styles.formCard}>
-            <View style={styles.form}>
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                placeholderTextColor="#999"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="login-username"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#999"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                testID="login-password"
-              />
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={loading}
-                testID="login-submit"
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Sign In</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity onPress={() => router.push('/(auth)/register')} testID="go-register">
-              <Text style={styles.linkText}>
-                Don't have an account? <Text style={styles.linkBold}>Register</Text>
-              </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              testID="login-password"
+            />
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              testID="login-submit"
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Sign In</Text>
+              )}
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={() => router.push('/(auth)/register')} testID="go-register">
+            <Text style={styles.linkText}>
+              Don't have an account? <Text style={styles.linkBold}>Register</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollViewCompat>
     </ImageBackground>
   );
 }

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   Alert, ActivityIndicator, Image, Modal, FlatList, Dimensions, Platform,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -342,7 +343,7 @@ export default function TaskDetailScreen() {
           <View style={styles.headerActionBtn} />
         )}
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollViewCompat style={{ flex: 1 }} contentContainerStyle={styles.content} bottomOffset={60}>
 
       {pendingForTask && (
         <View style={[styles.offlineBanner, {
@@ -864,7 +865,7 @@ export default function TaskDetailScreen() {
           </TouchableOpacity>
         );
       })()}
-      </ScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }

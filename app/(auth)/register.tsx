@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Image, ImageBackground,
+  Platform, ActivityIndicator, Image, ImageBackground,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -44,94 +45,93 @@ export default function RegisterScreen() {
       resizeMode="repeat"
     >
       <View style={styles.overlay} />
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollViewCompat
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        contentContainerStyle={[styles.inner, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}
+        bottomOffset={40}
       >
-        <View style={[styles.inner, { paddingTop: Platform.OS === 'web' ? 67 + insets.top : insets.top }]}>
-          <View style={styles.header}>
-            <Image
-              source={require('@/assets/images/vrtsync-logo.png')}
-              style={styles.logo}
-              resizeMode="contain"
+        <View style={styles.header}>
+          <Image
+            source={require('@/assets/images/vrtsync-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.subtitle}>Create Account</Text>
+        </View>
+
+        <View style={styles.formCard}>
+          <View style={styles.form}>
+            <TextInput
+              style={styles.input}
+              placeholder="Display Name"
+              placeholderTextColor="#999"
+              value={displayName}
+              onChangeText={setDisplayName}
+              testID="register-displayname"
             />
-            <Text style={styles.subtitle}>Create Account</Text>
-          </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor="#999"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="register-username"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#999"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              testID="register-password"
+            />
 
-          <View style={styles.formCard}>
-            <View style={styles.form}>
-              <TextInput
-                style={styles.input}
-                placeholder="Display Name"
-                placeholderTextColor="#999"
-                value={displayName}
-                onChangeText={setDisplayName}
-                testID="register-displayname"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Username"
-                placeholderTextColor="#999"
-                value={username}
-                onChangeText={setUsername}
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="register-username"
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor="#999"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                testID="register-password"
-              />
-
-              <View style={styles.roleContainer}>
-                <Text style={styles.roleLabel}>Role</Text>
-                <View style={styles.roleButtons}>
-                  <TouchableOpacity
-                    style={[styles.roleButton, role === 'contractor' && styles.roleButtonActive]}
-                    onPress={() => setRole('contractor')}
-                  >
-                    <Text style={[styles.roleButtonText, role === 'contractor' && styles.roleButtonTextActive]}>
-                      Contractor
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
-                    onPress={() => setRole('admin')}
-                  >
-                    <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
-                      Admin
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+            <View style={styles.roleContainer}>
+              <Text style={styles.roleLabel}>Role</Text>
+              <View style={styles.roleButtons}>
+                <TouchableOpacity
+                  style={[styles.roleButton, role === 'contractor' && styles.roleButtonActive]}
+                  onPress={() => setRole('contractor')}
+                >
+                  <Text style={[styles.roleButtonText, role === 'contractor' && styles.roleButtonTextActive]}>
+                    Contractor
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
+                  onPress={() => setRole('admin')}
+                >
+                  <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
+                    Admin
+                  </Text>
+                </TouchableOpacity>
               </View>
-
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleRegister}
-                disabled={loading}
-                testID="register-submit"
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Create Account</Text>
-                )}
-              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity onPress={() => router.back()} testID="go-login">
-              <Text style={styles.linkText}>
-                Already have an account? <Text style={styles.linkBold}>Sign In</Text>
-              </Text>
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+              testID="register-submit"
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Create Account</Text>
+              )}
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={() => router.back()} testID="go-login">
+            <Text style={styles.linkText}>
+              Already have an account? <Text style={styles.linkBold}>Sign In</Text>
+            </Text>
+          </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollViewCompat>
     </ImageBackground>
   );
 }

@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, Modal, TouchableOpacity,
   TextInput, ScrollView, ActivityIndicator, Alert, Platform, Image,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -314,7 +315,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollViewCompat contentContainerStyle={styles.formContent} bottomOffset={60}>
           {error && (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={16} color="#e74c3c" />
@@ -498,7 +499,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
               </View>
             )}
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollViewCompat>
       </View>
     </Modal>
   );

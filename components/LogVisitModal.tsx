@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
-  KeyboardAvoidingView, Platform, ScrollView, Alert,
+  Platform, Alert,
 } from 'react-native';
+import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import { ServiceSchedule } from '@/client/contexts/OfflineContext';
@@ -89,10 +90,7 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
+        <View style={styles.keyboardView}>
           <View style={styles.sheet}>
             <View style={styles.handle} />
 
@@ -114,7 +112,7 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
               </Text>
             </View>
 
-            <ScrollView style={styles.form} keyboardShouldPersistTaps="handled">
+            <KeyboardAwareScrollViewCompat style={styles.form} bottomOffset={20}>
               <Text style={styles.fieldLabel}>Service Date</Text>
               <TextInput
                 style={styles.input}
@@ -146,7 +144,7 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
                 numberOfLines={3}
                 testID="visit-notes-input"
               />
-            </ScrollView>
+            </KeyboardAwareScrollViewCompat>
 
             <TouchableOpacity
               style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
@@ -161,7 +159,7 @@ export default function LogVisitModal({ visible, schedule, onClose, onSubmit, us
               </Text>
             </TouchableOpacity>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
