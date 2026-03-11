@@ -302,7 +302,7 @@ export default function DashboardScreen() {
 
                   <TouchableOpacity
                     style={styles.requestsCard}
-                    onPress={() => router.push('/(tabs)/tasks')}
+                    onPress={() => router.push({ pathname: '/(tabs)/tasks', params: { filter: 'requests' } })}
                     activeOpacity={0.7}
                   >
                     <View style={styles.requestsCardHeader}>

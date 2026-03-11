@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
 import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
@@ -130,7 +130,15 @@ export default function TasksScreen() {
   } = useOffline();
   const [syncing, setSyncing] = React.useState(false);
   const [searchVisible, setSearchVisible] = React.useState(false);
-  const [filterMode, setFilterMode] = React.useState<FilterMode>('tasks');
+  const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
+  const [filterMode, setFilterMode] = React.useState<FilterMode>(
+    filterParam === 'requests' || filterParam === 'completed' ? filterParam : 'tasks'
+  );
+  React.useEffect(() => {
+    if (filterParam === 'requests' || filterParam === 'completed') {
+      setFilterMode(filterParam);
+    }
+  }, [filterParam]);
   const [viewMode, setViewMode] = React.useState<ViewMode>('list');
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
