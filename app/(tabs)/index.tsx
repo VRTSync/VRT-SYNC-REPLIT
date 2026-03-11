@@ -27,6 +27,8 @@ type Task = {
   address: string | null;
   assignedTo: string | null;
   dueDate: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
   version: number;
 };
 
@@ -44,6 +46,7 @@ type DashboardData = {
   upcomingTasks: Task[];
   overdueTasks: Task[];
   inWindowTasks: Task[];
+  comingUpTasks: Task[];
   followUpTasks: FollowUpTask[];
   urgentRequestCount: number;
   normalRequestCount: number;
@@ -174,6 +177,16 @@ export default function DashboardScreen() {
     router.push({ pathname: '/(tabs)/map', params: { category: categoryKey } });
   };
 
+  const formatWindowDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  const formatWindowRange = (task: Task) => {
+    if (!task.windowStart || !task.windowEnd) return null;
+    return `${formatWindowDate(task.windowStart)} – ${formatWindowDate(task.windowEnd)}`;
+  };
+
   const formatDueDate = (dateStr: string | null) => {
     if (!dateStr) return '';
     const d = new Date(dateStr);
@@ -188,30 +201,38 @@ export default function DashboardScreen() {
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
-  const renderTaskRow = (task: Task) => (
-    <TouchableOpacity
-      key={task.id}
-      style={styles.taskRow}
-      onPress={() => router.push(`/task/${task.id}`)}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.priorityBar, { backgroundColor: priorityColors[task.priority] }]} />
-      <View style={styles.taskRowContent}>
-        <Text style={styles.taskRowTitle} numberOfLines={1}>{task.title}</Text>
-        <View style={styles.taskRowMeta}>
-          <View style={[styles.statusPill, { backgroundColor: statusColors[task.status] + '20' }]}>
-            <Text style={[styles.statusPillText, { color: statusColors[task.status] }]}>
-              {statusLabels[task.status]}
-            </Text>
+  const renderTaskRow = (task: Task) => {
+    const windowRange = formatWindowRange(task);
+    return (
+      <TouchableOpacity
+        key={task.id}
+        style={styles.taskRow}
+        onPress={() => router.push(`/task/${task.id}`)}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.priorityBar, { backgroundColor: priorityColors[task.priority] }]} />
+        <View style={styles.taskRowContent}>
+          <Text style={styles.taskRowTitle} numberOfLines={1}>{task.title}</Text>
+          <View style={styles.taskRowMeta}>
+            <View style={[styles.statusPill, { backgroundColor: statusColors[task.status] + '20' }]}>
+              <Text style={[styles.statusPillText, { color: statusColors[task.status] }]}>
+                {statusLabels[task.status]}
+              </Text>
+            </View>
+            {windowRange ? (
+              <View style={styles.windowRangeMeta}>
+                <Ionicons name="calendar-outline" size={11} color="#999" />
+                <Text style={styles.taskRowDate}>{windowRange}</Text>
+              </View>
+            ) : task.dueDate ? (
+              <Text style={styles.taskRowDate}>{formatDueDate(task.dueDate)}</Text>
+            ) : null}
           </View>
-          {task.dueDate && (
-            <Text style={styles.taskRowDate}>{formatDueDate(task.dueDate)}</Text>
-          )}
         </View>
-      </View>
-      <Ionicons name="chevron-forward" size={16} color="#ccc" />
-    </TouchableOpacity>
-  );
+        <Ionicons name="chevron-forward" size={16} color="#ccc" />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -279,26 +300,42 @@ export default function DashboardScreen() {
                     )}
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.todayRequestRow}
-                    onPress={() => router.push('/(tabs)/tasks')}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.todayRequestLeft}>
-                      <Ionicons name="mail-outline" size={18} color="#0C1D31" />
-                      <Text style={styles.todayRequestTitle}>Requests</Text>
+                  <View style={styles.requestsBlock}>
+                    <View style={styles.requestsBlockHeader}>
+                      <Ionicons name="mail-outline" size={16} color="#0C1D31" />
+                      <Text style={styles.requestsBlockTitle}>Requests</Text>
                     </View>
-                    <View style={styles.todayRequestRight}>
-                      {totalRequests === 0 ? (
-                        <Text style={styles.todayRequestSubtext}>None</Text>
-                      ) : (
-                        <Text style={styles.todayRequestSubtext}>
-                          {newCount > 0 ? `New: ${newCount}` : ''}{newCount > 0 && ackCount > 0 ? '  ·  ' : ''}{ackCount > 0 ? `Acknowledged: ${ackCount}` : ''}
-                        </Text>
-                      )}
-                      <Ionicons name="chevron-forward" size={14} color="#bbb" />
-                    </View>
-                  </TouchableOpacity>
+                    {totalRequests === 0 ? (
+                      <Text style={styles.requestsNone}>No open requests</Text>
+                    ) : (
+                      <>
+                        {newCount > 0 && (
+                          <TouchableOpacity
+                            style={styles.requestStatusRow}
+                            onPress={() => router.push('/(tabs)/tasks')}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[styles.requestStatusDot, { backgroundColor: '#e65100' }]} />
+                            <Text style={styles.requestStatusLabel}>New</Text>
+                            <Text style={[styles.requestStatusCount, { color: '#e65100' }]}>{newCount}</Text>
+                            <Ionicons name="chevron-forward" size={14} color="#ccc" />
+                          </TouchableOpacity>
+                        )}
+                        {ackCount > 0 && (
+                          <TouchableOpacity
+                            style={styles.requestStatusRow}
+                            onPress={() => router.push('/(tabs)/tasks')}
+                            activeOpacity={0.7}
+                          >
+                            <View style={[styles.requestStatusDot, { backgroundColor: '#1565c0' }]} />
+                            <Text style={styles.requestStatusLabel}>Acknowledged</Text>
+                            <Text style={[styles.requestStatusCount, { color: '#1565c0' }]}>{ackCount}</Text>
+                            <Ionicons name="chevron-forward" size={14} color="#ccc" />
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    )}
+                  </View>
 
                   {inWindow.length === 0 ? (
                     <View style={styles.emptySection}>
@@ -323,20 +360,20 @@ export default function DashboardScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="calendar-outline" size={18} color="#0C1D31" />
-                <Text style={styles.sectionTitle}>Next 7 Days</Text>
-                {dashboard?.upcomingTasks && dashboard.upcomingTasks.length > 0 && (
+                <Text style={styles.sectionTitle}>Coming Up</Text>
+                {dashboard?.comingUpTasks && dashboard.comingUpTasks.length > 0 && (
                   <View style={styles.countBadge}>
-                    <Text style={styles.countBadgeText}>{dashboard.upcomingTasks.length}</Text>
+                    <Text style={styles.countBadgeText}>{dashboard.comingUpTasks.length}</Text>
                   </View>
                 )}
               </View>
-              {!dashboard?.upcomingTasks || dashboard.upcomingTasks.length === 0 ? (
+              {!dashboard?.comingUpTasks || dashboard.comingUpTasks.length === 0 ? (
                 <View style={styles.emptySection}>
                   <Ionicons name="calendar-clear-outline" size={24} color="#ccc" />
-                  <Text style={styles.emptySectionText}>No upcoming tasks this week</Text>
+                  <Text style={styles.emptySectionText}>No upcoming tasks</Text>
                 </View>
               ) : (
-                dashboard.upcomingTasks.map(renderTaskRow)
+                dashboard.comingUpTasks.map(renderTaskRow)
               )}
             </View>
 
@@ -575,34 +612,55 @@ const styles = StyleSheet.create({
     borderColor: '#25C1AC30',
   },
   viewAllBtnText: { fontSize: 15, fontWeight: '600', color: '#25C1AC' },
-  todayRequestRow: {
+  windowRangeMeta: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    gap: 3,
+  },
+  requestsBlock: {
     backgroundColor: '#f8f9fa',
     borderRadius: 10,
-    marginBottom: 8,
+    padding: 12,
+    marginBottom: 10,
   },
-  todayRequestLeft: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-  },
-  todayRequestTitle: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: '#0C1D31',
-  },
-  todayRequestRight: {
+  requestsBlockHeader: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
+    marginBottom: 6,
   },
-  todayRequestSubtext: {
+  requestsBlockTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#0C1D31',
+  },
+  requestsNone: {
     fontSize: 13,
-    fontWeight: '400' as const,
-    color: '#999',
+    color: '#bbb',
+    paddingLeft: 22,
+  },
+  requestStatusRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  requestStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  requestStatusLabel: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: '#555',
+    flex: 1,
+  },
+  requestStatusCount: {
+    fontSize: 15,
+    fontWeight: '700' as const,
   },
 });

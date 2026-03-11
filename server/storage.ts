@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, ne, inArray, gte, lte, lt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -1133,6 +1133,18 @@ export async function getDashboardData(userId: string, communityId: string, isAd
     .orderBy(asc(tasks.windowEnd), asc(tasks.priority))
     .limit(20);
 
+  const comingUpTasks = await db.select().from(tasks)
+    .where(and(
+      eq(tasks.communityId, communityId),
+      ne(tasks.status, "completed"),
+      isNotNull(tasks.windowStart),
+      isNotNull(tasks.windowEnd),
+      gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+    ))
+    .orderBy(asc(tasks.windowStart))
+    .limit(3);
+
   return {
     dueTodayTasks,
     upcomingTasks,
@@ -1142,6 +1154,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
     newRequestCount,
     acknowledgedRequestCount,
     inWindowTasks,
+    comingUpTasks,
     followUpTasks: followUpResults.map(r => ({
       id: r.id,
       taskId: r.taskId,
