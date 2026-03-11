@@ -78,12 +78,6 @@ function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void 
         <Text style={styles.requestLabel}>REQUEST</Text>
         {item.isArchived && <Text style={styles.archivedLabel}>ARCHIVED</Text>}
       </View>
-      {isCompleted && (
-        <View style={styles.completedBanner}>
-          <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
-          <Text style={styles.completedBannerText}>COMPLETED</Text>
-        </View>
-      )}
       <Text style={[styles.cardTitle, isCompleted && styles.completedTitle]} numberOfLines={2}>{item.title}</Text>
       <View style={styles.badgeRow}>
         <View style={[styles.priorityBadge, { backgroundColor: isUrgent ? '#FFEBEE' : '#E0F2F1' }]}>
@@ -651,26 +645,11 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   completedCard: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#fff',
     borderLeftWidth: 4,
     borderLeftColor: '#4caf50',
-  },
-  completedBanner: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 6,
-    backgroundColor: '#C8E6C9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginBottom: 10,
-    alignSelf: 'flex-start' as const,
-  },
-  completedBannerText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: '#2E7D32',
-    letterSpacing: 1,
+    borderWidth: 1,
+    borderColor: '#4caf50',
   },
   completedTitle: {
     color: '#2E7D32',

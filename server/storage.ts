@@ -1050,6 +1050,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
     .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
     .where(and(
       eq(tasks.communityId, communityId),
+      ne(tasks.status, "completed"),
       isNotNull(taskCompletions.followUpNeeded),
       ne(taskCompletions.followUpNeeded, ''),
       ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),

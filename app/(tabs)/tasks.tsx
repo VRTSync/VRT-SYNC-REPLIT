@@ -327,12 +327,6 @@ export default function TasksScreen() {
         activeOpacity={0.7}
         testID={`task-${item.id}`}
       >
-        {isCompleted && (
-          <View style={styles.completedBanner}>
-            <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
-            <Text style={styles.completedBannerText}>COMPLETED</Text>
-          </View>
-        )}
         <View style={styles.taskHeader}>
           <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
           <Text style={[styles.taskTitle, isCompleted && styles.completedTitle]} numberOfLines={1}>{item.title}</Text>
@@ -713,26 +707,11 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   completedCard: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: '#fff',
     borderLeftWidth: 4,
     borderLeftColor: '#4caf50',
-  },
-  completedBanner: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 6,
-    backgroundColor: '#C8E6C9',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginBottom: 10,
-    alignSelf: 'flex-start' as const,
-  },
-  completedBannerText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: '#2E7D32',
-    letterSpacing: 1,
+    borderWidth: 1,
+    borderColor: '#4caf50',
   },
   completedTitle: {
     color: '#2E7D32',

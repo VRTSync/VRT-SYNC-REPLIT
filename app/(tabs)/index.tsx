@@ -300,42 +300,35 @@ export default function DashboardScreen() {
                     )}
                   </View>
 
-                  <View style={styles.requestsBlock}>
-                    <View style={styles.requestsBlockHeader}>
-                      <Ionicons name="mail-outline" size={16} color="#0C1D31" />
-                      <Text style={styles.requestsBlockTitle}>Requests</Text>
+                  <TouchableOpacity
+                    style={styles.requestsCard}
+                    onPress={() => router.push('/(tabs)/tasks')}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.requestsCardHeader}>
+                      <Ionicons name="mail-unread-outline" size={20} color="#25C1AC" />
+                      <Text style={styles.requestsCardTitle}>Requests</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#bbb" style={{ marginLeft: 'auto' }} />
                     </View>
                     {totalRequests === 0 ? (
                       <Text style={styles.requestsNone}>No open requests</Text>
                     ) : (
-                      <>
+                      <View style={styles.requestsBadgeRow}>
                         {newCount > 0 && (
-                          <TouchableOpacity
-                            style={styles.requestStatusRow}
-                            onPress={() => router.push('/(tabs)/tasks')}
-                            activeOpacity={0.7}
-                          >
-                            <View style={[styles.requestStatusDot, { backgroundColor: '#e65100' }]} />
-                            <Text style={styles.requestStatusLabel}>New</Text>
-                            <Text style={[styles.requestStatusCount, { color: '#e65100' }]}>{newCount}</Text>
-                            <Ionicons name="chevron-forward" size={14} color="#ccc" />
-                          </TouchableOpacity>
+                          <View style={[styles.requestsBadge, { backgroundColor: '#FFF3E0' }]}>
+                            <View style={[styles.requestsBadgeDot, { backgroundColor: '#e65100' }]} />
+                            <Text style={[styles.requestsBadgeLabel, { color: '#e65100' }]}>{newCount} New</Text>
+                          </View>
                         )}
                         {ackCount > 0 && (
-                          <TouchableOpacity
-                            style={styles.requestStatusRow}
-                            onPress={() => router.push('/(tabs)/tasks')}
-                            activeOpacity={0.7}
-                          >
-                            <View style={[styles.requestStatusDot, { backgroundColor: '#1565c0' }]} />
-                            <Text style={styles.requestStatusLabel}>Acknowledged</Text>
-                            <Text style={[styles.requestStatusCount, { color: '#1565c0' }]}>{ackCount}</Text>
-                            <Ionicons name="chevron-forward" size={14} color="#ccc" />
-                          </TouchableOpacity>
+                          <View style={[styles.requestsBadge, { backgroundColor: '#E3F2FD' }]}>
+                            <View style={[styles.requestsBadgeDot, { backgroundColor: '#1565c0' }]} />
+                            <Text style={[styles.requestsBadgeLabel, { color: '#1565c0' }]}>{ackCount} Acknowledged</Text>
+                          </View>
                         )}
-                      </>
+                      </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
 
                   {inWindow.length === 0 ? (
                     <View style={styles.emptySection}>
@@ -617,50 +610,53 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     gap: 3,
   },
-  requestsBlock: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 10,
-    padding: 12,
+  requestsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
     marginBottom: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#25C1AC',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  requestsBlockHeader: {
+  requestsCardHeader: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 6,
-    marginBottom: 6,
+    gap: 8,
+    marginBottom: 8,
   },
-  requestsBlockTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
+  requestsCardTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
     color: '#0C1D31',
   },
   requestsNone: {
     fontSize: 13,
-    color: '#bbb',
-    paddingLeft: 22,
+    color: '#aaa',
+    paddingLeft: 28,
+    paddingBottom: 2,
   },
-  requestStatusRow: {
+  requestsBadgeRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    paddingLeft: 28,
+  },
+  requestsBadge: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 8,
-    paddingVertical: 7,
-    paddingHorizontal: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
+    gap: 5,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  requestStatusDot: {
-    width: 8,
-    height: 8,
+  requestsBadgeDot: {
+    width: 7,
+    height: 7,
     borderRadius: 4,
   },
-  requestStatusLabel: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: '#555',
-    flex: 1,
-  },
-  requestStatusCount: {
-    fontSize: 15,
-    fontWeight: '700' as const,
+  requestsBadgeLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
 });
