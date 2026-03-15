@@ -76,7 +76,7 @@ PortalRouter.register('requests', async function (container) {
       + '    <button class="td-close" id="req-form-close">&times;</button>'
       + '  </div>'
       + '  <div class="cf-group"><label class="cf-label">Title *</label><input type="text" class="cf-input" id="req-title" placeholder="Brief description of the issue"></div>'
-      + '  <div class="cf-group"><label class="cf-label">Description</label><textarea class="cf-input cf-textarea" id="req-desc" placeholder="Detailed description"></textarea></div>'
+      + '  <div class="cf-group"><label class="cf-label">Description *</label><textarea class="cf-input cf-textarea" id="req-desc" placeholder="Detailed description" required></textarea></div>'
       + '  <div class="cf-row">'
       + '    <div class="cf-group cf-half"><label class="cf-label">Priority</label>'
       + '      <select class="cf-input" id="req-priority"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>'
@@ -171,13 +171,18 @@ PortalRouter.register('requests', async function (container) {
     if (submitBtn) {
       submitBtn.addEventListener('click', async function () {
         var title = overlay.querySelector('#req-title').value.trim();
+        var desc = overlay.querySelector('#req-desc').value.trim();
         if (!title) {
           showToast('Title is required', true);
           return;
         }
+        if (!desc) {
+          showToast('Description is required', true);
+          return;
+        }
         var body = {
           title: title,
-          description: overlay.querySelector('#req-desc').value.trim() || undefined,
+          description: desc,
           priority: overlay.querySelector('#req-priority').value,
           category: overlay.querySelector('#req-category').value || undefined,
           assignedTo: overlay.querySelector('#req-assigned').value || undefined
