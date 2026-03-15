@@ -25,7 +25,7 @@ window.AdminAPI = (function() {
       const res = await fetch(url, config);
       clearTimeout(timer);
       if (res.status === 401) {
-        window.location.href = '/web/admin/login';
+        window.location.href = '/web/login';
         throw new Error('Session expired');
       }
       if (res.status === 403) {

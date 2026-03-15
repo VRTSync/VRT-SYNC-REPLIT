@@ -14,7 +14,7 @@
     try {
       const data = await apiFetch('/api/auth/me');
       if (!data || !data.user) {
-        window.location.href = '/web/admin/login';
+        window.location.href = '/web/login';
         return;
       }
       currentUser = data.user;
@@ -28,7 +28,7 @@
 
       document.getElementById('logout-btn').addEventListener('click', async () => {
         await apiFetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/web/admin/login';
+        window.location.href = '/web/login';
       });
 
       await refreshCommunities();
