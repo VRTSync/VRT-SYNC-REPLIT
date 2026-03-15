@@ -223,7 +223,10 @@ function configureAdminHub(app: express.Application) {
     res.redirect("/web/admin/dashboard");
   });
 
-  app.get(/^\/web\/admin\/(?!login).*$/, (_req: Request, res: Response) => {
+  app.get(/^\/web\/admin\/(?!login).*$/, (req: Request, res: Response) => {
+    if (!(req.session as any)?.userId) {
+      return res.redirect("/web/login");
+    }
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(adminShell);
   });
