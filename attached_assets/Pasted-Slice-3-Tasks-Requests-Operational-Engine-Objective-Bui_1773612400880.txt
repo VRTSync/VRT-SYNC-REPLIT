@@ -1,0 +1,387 @@
+Slice 3 — Tasks & Requests Operational Engine
+Objective
+
+Build the operational work engine that powers contractor execution and HOA oversight inside the VRTSync portals.
+
+This slice introduces the Task system and HOA Request workflow that will drive most day-to-day activity within the platform.
+
+This slice establishes:
+
+• contractor task visibility
+• HOA request intake into the task system
+• task lifecycle state transitions
+• contractor task completion submission
+• shared task list page framework
+• task detail view
+• dashboard modules powered by real task data
+
+This slice should focus on task lifecycle and operational visibility, not yet on deeper integrations such as map-generated tasks, invoice generation, or service scheduling.
+
+The goal is to introduce the core operational workflow of the platform.
+
+Core Principle
+
+VRTSync tracks work performed in a community.
+
+Work can originate from two sources:
+
+Contract Work
+Scheduled or recurring work defined by contracts.
+
+HOA Requests
+Ad-hoc work requests submitted by HOA administrators.
+
+Both types of work flow into the same Task system.
+
+This unified approach ensures:
+
+• consistent contractor workflow
+• centralized work history
+• predictable operational reporting
+• future linkage to map assets and invoices
+
+Roles Included in This Slice
+
+This slice applies to:
+
+Property Manager
+HOA Admin
+HOA Member
+Contractor
+
+Super Admin remains unchanged.
+
+Task System Architecture
+
+Tasks represent individual units of work within a community.
+
+Tasks should already exist in the backend schema or be created in a simple first-pass form.
+
+Core fields should include:
+
+id
+communityId
+title
+description
+priority
+status
+windowStart
+windowEnd
+createdBy
+assignedContractor
+createdAt
+updatedAt
+
+Optional fields may include:
+
+locationReference
+requestSource
+attachments
+notes
+
+Tasks should always be scoped to a community.
+
+Task Status Lifecycle
+
+Tasks move through the following states:
+
+pending
+acknowledged
+in_progress
+submitted
+completed
+State Definitions
+
+pending
+
+Task exists but contractor has not yet acknowledged it.
+
+acknowledged
+
+Contractor has confirmed the task has been seen and accepted.
+
+in_progress
+
+Contractor has begun performing the work.
+
+submitted
+
+Contractor has finished work and submitted completion details.
+
+completed
+
+Work has been finalized.
+
+For this slice, it is acceptable for:
+
+submitted → completed
+
+to happen automatically if approval logic is not yet implemented.
+
+HOA Request Workflow
+
+HOA requests create new tasks.
+
+Workflow:
+
+HOA Admin submits request
+→ task created in pending state
+→ contractor acknowledges
+→ contractor performs work
+→ contractor submits completion
+→ task marked completed
+
+Requests should include:
+
+description
+priority
+optional photo attachments
+optional location reference
+
+The request creation UI itself can be minimal for this slice.
+
+The primary goal is ensuring requests flow into the operational task system correctly.
+
+Task List Pages
+
+Create task list views for relevant portal roles.
+
+Example routes:
+
+/web/contractor/tasks
+/web/hoa/tasks
+/web/pm/tasks
+
+All task pages should reuse the existing module framework from Slice 2.
+
+Prefer using the existing listModule() structure.
+
+Each list should support:
+
+• title
+• rows
+• empty state
+• click target
+
+Contractor Task View
+
+Contractors see:
+
+My Tasks
+
+Filtered by:
+
+assignedContractor = current contractor
+communityId = active community
+
+Suggested list groupings:
+
+• Today
+• Active
+• Upcoming
+• Completed
+
+Each row should include:
+
+title
+priority
+status
+window
+optional location reference
+
+Clicking a row should open the task detail panel.
+
+HOA Admin Task View
+
+HOA Admin sees:
+
+All Community Tasks
+
+Sections:
+
+• Open Tasks
+• In Progress
+• Completed
+
+HOA Admin users monitor progress but do not perform contractor actions.
+
+Property Manager Task View
+
+Property Managers see tasks across assigned communities.
+
+Filtering should support:
+
+community filter
+status filter
+contractor filter
+
+The PM task page should emphasize oversight and visibility, not execution.
+
+HOA Member Task Visibility
+
+HOA Members should not interact with the operational task system directly.
+
+Instead they may see:
+
+recent completed work
+
+through dashboard modules.
+
+A full task management page is not required for this role in this slice.
+
+Task Detail View
+
+Create a shared task detail panel used across all portals.
+
+This panel should display:
+
+Task title
+Description
+Priority
+Status
+Scheduled window
+Assigned contractor
+Creation timestamp
+Completion information (if available)
+
+Attachments and photos can appear if already supported.
+
+Contractor Task Completion
+
+Contractors must be able to complete tasks.
+
+Completion submission should capture:
+
+employeeSignOffName
+timeSpentMinutes
+materialsUsed
+followUpNeeded
+optional photos
+completedAt
+
+These values populate the task_completions table.
+
+For this slice, the completion interface can be minimal.
+
+Do not build:
+
+• offline completion support
+• GPS tracking
+• advanced materials inventory
+
+Those belong in later slices.
+
+Dashboard Integration
+
+Slice 3 should connect the task system to dashboards built in Slice 2.
+
+Example dashboard modules now powered by real task data.
+
+Contractor dashboard:
+
+• My Active Tasks
+• HOA Requests
+
+HOA Admin dashboard:
+
+• Recent Work
+• Upcoming Work
+
+Property Manager dashboard:
+
+• Recent Completed Work
+• Recent Requests
+
+These modules should use existing listModule() rendering.
+
+Data Strategy for This Slice
+
+Use live data where available.
+
+Good candidates:
+
+GET /api/tasks
+GET /api/tasks?communityId=
+GET /api/tasks?assignedTo=
+GET /api/tasks/recent
+
+If necessary, create lightweight endpoints for task previews used by dashboard modules.
+
+Do not build deep filtering logic yet.
+
+Routing Requirements
+
+Add task routes for each relevant portal.
+
+Examples:
+
+/web/contractor/tasks
+/web/hoa/tasks
+/web/pm/tasks
+
+Task detail may be implemented as:
+
+/web/contractor/tasks/:id
+
+or
+
+a modal/panel opened from the list.
+
+Either approach is acceptable.
+
+Community-Aware Behavior
+
+All task queries must respect the active community.
+
+Use:
+
+PortalState.getCommunityContext()
+
+Changing the community selector should:
+
+• refresh task lists
+• refresh dashboard task modules
+• maintain portal shell
+
+Out of Scope for Slice 3
+
+Do NOT build the following yet:
+
+map-based task creation
+asset-linked tasks
+task scheduling engine
+contract creation system
+invoice generation
+document integration
+notification automation
+plus button task creation flows
+
+These belong in later slices.
+
+Deliverables for Slice 3
+
+By the end of this slice the system should support:
+
+• task lists for contractor, HOA admin, property manager
+• HOA requests entering the task system
+• contractor task acknowledgement
+• contractor task completion submission
+• task detail panel
+• dashboards showing real task data
+• task queries scoped by active community
+
+Success Criteria
+
+The platform should now support the full operational work loop:
+
+HOA creates request
+→ contractor sees task
+→ contractor acknowledges task
+→ contractor performs work
+→ contractor submits completion
+→ system records work history
+→ HOA / PM dashboards show completed work
+
+Once this slice is complete, VRTSync will have its first operational engine, powering contractor execution and HOA oversight.
+
+This slice establishes the work lifecycle that future systems such as assets, invoices, and reports will attach to.
