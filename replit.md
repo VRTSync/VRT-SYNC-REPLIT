@@ -62,6 +62,14 @@ Built with Expo SDK and Expo Router for file-based routing. Uses React Query for
 ### Shared NavyHeader Component
 `components/NavyHeader.tsx` is a prop-based shared component used across all contractor and HOA tab screens. It renders a navy bar (#0C1D31) with community name (left), optional chevron dropdown for multi-community users, and sync badge pill (right). Below the navy bar, each screen provides its own subtitle row (white bar with page title and actions) via `children`. The `components/useNavyHeaderProps.ts` hook computes sync state from `useOffline()` and community data from `useCommunity()`, returning all props NavyHeader needs. Used in: `app/(tabs)/index.tsx`, `app/(tabs)/tasks.tsx`, `app/(hoa-tabs)/index.tsx`, `app/(hoa-tabs)/calendar.tsx`, `app/(hoa-tabs)/requests.tsx`, `app/(hoa-tabs)/settings.tsx`.
 
+### Web Portal — Tasks & Requests (Slice 3)
+The web portals now include full task and request management pages:
+- **Tasks page (`pages/tasks.js`)**: Shared across all three portal shells (Contractor, HOA, PM). Contractors see filter tabs (Active/Overdue/Upcoming/Completed) scoped to assigned tasks. HOA and PM see All/Active/Completed tabs for community-wide view. Clicking a task row opens the detail side panel.
+- **Task Detail panel (`pages/task-detail.js`)**: Slide-in panel from the right showing full task details, status/priority badges, description, window dates, and completion history. Contractors see contextual action buttons: Acknowledge (HOA submitted tasks), Mark In Progress, and Complete (only from in_progress). Completion form captures sign-off name, time, materials, follow-up notes. HOA and PM roles are read-only.
+- **Requests page (`pages/requests.js`)**: HOA-only page with filter chips (All/Open/Completed). HOA admins can create new requests via a modal form (title, description, priority, category). HOA members see list only.
+- **`PortalRouter.refresh()`**: Added to re-render the current route after task actions without full navigation.
+- **HOA request location relaxed**: `POST /api/hoa/requests` no longer requires `pinLat`/`pinLng` when no asset is selected. Partial coordinates (one without the other) are rejected.
+
 ### API Design
 A RESTful JSON API (`/api/`) provides endpoints for authentication, communities, tasks, user management, and object storage. Data is filtered by the selected community.
 

@@ -162,7 +162,7 @@ window.PortalModules = (function () {
     const window = fmtDateRange(task.windowStart, task.windowEnd);
 
     return `
-      <div class="task-row">
+      <div class="task-row" data-task-id="${esc(task.id)}" style="cursor:pointer">
         <span class="tr-dot" style="background:${PRIORITY_COLOR[priority] || '#6b7280'}"></span>
         <div class="tr-main">
           <span class="tr-title">${esc(task.title || 'Untitled')}</span>

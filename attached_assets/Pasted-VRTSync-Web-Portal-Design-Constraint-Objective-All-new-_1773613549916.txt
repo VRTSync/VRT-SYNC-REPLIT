@@ -1,0 +1,449 @@
+VRTSync Web Portal — Design Constraint
+Objective
+
+All new VRTSync web portals must visually inherit the existing Admin Hub design language.
+
+The contractor, HOA, and property manager portals should feel like they are part of the same product family as the Admin Hub shown in the reference screenshot — not like separate apps.
+
+The layout, spacing, color system, card treatment, typography, and shell structure should remain consistent with the Admin Hub.
+
+What changes per user is module composition, page content, and navigation options — not the core visual system.
+
+Core Design Principle
+
+Use a single shared portal design system across all web roles.
+
+The following should remain visually consistent across portals:
+
+left sidebar shell
+
+top header bar
+
+page padding
+
+card styling
+
+typography hierarchy
+
+spacing rhythm
+
+border radius
+
+shadows
+
+hover behavior
+
+muted gray page background
+
+dark navy branded sidebar
+
+The portal should always feel like:
+
+same application, different role lens
+
+not:
+
+different products for different users
+
+Shell Layout Constraint
+
+All role portals should use the same structural shell as the Admin Hub reference:
+
+Left Sidebar
+
+Permanent dark vertical sidebar.
+
+Sidebar style
+
+deep navy / blue-black gradient background
+
+branded logo block at top
+
+strong vertical rhythm
+
+icon + label nav items
+
+active item uses teal glow / highlight treatment
+
+subtle separators
+
+soft rounded active states, not sharp rectangles
+
+Sidebar behavior
+
+same width across all portals
+
+same spacing/padding logic
+
+same icon alignment
+
+same typography treatment
+
+Only the available nav items change by role.
+
+Top Bar
+
+All portals use the same top horizontal bar.
+
+Top bar style
+
+white background
+
+very light bottom border or subtle separation
+
+minimal visual noise
+
+right-aligned user identity controls
+
+space for:
+
+community selector
+
+notification bell
+
+user name / profile
+
+logout or profile actions
+
+The top bar should feel quiet and utility-driven.
+
+Main Content Area
+
+Main content sits on a soft light gray background exactly like the admin reference.
+
+Content area rules
+
+generous outer padding
+
+card-based layout
+
+strong alignment grid
+
+no overly dense screens
+
+content should breathe
+
+Use a consistent max-width behavior if helpful, but the page should still feel like a desktop admin workspace.
+
+Visual Style Constraint
+Color Palette
+
+Keep the existing Admin Hub visual language.
+
+Primary tones
+
+deep navy sidebar
+
+teal / aqua accent
+
+white cards
+
+soft light gray page background
+
+muted dark text
+
+subtle status colors
+
+Accent usage
+
+Use teal as the primary branded accent for:
+
+active nav states
+
+highlight borders
+
+key counts
+
+selected states
+
+important controls
+
+Use other colors sparingly for status only:
+
+blue = informational
+
+green = healthy/completed
+
+orange = warning/incomplete
+
+red = archived/critical
+
+Do not introduce a new visual color identity per role.
+
+Roles should differ by content, not by color theme.
+
+Card Design
+
+Cards should match the feel in the screenshot.
+
+Card styling
+
+white background
+
+soft rounded corners
+
+light shadow or subtle elevation
+
+thin neutral border optional
+
+clean interior padding
+
+restrained accent line or accent edge where appropriate
+
+KPI/stat cards
+
+Match the admin screenshot style:
+
+label in muted uppercase/small caps style
+
+large bold number
+
+subtle accent line at bottom or edge
+
+clean spacing
+
+no clutter inside the card
+
+Module cards
+
+Use the same card DNA for:
+
+lists
+
+map preview
+
+quick links
+
+notes
+
+graphs
+
+requests
+
+recent work
+
+upcoming work
+
+Even when the module type changes, the visual container should still feel native to the same design system.
+
+Typography Constraint
+
+Typography should stay clean, modern, and operational.
+
+Rules
+
+page titles large, bold, dark
+
+module/card titles smaller, uppercase or semi-muted like admin screenshot
+
+body text neutral and highly legible
+
+metadata small and subdued
+
+avoid overly stylized fonts
+
+avoid marketing-style typography
+
+Tone should feel:
+
+professional, operational, GIS/data-aware, enterprise-light
+
+not:
+
+consumer app, startup playful, or generic bootstrap dashboard
+
+Grid & Spacing Constraint
+
+Spacing should closely match the reference portal.
+
+Layout rhythm
+
+generous gaps between cards
+
+consistent internal card padding
+
+consistent margin below page titles
+
+modules should align to a predictable grid
+
+avoid cramped dense dashboards
+
+Dashboard grid behavior
+
+Use a modular desktop grid where:
+
+KPI cards can sit in 4-column rows
+
+larger modules span multiple columns
+
+map module can occupy the dominant visual area where appropriate
+
+list modules stack cleanly beside or below major modules
+
+The grid can change per role, but the spacing system must stay consistent.
+
+Role-Based Module Constraint
+
+The shell stays the same, but each role gets a different module composition.
+
+Important rule
+
+Do not redesign the portal per role.
+
+Instead:
+
+keep the same shell
+
+keep the same design language
+
+swap modules based on role
+
+reorder modules based on role priority
+
+Example
+
+Contractor dashboard:
+
+execution-focused modules
+
+active tasks
+
+HOA requests
+
+quick map access
+
+notes
+
+HOA Admin dashboard:
+
+map-heavy command center
+
+recent work
+
+requests
+
+upcoming work
+
+water usage
+
+Property Manager dashboard:
+
+operations oversight
+
+requests
+
+completions
+
+invoices
+
+upcoming work
+
+HOA Member dashboard:
+
+lighter read-only version of HOA Admin
+
+These should feel like different layouts inside the same portal system, not separate UI themes.
+
+Component Reuse Constraint
+
+Create one shared component library for all portals.
+
+At minimum, reuse the same styling foundation for:
+
+sidebar nav item
+
+topbar control
+
+page header
+
+stat card
+
+list module
+
+quick links module
+
+map preview module
+
+graph module
+
+notes module
+
+filter tabs
+
+detail side panel
+
+badges
+
+buttons
+
+empty states
+
+All future slices should build from this same component language.
+
+Do not create role-specific visual components unless functionally necessary.
+
+Interaction Constraint
+
+Interactions should feel smooth and modern, but restrained.
+
+Expected interaction style
+
+subtle hover lift on cards
+
+soft background highlight on hover rows
+
+active nav glow
+
+smooth panel slide-ins
+
+no excessive animation
+
+no flashy transitions
+
+This system should feel dependable and operational.
+
+Replit Build Constraint
+
+When implementing new role portals in Replit:
+
+Must preserve
+
+existing Admin Hub shell feel
+
+dark left sidebar
+
+white top bar
+
+gray canvas background
+
+card-first content design
+
+clean enterprise spacing
+
+teal-accent VRTSync branding
+
+Must allow
+
+route-based page changes
+
+role-based nav differences
+
+role-based dashboard module composition
+
+shared component rendering across roles
+
+future slice expansion without redesign
+
+Must avoid
+
+redesigning each portal from scratch
+
+introducing different themes per role
+
+overly rounded consumer-app styling
+
+flat bare layouts without card structure
+
+generic bootstrap feel
+
+crowded dashboards

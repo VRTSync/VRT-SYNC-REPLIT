@@ -2736,11 +2736,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         longitude = asset.longitude ?? undefined;
         resolvedAssetId = asset.id;
       } else {
-        if (pinLat == null || pinLng == null) {
-          return res.status(400).json({ error: "pinLat and pinLng are required when no asset is selected" });
+        if (pinLat != null && pinLng != null) {
+          latitude = pinLat;
+          longitude = pinLng;
+        } else if ((pinLat != null) !== (pinLng != null)) {
+          return res.status(400).json({ error: "Both pinLat and pinLng must be provided together, or omit both" });
         }
-        latitude = pinLat;
-        longitude = pinLng;
       }
 
       let validatedAssignedTo: string | undefined;

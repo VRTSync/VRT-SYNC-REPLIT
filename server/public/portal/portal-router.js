@@ -111,5 +111,11 @@ window.PortalRouter = (function () {
     return parsed.route;
   }
 
-  return { register, navigate, render, init, getRouteFromPath, getCurrentRoute, getParams, parseRoute };
+  function refresh() {
+    if (currentRoute) {
+      render(currentRoute, currentParams);
+    }
+  }
+
+  return { register, navigate, render, refresh, init, getRouteFromPath, getCurrentRoute, getParams, parseRoute };
 })();
