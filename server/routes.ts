@@ -423,6 +423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const newStatus = data.status;
           const validTransitions: Record<string, string[]> = {
             submitted: ["acknowledged"],
+            acknowledged: ["in_progress"],
           };
           const allowedStatuses = validTransitions[currentStatus];
           if (!allowedStatuses || !allowedStatuses.includes(newStatus)) {
@@ -479,8 +480,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "You do not have access to this task" });
       }
 
-      if (existingTask.origin === "HOA" && existingTask.status !== "acknowledged") {
-        return res.status(400).json({ error: "HOA requests must be acknowledged before completing" });
+      if (existingTask.origin === "HOA" && existingTask.status !== "acknowledged" && existingTask.status !== "in_progress") {
+        return res.status(400).json({ error: "HOA requests must be acknowledged or in progress before completing" });
       }
 
       const parsed = completeTaskSchema.safeParse(req.body);

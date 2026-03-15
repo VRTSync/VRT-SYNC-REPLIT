@@ -61,6 +61,9 @@
           btns += '<button class="td-action-btn td-btn-ack" data-action="acknowledge">Acknowledge</button>';
         }
         if (task.status === 'acknowledged') {
+          btns += '<button class="td-action-btn td-btn-progress" data-action="in_progress">Mark In Progress</button>';
+        }
+        if (task.status === 'acknowledged' || task.status === 'in_progress') {
           btns += '<button class="td-action-btn td-btn-complete" data-action="complete">Complete Task</button>';
         }
       } else {
