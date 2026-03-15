@@ -1,0 +1,122 @@
+/* VRTSync Portal CSS Extensions
+ * Loaded in addition to admin.css (which provides the full design system).
+ * Only adds new elements needed for the expanded portal topbar.
+ */
+
+/* ── Topbar community label (fixed single-community users) ── */
+.topbar-community-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+  padding: 6px 12px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+/* ── Topbar icon buttons (bell, global +) ── */
+.topbar-icon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--white);
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.topbar-icon-btn:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+  color: var(--navy);
+}
+
+.topbar-icon-btn.btn-primary-icon {
+  background: var(--teal);
+  border-color: var(--teal-dark);
+  color: white;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.topbar-icon-btn.btn-primary-icon:hover {
+  background: var(--teal-dark);
+  border-color: var(--teal-dark);
+}
+
+/* Notification badge dot */
+.topbar-icon-btn .notif-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  background: var(--red);
+  border-radius: 50%;
+  border: 1.5px solid white;
+  display: none;
+}
+
+.topbar-icon-btn .notif-dot.visible {
+  display: block;
+}
+
+/* ── Topbar divider ── */
+.topbar-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--gray-200);
+  flex-shrink: 0;
+}
+
+/* ── User profile chip (name + role tag) ── */
+.user-profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  cursor: default;
+}
+
+.user-profile-chip .user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
+}
+
+.user-profile-chip .user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+  line-height: 1.2;
+}
+
+.user-profile-chip .user-role-tag {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--teal-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

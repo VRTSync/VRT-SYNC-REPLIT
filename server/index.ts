@@ -289,6 +289,111 @@ async function doLogin(){
   log("Admin hub configured at /web/admin/*");
 }
 
+function configurePortalHub(app: express.Application) {
+  app.use("/portal-static", express.static(path.resolve(process.cwd(), "server", "public", "portal")));
+
+  const contractorShell = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "contractor-shell.html"), "utf-8");
+  const hoaShell        = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "hoa-shell.html"), "utf-8");
+  const pmShell         = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "pm-shell.html"), "utf-8");
+
+  /* ── Unified login (all non-admin roles) ─────────────────────────────── */
+  const loginHtml = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>VRTSync — Sign In</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#06101c 0%,#0C1D31 40%,#132a45 100%);display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(37,193,172,0.08) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(37,193,172,0.05) 0%,transparent 50%);pointer-events:none}
+.wrap{position:relative;z-index:1;width:100%;max-width:420px;padding:20px}
+.brand{text-align:center;margin-bottom:32px}
+.brand-logo{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#25C1AC,#1da393);border-radius:16px;font-size:26px;font-weight:800;color:#fff;margin-bottom:16px;box-shadow:0 4px 20px rgba(37,193,172,0.4);letter-spacing:-1px}
+.brand h1{font-size:28px;font-weight:700;letter-spacing:0.5px;margin-bottom:4px}
+.brand p{font-size:12px;color:rgba(37,193,172,0.6);text-transform:uppercase;letter-spacing:2px;font-weight:600}
+.box{background:rgba(255,255,255,0.97);border-radius:20px;padding:36px;color:#1f2937;box-shadow:0 20px 60px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.05)}
+.box h2{font-size:18px;margin-bottom:4px;color:#0C1D31;font-weight:700}
+.sub{font-size:14px;color:#6b7280;margin-bottom:24px}
+.fg{margin-bottom:16px}
+.fg label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
+.fg input{width:100%;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#f9fafb;transition:all .2s;color:#1f2937}
+.fg input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.15);background:#fff}
+.btn{width:100%;padding:12px;background:linear-gradient(135deg,#25C1AC,#1da393);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s;box-shadow:0 2px 8px rgba(37,193,172,0.3);margin-top:8px}
+.btn:hover{background:linear-gradient(135deg,#1da393,#189985);box-shadow:0 4px 16px rgba(37,193,172,0.4);transform:translateY(-1px)}
+.btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.err{color:#ef4444;font-size:13px;margin-bottom:12px;display:none;background:rgba(239,68,68,0.08);padding:8px 12px;border-radius:8px;border:1px solid rgba(239,68,68,0.2)}
+.admin-link{text-align:center;margin-top:18px;font-size:12px;color:rgba(255,255,255,0.4)}
+.admin-link a{color:rgba(37,193,172,0.7);text-decoration:none}
+.admin-link a:hover{color:#25C1AC}
+</style></head><body>
+<div class="wrap">
+  <div class="brand">
+    <div class="brand-logo">V</div>
+    <h1>VRTSync</h1>
+    <p>Field Operations Platform</p>
+  </div>
+  <div class="box">
+    <h2>Welcome back</h2>
+    <p class="sub">Sign in to your VRTSync portal</p>
+    <div class="err" id="err"></div>
+    <div class="fg"><label>Username</label><input type="text" id="u" autofocus placeholder="Enter your username" /></div>
+    <div class="fg"><label>Password</label><input type="password" id="p" placeholder="Enter your password" /></div>
+    <button class="btn" id="btn">Sign In</button>
+  </div>
+  <p class="admin-link">Super Admin? <a href="/web/admin/login">Admin Hub →</a></p>
+</div>
+<script>
+const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard'};
+document.getElementById('btn').addEventListener('click',doLogin);
+document.getElementById('p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+async function doLogin(){
+  const u=document.getElementById('u').value.trim();
+  const p=document.getElementById('p').value;
+  const err=document.getElementById('err');
+  const btn=document.getElementById('btn');
+  err.style.display='none';
+  if(!u||!p){err.textContent='Please enter your username and password';err.style.display='block';return}
+  btn.disabled=true;btn.textContent='Signing in…';
+  try{
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:u,password:p})});
+    if(!r.ok){const d=await r.json().catch(()=>({}));err.textContent=d.message||'Login failed. Check your credentials.';err.style.display='block';btn.disabled=false;btn.textContent='Sign In';return}
+    const me=await fetch('/api/auth/me',{credentials:'same-origin'}).then(r=>r.json());
+    const dest=roleMap[me.user?.role];
+    if(!dest){err.textContent='Your account does not have portal access. Contact your administrator.';err.style.display='block';await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'});btn.disabled=false;btn.textContent='Sign In';return}
+    window.location.href=dest;
+  }catch(e){err.textContent='Network error. Please try again.';err.style.display='block';btn.disabled=false;btn.textContent='Sign In'}
+}
+</script></body></html>`;
+
+  app.get("/web/login", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(loginHtml);
+  });
+
+  /* ── Catch-all redirects for bare /web/* paths ───────────────────────── */
+  app.get("/web", (_req: Request, res: Response) => res.redirect("/web/login"));
+  app.get("/web/contractor", (_req: Request, res: Response) => res.redirect("/web/contractor/dashboard"));
+  app.get("/web/hoa",        (_req: Request, res: Response) => res.redirect("/web/hoa/dashboard"));
+  app.get("/web/pm",         (_req: Request, res: Response) => res.redirect("/web/pm/dashboard"));
+
+  /* ── Portal shell routes ─────────────────────────────────────────────── */
+  app.get(/^\/web\/contractor\/.*$/, (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(contractorShell);
+  });
+
+  app.get(/^\/web\/hoa\/.*$/, (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(hoaShell);
+  });
+
+  app.get(/^\/web\/pm\/.*$/, (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(pmShell);
+  });
+
+  log("Portal hub configured at /web/contractor, /web/hoa, /web/pm");
+}
+
 function setupErrorHandler(app: express.Application) {
   app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
     const error = err as {
@@ -317,6 +422,7 @@ function setupErrorHandler(app: express.Application) {
 
   configureExpoAndLanding(app);
   configureAdminHub(app);
+  configurePortalHub(app);
 
   const server = await registerRoutes(app);
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VRTSync — HOA Portal</title>
+  <link rel="stylesheet" href="/admin-static/admin.css">
+  <link rel="stylesheet" href="/portal-static/portal-ext.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    window.PORTAL_CONFIG = {
+      base:         '/web/hoa',
+      allowedRoles: ['hoa_admin', 'hoa_member'],
+      label:        'HOA Portal'
+    };
+  </script>
+</head>
+<body>
+  <div id="app">
+
+    <nav id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">V</div>
+        <div>
+          <span class="brand-text">VRTSync</span>
+          <span class="brand-sub" id="brand-sub">HOA Portal</span>
+        </div>
+      </div>
+      <ul class="nav-links" id="nav-links">
+        <!-- Rendered by portal.js -->
+      </ul>
+      <div class="sidebar-footer">&copy; VRTSync</div>
+    </nav>
+
+    <main id="main-content">
+      <header id="topbar">
+        <div class="topbar-left">
+          <div id="community-area"></div>
+        </div>
+        <div class="topbar-right">
+          <button class="topbar-icon-btn btn-primary-icon" id="global-add-btn" title="Submit a request" disabled>
+            <span style="font-size:20px;font-weight:300;line-height:1;margin-top:-1px;">+</span>
+          </button>
+          <button class="topbar-icon-btn" id="notif-btn" title="Notifications" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 01-3.46 0"/>
+            </svg>
+            <span class="notif-dot" id="notif-dot"></span>
+          </button>
+          <div class="topbar-divider"></div>
+          <div class="user-profile-chip">
+            <div class="user-avatar" id="user-avatar">?</div>
+            <div>
+              <div class="user-name" id="user-display"></div>
+              <div class="user-role-tag" id="user-role-tag">HOA</div>
+            </div>
+          </div>
+          <button id="logout-btn" class="btn btn-ghost btn-sm">Logout</button>
+        </div>
+      </header>
+      <div id="page-content">
+        <div class="loading-spinner">Loading...</div>
+      </div>
+    </main>
+
+  </div>
+  <div id="toast-container"></div>
+
+  <script src="/portal-static/portal-api.js"></script>
+  <script src="/portal-static/portal-router.js"></script>
+  <script src="/portal-static/pages/dashboard.js"></script>
+  <script src="/portal-static/portal.js"></script>
+</body>
+</html>

@@ -1,8 +1,15 @@
-window.PortalRouter = (function() {
+/* VRTSync Portal Router
+ * Reads window.PORTAL_CONFIG.base to determine the URL base path.
+ * Identical pattern to admin router.js — just configurable per portal.
+ */
+window.PortalRouter = (function () {
   const routes = {};
   let currentRoute = null;
   let currentParams = {};
-  const BASE = '/web/portal';
+
+  function getBase() {
+    return (window.PORTAL_CONFIG && window.PORTAL_CONFIG.base) || '/web/portal';
+  }
 
   function register(name, renderFn) {
     routes[name] = renderFn;
@@ -10,7 +17,8 @@ window.PortalRouter = (function() {
 
   function navigate(routeName, pushState = true, params = {}) {
     currentParams = params;
-    let path = BASE + '/' + routeName;
+    const base = getBase();
+    let path = base + '/' + routeName;
     if (params.id) {
       path += '/' + params.id;
       if (params.tab) path += '/' + params.tab;
@@ -25,8 +33,9 @@ window.PortalRouter = (function() {
     currentRoute = routeName;
     currentParams = params || {};
     const container = document.getElementById('page-content');
+    if (!container) return;
 
-    document.querySelectorAll('.nav-link').forEach(link => {
+    document.querySelectorAll('.nav-link[data-route]').forEach(link => {
       link.classList.toggle('active', link.dataset.route === routeName);
     });
 
@@ -36,11 +45,23 @@ window.PortalRouter = (function() {
         routes[routeName](container, currentParams);
       } catch (err) {
         console.error('Page render error:', err);
-        container.innerHTML = `<div class="empty-state"><p>Error loading page</p></div>`;
+        container.innerHTML = `<div class="empty-state"><p>Error loading page. Please refresh.</p></div>`;
       }
     } else {
-      container.innerHTML = `<div class="empty-state"><p>Page not found: ${routeName}</p></div>`;
+      /* Generic coming-soon placeholder for unbuilt pages */
+      container.innerHTML = `
+        <div class="page-header"><h1>${capitalize(routeName.replace(/-/g, ' '))}</h1></div>
+        <div class="empty-state" style="margin-top:60px;">
+          <div style="font-size:40px;margin-bottom:16px;">🏗️</div>
+          <h3 style="color:var(--navy);margin-bottom:8px;">Coming Soon</h3>
+          <p style="color:var(--gray-500);">This section is being built.</p>
+        </div>
+      `;
     }
+  }
+
+  function capitalize(str) {
+    return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
   function getCurrentRoute() { return currentRoute; }
@@ -65,18 +86,20 @@ window.PortalRouter = (function() {
   }
 
   function parseRoute() {
+    const base = getBase();
     const path = window.location.pathname;
-    const match = path.match(/\/web\/portal\/?(.*)$/);
+    const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = path.match(new RegExp(escaped + '\\/?(.*)$'));
     const rest = (match && match[1]) || 'dashboard';
     const parts = rest.split('/').filter(Boolean);
 
-    if (!parts.length || parts[0] === '') return { route: 'dashboard', params: {} };
+    if (!parts.length) return { route: 'dashboard', params: {} };
 
     if (parts[1]) {
       return { route: parts[0], params: { id: parts[1], tab: parts[2] || 'overview' } };
     }
 
-    return { route: parts[0], params: {} };
+    return { route: parts[0] || 'dashboard', params: {} };
   }
 
   function getRouteFromPath() {

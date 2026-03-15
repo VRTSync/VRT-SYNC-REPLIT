@@ -12,7 +12,27 @@ Preferred communication style: Simple, everyday language.
 The project is organized as a monorepo with `app/` for the Expo React Native application, `server/` for the Express.js API, and `shared/` for common code including Drizzle ORM schema definitions and Zod validation.
 
 ### Authentication & Authorization
-The system uses session-based authentication with `express-session` and a PostgreSQL store. Passwords are `bcryptjs` hashed. Four roles exist: `admin`, `contractor`, `hoa_admin`, and `hoa_member`. Middleware enforces access control based on roles and HOA community scoping. HOA users are limited to a single community. Client-side authentication and routing are managed by React Query and Expo Router, with continuous enforcement of stack routing based on user roles.
+The system uses session-based authentication with `express-session` and a PostgreSQL store. Passwords are `bcryptjs` hashed. Five roles exist: `admin`, `property_manager`, `contractor`, `hoa_admin`, and `hoa_member`. Middleware enforces access control based on roles and HOA community scoping. HOA users are limited to a single community. Client-side authentication and routing are managed by React Query and Expo Router, with continuous enforcement of stack routing based on user roles.
+
+### Web Portal Architecture (VRTSync Portal)
+The web portal expands the existing admin portal into a multi-role SPA platform. All portals share the same design system, API layer, router pattern, and session authentication.
+
+**Entry points:**
+- `/web/login` — Unified login for all non-admin roles; detects role via `GET /api/auth/me` and redirects to the correct shell
+- `/web/admin/*` — Super Admin Hub (existing, unchanged)
+- `/web/contractor/*` — Contractor Portal shell
+- `/web/hoa/*` — HOA Admin / HOA Member Portal shell
+- `/web/pm/*` — Property Manager Portal shell
+
+**Shared static assets:**
+- `/admin-static/*` → `server/public/admin/` — design system CSS (`admin.css`), admin-specific JS
+- `/portal-static/*` → `server/public/portal/` — shared portal JS (`portal-api.js`, `portal-router.js`, `portal.js`, `portal-ext.css`) and portal page modules (`pages/`)
+
+**Shell templates:** `server/templates/contractor-shell.html`, `hoa-shell.html`, `pm-shell.html` — each sets `window.PORTAL_CONFIG = { base, allowedRoles, label }` before loading the shared `portal.js` bootstrap.
+
+**Bootstrap flow:** `portal.js` reads `PORTAL_CONFIG`, validates role, fetches communities, renders role-appropriate sidebar nav, community picker (or fixed label for HOA), notification bell placeholder, global "+" button placeholder, and user profile chip. Unregistered routes show a "Coming Soon" placeholder automatically via the router.
+
+**Page registration:** Each page module registers itself with `PortalRouter.register('route-name', fn)`. Page scripts are loaded in the shell template's `<script>` tags. `PortalState` provides `getUser()`, `getActiveCommunity()`, `getCommunities()`, and `setActiveCommunity()` to all page modules.
 
 ### Data Model
 The PostgreSQL database, managed with Drizzle ORM, includes tables for Users, Communities, Tasks, Task Completions, Attachments, Assets, Task Templates, Offline Packs, Task Schedules, Service Schedules, Service Visits, and Asset Notes. Key features include:
