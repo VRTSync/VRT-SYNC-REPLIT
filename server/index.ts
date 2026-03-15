@@ -300,67 +300,109 @@ function configurePortalHub(app: express.Application) {
   const loginHtml = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>VRTSync — Sign In</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="https://vrtsync.com/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;background:linear-gradient(160deg,#06101c 0%,#0C1D31 40%,#132a45 100%);display:flex;align-items:center;justify-content:center;min-height:100vh;color:#fff;-webkit-font-smoothing:antialiased}
-body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(37,193,172,0.08) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(37,193,172,0.05) 0%,transparent 50%);pointer-events:none}
-.wrap{position:relative;z-index:1;width:100%;max-width:420px;padding:20px}
-.brand{text-align:center;margin-bottom:32px}
-.brand-logo{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;background:linear-gradient(135deg,#25C1AC,#1da393);border-radius:16px;font-size:26px;font-weight:800;color:#fff;margin-bottom:16px;box-shadow:0 4px 20px rgba(37,193,172,0.4);letter-spacing:-1px}
-.brand h1{font-size:28px;font-weight:700;letter-spacing:0.5px;margin-bottom:4px}
-.brand p{font-size:12px;color:rgba(37,193,172,0.6);text-transform:uppercase;letter-spacing:2px;font-weight:600}
-.box{background:rgba(255,255,255,0.97);border-radius:20px;padding:36px;color:#1f2937;box-shadow:0 20px 60px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.05)}
-.box h2{font-size:18px;margin-bottom:4px;color:#0C1D31;font-weight:700}
-.sub{font-size:14px;color:#6b7280;margin-bottom:24px}
-.fg{margin-bottom:16px}
-.fg label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;color:#374151}
-.fg input{width:100%;padding:12px 16px;border:1px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;background:#f9fafb;transition:all .2s;color:#1f2937}
-.fg input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.15);background:#fff}
-.btn{width:100%;padding:12px;background:linear-gradient(135deg,#25C1AC,#1da393);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s;box-shadow:0 2px 8px rgba(37,193,172,0.3);margin-top:8px}
-.btn:hover{background:linear-gradient(135deg,#1da393,#189985);box-shadow:0 4px 16px rgba(37,193,172,0.4);transform:translateY(-1px)}
-.btn:disabled{opacity:.6;cursor:not-allowed;transform:none}
-.err{color:#ef4444;font-size:13px;margin-bottom:12px;display:none;background:rgba(239,68,68,0.08);padding:8px 12px;border-radius:8px;border:1px solid rgba(239,68,68,0.2)}
-.admin-link{text-align:center;margin-top:18px;font-size:12px;color:rgba(255,255,255,0.4)}
-.admin-link a{color:rgba(37,193,172,0.7);text-decoration:none}
-.admin-link a:hover{color:#25C1AC}
+html,body{height:100%}
+body{font-family:'Inter',sans-serif;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;color:#0C1D31;-webkit-font-smoothing:antialiased;overflow:hidden;position:relative}
+.topo{position:fixed;pointer-events:none;z-index:0;width:520px;height:520px;background-image:url('/portal-static/topography.png');background-size:cover;background-repeat:no-repeat;opacity:0.12;filter:invert(1) sepia(1) saturate(3) hue-rotate(130deg) brightness(1.1)}
+.topo--left{bottom:-80px;left:-80px;transform:rotate(15deg)}
+.topo--right{top:-80px;right:-80px;transform:rotate(-20deg)}
+.page{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;width:100%;padding:40px 20px 20px}
+.brand{text-align:center;margin-bottom:40px}
+.brand img{height:48px;margin-bottom:0}
+.card{background:rgba(230,248,245,0.55);border-radius:16px;padding:40px 44px;width:100%;max-width:440px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.card h2{font-family:'Outfit',sans-serif;font-size:28px;font-weight:700;color:#0C1D31;margin-bottom:6px;text-align:center}
+.tagline{text-align:center;font-size:13px;font-weight:600;letter-spacing:3px;color:#25C1AC;text-transform:uppercase;margin-bottom:28px}
+.fg{margin-bottom:18px}
+.fg label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:#374151}
+.input-wrap{position:relative}
+.input-wrap .icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#9ca3af;pointer-events:none;display:flex;align-items:center}
+.input-wrap .icon svg{width:18px;height:18px}
+.input-wrap input{width:100%;padding:13px 14px 13px 42px;border:1px solid #d1d5db;border-radius:10px;font-size:14px;font-family:'Inter',sans-serif;background:#fff;transition:border-color .2s,box-shadow .2s;color:#1f2937}
+.input-wrap input:focus{outline:none;border-color:#25C1AC;box-shadow:0 0 0 3px rgba(37,193,172,0.12)}
+.input-wrap input::placeholder{color:#9ca3af}
+.toggle-pw{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#9ca3af;display:flex;align-items:center;padding:0}
+.toggle-pw:hover{color:#6b7280}
+.toggle-pw svg{width:20px;height:20px}
+.btn{width:100%;padding:13px;background:#25C1AC;color:#fff;border:none;border-radius:9999px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s,box-shadow .2s,transform .15s;box-shadow:0 4px 14px rgba(37,193,172,0.25);margin-top:6px}
+.btn:hover{background:#1fb89e;box-shadow:0 6px 20px rgba(37,193,172,0.35);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.err{color:#dc2626;font-size:13px;margin-bottom:14px;display:none;background:rgba(220,38,38,0.06);padding:10px 14px;border-radius:10px;border:1px solid rgba(220,38,38,0.15);line-height:1.4}
+.forgot{text-align:center;margin-top:18px;font-size:14px;color:#6b7280}
+.forgot a{color:#0C1D31;text-decoration:none;font-weight:500}
+.forgot a:hover{text-decoration:underline}
+footer{position:relative;z-index:1;padding:20px;text-align:center;font-size:12px;color:#9ca3af}
+@media(max-width:520px){
+  .card{padding:32px 24px;margin:0 8px}
+  .topo{width:300px;height:300px;opacity:0.08}
+}
 </style></head><body>
-<div class="wrap">
+<div class="topo topo--left"></div>
+<div class="topo topo--right"></div>
+<div class="page">
   <div class="brand">
-    <div class="brand-logo">V</div>
-    <h1>VRTSync</h1>
-    <p>Field Operations Platform</p>
+    <img src="https://vrtsync.com/assets/FINAL-02_1768843649073-eIfol9Dz.png" alt="VRTSync" />
   </div>
-  <div class="box">
-    <h2>Welcome back</h2>
-    <p class="sub">Sign in to your VRTSync portal</p>
+  <div class="card">
+    <h2>Log In</h2>
+    <p class="tagline">DATA. MAPPED. SYNCED.</p>
     <div class="err" id="err"></div>
-    <div class="fg"><label>Username</label><input type="text" id="u" autofocus placeholder="Enter your username" /></div>
-    <div class="fg"><label>Password</label><input type="password" id="p" placeholder="Enter your password" /></div>
-    <button class="btn" id="btn">Sign In</button>
+    <div class="fg">
+      <label>Email</label>
+      <div class="input-wrap">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M22 7l-10 6L2 7"/></svg></span>
+        <input type="text" id="u" autofocus placeholder="Email" />
+      </div>
+    </div>
+    <div class="fg">
+      <label>Password</label>
+      <div class="input-wrap">
+        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <input type="password" id="p" placeholder="Password" />
+        <button type="button" class="toggle-pw" id="togglePw" tabindex="-1" aria-label="Toggle password visibility">
+          <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="btn" id="btn">Log in</button>
+    <p class="forgot"><a href="#">Forgot your password?</a></p>
   </div>
-  <p class="admin-link">Super Admin? <a href="/web/admin/login">Admin Hub →</a></p>
 </div>
+<footer>&copy; 2026 VRTSync</footer>
 <script>
 const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard'};
 document.getElementById('btn').addEventListener('click',doLogin);
+document.getElementById('u').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('p').focus()}});
 document.getElementById('p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
+document.getElementById('togglePw').addEventListener('click',function(){
+  const p=document.getElementById('p');
+  const isHidden=p.type==='password';
+  p.type=isHidden?'text':'password';
+  document.getElementById('eyeOpen').style.display=isHidden?'none':'block';
+  document.getElementById('eyeClosed').style.display=isHidden?'block':'none';
+});
 async function doLogin(){
   const u=document.getElementById('u').value.trim();
   const p=document.getElementById('p').value;
   const err=document.getElementById('err');
   const btn=document.getElementById('btn');
   err.style.display='none';
-  if(!u||!p){err.textContent='Please enter your username and password';err.style.display='block';return}
-  btn.disabled=true;btn.textContent='Signing in…';
+  if(!u||!p){err.textContent='Please enter your email and password.';err.style.display='block';return}
+  btn.disabled=true;btn.textContent='Signing in\\u2026';
   try{
     const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({username:u,password:p})});
-    if(!r.ok){const d=await r.json().catch(()=>({}));err.textContent=d.message||'Login failed. Check your credentials.';err.style.display='block';btn.disabled=false;btn.textContent='Sign In';return}
+    if(!r.ok){const d=await r.json().catch(()=>({}));err.textContent=d.message||'Login failed. Check your credentials.';err.style.display='block';btn.disabled=false;btn.textContent='Log in';return}
     const me=await fetch('/api/auth/me',{credentials:'same-origin'}).then(r=>r.json());
     const dest=roleMap[me.user?.role];
-    if(!dest){err.textContent='Your account does not have portal access. Contact your administrator.';err.style.display='block';await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'});btn.disabled=false;btn.textContent='Sign In';return}
+    if(!dest){err.textContent='Your account does not have portal access. Contact your administrator.';err.style.display='block';await fetch('/api/auth/logout',{method:'POST',credentials:'same-origin'});btn.disabled=false;btn.textContent='Log in';return}
     window.location.href=dest;
-  }catch(e){err.textContent='Network error. Please try again.';err.style.display='block';btn.disabled=false;btn.textContent='Sign In'}
+  }catch(e){err.textContent='Network error. Please try again.';err.style.display='block';btn.disabled=false;btn.textContent='Log in'}
 }
 </script></body></html>`;
 
