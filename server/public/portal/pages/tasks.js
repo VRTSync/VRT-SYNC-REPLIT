@@ -29,20 +29,32 @@ PortalRouter.register('tasks', async function (container) {
   }
 
   var isContractor = role === 'contractor';
-  var tabs = isContractor
-    ? [
-        { key: 'active',    label: 'Active' },
-        { key: 'overdue',   label: 'Overdue' },
-        { key: 'upcoming',  label: 'Upcoming' },
-        { key: 'completed', label: 'Completed' }
-      ]
-    : [
-        { key: 'all',       label: 'All' },
-        { key: 'active',    label: 'Active' },
-        { key: 'completed', label: 'Completed' }
-      ];
-
-  var activeTab = isContractor ? 'active' : 'all';
+  var isHoa = role === 'hoa_admin' || role === 'hoa_member';
+  var tabs;
+  var activeTab;
+  if (isContractor) {
+    tabs = [
+      { key: 'active',    label: 'Active' },
+      { key: 'overdue',   label: 'Overdue' },
+      { key: 'upcoming',  label: 'Upcoming' },
+      { key: 'completed', label: 'Completed' }
+    ];
+    activeTab = 'active';
+  } else if (isHoa) {
+    tabs = [
+      { key: 'open',        label: 'Open' },
+      { key: 'in_progress', label: 'In Progress' },
+      { key: 'completed',   label: 'Completed' }
+    ];
+    activeTab = 'open';
+  } else {
+    tabs = [
+      { key: 'all',       label: 'All' },
+      { key: 'active',    label: 'Active' },
+      { key: 'completed', label: 'Completed' }
+    ];
+    activeTab = 'all';
+  }
 
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
@@ -69,6 +81,8 @@ PortalRouter.register('tasks', async function (container) {
       if (tab === 'overdue') return cls === 'overdue';
       if (tab === 'upcoming') return cls === 'upcoming';
       if (tab === 'completed') return cls === 'completed';
+      if (tab === 'open') return t.status !== 'completed' && t.status !== 'in_progress';
+      if (tab === 'in_progress') return t.status === 'in_progress';
       return true;
     });
   }

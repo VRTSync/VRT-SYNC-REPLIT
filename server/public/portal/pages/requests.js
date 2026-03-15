@@ -31,6 +31,18 @@ PortalRouter.register('requests', async function (container) {
 
   var activeFilter = 'all';
 
+  var contractors = [];
+  if (isAdmin) {
+    try {
+      var members = await PortalAPI.apiFetch('/api/communities/' + community.id + '/members');
+      if (Array.isArray(members)) {
+        contractors = members.filter(function (m) {
+          return m.user && (m.user.role === 'contractor' || m.user.role === 'admin');
+        });
+      }
+    } catch (e) { /* optional field — OK if it fails */ }
+  }
+
   container.innerHTML = renderPage();
   renderList();
   wireEvents();
@@ -51,6 +63,12 @@ PortalRouter.register('requests', async function (container) {
   }
 
   function renderForm() {
+    var contractorOpts = '<option value="">— None (unassigned) —</option>';
+    contractors.forEach(function (m) {
+      var name = m.user.displayName || m.user.username || m.userId;
+      contractorOpts += '<option value="' + M.esc(m.userId) + '">' + M.esc(name) + '</option>';
+    });
+
     return '<div class="req-form-overlay" id="req-form-overlay" style="display:none">'
       + '<div class="req-form-card">'
       + '  <div class="req-form-header">'
@@ -72,6 +90,9 @@ PortalRouter.register('requests', async function (container) {
       + '        <option value="Other">Other</option>'
       + '      </select>'
       + '    </div>'
+      + '  </div>'
+      + '  <div class="cf-group"><label class="cf-label">Assign to Contractor</label>'
+      + '    <select class="cf-input" id="req-assigned">' + contractorOpts + '</select>'
       + '  </div>'
       + '  <div class="cf-actions">'
       + '    <button class="btn btn-ghost btn-sm" id="req-cancel">Cancel</button>'
@@ -137,6 +158,7 @@ PortalRouter.register('requests', async function (container) {
       overlay.querySelector('#req-desc').value = '';
       overlay.querySelector('#req-priority').value = 'Normal';
       overlay.querySelector('#req-category').value = '';
+      overlay.querySelector('#req-assigned').value = '';
     }
 
     if (closeBtn) closeBtn.addEventListener('click', hideForm);
@@ -157,7 +179,8 @@ PortalRouter.register('requests', async function (container) {
           title: title,
           description: overlay.querySelector('#req-desc').value.trim() || undefined,
           priority: overlay.querySelector('#req-priority').value,
-          category: overlay.querySelector('#req-category').value || undefined
+          category: overlay.querySelector('#req-category').value || undefined,
+          assignedTo: overlay.querySelector('#req-assigned').value || undefined
         };
 
         submitBtn.disabled = true;

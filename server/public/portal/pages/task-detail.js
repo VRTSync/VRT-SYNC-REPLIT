@@ -56,14 +56,20 @@
     var actionsHtml = '';
     if (isContractor && task.status !== 'completed') {
       var btns = '';
-      if (isHoa && task.status === 'submitted') {
-        btns += '<button class="td-action-btn td-btn-ack" data-action="acknowledge">Acknowledge</button>';
-      }
-      if (task.status === 'pending' || task.status === 'acknowledged' || task.status === 'submitted') {
-        btns += '<button class="td-action-btn td-btn-progress" data-action="in_progress">Mark In Progress</button>';
-      }
-      if (task.status === 'in_progress') {
-        btns += '<button class="td-action-btn td-btn-complete" data-action="complete">Complete Task</button>';
+      if (isHoa) {
+        if (task.status === 'submitted') {
+          btns += '<button class="td-action-btn td-btn-ack" data-action="acknowledge">Acknowledge</button>';
+        }
+        if (task.status === 'acknowledged') {
+          btns += '<button class="td-action-btn td-btn-complete" data-action="complete">Complete Task</button>';
+        }
+      } else {
+        if (task.status === 'pending' || task.status === 'acknowledged') {
+          btns += '<button class="td-action-btn td-btn-progress" data-action="in_progress">Mark In Progress</button>';
+        }
+        if (task.status === 'in_progress') {
+          btns += '<button class="td-action-btn td-btn-complete" data-action="complete">Complete Task</button>';
+        }
       }
       if (btns) actionsHtml = '<div class="td-actions">' + btns + '</div>';
     }
@@ -95,6 +101,7 @@
       + '<div class="td-section"><h4 class="td-section-title">Details</h4>'
       + (window ? '<div class="td-field"><span class="td-label">Window</span><span class="td-value">' + window + '</span></div>' : '')
       + (task.category ? '<div class="td-field"><span class="td-label">Category</span><span class="td-value">' + M.esc(task.category) + '</span></div>' : '')
+      + (task.assignedToName || task.assignedTo ? '<div class="td-field"><span class="td-label">Assigned to</span><span class="td-value">' + M.esc(task.assignedToName || task.assignedTo) + '</span></div>' : '')
       + (task.address ? '<div class="td-field"><span class="td-label">Address</span><span class="td-value">' + M.esc(task.address) + '</span></div>' : '')
       + '<div class="td-field"><span class="td-label">Created</span><span class="td-value">' + new Date(task.createdAt).toLocaleDateString() + '</span></div>'
       + '</div>'
