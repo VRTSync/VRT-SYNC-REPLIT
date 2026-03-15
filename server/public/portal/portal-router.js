@@ -42,7 +42,10 @@ window.PortalRouter = (function () {
     if (routes[routeName]) {
       container.innerHTML = '<div class="loading-spinner">Loading...</div>';
       try {
-        routes[routeName](container, currentParams);
+        Promise.resolve(routes[routeName](container, currentParams)).catch(err => {
+          console.error('Page render error (async):', err);
+          container.innerHTML = `<div class="empty-state"><p>Error loading page. Please refresh.</p></div>`;
+        });
       } catch (err) {
         console.error('Page render error:', err);
         container.innerHTML = `<div class="empty-state"><p>Error loading page. Please refresh.</p></div>`;

@@ -53,6 +53,13 @@
     getUser:            () => currentUser,
     getCommunities:     () => communities,
     getActiveCommunity: () => activeCommunity,
+    getCommunityContext: () => ({
+      user: currentUser,
+      role: currentUser ? currentUser.role : null,
+      communities,
+      activeCommunity,
+      isMultiCommunityUser: communities.length > 1,
+    }),
     setActiveCommunity,
     refreshCommunities,
     isHoaRole:    () => currentUser && (currentUser.role === 'hoa_admin' || currentUser.role === 'hoa_member'),
@@ -89,11 +96,22 @@
       /* Load communities */
       await refreshCommunities();
 
-      /* HOA users locked to their community; others default to first */
+      /* Resolve active community:
+       *  1. HOA users → always their assigned community
+       *  2. Others → try localStorage, then auto-pick if single, else null (→ selector) */
+      const _lsKey = 'vrtsync_community_' + currentUser.id;
       if (currentUser.hoaCommunityId) {
         activeCommunity = communities.find(c => c.id === currentUser.hoaCommunityId) || communities[0] || null;
       } else {
-        activeCommunity = communities[0] || null;
+        const savedId = localStorage.getItem(_lsKey);
+        const savedMatch = savedId && communities.find(c => c.id === savedId);
+        if (savedMatch) {
+          activeCommunity = savedMatch;
+        } else if (communities.length === 1) {
+          activeCommunity = communities[0];
+        } else {
+          activeCommunity = null; /* multi-community user — needs to select */
+        }
       }
 
       /* Render topbar */
@@ -105,10 +123,19 @@
         window.location.href = '/web/login';
       });
 
-      /* Init router and navigate to the current path */
+      /* Init router, then direct to appropriate starting route */
       PortalRouter.init();
-      const parsed = PortalRouter.parseRoute();
-      PortalRouter.navigate(parsed.route, false, parsed.params);
+      if (!activeCommunity && communities.length > 1) {
+        /* Multi-community user with no saved selection → go to selector */
+        PortalRouter.navigate('communities', false);
+      } else {
+        const parsed = PortalRouter.parseRoute();
+        /* Avoid sending single-community users to the selector */
+        const startRoute = parsed.route === 'communities' && communities.length <= 1
+          ? 'dashboard'
+          : parsed.route;
+        PortalRouter.navigate(startRoute, false, parsed.params);
+      }
 
     } catch (err) {
       console.error('Portal bootstrap failed:', err);
@@ -195,6 +222,13 @@
   /* ─── Community switching ────────────────────────────────────────────────── */
   function setActiveCommunity(communityId) {
     activeCommunity = communities.find(c => c.id === communityId) || activeCommunity;
+    /* Persist selection */
+    if (currentUser && activeCommunity) {
+      localStorage.setItem('vrtsync_community_' + currentUser.id, activeCommunity.id);
+    }
+    /* Re-render topbar community area */
+    renderTopbar();
+    /* Re-render current page with new context */
     const route = PortalRouter.getCurrentRoute();
     if (route) PortalRouter.render(route, PortalRouter.getParams());
   }
