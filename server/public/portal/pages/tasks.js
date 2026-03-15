@@ -56,11 +56,31 @@ PortalRouter.register('tasks', async function (container) {
     activeTab = 'all';
   }
 
+  var priorityFilter = 'all';
+  var isPM = role === 'property_manager';
+
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
   wireEvents(container, tabs, tasks, isContractor);
 
   function renderPage(tabs, current) {
+    var priorityBar = '';
+    if (isPM) {
+      var pTabs = [
+        { key: 'all', label: 'All Priorities' },
+        { key: 'urgent', label: 'Urgent' },
+        { key: 'high', label: 'High' },
+        { key: 'medium', label: 'Medium' },
+        { key: 'low', label: 'Low' }
+      ];
+      priorityBar = '<div class="tf-bar" style="margin-top:8px" id="priority-bar">'
+        + pTabs.map(function (p) {
+            return '<button class="tf-tab tf-tab--sm' + (p.key === priorityFilter ? ' tf-tab--active' : '') + '" data-priority="' + p.key + '">'
+              + M.esc(p.label) + '</button>';
+          }).join('')
+        + '</div>';
+    }
+
     return M.pageHeader('Tasks', community)
       + '<div class="tf-bar">'
       + tabs.map(function (t) {
@@ -68,23 +88,30 @@ PortalRouter.register('tasks', async function (container) {
             + M.esc(t.label) + '</button>';
         }).join('')
       + '</div>'
+      + priorityBar
       + '<div class="portal-module" style="margin-top:16px">'
       + '  <div class="pm-body pm-body--list" id="tasks-list"></div>'
       + '</div>';
   }
 
   function filterTasks(tasks, tab, isContractor) {
-    if (tab === 'all') return tasks;
-    return tasks.filter(function (t) {
-      var cls = M.classifyTask(t);
-      if (tab === 'active') return cls === 'active' || cls === 'other';
-      if (tab === 'overdue') return cls === 'overdue';
-      if (tab === 'upcoming') return cls === 'upcoming';
-      if (tab === 'completed') return cls === 'completed';
-      if (tab === 'open') return t.status !== 'completed' && t.status !== 'in_progress';
-      if (tab === 'in_progress') return t.status === 'in_progress';
-      return true;
-    });
+    var result = tasks;
+    if (tab !== 'all') {
+      result = result.filter(function (t) {
+        var cls = M.classifyTask(t);
+        if (tab === 'active') return cls === 'active' || cls === 'other';
+        if (tab === 'overdue') return cls === 'overdue';
+        if (tab === 'upcoming') return cls === 'upcoming';
+        if (tab === 'completed') return cls === 'completed';
+        if (tab === 'open') return t.status !== 'completed' && t.status !== 'in_progress';
+        if (tab === 'in_progress') return t.status === 'in_progress';
+        return true;
+      });
+    }
+    if (priorityFilter !== 'all') {
+      result = result.filter(function (t) { return t.priority === priorityFilter; });
+    }
+    return result;
   }
 
   function renderList(container, tasks, tab, isContractor) {
@@ -106,10 +133,18 @@ PortalRouter.register('tasks', async function (container) {
   }
 
   function wireEvents(container, tabs, tasks, isContractor) {
-    container.querySelectorAll('.tf-tab').forEach(function (btn) {
+    container.querySelectorAll('.tf-tab[data-tab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         activeTab = btn.dataset.tab;
-        container.querySelectorAll('.tf-tab').forEach(function (b) { b.classList.remove('tf-tab--active'); });
+        container.querySelectorAll('.tf-tab[data-tab]').forEach(function (b) { b.classList.remove('tf-tab--active'); });
+        btn.classList.add('tf-tab--active');
+        renderList(container, tasks, activeTab, isContractor);
+      });
+    });
+    container.querySelectorAll('.tf-tab[data-priority]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        priorityFilter = btn.dataset.priority;
+        container.querySelectorAll('.tf-tab[data-priority]').forEach(function (b) { b.classList.remove('tf-tab--active'); });
         btn.classList.add('tf-tab--active');
         renderList(container, tasks, activeTab, isContractor);
       });

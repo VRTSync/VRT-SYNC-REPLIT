@@ -324,13 +324,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json(tasks);
       }
 
-      if (user.role === "admin") {
+      if (user.role === "admin" || user.role === "property_manager") {
         if (communityId) {
+          if (user.role === "property_manager") {
+            const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+            if (!isMember) {
+              return res.status(403).json({ error: "You are not a member of this community" });
+            }
+          }
           const allTasks = await storage.getTasksByCommunity(communityId);
           return res.json(allTasks);
         }
-        const allTasks = await storage.getAllTasks();
-        return res.json(allTasks);
+        if (user.role === "admin") {
+          const allTasks = await storage.getAllTasks();
+          return res.json(allTasks);
+        }
+        return res.json([]);
       }
 
       if (communityId) {

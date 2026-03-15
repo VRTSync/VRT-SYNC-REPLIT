@@ -640,6 +640,11 @@
   color: white;
 }
 
+.tf-tab--sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
 .tf-tab--accent {
   background: var(--teal);
   border-color: var(--teal);
