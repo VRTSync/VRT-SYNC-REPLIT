@@ -376,6 +376,29 @@
     showZones: function(show) {
       if (show) { if (!map.hasLayer(zoneClusterGroup)) map.addLayer(zoneClusterGroup); }
       else { if (map.hasLayer(zoneClusterGroup)) map.removeLayer(zoneClusterGroup); }
+    },
+
+    setCommunityOutline: function(geojson) {
+      if (this._outlineLayer) {
+        map.removeLayer(this._outlineLayer);
+        this._outlineLayer = null;
+      }
+      if (!geojson) return;
+      this._outlineLayer = L.geoJSON(geojson, {
+        style: function() {
+          return {
+            color: '#0C1D31',
+            weight: 3,
+            fillColor: '#0C1D31',
+            fillOpacity: 0.08,
+            opacity: 0.9,
+            dashArray: null
+          };
+        },
+        interactive: false
+      });
+      this._outlineLayer.addTo(map);
+      this._outlineLayer.bringToBack();
     }
   };
 

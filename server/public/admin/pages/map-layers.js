@@ -24,6 +24,7 @@ window._renderMapLayers = async function(container, communityId) {
         <button class="btn btn-secondary btn-sm" id="add-layer-btn">+ Manual Entry</button>
       </div>
     </div>
+    <div id="outline-section"></div>
     <div id="layer-tree"></div>
   `;
 
@@ -31,6 +32,273 @@ window._renderMapLayers = async function(container, communityId) {
   document.getElementById('add-layer-btn').addEventListener('click', () => showLayerModal());
   document.getElementById('upload-irrigation-btn').addEventListener('click', () => showIrrigationUploadModal());
   await loadLayers();
+  await loadOutlineSection();
+
+  async function loadOutlineSection() {
+    const sectionEl = document.getElementById('outline-section');
+    if (!sectionEl) return;
+    try {
+      const layers = await apiFetch(`/api/map-layers?communityId=${communityId}&layerKey=outline`);
+      const outline = layers.find(l => l.subLayerKey === 'community_boundary');
+      let featureCount = 0;
+      if (outline) {
+        try {
+          const summary = await apiFetch(`/api/map-layers/${outline.id}/summary`);
+          featureCount = summary.featureCount || 0;
+        } catch {}
+      }
+
+      let html = `
+        <div style="margin-bottom:24px;border:2px solid #0C1D31;border-radius:10px;padding:16px;background:#f8fafb">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0C1D31" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 3v18"/></svg>
+              <h3 style="font-size:14px;font-weight:700;color:#0C1D31;margin:0">Community Outline</h3>
+            </div>
+            <div style="display:flex;gap:6px">`;
+
+      if (outline) {
+        html += `
+              <button class="btn btn-primary btn-xs" id="outline-edit-btn">Replace</button>
+              <button class="btn btn-danger btn-xs" id="outline-delete-btn">Delete</button>`;
+      } else {
+        html += `
+              <button class="btn btn-primary btn-xs" id="outline-upload-btn">Upload Outline</button>
+              <button class="btn btn-secondary btn-xs" id="outline-paste-btn">Paste GeoJSON</button>`;
+      }
+
+      html += `
+            </div>
+          </div>`;
+
+      if (outline) {
+        html += `
+          <div style="display:flex;gap:16px;font-size:13px;color:var(--gray-600)">
+            <div><strong>Name:</strong> ${esc(outline.displayName)}</div>
+            <div><strong>Format:</strong> ${formatBadge(outline.sourceFormat)}</div>
+            <div><strong>Features:</strong> ${featureCount}</div>
+          </div>`;
+      } else {
+        html += `
+          <div style="font-size:13px;color:var(--gray-400)">No community outline defined. Upload a KML or GeoJSON file to show a boundary overlay on all map views.</div>`;
+      }
+
+      html += `</div>`;
+      sectionEl.innerHTML = html;
+
+      if (outline) {
+        document.getElementById('outline-edit-btn')?.addEventListener('click', () => showOutlineUploadModal(outline));
+        document.getElementById('outline-delete-btn')?.addEventListener('click', async () => {
+          if (!confirm('Delete the community outline? This cannot be undone.')) return;
+          try {
+            await apiFetch(`/api/map-layers/${outline.id}`, { method: 'DELETE' });
+            showToast('Outline deleted', 'success');
+            await loadOutlineSection();
+          } catch (err) {
+            showToast('Delete failed: ' + err.message, 'error');
+          }
+        });
+      } else {
+        document.getElementById('outline-upload-btn')?.addEventListener('click', () => showOutlineUploadModal());
+        document.getElementById('outline-paste-btn')?.addEventListener('click', () => showOutlinePasteModal());
+      }
+    } catch (err) {
+      sectionEl.innerHTML = '';
+    }
+  }
+
+  function showOutlineUploadModal(existing = null) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:520px">
+        <div class="modal-header">
+          <h2>${existing ? 'Replace' : 'Upload'} Community Outline</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Display Name</label>
+            <input type="text" class="form-input" id="ol-name" value="${esc(existing?.displayName || 'Community Boundary')}" />
+          </div>
+          <div class="form-group">
+            <label>File (.kml or .geojson / .json)</label>
+            <div id="ol-dropzone" style="border:2px dashed var(--gray-300);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s">
+              <div style="font-size:28px;margin-bottom:8px;color:var(--gray-400)">&#128193;</div>
+              <div id="ol-droptext" style="color:var(--gray-500)">Drop a file here or click to browse</div>
+              <div style="font-size:12px;color:var(--gray-400);margin-top:4px">Supports .kml, .geojson, .json</div>
+              <input type="file" id="ol-file" accept=".kml,.geojson,.json" style="display:none" />
+            </div>
+          </div>
+          <div id="ol-preview" style="display:none;margin-top:8px">
+            <div style="background:var(--gray-50);padding:10px;border-radius:8px;font-size:13px">
+              <strong id="ol-filename"></strong>
+              <span id="ol-format-badge" style="margin-left:8px"></span>
+              <span id="ol-size" style="margin-left:8px;color:var(--gray-500)"></span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary cancel-btn">Cancel</button>
+          <button class="btn btn-primary upload-ol-btn" disabled>${existing ? 'Replace' : 'Upload'}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let selectedFile = null;
+    const dropzone = overlay.querySelector('#ol-dropzone');
+    const fileInput = overlay.querySelector('#ol-file');
+    const uploadBtn = overlay.querySelector('.upload-ol-btn');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--teal)'; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = 'var(--gray-300)'; });
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--gray-300)';
+      if (e.dataTransfer.files[0]) handleOlFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleOlFile(fileInput.files[0]); });
+
+    function handleOlFile(file) {
+      selectedFile = file;
+      const ext = file.name.split('.').pop().toLowerCase();
+      const isKml = ext === 'kml';
+      overlay.querySelector('#ol-preview').style.display = 'block';
+      overlay.querySelector('#ol-filename').textContent = file.name;
+      overlay.querySelector('#ol-format-badge').innerHTML = isKml
+        ? '<span class="badge" style="background:#e67e22;color:#fff">KML</span>'
+        : '<span class="badge" style="background:#27ae60;color:#fff">GeoJSON</span>';
+      overlay.querySelector('#ol-size').textContent = formatSize(file.size);
+      overlay.querySelector('#ol-droptext').textContent = file.name;
+      if (!overlay.querySelector('#ol-name').value || overlay.querySelector('#ol-name').value === 'Community Boundary') {
+        overlay.querySelector('#ol-name').value = file.name.replace(/\.[^.]+$/, '');
+      }
+      uploadBtn.disabled = false;
+    }
+
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    uploadBtn.addEventListener('click', async () => {
+      const displayName = overlay.querySelector('#ol-name').value.trim();
+      if (!displayName) { showToast('Display name is required', 'error'); return; }
+      if (!selectedFile) { showToast('Please select a file', 'error'); return; }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading...';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('displayName', displayName);
+        formData.append('communityId', communityId);
+        formData.append('layerKey', 'outline');
+        formData.append('subLayerKey', 'community_boundary');
+        if (existing) {
+          formData.append('layerId', existing.id);
+          formData.append('version', String(existing.version));
+        }
+
+        const resp = await fetch('/api/map-layers/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error || 'Upload failed');
+        }
+        const result = await resp.json();
+        overlay.remove();
+        showToast(`Outline ${existing ? 'replaced' : 'uploaded'} with ${result.featureCount} feature(s)`, 'success');
+        await loadOutlineSection();
+      } catch (err) {
+        showToast(err.message, 'error');
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = existing ? 'Replace' : 'Upload';
+      }
+    });
+  }
+
+  function showOutlinePasteModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:600px">
+        <div class="modal-header">
+          <h2>Paste Community Outline GeoJSON</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Display Name</label>
+            <input type="text" class="form-input" id="olp-name" value="Community Boundary" />
+          </div>
+          <div class="form-group">
+            <label>GeoJSON Data</label>
+            <textarea class="form-textarea geojson-input" id="olp-geojson" placeholder='Paste GeoJSON FeatureCollection or Feature here...' style="min-height:200px"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary cancel-btn">Cancel</button>
+          <button class="btn btn-primary save-olp-btn">Save Outline</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('.save-olp-btn').addEventListener('click', async () => {
+      const displayName = overlay.querySelector('#olp-name').value.trim();
+      const geojsonRaw = overlay.querySelector('#olp-geojson').value.trim();
+
+      if (!displayName) { showToast('Display name is required', 'error'); return; }
+      if (!geojsonRaw) { showToast('GeoJSON data is required', 'error'); return; }
+
+      try {
+        JSON.parse(geojsonRaw);
+      } catch {
+        showToast('Invalid JSON', 'error');
+        return;
+      }
+
+      const saveBtn = overlay.querySelector('.save-olp-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      try {
+        await apiFetch('/api/map-layers', {
+          method: 'POST',
+          body: {
+            displayName,
+            communityId,
+            layerKey: 'outline',
+            subLayerKey: 'community_boundary',
+            geojsonData: geojsonRaw,
+          },
+        });
+        overlay.remove();
+        showToast('Community outline created', 'success');
+        await loadOutlineSection();
+      } catch (err) {
+        showToast(err.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Outline';
+      }
+    });
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
 
   async function loadLayers() {
     try {
@@ -43,13 +311,15 @@ window._renderMapLayers = async function(container, communityId) {
       }));
 
       const treeEl = document.getElementById('layer-tree');
-      if (layers.length === 0) {
+      const nonOutlineLayers = layers.filter(l => l.layerKey !== 'outline');
+
+      if (nonOutlineLayers.length === 0) {
         treeEl.innerHTML = '<div class="empty-state">No map layers yet. Upload a KML or GeoJSON file to get started.</div>';
         return;
       }
 
       const grouped = {};
-      layers.forEach(l => {
+      nonOutlineLayers.forEach(l => {
         const key = l.layerKey || 'uncategorized';
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(l);
@@ -956,12 +1226,6 @@ window._renderMapLayers = async function(container, communityId) {
         showToast(err.message, 'error');
       }
     });
-  }
-
-  function formatSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
   function showIrrigationUploadModal() {

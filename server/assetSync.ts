@@ -160,6 +160,10 @@ export async function syncAssetsFromLayer(
   geojsonData: string | null,
   triggeredByUserId?: string,
 ): Promise<SyncResult> {
+  if (layerKey === "outline") {
+    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
+  }
+
   const assetType = resolveAssetType(layerKey, subLayerKey);
   if (!assetType) {
     return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
@@ -320,6 +324,10 @@ export async function previewSyncFromLayer(
   subLayerKey: string,
   geojsonData: string | null,
 ): Promise<SyncPreviewResult> {
+  if (layerKey === "outline") {
+    return { featureCount: 0, wouldCreateCount: 0, wouldUpdateCount: 0, wouldArchiveCount: 0, wouldSkipCount: 0, wouldCreateSamples: [], wouldArchiveSamples: [] };
+  }
+
   const assetType = resolveAssetType(layerKey, subLayerKey);
   if (!assetType) {
     return { featureCount: 0, wouldCreateCount: 0, wouldUpdateCount: 0, wouldArchiveCount: 0, wouldSkipCount: 0, wouldCreateSamples: [], wouldArchiveSamples: [] };

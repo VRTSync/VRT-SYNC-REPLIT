@@ -210,13 +210,23 @@ PortalRouter.register('map', async function (container) {
       }
       pushLayersToIframe();
       syncVisibleLayers();
+      loadCommunityOutline();
     } catch (err) {
       console.error('Failed to load map layers:', err);
     }
   }
 
+  function loadCommunityOutline() {
+    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
+    if (outlineLayer) {
+      sendToIframe(`window.mapBridge.setCommunityOutline(${JSON.stringify(outlineLayer._geojson)});`);
+    } else {
+      sendToIframe(`window.mapBridge.setCommunityOutline(null);`);
+    }
+  }
+
   function pushLayersToIframe() {
-    const layerData = mapLayers.filter(l => l._geojson).map(l => ({
+    const layerData = mapLayers.filter(l => l._geojson && l.layerKey !== 'outline').map(l => ({
       id: l.id,
       layerKey: l.layerKey,
       subLayerKey: l.subLayerKey,

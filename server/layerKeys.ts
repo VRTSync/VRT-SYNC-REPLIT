@@ -3,6 +3,7 @@ export const CANONICAL_LAYER_HIERARCHY: Record<string, string[]> = {
   irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve"],
   snow: ["plow", "atv", "hand_shovel", "ice_melt", "slicer", "storage_area"],
   trees: ["tree"],
+  outline: ["community_boundary"],
 };
 
 export const VALID_LAYER_KEYS = Object.keys(CANONICAL_LAYER_HIERARCHY);
