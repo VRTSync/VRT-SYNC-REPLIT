@@ -201,7 +201,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
               var fid = feature.properties.featureId || feature.id;
               c = colorMap[fid] || c;
             }
-            return { color: c, weight: 2, fillColor: c, fillOpacity: 0.25, opacity: 0.8 };
+            return { color: c, weight: 2, fillColor: c, fillOpacity: 0.35, opacity: 0.9 };
           },
           pointToLayer: function(feature, latlng) {
             var c = layer.color;
