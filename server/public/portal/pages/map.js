@@ -257,6 +257,7 @@ PortalRouter.register('map', async function (container) {
     const showZones = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.zone;
     sendToIframe(`window.mapBridge.showControllers(${!!showControllers});`);
     sendToIframe(`window.mapBridge.showZones(${!!showZones});`);
+    sendToIframe(`window.mapBridge.fitToContent();`);
   }
 
   async function handleAssetDetail(data) {
@@ -270,6 +271,12 @@ PortalRouter.register('map', async function (container) {
         selectedAsset._layerName = data.layerName || '';
         detailTab = 'details';
         renderDetailPanel();
+        const lat = asset.latitude;
+        const lng = asset.longitude;
+        if (lat != null && lng != null) {
+          const flyLabel = selectedAsset._label || '';
+          sendToIframe(`window.mapBridge.flyTo(${lat}, ${lng}, 16, ${JSON.stringify(flyLabel)});`);
+        }
       } else {
         selectedAsset = {
           _label: data.label || data.featureRef,
