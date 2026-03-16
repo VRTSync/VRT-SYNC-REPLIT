@@ -30,7 +30,9 @@ The web portal expands the existing admin portal into a multi-role SPA platform.
 
 **Shell templates:** `server/templates/contractor-shell.html`, `hoa-shell.html`, `pm-shell.html` — each sets `window.PORTAL_CONFIG = { base, allowedRoles, label }` before loading the shared `portal.js` bootstrap.
 
-**Bootstrap flow:** `portal.js` reads `PORTAL_CONFIG`, validates role, fetches communities, renders role-appropriate sidebar nav, community picker (or fixed label for HOA), notification bell placeholder, global "+" button placeholder, and user profile chip. Unregistered routes show a "Coming Soon" placeholder automatically via the router.
+**Bootstrap flow:** `portal.js` reads `PORTAL_CONFIG`, validates role, fetches communities, renders role-appropriate sidebar nav, community picker (or fixed label for HOA), and user profile chip. `portal-topbar.js` activates all interactive topbar elements (notification bell, community selector dropdown, profile menu, "+" action menu). Unregistered routes show a "Coming Soon" placeholder automatically via the router.
+
+**Topbar interactivity (`portal-topbar.js`):** Shared module loaded by all 4 shells. Provides: notification bell with dropdown panel (fetches from `/api/notifications`, shows unread-first list, mark-as-read per item and mark-all-read, 30s unread count polling); community selector dropdown for multi-community users; user profile dropdown with name/role/logout; role-aware "+" quick action menu. All dropdowns are appended to `document.body` as fixed-position elements and close on outside click.
 
 **Page registration:** Each page module registers itself with `PortalRouter.register('route-name', fn)`. Page scripts are loaded in the shell template's `<script>` tags. `PortalState` provides `getUser()`, `getActiveCommunity()`, `getCommunities()`, and `setActiveCommunity()` to all page modules.
 

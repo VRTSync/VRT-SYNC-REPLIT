@@ -200,23 +200,15 @@
 
     const isHoa = currentUser.role === 'hoa_admin' || currentUser.role === 'hoa_member';
 
-    if (isHoa || communities.length <= 1) {
-      const name = activeCommunity ? activeCommunity.name : (communities.length === 0 ? 'No Community' : communities[0]?.name);
-      communityArea.innerHTML = `
-        <span class="topbar-community-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.5;flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          ${name}
-        </span>
-      `;
-    } else {
-      const opts = communities.map(c =>
-        `<option value="${c.id}" ${activeCommunity && activeCommunity.id === c.id ? 'selected' : ''}>${c.name}</option>`
-      ).join('');
-      communityArea.innerHTML = `<select class="community-select" id="community-picker">${opts}</select>`;
-      document.getElementById('community-picker').addEventListener('change', (e) => {
-        setActiveCommunity(e.target.value);
-      });
-    }
+    const communityName = activeCommunity ? activeCommunity.name : (communities.length === 0 ? 'No Community' : communities[0]?.name);
+    const isMulti = !isHoa && communities.length > 1;
+    communityArea.innerHTML = `
+      <span class="topbar-community-label${isMulti ? ' topbar-community-label--multi' : ''}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.5;flex-shrink:0"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        ${communityName}
+        ${isMulti ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.4;flex-shrink:0;margin-left:2px"><polyline points="6 9 12 15 18 9"/></svg>' : ''}
+      </span>
+    `;
   }
 
   /* ─── Community switching ────────────────────────────────────────────────── */

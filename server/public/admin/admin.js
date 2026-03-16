@@ -24,7 +24,16 @@
         return;
       }
 
-      document.getElementById('user-display').textContent = currentUser.displayName || currentUser.username;
+      const name = currentUser.displayName || currentUser.username || '';
+      document.getElementById('user-display').textContent = name;
+
+      const avatar = document.getElementById('user-avatar');
+      if (avatar) {
+        const parts = name.split(' ').filter(Boolean);
+        avatar.textContent = parts.length >= 2
+          ? (parts[0][0] + parts[1][0]).toUpperCase()
+          : name.slice(0, 2).toUpperCase();
+      }
 
       document.getElementById('logout-btn').addEventListener('click', async () => {
         await apiFetch('/api/auth/logout', { method: 'POST' });
