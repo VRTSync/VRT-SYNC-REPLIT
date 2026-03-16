@@ -126,26 +126,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const user = bootstrap?.user ?? null;
   const bootstrapCommunities = bootstrap?.communities ?? [];
   const defaultCommunityId = bootstrap?.defaultCommunityId ?? null;
+  const userId = user?.id ?? null;
 
   useEffect(() => {
-    if (user && !pushTokenRegistered.current) {
+    if (userId && !pushTokenRegistered.current) {
       pushTokenRegistered.current = true;
       registerPushTokenWithServer();
     }
-    if (!user) {
+    if (!userId) {
       pushTokenRegistered.current = false;
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const subscription = Notifications.addPushTokenListener((newToken) => {
-      if (user) {
-        registerPushTokenWithServer();
-      }
+    if (!userId) return;
+    const subscription = Notifications.addPushTokenListener(() => {
+      if (!pushTokenRegistered.current) return;
+      registerPushTokenWithServer();
     });
     return () => subscription.remove();
-  }, [user]);
+  }, [userId]);
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
