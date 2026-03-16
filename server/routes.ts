@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { requireAuth, requireAdmin, registerAuthRoutes, setupSession, enforceHoaScoping, isHoaRole } from "./auth";
+import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole } from "./auth";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
@@ -41,7 +41,6 @@ async function checkHoaLimits(communityId: string, role: string, excludeUserId?:
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  setupSession(app);
   registerAuthRoutes(app);
 
   app.use("/api", enforceHoaScoping);

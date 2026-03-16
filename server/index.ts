@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { setupSession } from "./auth";
 import { sendDueReminders } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
@@ -497,6 +498,7 @@ async function seedProductionAdmin() {
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
+  setupSession(app);
   setupRequestLogging(app);
 
   await seedProductionAdmin();
