@@ -1,0 +1,477 @@
+Slice 5 — Documents Page (Community Drive) + Admin Styling Enforcement
+Objective
+
+Implement the Documents page for the web portals as a traditional community drive experience using the existing VRTSync shell, routing, authentication, and admin design system.
+
+This page should function as the community/property manager drive for storing and organizing files related to a community.
+
+The page must support:
+
+folder navigation
+
+file listing
+
+upload controls for authorized users
+
+read-only access for view-only users
+
+community-scoped file browsing
+
+This slice should prioritize a clean, traditional drive-style experience over advanced metadata or asset-linking features.
+
+Critical Design Rule
+
+All new Documents page UI must visually match the existing admin portal styling.
+
+Use:
+
+server/public/admin/admin.css
+
+and existing shell/page layout patterns.
+
+Do not create a separate file-browser design language.
+
+The Documents page should feel like a natural extension of the admin portal.
+
+Documents Page Purpose
+
+The Documents page is the community’s shared drive.
+
+It is intended for:
+
+property managers
+
+HOA admins
+
+HOA members
+
+super admins
+
+It is not directly visible to contractors.
+
+Future messaging/document-sharing may expose individual files to contractors later, but that is not part of this slice.
+
+Roles Included in This Slice
+
+Build Documents page behavior for:
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Super Admin reuse is acceptable if already easy.
+
+Do not add contractor access.
+
+Role Permissions
+Property Manager
+
+Full control inside assigned communities.
+
+Can:
+
+create folders
+
+upload files
+
+rename items
+
+move items later if easy
+
+delete items
+
+open/download files
+
+HOA Admin
+
+Full control inside their community.
+
+Can:
+
+create folders
+
+upload files
+
+rename items
+
+delete items
+
+open/download files
+
+HOA Member
+
+Read-only.
+
+Can:
+
+browse folders
+
+open files
+
+download files
+
+Cannot:
+
+upload
+
+create folders
+
+rename
+
+delete
+
+Contractor
+
+No Documents page access.
+
+Do not include Documents in contractor nav.
+
+Routes
+
+Add/finalize Documents routes for:
+
+/web/hoa/documents
+/web/pm/documents
+
+If Super Admin can reuse later, keep the page structure compatible.
+
+Use the existing SPA router pattern.
+
+Community Context Rule
+
+The Documents page is always community-scoped.
+
+It must respect:
+
+PortalState.getActiveCommunity()
+
+All folder/file data should load for the active community only.
+
+Changing the community in the top bar should:
+
+refresh the document view
+
+reset folder state appropriately
+
+preserve clean navigation behavior
+
+Shared Community Header
+
+Reuse the community page header pattern.
+
+Example:
+
+Documents
+Preserve Metro District
+
+This must appear above the drive area.
+
+Page Layout
+
+Use a traditional drive-style layout.
+
+Recommended structure:
+
+Page Header
+Action Bar
+Breadcrumbs
+Folders / Files List
+
+This should render inside the existing shell and #page-content.
+
+Action Bar
+
+For users with edit rights, include:
+
+New Folder button
+
+Upload File button
+
+Use existing admin button classes:
+
+.btn
+.btn-primary
+.btn-secondary
+
+For HOA Members, hide create/upload actions.
+
+Folder Structure Model
+
+This page should behave like a traditional flexible drive.
+
+Important rule:
+VRTSync does not enforce a fixed folder hierarchy.
+
+Users create their own structure.
+
+This is intentionally flexible.
+
+Examples of possible user-created folders:
+
+Governing Docs
+
+Irrigation Plans
+
+Enhancement Plans
+
+Meeting Notes
+
+Warranties
+
+But the system should not hardcode these.
+
+Drive Navigation
+
+The page must support:
+
+root folder view
+
+clicking into folders
+
+breadcrumb navigation
+
+returning to parent folders
+
+Example breadcrumb:
+
+Documents > Irrigation Plans > As-Builts
+
+This is required for usability.
+
+List View
+
+The main content area should show a list/table of folders and files.
+
+Recommended columns:
+
+Name
+
+Type
+
+Uploaded By
+
+Date Modified / Uploaded
+
+Size (for files)
+
+Folders should appear clearly distinct from files.
+
+Clicking a folder:
+
+opens that folder
+
+Clicking a file:
+
+opens file details or direct file action depending on what already exists
+
+Empty States
+Empty root
+
+Show a clean message like:
+
+No documents yet for this community
+
+If the user has edit rights, include a subtle prompt to:
+
+create a folder
+
+upload the first file
+
+Empty folder
+
+Show a clean folder-specific empty state.
+
+New Folder Flow
+
+Authorized users should be able to create folders.
+
+Use an admin-styled modal.
+
+Modal fields:
+
+folder name
+
+No advanced settings needed.
+
+Use existing modal classes:
+
+.modal-overlay
+.modal
+Upload File Flow
+
+Authorized users should be able to upload files.
+
+Use the existing design system and modal/picker pattern already used elsewhere if possible.
+
+At minimum support:
+
+selecting a file
+
+uploading into the current folder
+
+refreshing the list after upload
+
+Advanced multi-file upload is optional if already easy.
+
+File Actions
+
+For edit-capable users, support basic file actions.
+
+Priority actions:
+
+rename
+
+delete
+
+download/open
+
+If move is easy, include it.
+If not, defer move to a later slice.
+
+Do not overcomplicate this page in V1.
+
+Folder Actions
+
+For edit-capable users, support:
+
+rename folder
+
+delete folder
+
+If deleting a non-empty folder introduces too much complexity, it is acceptable to:
+
+block deletion of non-empty folders for now
+or
+
+show a confirmation with clear warning
+
+Keep behavior simple and safe.
+
+Read-Only Experience
+
+For HOA Members:
+
+page should look the same
+
+all creation/edit controls hidden
+
+browsing and viewing still fully supported
+
+This is an important platform pattern:
+same page, same structure, fewer actions.
+
+Data Strategy
+
+Use real API/data infrastructure if it already exists or is easy to extend.
+
+If the documents backend is still lightweight, implement the UI with a clean upgrade path.
+
+Minimum required concepts:
+
+community-scoped root
+
+folder/file records
+
+parent-child folder relationships
+
+upload target path/folder
+
+item metadata needed for list display
+
+Do not block the slice trying to solve versioning, sharing, tagging, or search.
+
+Search / Filtering
+
+Do not build advanced search in this slice unless it is extremely easy.
+
+A simple list view is enough for now.
+
+Styling Requirements
+
+All visual treatment must match the admin portal.
+
+Use:
+
+existing cards/panels
+
+existing buttons
+
+existing typography
+
+existing spacing
+
+existing modal styling
+
+The drive should feel like a VRTSync admin-style page, not a third-party file app.
+
+Out of Scope for Slice 5
+
+Do NOT build the following yet:
+
+contractor document sharing
+
+asset-linked documents
+
+tags / labels
+
+advanced search
+
+file versioning
+
+drag-and-drop folder tree
+
+permissions beyond current role rules
+
+messaging integration
+
+document comments
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 5, the system should support:
+
+Documents page in HOA and PM portals
+
+community-scoped file browsing
+
+folder navigation
+
+breadcrumb navigation
+
+new folder creation for authorized users
+
+file upload for authorized users
+
+read-only document viewing for HOA Members
+
+clean admin-styled UI
+
+Success Criteria
+
+The system should be able to:
+
+open the Documents page inside HOA and PM portals
+
+load files/folders for the active community
+
+navigate into folders and back via breadcrumbs
+
+create a folder (authorized users)
+
+upload a file into the current folder (authorized users)
+
+hide edit actions for read-only users
+
+maintain admin portal visual styling throughout
+
+Important Reminder to Replit
+
+This page should feel like the community drive inside VRTSync, not like a separate document product.
+
+Use the existing admin shell and visual language.
+Keep it simple, traditional, and community-scoped.
+Do not expose the Documents page to contractors.
