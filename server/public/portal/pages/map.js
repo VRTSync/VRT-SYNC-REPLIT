@@ -75,7 +75,7 @@ PortalRouter.register('map', async function (container) {
         <div class="mlp-sublayers" id="mlp-sublayers"></div>
       </div>
       <div class="map-canvas-wrap">
-        <iframe id="map-iframe" src="/public/leaflet-map.html" class="map-iframe" allowfullscreen></iframe>
+        <iframe id="map-iframe" src="/leaflet-map.html" class="map-iframe" allowfullscreen></iframe>
       </div>
       <div class="map-detail-panel" id="map-detail-panel">
         <div class="mdp-empty" id="mdp-empty">
