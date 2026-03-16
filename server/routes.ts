@@ -21,6 +21,7 @@ import {
   insertServiceScheduleSchema, updateServiceScheduleSchema, logServiceVisitSchema,
   insertAssetNoteSchema, createHoaRequestSchema,
   insertDriveFolderSchema, updateDriveFolderSchema, insertDriveFileSchema, updateDriveFileSchema,
+  insertInvoiceSchema, updateInvoiceSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -2865,6 +2866,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Mark read error:", error);
       res.status(500).json({ error: "Failed to mark notification read" });
+    }
+  });
+
+  const invoiceReadRoles = ['admin', 'property_manager', 'hoa_admin', 'hoa_member'];
+  const invoiceMutateRoles = ['admin'];
+
+  app.get("/api/invoices", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role === 'contractor') return res.status(403).json({ error: "Access denied" });
+
+      if (user.role === 'admin') {
+        const communityId = req.query.communityId as string | undefined;
+        const rows = await storage.getInvoices(communityId || undefined);
+        return res.json(rows);
+      }
+
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        const rows = await storage.getInvoices(user.hoaCommunityId);
+        return res.json(rows);
+      }
+
+      const communityId = req.query.communityId as string;
+      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+      if (!isMember) return res.status(403).json({ error: "Access denied" });
+      const rows = await storage.getInvoices(communityId);
+      return res.json(rows);
+    } catch (error) {
+      console.error("Get invoices error:", error);
+      res.status(500).json({ error: "Failed to fetch invoices" });
+    }
+  });
+
+  app.get("/api/invoices/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role === 'contractor') return res.status(403).json({ error: "Access denied" });
+
+      const invoice = await storage.getInvoiceById(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+      if (user.role !== 'admin') {
+        if (isHoaRole(user.role) && user.hoaCommunityId) {
+          if (invoice.communityId !== user.hoaCommunityId) return res.status(403).json({ error: "Access denied" });
+        } else {
+          const isMember = await storage.isUserMemberOfCommunity(user.id, invoice.communityId);
+          if (!isMember) return res.status(403).json({ error: "Access denied" });
+        }
+      }
+
+      res.json(invoice);
+    } catch (error) {
+      console.error("Get invoice error:", error);
+      res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+  });
+
+  app.post("/api/invoices", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertInvoiceSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (parsed.data.attachmentLayerId) {
+        const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
+        if (!layer || layer.communityId !== parsed.data.communityId) {
+          return res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
+        }
+      }
+      const invoice = await storage.createInvoice(parsed.data);
+      res.status(201).json(invoice);
+    } catch (error) {
+      console.error("Create invoice error:", error);
+      res.status(500).json({ error: "Failed to create invoice" });
+    }
+  });
+
+  app.put("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const existing = await storage.getInvoiceById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      const parsed = updateInvoiceSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      const targetCommunityId = parsed.data.communityId || existing.communityId;
+      if (parsed.data.attachmentLayerId) {
+        const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
+        if (!layer || layer.communityId !== targetCommunityId) {
+          return res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
+        }
+      }
+      const updated = await storage.updateInvoice(req.params.id, parsed.data);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update invoice error:", error);
+      res.status(500).json({ error: "Failed to update invoice" });
+    }
+  });
+
+  app.delete("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const existing = await storage.getInvoiceById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      await storage.deleteInvoice(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete invoice error:", error);
+      res.status(500).json({ error: "Failed to delete invoice" });
     }
   });
 

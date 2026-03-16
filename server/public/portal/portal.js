@@ -27,6 +27,7 @@
       { route: 'tasks',      label: 'Tasks',           icon: iconCheckSquare() },
       { route: 'requests',   label: 'Requests',        icon: iconInbox() },
       { route: 'map',        label: 'Map',             icon: iconMap() },
+      { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
       { route: 'documents',  label: 'Documents',       icon: iconFile() },
       { route: 'reports',    label: 'Reports',         icon: iconBarChart() },
       { route: 'contacts',   label: 'Contacts',        icon: iconUsers() },
@@ -35,6 +36,7 @@
       { route: 'dashboard',  label: 'Dashboard',       icon: iconGrid() },
       { route: 'requests',   label: 'Requests',        icon: iconInbox() },
       { route: 'map',        label: 'Map',             icon: iconMap() },
+      { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
     ],
     property_manager: [
       { route: 'dashboard',  label: 'Dashboard',       icon: iconGrid() },

@@ -72,6 +72,20 @@ The web portals now include full task and request management pages:
 - **`PortalRouter.refresh()`**: Added to re-render the current route after task actions without full navigation.
 - **HOA request location relaxed**: `POST /api/hoa/requests` no longer requires `pinLat`/`pinLng` when no asset is selected. Partial coordinates (one without the other) are rejected.
 
+### Invoices (Asset Work History Engine)
+The `invoices` table stores structured invoice records tied to communities. Each invoice has contractor name, completion date, service type, cost, optional notes, optional PDF attachment (via object storage), and an optional attachment target label (breadcrumb path like "Trees → Blue Spruce → Tree #23") with an optional map layer FK.
+
+**API routes (`/api/invoices`):**
+- `GET /api/invoices` — Lists invoices. Super admin sees all (optionally filtered by `communityId`). PM/HOA roles see community-scoped only. Contractors are rejected.
+- `GET /api/invoices/:id` — Single invoice detail with community name.
+- `POST /api/invoices` — Admin-only create with PDF upload support.
+- `PUT /api/invoices/:id` — Admin-only update.
+- `DELETE /api/invoices/:id` — Admin-only delete.
+
+**Admin portal (`/web/admin/invoices`):** Full CRUD table with community filter, create/edit modal with attachment target dropdown (layer → sublayer → asset), PDF upload, and detail view.
+
+**Portal invoices (`/web/pm/invoices`, `/web/hoa/invoices`):** Read-only community-scoped table. Clicking a row opens a detail modal. No create/edit/delete. Available for property_manager, hoa_admin, and hoa_member roles.
+
 ### API Design
 A RESTful JSON API (`/api/`) provides endpoints for authentication, communities, tasks, user management, and object storage. Data is filtered by the selected community.
 

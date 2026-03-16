@@ -747,3 +747,53 @@ export const insertDriveFileSchema = z.object({
 export const updateDriveFileSchema = z.object({
   name: z.string().min(1, "File name is required"),
 });
+
+export const invoices = pgTable("invoices", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  contractor: text("contractor").notNull(),
+  completionDate: date("completion_date").notNull(),
+  serviceType: text("service_type").notNull(),
+  cost: doublePrecision("cost").notNull(),
+  notes: text("notes"),
+  pdfObjectKey: text("pdf_object_key"),
+  attachmentLabel: text("attachment_label"),
+  attachmentLayerId: varchar("attachment_layer_id").references(() => mapLayers.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("invoices_community_idx").on(table.communityId),
+  index("invoices_completion_date_idx").on(table.completionDate),
+]);
+
+export type Invoice = typeof invoices.$inferSelect;
+
+export const insertInvoiceSchema = z.object({
+  communityId: z.string().min(1),
+  contractor: z.string().min(1, "Contractor name is required"),
+  completionDate: z.string().min(1, "Completion date is required"),
+  serviceType: z.string().min(1, "Service type is required"),
+  cost: z.number().min(0, "Cost must be non-negative"),
+  notes: z.string().optional().nullable(),
+  pdfObjectKey: z.string().optional().nullable(),
+  attachmentLabel: z.string().optional().nullable(),
+  attachmentLayerId: z.string().optional().nullable(),
+});
+
+export const updateInvoiceSchema = z.object({
+  contractor: z.string().min(1).optional(),
+  completionDate: z.string().min(1).optional(),
+  serviceType: z.string().min(1).optional(),
+  cost: z.number().min(0).optional(),
+  notes: z.string().optional().nullable(),
+  pdfObjectKey: z.string().optional().nullable(),
+  attachmentLabel: z.string().optional().nullable(),
+  attachmentLayerId: z.string().optional().nullable(),
+});
+
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+  community: one(communities, { fields: [invoices.communityId], references: [communities.id] }),
+  attachmentLayer: one(mapLayers, { fields: [invoices.attachmentLayerId], references: [mapLayers.id] }),
+}));

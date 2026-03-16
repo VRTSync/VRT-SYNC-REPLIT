@@ -7,7 +7,7 @@ import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import { db, pool } from "./db";
-import { users } from "../shared/schema";
+import { users, invoices, communities } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { LEAFLET_MAP_HTML } from "../shared/leaflet-map-template";
@@ -505,6 +505,24 @@ async function runStartupMigrations() {
         created_at    timestamp NOT NULL DEFAULT now(),
         updated_at    timestamp NOT NULL DEFAULT now()
       );
+
+      CREATE TABLE IF NOT EXISTS invoices (
+        id                  varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id        varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        contractor          text NOT NULL,
+        completion_date     date NOT NULL,
+        service_type        text NOT NULL,
+        cost                double precision NOT NULL,
+        notes               text,
+        pdf_object_key      text,
+        attachment_label    text,
+        attachment_layer_id varchar REFERENCES map_layers(id) ON DELETE SET NULL,
+        created_at          timestamp NOT NULL DEFAULT now(),
+        updated_at          timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS invoices_community_idx ON invoices(community_id);
+      CREATE INDEX IF NOT EXISTS invoices_completion_date_idx ON invoices(completion_date);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {
@@ -534,6 +552,37 @@ async function seedProductionAdmin() {
   }
 }
 
+async function seedInvoices() {
+  try {
+    const existing = await db.select().from(invoices).limit(1);
+    if (existing.length > 0) return;
+    const allCommunities = await db.select().from(communities).limit(3);
+    if (allCommunities.length === 0) return;
+    const seedData = [
+      { contractor: 'Green Valley Landscaping', completionDate: '2026-02-15', serviceType: 'Landscape Maintenance', cost: 2450.00, notes: 'Spring bed cleanup and mulching', attachmentLabel: 'Community → Landscape Beds → Bed #12' },
+      { contractor: 'Rocky Mountain Tree Care', completionDate: '2026-01-20', serviceType: 'Tree Trimming', cost: 1875.50, notes: 'Removed dead limbs from mature elms', attachmentLabel: 'Trees → Blue Spruce → Tree #23' },
+      { contractor: 'AquaTech Irrigation', completionDate: '2026-03-01', serviceType: 'Irrigation Repair', cost: 825.00, notes: 'Replaced backflow preventer on controller A', attachmentLabel: 'Irrigation → Controller A → Zone 3' },
+      { contractor: 'Summit Snow Services', completionDate: '2026-01-05', serviceType: 'Snow Removal', cost: 3200.00, notes: 'Full community snow removal after 8-inch storm' },
+      { contractor: 'Green Valley Landscaping', completionDate: '2026-03-10', serviceType: 'Fertilization', cost: 1100.00, notes: 'Pre-emergent herbicide and spring fertilizer application' },
+    ];
+    for (const s of seedData) {
+      const community = allCommunities[Math.floor(Math.random() * allCommunities.length)];
+      await db.insert(invoices).values({
+        communityId: community.id,
+        contractor: s.contractor,
+        completionDate: s.completionDate,
+        serviceType: s.serviceType,
+        cost: s.cost,
+        notes: s.notes || null,
+        attachmentLabel: s.attachmentLabel || null,
+      });
+    }
+    log("Seeded " + seedData.length + " invoices");
+  } catch (err) {
+    console.error("Invoice seed failed (non-fatal):", err);
+  }
+}
+
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
@@ -542,6 +591,7 @@ async function seedProductionAdmin() {
 
   await runStartupMigrations();
   await seedProductionAdmin();
+  await seedInvoices();
 
   configureExpoAndLanding(app);
   configureAdminHub(app);

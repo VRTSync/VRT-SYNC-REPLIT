@@ -4,14 +4,14 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
-  notifications, driveFolders, driveFiles,
+  notifications, driveFolders, driveFiles, invoices,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
-  type DriveFolder, type DriveFile
+  type DriveFolder, type DriveFile, type Invoice
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -2034,4 +2034,71 @@ export async function deleteDriveFile(id: string): Promise<DriveFile> {
 export async function getDriveFile(id: string): Promise<DriveFile | null> {
   const [file] = await db.select().from(driveFiles).where(eq(driveFiles.id, id));
   return file || null;
+}
+
+export async function getInvoices(communityId?: string): Promise<(Invoice & { communityName?: string })[]> {
+  if (communityId) {
+    const rows = await db.select({
+      invoice: invoices,
+      communityName: communities.name,
+    }).from(invoices)
+      .leftJoin(communities, eq(invoices.communityId, communities.id))
+      .where(eq(invoices.communityId, communityId))
+      .orderBy(desc(invoices.completionDate));
+    return rows.map(r => ({ ...r.invoice, communityName: r.communityName || undefined }));
+  }
+  const rows = await db.select({
+    invoice: invoices,
+    communityName: communities.name,
+  }).from(invoices)
+    .leftJoin(communities, eq(invoices.communityId, communities.id))
+    .orderBy(desc(invoices.completionDate));
+  return rows.map(r => ({ ...r.invoice, communityName: r.communityName || undefined }));
+}
+
+export async function getInvoiceById(id: string): Promise<(Invoice & { communityName?: string }) | null> {
+  const rows = await db.select({
+    invoice: invoices,
+    communityName: communities.name,
+  }).from(invoices)
+    .leftJoin(communities, eq(invoices.communityId, communities.id))
+    .where(eq(invoices.id, id));
+  if (rows.length === 0) return null;
+  return { ...rows[0].invoice, communityName: rows[0].communityName || undefined };
+}
+
+export async function createInvoice(data: {
+  communityId: string;
+  contractor: string;
+  completionDate: string;
+  serviceType: string;
+  cost: number;
+  notes?: string | null;
+  pdfObjectKey?: string | null;
+  attachmentLabel?: string | null;
+  attachmentLayerId?: string | null;
+}): Promise<Invoice> {
+  const [invoice] = await db.insert(invoices).values(data).returning();
+  return invoice;
+}
+
+export async function updateInvoice(id: string, data: Partial<{
+  contractor: string;
+  completionDate: string;
+  serviceType: string;
+  cost: number;
+  notes: string | null;
+  pdfObjectKey: string | null;
+  attachmentLabel: string | null;
+  attachmentLayerId: string | null;
+}>): Promise<Invoice | null> {
+  const [invoice] = await db.update(invoices)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(invoices.id, id))
+    .returning();
+  return invoice || null;
+}
+
+export async function deleteInvoice(id: string): Promise<void> {
+  await db.delete(invoices).where(eq(invoices.id, id));
 }
