@@ -11,6 +11,7 @@ import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
+import { getDefaultLayerColor } from '@/shared/layerColors';
 
 type MapLayerMeta = {
   id: string;
@@ -50,10 +51,6 @@ const CATEGORY_TABS = [
   { key: 'trees', label: 'Trees', icon: 'leaf-outline' as const },
 ];
 
-const layerColors = [
-  '#25C1AC', '#3498db', '#e74c3c', '#f39c12', '#9b59b6',
-  '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
-];
 
 export default function MapScreen() {
   const params = useLocalSearchParams<{ targetLat?: string; targetLng?: string; targetLabel?: string; category?: string }>();
@@ -309,7 +306,7 @@ export default function MapScreen() {
           subLayerKey: l.subLayerKey,
           displayName: l.displayName,
           geojson,
-          color: l.color || layerColors[idx % layerColors.length],
+          color: l.color || getDefaultLayerColor(l.subLayerKey, idx),
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
@@ -467,7 +464,7 @@ export default function MapScreen() {
                 <>
                   {catLayers.map((layer, idx) => (
                     <View key={layer.id} style={styles.layerToggleRow}>
-                      <View style={[styles.layerColorDot, { backgroundColor: layer.color || layerColors[idx % layerColors.length] }]} />
+                      <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
                       <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
                       <Switch
                         value={!disabledLayerIds.has(layer.id)}

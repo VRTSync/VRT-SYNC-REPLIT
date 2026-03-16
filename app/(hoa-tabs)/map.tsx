@@ -9,6 +9,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
+import { getDefaultLayerColor } from '@/shared/layerColors';
 
 type MapLayerMeta = {
   id: string;
@@ -17,6 +18,7 @@ type MapLayerMeta = {
   subLayerKey: string;
   displayName: string;
   version: number;
+  color?: string;
 };
 
 type ControllerInfo = {
@@ -47,10 +49,6 @@ const CATEGORY_TABS = [
   { key: 'trees', label: 'Trees', icon: 'leaf-outline' as const },
 ];
 
-const layerColors = [
-  '#25C1AC', '#3498db', '#e74c3c', '#f39c12', '#9b59b6',
-  '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
-];
 
 export default function HoaMapScreen() {
   const params = useLocalSearchParams<{ category?: string }>();
@@ -267,7 +265,7 @@ export default function HoaMapScreen() {
           subLayerKey: l.subLayerKey,
           displayName: l.displayName,
           geojson,
-          color: layerColors[idx % layerColors.length],
+          color: l.color || getDefaultLayerColor(l.subLayerKey, idx),
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
@@ -388,7 +386,7 @@ export default function HoaMapScreen() {
                 <>
                   {catLayers.map((layer, idx) => (
                     <View key={layer.id} style={styles.layerToggleRow}>
-                      <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
+                      <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
                       <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
                       <Switch
                         value={!disabledLayerIds.has(layer.id)}

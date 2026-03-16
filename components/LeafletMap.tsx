@@ -102,7 +102,7 @@ export default function LeafletMap({
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const mapReadyRef = useRef(false);
-  const pendingRef = useRef<string[]>([]);
+  const pendingRef = useRef<{ fn: string; args: any[] }[]>([]);
   const onViewAssetDetailRef = useRef(onViewAssetDetail);
   onViewAssetDetailRef.current = onViewAssetDetail;
   const onTargetReachedRef = useRef(onTargetReached);
@@ -111,27 +111,35 @@ export default function LeafletMap({
   onTaskPressRef.current = onTaskPress;
   const isWeb = Platform.OS === 'web';
 
-  const runJS = useCallback((js: string) => {
+  const sendCmd = useCallback((fn: string, ...args: any[]) => {
     if (mapReadyRef.current) {
       if (isWeb && iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({ type: 'eval', code: js }, '*');
+        iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn, args }, '*');
       } else if (!isWeb && webViewRef.current) {
-        webViewRef.current.injectJavaScript(js + '; true;');
+        const argsJson = JSON.stringify(args);
+        webViewRef.current.injectJavaScript(
+          `window.mapBridge[${JSON.stringify(fn)}].apply(window.mapBridge, ${argsJson}); true;`
+        );
       }
     } else {
-      pendingRef.current.push(js);
+      pendingRef.current.push({ fn, args });
     }
   }, [isWeb]);
 
   const flushPending = useCallback(() => {
     if (pendingRef.current.length > 0) {
-      const batch = pendingRef.current.join('; ');
+      const cmds = pendingRef.current.slice();
       pendingRef.current = [];
-      if (isWeb && iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage({ type: 'eval', code: batch }, '*');
-      } else if (!isWeb && webViewRef.current) {
-        webViewRef.current.injectJavaScript(batch + '; true;');
-      }
+      cmds.forEach((cmd: { fn: string; args: any[] }) => {
+        if (isWeb && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn: cmd.fn, args: cmd.args }, '*');
+        } else if (!isWeb && webViewRef.current) {
+          const argsJson = JSON.stringify(cmd.args);
+          webViewRef.current.injectJavaScript(
+            `window.mapBridge[${JSON.stringify(cmd.fn)}].apply(window.mapBridge, ${argsJson}); true;`
+          );
+        }
+      });
     }
   }, [isWeb]);
 
@@ -146,8 +154,7 @@ export default function LeafletMap({
         if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
           initialBoundsAppliedRef.current = true;
           const b = initialBoundsRef.current;
-          const js = `window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`;
-          pendingRef.current.unshift(js);
+          pendingRef.current.unshift({ fn: 'fitBounds', args: [[[b[0][0], b[0][1]], [b[1][0], b[1][1]]]] });
         }
         flushPending();
         break;
@@ -202,15 +209,15 @@ export default function LeafletMap({
     if (!initialBoundsAppliedRef.current && initialBounds) {
       initialBoundsAppliedRef.current = true;
       const b = initialBounds;
-      runJS(`window.mapBridge.fitBounds([[${b[0][0]},${b[0][1]}],[${b[1][0]},${b[1][1]}]])`);
+      sendCmd('fitBounds', [[b[0][0], b[0][1]], [b[1][0], b[1][1]]]);
     }
-  }, [initialBounds, runJS]);
+  }, [initialBounds, sendCmd]);
 
   useEffect(() => {
     if (userLocation) {
-      runJS(`window.mapBridge.setUserLocation(${userLocation.latitude}, ${userLocation.longitude})`);
+      sendCmd('setUserLocation', userLocation.latitude, userLocation.longitude);
     }
-  }, [userLocation, runJS]);
+  }, [userLocation, sendCmd]);
 
   const taskData = useMemo(() => {
     return tasks.map(t => ({
@@ -224,8 +231,8 @@ export default function LeafletMap({
   }, [tasks]);
 
   useEffect(() => {
-    runJS(`window.mapBridge.setTasks(${JSON.stringify(taskData)})`);
-  }, [taskData, runJS]);
+    sendCmd('setTasks', taskData);
+  }, [taskData, sendCmd]);
 
   const sentLayerIdsRef = useRef<Set<string>>(new Set());
 
@@ -244,43 +251,53 @@ export default function LeafletMap({
   useEffect(() => {
     const newLayers = layerData.filter(l => l.geojson && !sentLayerIdsRef.current.has(l.id));
     if (newLayers.length > 0) {
-      runJS(`window.mapBridge.addLayers(${JSON.stringify(newLayers)})`);
+      sendCmd('addLayers', newLayers);
       newLayers.forEach(l => sentLayerIdsRef.current.add(l.id));
     }
     const activeIds = layerData.filter(l => l.geojson).map(l => l.id);
-    runJS(`window.mapBridge.showLayerIds(${JSON.stringify(activeIds)})`);
-  }, [layerData, runJS]);
+    sendCmd('showLayerIds', activeIds);
+  }, [layerData, sendCmd]);
 
   useEffect(() => {
     if (showControllers && controllerMarkers.length > 0) {
-      runJS(`window.mapBridge.setControllerMarkers(${JSON.stringify(controllerMarkers)})`);
-      runJS(`window.mapBridge.showControllers(true)`);
+      sendCmd('setControllerMarkers', controllerMarkers);
+      sendCmd('showControllers', true);
     } else {
-      runJS(`window.mapBridge.showControllers(false)`);
+      sendCmd('showControllers', false);
     }
-  }, [showControllers, controllerMarkers, runJS]);
+  }, [showControllers, controllerMarkers, sendCmd]);
 
   useEffect(() => {
     if (showZones && zoneMarkers.length > 0) {
-      runJS(`window.mapBridge.setZoneMarkers(${JSON.stringify(zoneMarkers)})`);
-      runJS(`window.mapBridge.showZones(true)`);
+      sendCmd('setZoneMarkers', zoneMarkers);
+      sendCmd('showZones', true);
     } else {
-      runJS(`window.mapBridge.showZones(false)`);
+      sendCmd('showZones', false);
     }
-  }, [showZones, zoneMarkers, runJS]);
+  }, [showZones, zoneMarkers, sendCmd]);
 
   useEffect(() => {
     if (targetRegion) {
-      runJS(`window.mapBridge.flyTo(${targetRegion.latitude}, ${targetRegion.longitude}, 16, ${JSON.stringify(targetRegion.label || '')})`);
+      sendCmd('flyTo', targetRegion.latitude, targetRegion.longitude, 16, targetRegion.label || '');
     }
-  }, [targetRegion, runJS]);
+  }, [targetRegion, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 
   const iframeSrcDoc = useMemo(() => htmlContent, [htmlContent]);
 
   const handleIframeLoad = useCallback(() => {
-  }, []);
+    if (mapReadyRef.current) {
+      flushPending();
+      return;
+    }
+    try {
+      if (iframeRef.current?.contentWindow && (iframeRef.current.contentWindow as any).mapBridge) {
+        mapReadyRef.current = true;
+        flushPending();
+      }
+    } catch (e) {}
+  }, [flushPending]);
 
   const [webViewError, setWebViewError] = useState<string | null>(null);
 

@@ -425,8 +425,13 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   }
 
   window.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'eval' && e.data.code) {
-      try { new Function(e.data.code)(); } catch(ex) { console.error(ex); }
+    if (e.data && e.data.type === 'cmd' && e.data.fn) {
+      try {
+        var fn = window.mapBridge[e.data.fn];
+        if (typeof fn === 'function') {
+          fn.apply(window.mapBridge, e.data.args || []);
+        }
+      } catch(ex) { console.error(ex); }
     }
   });
 
