@@ -22,6 +22,7 @@ import {
   insertAssetNoteSchema, createHoaRequestSchema,
   insertDriveFolderSchema, updateDriveFolderSchema, insertDriveFileSchema, updateDriveFileSchema,
   insertInvoiceSchema, updateInvoiceSchema,
+  insertContractSchema, updateContractSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -729,9 +730,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users", requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/users", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const allUsers = await storage.getAllUsers();
+      let allUsers = await storage.getAllUsers();
+      const roleFilter = req.query.role as string | undefined;
+      if (roleFilter) {
+        allUsers = allUsers.filter(u => u.role === roleFilter);
+      }
       res.json(allUsers.map(({ password: _, ...u }) => u));
     } catch (error) {
       console.error("Get users error:", error);
@@ -2974,6 +2979,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete invoice error:", error);
       res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
+
+  app.get("/api/contracts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!['admin', 'property_manager'].includes(user.role)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const communityId = req.query.communityId as string | undefined;
+      const contractorUserId = req.query.contractorUserId as string | undefined;
+
+      if (user.role === 'property_manager') {
+        if (!communityId) return res.status(400).json({ error: "communityId is required" });
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+
+      let rows = await storage.getContracts(communityId || undefined, contractorUserId || undefined);
+
+      const statusFilter = req.query.status as string | undefined;
+      if (statusFilter) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        rows = rows.filter(r => {
+          if (!r.isActive) return statusFilter === 'expired';
+          const start = new Date(r.startDate + 'T00:00:00');
+          const end = new Date(r.endDate + 'T00:00:00');
+          if (today < start) return statusFilter === 'upcoming';
+          if (today > end) return statusFilter === 'expired';
+          return statusFilter === 'active';
+        });
+      }
+
+      res.json(rows);
+    } catch (error) {
+      console.error("Get contracts error:", error);
+      res.status(500).json({ error: "Failed to fetch contracts" });
+    }
+  });
+
+  app.get("/api/contracts/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!['admin', 'property_manager'].includes(user.role)) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const contract = await storage.getContractById(req.params.id);
+      if (!contract) return res.status(404).json({ error: "Contract not found" });
+
+      if (user.role === 'property_manager') {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, contract.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+
+      res.json(contract);
+    } catch (error) {
+      console.error("Get contract error:", error);
+      res.status(500).json({ error: "Failed to fetch contract" });
+    }
+  });
+
+  app.post("/api/contracts", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = insertContractSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+      if (parsed.data.startDate && parsed.data.endDate && parsed.data.endDate < parsed.data.startDate) {
+        return res.status(400).json({ error: "End date must be on or after start date" });
+      }
+
+      const contractorUser = await storage.getUserById(parsed.data.contractorUserId);
+      if (!contractorUser || contractorUser.role !== 'contractor') {
+        return res.status(400).json({ error: "Selected user is not a contractor" });
+      }
+
+      const contract = await storage.createContract(parsed.data);
+      res.status(201).json(contract);
+    } catch (error) {
+      console.error("Create contract error:", error);
+      res.status(500).json({ error: "Failed to create contract" });
+    }
+  });
+
+  app.put("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const existing = await storage.getContractById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Contract not found" });
+      const parsed = updateContractSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+      const startDate = parsed.data.startDate || existing.startDate;
+      const endDate = parsed.data.endDate || existing.endDate;
+      if (endDate < startDate) {
+        return res.status(400).json({ error: "End date must be on or after start date" });
+      }
+
+      if (parsed.data.contractorUserId) {
+        const contractorUser = await storage.getUserById(parsed.data.contractorUserId);
+        if (!contractorUser || contractorUser.role !== 'contractor') {
+          return res.status(400).json({ error: "Selected user is not a contractor" });
+        }
+      }
+
+      const updated = await storage.updateContract(req.params.id, parsed.data);
+      res.json(updated);
+    } catch (error) {
+      console.error("Update contract error:", error);
+      res.status(500).json({ error: "Failed to update contract" });
+    }
+  });
+
+  app.delete("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const existing = await storage.getContractById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Contract not found" });
+      await storage.deleteContract(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete contract error:", error);
+      res.status(500).json({ error: "Failed to delete contract" });
     }
   });
 

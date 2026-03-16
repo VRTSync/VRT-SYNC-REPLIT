@@ -797,3 +797,50 @@ export const invoicesRelations = relations(invoices, ({ one }) => ({
   community: one(communities, { fields: [invoices.communityId], references: [communities.id] }),
   attachmentLayer: one(mapLayers, { fields: [invoices.attachmentLayerId], references: [mapLayers.id] }),
 }));
+
+export const contracts = pgTable("contracts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  contractType: text("contract_type").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  servicesIncluded: jsonb("services_included").notNull().default(sql`'[]'::jsonb`),
+  pdfObjectKey: text("pdf_object_key"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("contracts_community_idx").on(table.communityId),
+  index("contracts_contractor_idx").on(table.contractorUserId),
+]);
+
+export type Contract = typeof contracts.$inferSelect;
+
+export const contractsRelations = relations(contracts, ({ one }) => ({
+  community: one(communities, { fields: [contracts.communityId], references: [communities.id] }),
+  contractorUser: one(users, { fields: [contracts.contractorUserId], references: [users.id] }),
+}));
+
+export const insertContractSchema = z.object({
+  communityId: z.string().min(1, "Community is required"),
+  contractorUserId: z.string().min(1, "Contractor is required"),
+  contractType: z.string().min(1, "Contract type is required"),
+  startDate: z.string().min(1, "Start date is required"),
+  endDate: z.string().min(1, "End date is required"),
+  servicesIncluded: z.array(z.string()).default([]),
+  pdfObjectKey: z.string().optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+
+export const updateContractSchema = z.object({
+  contractorUserId: z.string().min(1).optional(),
+  contractType: z.string().min(1).optional(),
+  startDate: z.string().min(1).optional(),
+  endDate: z.string().min(1).optional(),
+  servicesIncluded: z.array(z.string()).optional(),
+  pdfObjectKey: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
+});

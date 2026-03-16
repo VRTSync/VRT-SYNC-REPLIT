@@ -4,14 +4,14 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
-  notifications, driveFolders, driveFiles, invoices,
+  notifications, driveFolders, driveFiles, invoices, contracts,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
-  type DriveFolder, type DriveFile, type Invoice
+  type DriveFolder, type DriveFile, type Invoice, type Contract
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -2101,4 +2101,68 @@ export async function updateInvoice(id: string, data: Partial<{
 
 export async function deleteInvoice(id: string): Promise<void> {
   await db.delete(invoices).where(eq(invoices.id, id));
+}
+
+export async function getContracts(communityId?: string, contractorUserId?: string): Promise<(Contract & { communityName?: string; contractorName?: string })[]> {
+  const conditions = [];
+  if (communityId) conditions.push(eq(contracts.communityId, communityId));
+  if (contractorUserId) conditions.push(eq(contracts.contractorUserId, contractorUserId));
+
+  const rows = await db.select({
+    contract: contracts,
+    communityName: communities.name,
+    contractorName: users.displayName,
+  }).from(contracts)
+    .leftJoin(communities, eq(contracts.communityId, communities.id))
+    .leftJoin(users, eq(contracts.contractorUserId, users.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(contracts.createdAt));
+  return rows.map(r => ({ ...r.contract, communityName: r.communityName || undefined, contractorName: r.contractorName || undefined }));
+}
+
+export async function getContractById(id: string): Promise<(Contract & { communityName?: string; contractorName?: string }) | null> {
+  const rows = await db.select({
+    contract: contracts,
+    communityName: communities.name,
+    contractorName: users.displayName,
+  }).from(contracts)
+    .leftJoin(communities, eq(contracts.communityId, communities.id))
+    .leftJoin(users, eq(contracts.contractorUserId, users.id))
+    .where(eq(contracts.id, id));
+  if (rows.length === 0) return null;
+  return { ...rows[0].contract, communityName: rows[0].communityName || undefined, contractorName: rows[0].contractorName || undefined };
+}
+
+export async function createContract(data: {
+  communityId: string;
+  contractorUserId: string;
+  contractType: string;
+  startDate: string;
+  endDate: string;
+  servicesIncluded?: string[];
+  pdfObjectKey?: string | null;
+  isActive?: boolean;
+}): Promise<Contract> {
+  const [contract] = await db.insert(contracts).values(data).returning();
+  return contract;
+}
+
+export async function updateContract(id: string, data: Partial<{
+  contractorUserId: string;
+  contractType: string;
+  startDate: string;
+  endDate: string;
+  servicesIncluded: string[];
+  pdfObjectKey: string | null;
+  isActive: boolean;
+}>): Promise<Contract | null> {
+  const [contract] = await db.update(contracts)
+    .set({ ...data, updatedAt: new Date() })
+    .where(eq(contracts.id, id))
+    .returning();
+  return contract || null;
+}
+
+export async function deleteContract(id: string): Promise<void> {
+  await db.delete(contracts).where(eq(contracts.id, id));
 }

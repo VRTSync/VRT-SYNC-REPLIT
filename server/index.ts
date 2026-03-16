@@ -523,6 +523,23 @@ async function runStartupMigrations() {
 
       CREATE INDEX IF NOT EXISTS invoices_community_idx ON invoices(community_id);
       CREATE INDEX IF NOT EXISTS invoices_completion_date_idx ON invoices(completion_date);
+
+      CREATE TABLE IF NOT EXISTS contracts (
+        id                  varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id        varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        contractor_user_id  varchar NOT NULL REFERENCES users(id),
+        contract_type       text NOT NULL,
+        start_date          date NOT NULL,
+        end_date            date NOT NULL,
+        services_included   jsonb NOT NULL DEFAULT '[]'::jsonb,
+        pdf_object_key      text,
+        is_active           boolean NOT NULL DEFAULT true,
+        created_at          timestamp NOT NULL DEFAULT now(),
+        updated_at          timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS contracts_community_idx ON contracts(community_id);
+      CREATE INDEX IF NOT EXISTS contracts_contractor_idx ON contracts(contractor_user_id);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

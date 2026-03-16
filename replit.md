@@ -86,6 +86,23 @@ The `invoices` table stores structured invoice records tied to communities. Each
 
 **Portal invoices (`/web/pm/invoices`, `/web/hoa/invoices`):** Read-only community-scoped table. Clicking a row opens a detail modal. No create/edit/delete. Available for property_manager, hoa_admin, and hoa_member roles.
 
+### Contracts (Community–Contractor Relationship Engine)
+The `contracts` table defines service agreements between communities and contractors. Each contract has a community FK, contractor user FK (must be role=contractor), contract type, start/end dates, a JSONB array of services included, optional PDF document (via object storage), and an isActive flag.
+
+**Status is computed automatically** from today's date vs. start/end dates:
+- `upcoming` — today < startDate
+- `active` — startDate ≤ today ≤ endDate (and isActive=true)
+- `expired` — today > endDate or isActive=false
+
+**API routes (`/api/contracts`):**
+- `GET /api/contracts` — Lists contracts. Admin and property_manager only. Supports `communityId` and `contractorUserId` query filters.
+- `GET /api/contracts/:id` — Single contract detail with community and contractor names.
+- `POST /api/contracts` — Admin-only create.
+- `PUT /api/contracts/:id` — Admin-only update (community is immutable after creation).
+- `DELETE /api/contracts/:id` — Admin-only delete.
+
+**Admin portal (`/web/admin/contracts`):** Full CRUD table with community, contractor, and status filters. Create/edit modal with dynamic services list (add/remove rows), contractor dropdown populated from users with role=contractor, PDF upload, and detail view with services list.
+
 ### API Design
 A RESTful JSON API (`/api/`) provides endpoints for authentication, communities, tasks, user management, and object storage. Data is filtered by the selected community.
 
