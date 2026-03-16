@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEn
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member"]);
+export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member", "property_manager"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed", "submitted", "acknowledged"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
