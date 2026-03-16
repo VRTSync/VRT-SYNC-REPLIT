@@ -132,6 +132,9 @@ export function registerAuthRoutes(app: any) {
         req.session.hoaCommunityId = user.hoaCommunityId;
       }
       const { password: _, ...safeUser } = user;
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve()))
+      );
       res.json(safeUser);
     } catch (error) {
       console.error("Login error:", error);

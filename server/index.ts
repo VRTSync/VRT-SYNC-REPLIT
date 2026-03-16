@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 const app = express();
+app.set('trust proxy', 1);
 const log = console.log;
 
 declare module "http" {
