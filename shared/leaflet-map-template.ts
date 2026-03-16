@@ -1,4 +1,20 @@
-<!DOCTYPE html>
+/**
+ * CANONICAL LEAFLET MAP TEMPLATE — Single Source of Truth
+ *
+ * This file is the ONE place where all Leaflet map styling (CSS, marker shapes,
+ * popup layout, cluster badges, controller/zone coloring) is defined.
+ *
+ * It is consumed by:
+ *   • The Express server  — served at /leaflet-map.html for all web portal iframes
+ *     (see server/index.ts)
+ *   • The React Native app — used as inline HTML in the WebView and web iframe
+ *     (see components/LeafletMap.tsx)
+ *
+ * To change map styling, colors, marker shapes, or popup layout, edit ONLY this
+ * file. Both platforms will pick up the changes automatically.
+ */
+
+export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -444,4 +460,4 @@
 })();
 </script>
 </body>
-</html>
+</html>`;
