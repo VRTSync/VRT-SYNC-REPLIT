@@ -12,29 +12,29 @@ PortalRouter.register('map', async function (container) {
 
   const LAYER_HIERARCHY = {
     community: [
-      { key: 'bluegrass_area', label: 'Bluegrass', color: '#27ae60' },
-      { key: 'native_area', label: 'Native Area', color: '#2ecc71' },
-      { key: 'landscape_bed', label: 'Landscape Bed', color: '#16a085' },
-      { key: 'pet_station', label: 'Pet Station', color: '#8e44ad' },
+      { key: 'bluegrass_area', label: 'Bluegrass', color: '#2E8B57' },
+      { key: 'native_area', label: 'Native Area', color: '#8F9779' },
+      { key: 'landscape_bed', label: 'Landscape Bed', color: '#8B5A2B' },
+      { key: 'pet_station', label: 'Pet Station', color: '#1ABC9C' },
     ],
     irrigation: [
-      { key: 'backflow', label: 'Backflow', color: '#3498db' },
-      { key: 'controller', label: 'Controller', color: '#2980b9' },
-      { key: 'zone', label: 'Zone', color: '#1abc9c' },
-      { key: 'master_valve', label: 'Master Valve', color: '#e67e22' },
-      { key: 'flow_meter', label: 'Flow Meter', color: '#9b59b6' },
-      { key: 'qc_iso_valve', label: 'QC/ISO Valve', color: '#e74c3c' },
+      { key: 'backflow', label: 'Backflow', color: '#00BFFF' },
+      { key: 'controller', label: 'Controller', color: '#25C1AC' },
+      { key: 'zone', label: 'Zone', color: '#3498db' },
+      { key: 'master_valve', label: 'Master Valve', color: '#1F4E79' },
+      { key: 'flow_meter', label: 'Flow Meter', color: '#00CED1' },
+      { key: 'qc_iso_valve', label: 'QC/ISO Valve', color: '#87CEEB' },
     ],
     snow: [
-      { key: 'plow', label: 'Plow', color: '#2c3e50' },
-      { key: 'atv', label: 'ATV', color: '#7f8c8d' },
-      { key: 'hand_shovel', label: 'Hand Shovel', color: '#95a5a6' },
-      { key: 'ice_melt', label: 'Ice Melt', color: '#3498db' },
-      { key: 'slicer', label: 'Slicer', color: '#e74c3c' },
-      { key: 'storage_area', label: 'Storage Area', color: '#f39c12' },
+      { key: 'plow', label: 'Plow', color: '#4A90E2' },
+      { key: 'atv', label: 'ATV', color: '#6A5ACD' },
+      { key: 'hand_shovel', label: 'Hand Shovel', color: '#E83E8C' },
+      { key: 'ice_melt', label: 'Ice Melt', color: '#FF8C00' },
+      { key: 'slicer', label: 'Slicer', color: '#D62828' },
+      { key: 'storage_area', label: 'Storage Area', color: '#708090' },
     ],
     trees: [
-      { key: 'tree', label: 'Trees', color: '#27ae60' },
+      { key: 'tree', label: 'Trees', color: '#006400' },
     ],
   };
 
@@ -118,10 +118,12 @@ PortalRouter.register('map', async function (container) {
     const subs = LAYER_HIERARCHY[activeCategory] || [];
     el.innerHTML = subs.map(sub => {
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
+      const apiLayer = mapLayers.find(l => l.subLayerKey === sub.key && l.layerKey === activeCategory);
+      const dotColor = (apiLayer && apiLayer.color) ? apiLayer.color : sub.color;
       return `
         <label class="mlp-sublayer-row">
           <input type="checkbox" ${checked} data-cat="${activeCategory}" data-key="${sub.key}">
-          <span class="mlp-sub-dot" style="background:${sub.color}"></span>
+          <span class="mlp-sub-dot" style="background:${dotColor}"></span>
           <span class="mlp-sub-label">${esc(sub.label)}</span>
         </label>
       `;

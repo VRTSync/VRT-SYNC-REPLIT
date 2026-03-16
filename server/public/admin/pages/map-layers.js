@@ -346,7 +346,7 @@ window._renderMapLayers = async function(container, communityId) {
         groupLayers.forEach(l => {
           const s = summaries[l.id] || {};
           html += `<tr>
-            <td><strong>${esc(l.displayName)}</strong></td>
+            <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${esc(l.color||'#25C1AC')};border:1px solid rgba(0,0,0,0.15);vertical-align:middle;margin-right:6px"></span><strong>${esc(l.displayName)}</strong></td>
             <td><span class="badge badge-blue">${esc(l.subLayerKey || '—')}</span></td>
             <td>${formatBadge(s.sourceFormat || l.sourceFormat)}</td>
             <td>${s.featureCount ?? '—'}</td>
@@ -1142,6 +1142,16 @@ window._renderMapLayers = async function(container, communityId) {
             </div>
           </div>
           <div class="form-group">
+            <label>Color</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="color" id="ml-color-picker" value="${esc(layer?.color||'#25C1AC')}"
+                     style="width:40px;height:32px;border:none;cursor:pointer;padding:0">
+              <input type="text" class="form-input" id="ml-color-text"
+                     value="${esc(layer?.color||'#25C1AC')}" maxlength="7"
+                     style="font-family:monospace;width:100px">
+            </div>
+          </div>
+          <div class="form-group">
             <label>GeoJSON Data</label>
             <div class="flex gap-2 mb-2">
               <input type="file" id="ml-file" accept=".json,.geojson" style="font-size:13px" />
@@ -1169,6 +1179,13 @@ window._renderMapLayers = async function(container, communityId) {
         subLayerKeySelect.disabled = true;
         subLayerKeySelect.innerHTML = '<option value="">-- Select layer key first --</option>';
       }
+    });
+
+    const colorPicker = overlay.querySelector('#ml-color-picker');
+    const colorText = overlay.querySelector('#ml-color-text');
+    colorPicker.addEventListener('input', () => { colorText.value = colorPicker.value; });
+    colorText.addEventListener('input', () => {
+      if (/^#[0-9A-Fa-f]{6}$/.test(colorText.value)) colorPicker.value = colorText.value;
     });
 
     const fileInput = overlay.querySelector('#ml-file');
@@ -1208,7 +1225,9 @@ window._renderMapLayers = async function(container, communityId) {
         }
       }
 
+      const color = overlay.querySelector('#ml-color-text').value.trim();
       const body = { displayName, communityId, layerKey, subLayerKey };
+      if (color && /^#[0-9A-Fa-f]{6}$/.test(color)) body.color = color;
       if (geojsonData) body.geojsonData = geojsonData;
 
       try {

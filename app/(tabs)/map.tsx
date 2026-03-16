@@ -19,6 +19,7 @@ type MapLayerMeta = {
   subLayerKey: string;
   displayName: string;
   version: number;
+  color?: string;
 };
 
 type ControllerInfo = {
@@ -308,7 +309,7 @@ export default function MapScreen() {
           subLayerKey: l.subLayerKey,
           displayName: l.displayName,
           geojson,
-          color: layerColors[idx % layerColors.length],
+          color: l.color || layerColors[idx % layerColors.length],
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
@@ -466,7 +467,7 @@ export default function MapScreen() {
                 <>
                   {catLayers.map((layer, idx) => (
                     <View key={layer.id} style={styles.layerToggleRow}>
-                      <View style={[styles.layerColorDot, { backgroundColor: layerColors[idx % layerColors.length] }]} />
+                      <View style={[styles.layerColorDot, { backgroundColor: layer.color || layerColors[idx % layerColors.length] }]} />
                       <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
                       <Switch
                         value={!disabledLayerIds.has(layer.id)}

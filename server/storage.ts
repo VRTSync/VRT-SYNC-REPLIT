@@ -647,6 +647,7 @@ export async function createMapLayer(data: {
   displayName: string;
   sourceFormat?: string;
   geojsonData?: string;
+  color?: string;
 }): Promise<MapLayer> {
   const [layer] = await db.insert(mapLayers).values(data).returning();
   return layer;
@@ -672,6 +673,7 @@ export async function updateMapLayer(id: string, expectedVersion: number, data: 
   displayName: string;
   sourceFormat: string;
   geojsonData: string;
+  color: string;
 }>): Promise<MapLayer | null> {
   const [updated] = await db.update(mapLayers)
     .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })

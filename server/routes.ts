@@ -12,6 +12,7 @@ import { parseIrrigationKml } from "./kmlIrrigationParser";
 import { validateLayerGeoJSON } from "./layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "./layerKeys";
 import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "./kmlConverter";
+import { getDefaultLayerColor } from "../shared/layerColors";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
@@ -1182,6 +1183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const keyValidation = validateLayerKeys(parsed.data.layerKey, parsed.data.subLayerKey);
       if (!keyValidation.valid) return res.status(400).json({ error: keyValidation.error });
 
+      if (!parsed.data.color) {
+        const count = (await storage.getMapLayersByCommunity(parsed.data.communityId, parsed.data.layerKey)).length;
+        parsed.data.color = getDefaultLayerColor(parsed.data.subLayerKey, count);
+      }
+
       const layer = await storage.createMapLayer(parsed.data);
       let syncResult = null;
       let featureCount = 0;
@@ -1294,6 +1300,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { geojsonData: _, ...rest } = updated;
         return res.json({ ...rest, featureCount, syncResult });
       } else {
+        const uploadCount = (await storage.getMapLayersByCommunity(communityId, layerKey)).length;
+        const autoColor = getDefaultLayerColor(subLayerKey, uploadCount);
         const layer = await storage.createMapLayer({
           communityId,
           layerKey,
@@ -1301,6 +1309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           displayName,
           sourceFormat,
           geojsonData,
+          color: autoColor,
         });
         const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = layer;
@@ -1352,6 +1361,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const controllerGeojsonStr = JSON.stringify(parseResult.controllerGeojson);
       const zoneGeojsonStr = JSON.stringify(parseResult.zoneGeojson);
 
+      const irrLayerCount = existingLayers.length;
+
       if (controllerLayer) {
         const updated = await storage.updateMapLayer(controllerLayer.id, controllerLayer.version, {
           displayName: controllerDisplayName,
@@ -1367,6 +1378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           displayName: controllerDisplayName,
           sourceFormat: "kml",
           geojsonData: controllerGeojsonStr,
+          color: getDefaultLayerColor("controller", irrLayerCount),
         });
       }
 
@@ -1385,6 +1397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           displayName: "Zones",
           sourceFormat: "kml",
           geojsonData: zoneGeojsonStr,
+          color: getDefaultLayerColor("zone", irrLayerCount + 1),
         });
       }
 

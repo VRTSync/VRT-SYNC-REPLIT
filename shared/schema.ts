@@ -227,6 +227,7 @@ export const mapLayers = pgTable("map_layers", {
   displayName: text("display_name").notNull(),
   sourceFormat: text("source_format").notNull().default("geojson"),
   geojsonData: text("geojson_data"),
+  color: text("color"),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -569,12 +570,14 @@ export const insertMapLayerSchema = z.object({
   displayName: z.string().min(1),
   sourceFormat: z.enum(["geojson", "kml"]).default("geojson"),
   geojsonData: z.string().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
 });
 
 export const updateMapLayerSchema = z.object({
   displayName: z.string().min(1).optional(),
   sourceFormat: z.enum(["geojson", "kml"]).optional(),
   geojsonData: z.string().optional(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   version: z.number(),
 });
 
