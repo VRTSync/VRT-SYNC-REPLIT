@@ -5,6 +5,10 @@ import { sendDueReminders } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
+import { db } from "./db";
+import { users } from "../shared/schema";
+import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 const app = express();
 const log = console.log;
@@ -470,10 +474,31 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+async function seedProductionAdmin() {
+  try {
+    const existing = await db.select().from(users).where(eq(users.username, "rmangel@vrtsync.com")).limit(1);
+    if (existing.length === 0) {
+      const hashed = await bcrypt.hash("Soccer03", 10);
+      await db.insert(users).values({
+        id: crypto.randomUUID(),
+        username: "rmangel@vrtsync.com",
+        password: hashed,
+        role: "admin",
+        displayName: "Ryan Mangel",
+      });
+      log("Seeded admin user: rmangel@vrtsync.com");
+    }
+  } catch (err) {
+    console.error("Admin seed failed (non-fatal):", err);
+  }
+}
+
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
   setupRequestLogging(app);
+
+  await seedProductionAdmin();
 
   configureExpoAndLanding(app);
   configureAdminHub(app);
