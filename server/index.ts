@@ -10,6 +10,7 @@ import { db } from "./db";
 import { users } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { LEAFLET_MAP_HTML } from "../shared/leaflet-map-template";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -208,7 +209,6 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.get("/leaflet-map.html", (_req: Request, res: Response) => {
-    const { LEAFLET_MAP_HTML } = require("../shared/leaflet-map-template");
     res.type("html").send(LEAFLET_MAP_HTML);
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
