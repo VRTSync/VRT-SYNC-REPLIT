@@ -1,0 +1,72 @@
+VRTSync KML Sublayer Color System
+Community Category (Landscape Logic)
+
+These should feel natural and vegetation-oriented.
+
+Sublayer	Color	Hex	Reason
+bluegrass_area	Turf Green	#2E8B57	Deep grass color, clear on satellite
+native_area	Sage Green	#8F9779	Dry/native ecosystem tone
+landscape_bed	Mulch Brown	#8B5A2B	Matches mulch/soil visually
+pet_station	Teal	#1ABC9C	Utility feature, stands out but not alarming
+Irrigation Category (Water Infrastructure)
+
+Use cool mechanical blues so the category feels cohesive.
+
+Sublayer	Color	Hex	Reason
+backflow	Bright Cyan	#00BFFF	Water system primary device
+master_valve	Deep Blue	#1F4E79	Control infrastructure
+flow_meter	Aqua	#00CED1	Water measurement
+qc_iso_valve	Light Blue	#87CEEB	Field access points
+
+(Controllers and zones rotating palette will sit nicely next to these)
+
+Snow Category (Winter Operations)
+
+Snow layers should feel operational and visible over snow imagery.
+
+Sublayer	Color	Hex	Reason
+plow	Snow Blue	#4A90E2	Standard snow route color
+atv	Royal Purple	#6A5ACD	Smaller equipment, distinct
+hand_shovel	Magenta	#E83E8C	Human labor areas
+ice_melt	Bright Orange	#FF8C00	Material application
+slicer	Red	#D62828	Mechanical ice cutting
+storage_area	Slate Gray	#708090	Material staging
+Trees Category
+Sublayer	Color	Hex	Reason
+tree	Forest Green	#006400	Classic tree map color
+
+(Species differentiation can be done with icon colors later if needed.)
+
+Quick Visual Summary
+COMMUNITY
+Bluegrass        #2E8B57
+Native           #8F9779
+Landscape Bed    #8B5A2B
+Pet Station      #1ABC9C
+
+IRRIGATION
+Backflow         #00BFFF
+Master Valve     #1F4E79
+Flow Meter       #00CED1
+QC / ISO Valve   #87CEEB
+
+SNOW
+Plow             #4A90E2
+ATV              #6A5ACD
+Hand Shovel      #E83E8C
+Ice Melt         #FF8C00
+Slicer           #D62828
+Storage Area     #708090
+
+TREES
+Tree             #006400
+
+💡 Pro Tip for VRTSync rendering
+
+For polygons and lines:
+
+fillOpacity: 0.35
+strokeOpacity: 0.9
+strokeWidth: 2
+
+This keeps them visible on satellite imagery without blocking the map
