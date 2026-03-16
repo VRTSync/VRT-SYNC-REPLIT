@@ -6,7 +6,7 @@ import { sendDueReminders } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { users } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -477,6 +477,44 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+async function runStartupMigrations() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS color text;
+
+      CREATE TABLE IF NOT EXISTS drive_folders (
+        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        parent_id     varchar REFERENCES drive_folders(id) ON DELETE SET NULL,
+        name          text NOT NULL,
+        created_by    varchar NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+        created_at    timestamp NOT NULL DEFAULT now(),
+        updated_at    timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS drive_files (
+        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        folder_id     varchar REFERENCES drive_folders(id) ON DELETE SET NULL,
+        name          text NOT NULL,
+        file_ref      text NOT NULL,
+        mime_type     text,
+        size_bytes    integer,
+        uploaded_by   varchar NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+        created_at    timestamp NOT NULL DEFAULT now(),
+        updated_at    timestamp NOT NULL DEFAULT now()
+      );
+    `);
+    console.log("Startup migrations applied.");
+  } catch (err) {
+    console.error("Startup migration error:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function seedProductionAdmin() {
   try {
     const existing = await db.select().from(users).where(eq(users.username, "rmangel@vrtsync.com")).limit(1);
@@ -502,6 +540,7 @@ async function seedProductionAdmin() {
   setupSession(app);
   setupRequestLogging(app);
 
+  await runStartupMigrations();
   await seedProductionAdmin();
 
   configureExpoAndLanding(app);
