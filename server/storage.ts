@@ -4,13 +4,14 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
-  notifications,
+  notifications, driveFolders, driveFiles,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
-  type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification
+  type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
+  type DriveFolder, type DriveFile
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1956,4 +1957,81 @@ export async function getContractorsForCommunity(communityId: string): Promise<U
       inArray(users.role, ["contractor", "admin"]),
     ));
   return members.map(m => m.users);
+}
+
+export async function getDriveFolders(communityId: string, parentId?: string | null): Promise<(DriveFolder & { creatorName?: string })[]> {
+  const conditions = [eq(driveFolders.communityId, communityId)];
+  if (parentId) {
+    conditions.push(eq(driveFolders.parentId, parentId));
+  } else {
+    conditions.push(isNull(driveFolders.parentId));
+  }
+  const rows = await db.select({
+    folder: driveFolders,
+    creatorName: users.displayName,
+  }).from(driveFolders)
+    .leftJoin(users, eq(driveFolders.createdBy, users.id))
+    .where(and(...conditions))
+    .orderBy(asc(driveFolders.name));
+  return rows.map(r => ({ ...r.folder, creatorName: r.creatorName || undefined }));
+}
+
+export async function getDriveFiles(communityId: string, folderId?: string | null): Promise<(DriveFile & { uploaderName?: string })[]> {
+  const conditions = [eq(driveFiles.communityId, communityId)];
+  if (folderId) {
+    conditions.push(eq(driveFiles.folderId, folderId));
+  } else {
+    conditions.push(isNull(driveFiles.folderId));
+  }
+  const rows = await db.select({
+    file: driveFiles,
+    uploaderName: users.displayName,
+  }).from(driveFiles)
+    .leftJoin(users, eq(driveFiles.uploadedBy, users.id))
+    .where(and(...conditions))
+    .orderBy(asc(driveFiles.name));
+  return rows.map(r => ({ ...r.file, uploaderName: r.uploaderName || undefined }));
+}
+
+export async function getDriveFolder(id: string): Promise<DriveFolder | null> {
+  const [folder] = await db.select().from(driveFolders).where(eq(driveFolders.id, id));
+  return folder || null;
+}
+
+export async function createDriveFolder(data: { communityId: string; parentId?: string | null; name: string; createdBy: string }): Promise<DriveFolder> {
+  const [folder] = await db.insert(driveFolders).values(data).returning();
+  return folder;
+}
+
+export async function updateDriveFolder(id: string, data: { name: string }): Promise<DriveFolder> {
+  const [folder] = await db.update(driveFolders).set({ ...data, updatedAt: new Date() }).where(eq(driveFolders.id, id)).returning();
+  return folder;
+}
+
+export async function deleteDriveFolder(id: string): Promise<void> {
+  const childFolders = await db.select().from(driveFolders).where(eq(driveFolders.parentId, id)).limit(1);
+  if (childFolders.length > 0) throw new Error("FOLDER_NOT_EMPTY");
+  const childFiles = await db.select().from(driveFiles).where(eq(driveFiles.folderId, id)).limit(1);
+  if (childFiles.length > 0) throw new Error("FOLDER_NOT_EMPTY");
+  await db.delete(driveFolders).where(eq(driveFolders.id, id));
+}
+
+export async function createDriveFile(data: { communityId: string; folderId?: string | null; name: string; fileRef: string; mimeType?: string | null; sizeBytes?: number | null; uploadedBy: string }): Promise<DriveFile> {
+  const [file] = await db.insert(driveFiles).values(data).returning();
+  return file;
+}
+
+export async function updateDriveFile(id: string, data: { name: string }): Promise<DriveFile> {
+  const [file] = await db.update(driveFiles).set({ ...data, updatedAt: new Date() }).where(eq(driveFiles.id, id)).returning();
+  return file;
+}
+
+export async function deleteDriveFile(id: string): Promise<DriveFile> {
+  const [file] = await db.delete(driveFiles).where(eq(driveFiles.id, id)).returning();
+  return file;
+}
+
+export async function getDriveFile(id: string): Promise<DriveFile | null> {
+  const [file] = await db.select().from(driveFiles).where(eq(driveFiles.id, id));
+  return file || null;
 }

@@ -698,3 +698,52 @@ export const insertAssetNoteSchema = z.object({
   noteText: z.string().min(1, "Note text is required"),
   idempotencyKey: z.string().optional(),
 });
+
+export const driveFolders = pgTable("drive_folders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  parentId: varchar("parent_id").references((): AnyPgColumn => driveFolders.id, { onDelete: 'set null' }),
+  name: text("name").notNull(),
+  createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const driveFiles = pgTable("drive_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  folderId: varchar("folder_id").references(() => driveFolders.id, { onDelete: 'set null' }),
+  name: text("name").notNull(),
+  fileRef: text("file_ref").notNull(),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type DriveFolder = typeof driveFolders.$inferSelect;
+export type DriveFile = typeof driveFiles.$inferSelect;
+
+export const insertDriveFolderSchema = z.object({
+  communityId: z.string().min(1),
+  parentId: z.string().optional().nullable(),
+  name: z.string().min(1, "Folder name is required"),
+});
+
+export const updateDriveFolderSchema = z.object({
+  name: z.string().min(1, "Folder name is required"),
+});
+
+export const insertDriveFileSchema = z.object({
+  communityId: z.string().min(1),
+  folderId: z.string().optional().nullable(),
+  name: z.string().min(1, "File name is required"),
+  fileRef: z.string().min(1),
+  mimeType: z.string().optional().nullable(),
+  sizeBytes: z.number().int().optional().nullable(),
+});
+
+export const updateDriveFileSchema = z.object({
+  name: z.string().min(1, "File name is required"),
+});
