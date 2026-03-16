@@ -47,6 +47,10 @@ args = "Start App"
 task = "workflow.run"
 args = "Start Backend"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start Frontend"
+
 [[workflows.workflow]]
 name = "Start App"
 author = "agent"
@@ -82,7 +86,9 @@ mode = "sequential"
 task = "shell.exec"
 args = "npm run expo:dev"
 waitForPort = 8081
-ensurePreviewReachable = "/status"
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [postMerge]
 path = "scripts/post-merge.sh"
