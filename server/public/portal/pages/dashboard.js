@@ -2,6 +2,9 @@
  * Route: 'dashboard'
  * Renders role-specific dashboard using shared PortalModules.
  */
+function _wide() { return window.innerWidth >= 1600; }
+function _wc(narrow, wide) { return _wide() ? wide : narrow; }
+
 PortalRouter.register('dashboard', async function (container) {
   const ctx = PortalState.getCommunityContext();
   const { role, activeCommunity } = ctx;
@@ -112,7 +115,7 @@ async function renderContractor(container, ctx) {
     </div>
 
     <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.listModule({
           title: 'HOA Requests',
           rows: pendingReqs.slice(0, 5),
@@ -120,9 +123,17 @@ async function renderContractor(container, ctx) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.notesModule({ title: 'Contractor Notes' })}
       </div>
+      ${_wide() ? `<div class="dash-col-4w">
+        ${M.listModule({
+          title: 'Completed Tasks',
+          rows: completed.slice(0, 5),
+          emptyMsg: 'No completed tasks yet.',
+          viewAllRoute: 'tasks',
+        })}
+      </div>` : ''}
     </div>
   `;
 }
@@ -176,7 +187,7 @@ async function renderHoa(container, ctx, readOnly) {
     </div>
 
     <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.listModule({
           title: 'Recent Work',
           rows: recentDone.slice(0, 5),
@@ -184,7 +195,7 @@ async function renderHoa(container, ctx, readOnly) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.listModule({
           title: 'Upcoming Work',
           rows: upcoming.slice(0, 5),
@@ -192,6 +203,14 @@ async function renderHoa(container, ctx, readOnly) {
           viewAllRoute: 'tasks',
         })}
       </div>
+      ${_wide() ? `<div class="dash-col-4w">
+        ${M.listModule({
+          title: 'Open Requests',
+          rows: pendingReqs.slice(0, 5),
+          emptyMsg: 'No open requests.',
+          viewAllRoute: 'requests',
+        })}
+      </div>` : ''}
     </div>
 
     <div class="dash-grid" style="margin-top:20px">
@@ -237,7 +256,7 @@ async function renderPM(container, ctx) {
     ])}
 
     <div class="dash-grid">
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.listModule({
           title: 'Recently Completed',
           rows: recentDone,
@@ -245,7 +264,7 @@ async function renderPM(container, ctx) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      <div class="dash-col-6">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.listModule({
           title: 'Recent Requests',
           rows: pendingReqs.slice(0, 5),
@@ -253,6 +272,14 @@ async function renderPM(container, ctx) {
           viewAllRoute: 'tasks',
         })}
       </div>
+      ${_wide() ? `<div class="dash-col-4w">
+        ${M.listModule({
+          title: 'Overdue Tasks',
+          rows: overdue.slice(0, 5),
+          emptyMsg: 'No overdue tasks.',
+          viewAllRoute: 'tasks',
+        })}
+      </div>` : ''}
     </div>
 
     <div class="dash-grid" style="margin-top:20px">

@@ -139,7 +139,6 @@
 /* ── Page content padding ── */
 #page-content {
   padding: 28px 32px 40px;
-  max-width: 1400px;
 }
 
 /* ── Portal Page Header ── */
@@ -594,6 +593,20 @@
 
 .community-card-sel:hover .ccs-arrow {
   color: var(--teal);
+}
+
+/* ── Wide-screen enhancements ── */
+@media (min-width: 1600px) {
+  .portal-stats-row {
+    gap: 24px;
+    margin-bottom: 28px;
+  }
+  .portal-stat-card {
+    padding: 22px 24px;
+    gap: 18px;
+  }
+  .psc-value { font-size: 28px; }
+  .dash-col-4w { grid-column: span 4; }
 }
 
 /* ── Responsive tweaks ── */
@@ -1266,7 +1279,6 @@
 
 #page-content:has(.map-workspace) {
   padding: 0;
-  max-width: none;
 }
 
 .map-layers-panel {
