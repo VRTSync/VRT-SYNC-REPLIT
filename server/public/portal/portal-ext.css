@@ -139,6 +139,7 @@
 /* ── Page content padding ── */
 #page-content {
   padding: 28px 32px 40px;
+  max-width: 1600px;
 }
 
 /* ── Portal Page Header ── */
@@ -607,6 +608,12 @@
   }
   .psc-value { font-size: 28px; }
   .dash-col-4w { grid-column: span 4; }
+}
+
+@media (min-width: 1920px) {
+  #page-content {
+    max-width: none;
+  }
 }
 
 /* ── Responsive tweaks ── */
