@@ -415,6 +415,22 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       });
       this._outlineLayer.addTo(map);
       this._outlineLayer.bringToBack();
+    },
+
+    fitToOutline: function() {
+      if (this._outlineLayer) {
+        try {
+          var b = this._outlineLayer.getBounds();
+          if (b && b.isValid()) {
+            communityBounds = b;
+            map.fitBounds(b, { padding: [32, 32] });
+            return;
+          }
+        } catch(e) {}
+      }
+      if (communityBounds && communityBounds.isValid()) {
+        map.fitBounds(communityBounds, { padding: [32, 32] });
+      }
     }
   };
 

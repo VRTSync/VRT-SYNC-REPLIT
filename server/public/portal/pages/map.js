@@ -107,7 +107,7 @@ PortalRouter.register('map', async function (container) {
         activeCategory = btn.dataset.cat;
         renderCategories();
         renderSublayers();
-        syncVisibleLayers();
+        syncVisibleLayers(true);
       });
     });
   }
@@ -196,8 +196,8 @@ PortalRouter.register('map', async function (container) {
 
     try {
       const bounds = await apiFetch(`/api/communities/${communityId}/bounds`);
-      if (bounds && bounds.coordinates && bounds.coordinates.length > 0) {
-        cmdToIframe('fitBounds', bounds.coordinates);
+      if (bounds && bounds.bounds && bounds.bounds.length > 0) {
+        cmdToIframe('fitBounds', bounds.bounds);
       }
     } catch (err) {
       console.error('Failed to load community bounds:', err);
@@ -228,6 +228,7 @@ PortalRouter.register('map', async function (container) {
     const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
     if (outlineLayer) {
       cmdToIframe('setCommunityOutline', outlineLayer._geojson);
+      cmdToIframe('fitToOutline');
     } else {
       cmdToIframe('setCommunityOutline', null);
     }
@@ -248,7 +249,7 @@ PortalRouter.register('map', async function (container) {
     }
   }
 
-  function syncVisibleLayers() {
+  function syncVisibleLayers(fitMap) {
     const visibleIds = [];
     mapLayers.forEach(layer => {
       const cat = layer.layerKey;
@@ -263,7 +264,9 @@ PortalRouter.register('map', async function (container) {
     const showZones = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.zone;
     cmdToIframe('showControllers', !!showControllers);
     cmdToIframe('showZones', !!showZones);
-    cmdToIframe('fitToContent');
+    if (fitMap) {
+      cmdToIframe('fitToContent');
+    }
   }
 
   async function handleAssetDetail(data) {
