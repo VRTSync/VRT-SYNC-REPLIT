@@ -16,6 +16,11 @@ const app = express();
 app.set('trust proxy', 1);
 const log = console.log;
 
+const STATIC_VERSION = Date.now().toString(36);
+function stampHtml(html: string): string {
+  return html.replace(/(\/(?:admin|portal)-static\/[^"'?]+\.(?:css|js))/g, `$1?v=${STATIC_VERSION}`);
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -220,7 +225,7 @@ function configureAdminHub(app: express.Application) {
   app.use("/admin-static", express.static(path.resolve(process.cwd(), "server", "public", "admin")));
 
   const adminShellPath = path.resolve(process.cwd(), "server", "templates", "admin-shell.html");
-  const adminShell = fs.readFileSync(adminShellPath, "utf-8");
+  const adminShell = stampHtml(fs.readFileSync(adminShellPath, "utf-8"));
 
   app.get("/web/admin/login", (_req: Request, res: Response) => {
     res.redirect("/web/login");
@@ -244,9 +249,9 @@ function configureAdminHub(app: express.Application) {
 function configurePortalHub(app: express.Application) {
   app.use("/portal-static", express.static(path.resolve(process.cwd(), "server", "public", "portal")));
 
-  const contractorShell = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "contractor-shell.html"), "utf-8");
-  const hoaShell        = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "hoa-shell.html"), "utf-8");
-  const pmShell         = fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "pm-shell.html"), "utf-8");
+  const contractorShell = stampHtml(fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "contractor-shell.html"), "utf-8"));
+  const hoaShell        = stampHtml(fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "hoa-shell.html"), "utf-8"));
+  const pmShell         = stampHtml(fs.readFileSync(path.resolve(process.cwd(), "server", "templates", "pm-shell.html"), "utf-8"));
 
   /* ── Unified login (all non-admin roles) ─────────────────────────────── */
   const loginHtml = `<!DOCTYPE html>
