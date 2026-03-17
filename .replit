@@ -25,11 +25,15 @@ externalPort = 80
 localPort = 8082
 externalPort = 3000
 
+[[webviews]]
+name = "Web Portal"
+port = 5000
+
 [env]
 PORT = "5000"
 
 [agent]
-stack = "EXPO"
+stack = "nodejs"
 
 [workflows]
 runButton = "Project"
