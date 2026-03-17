@@ -51,7 +51,7 @@ PortalRouter.register('map', async function (container) {
   let detailTab = 'details';
   let mapLayers = [];
   let iframeReady = false;
-  let pendingMessages = [];
+  let pendingCmds = [];
   let renderGeneration = 0;
 
   if (window._portalMapCleanup) {
@@ -147,8 +147,14 @@ PortalRouter.register('map', async function (container) {
       } catch (_) { return; }
       if (msg.type === 'mapReady') {
         iframeReady = true;
-        pendingMessages.forEach(m => sendToIframe(m));
-        pendingMessages = [];
+        var cmds = pendingCmds.slice();
+        pendingCmds = [];
+        cmds.forEach(function(c) {
+          var iframe = document.getElementById('map-iframe');
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'cmd', fn: c.fn, args: c.args }, '*');
+          }
+        });
         loadCommunity(community.id);
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
@@ -162,14 +168,15 @@ PortalRouter.register('map', async function (container) {
     };
   }
 
-  function sendToIframe(code) {
-    const iframe = document.getElementById('map-iframe');
+  function cmdToIframe(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    var iframe = document.getElementById('map-iframe');
     if (!iframe || !iframe.contentWindow) return;
     if (!iframeReady) {
-      pendingMessages.push(code);
+      pendingCmds.push({ fn: fn, args: args });
       return;
     }
-    iframe.contentWindow.postMessage({ type: 'eval', code: code }, '*');
+    iframe.contentWindow.postMessage({ type: 'cmd', fn: fn, args: args }, '*');
   }
 
   async function loadCommunity(communityId) {
@@ -185,13 +192,12 @@ PortalRouter.register('map', async function (container) {
     renderCategories();
     renderSublayers();
 
-    sendToIframe(`window.mapBridge.clearIrrigation();`);
+    cmdToIframe('clearIrrigation');
 
     try {
       const bounds = await apiFetch(`/api/communities/${communityId}/bounds`);
       if (bounds && bounds.coordinates && bounds.coordinates.length > 0) {
-        const coords = JSON.stringify(bounds.coordinates);
-        sendToIframe(`window.mapBridge.fitBounds(${coords});`);
+        cmdToIframe('fitBounds', bounds.coordinates);
       }
     } catch (err) {
       console.error('Failed to load community bounds:', err);
@@ -221,9 +227,9 @@ PortalRouter.register('map', async function (container) {
   function loadCommunityOutline() {
     const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
     if (outlineLayer) {
-      sendToIframe(`window.mapBridge.setCommunityOutline(${JSON.stringify(outlineLayer._geojson)});`);
+      cmdToIframe('setCommunityOutline', outlineLayer._geojson);
     } else {
-      sendToIframe(`window.mapBridge.setCommunityOutline(null);`);
+      cmdToIframe('setCommunityOutline', null);
     }
   }
 
@@ -238,7 +244,7 @@ PortalRouter.register('map', async function (container) {
       controllerColorMap: l.controllerColorMap || {},
     }));
     if (layerData.length > 0) {
-      sendToIframe(`window.mapBridge.addLayers(${JSON.stringify(layerData)});`);
+      cmdToIframe('addLayers', layerData);
     }
   }
 
@@ -251,13 +257,13 @@ PortalRouter.register('map', async function (container) {
         visibleIds.push(layer.id);
       }
     });
-    sendToIframe(`window.mapBridge.showLayerIds(${JSON.stringify(visibleIds)});`);
+    cmdToIframe('showLayerIds', visibleIds);
 
     const showControllers = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.controller;
     const showZones = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.zone;
-    sendToIframe(`window.mapBridge.showControllers(${!!showControllers});`);
-    sendToIframe(`window.mapBridge.showZones(${!!showZones});`);
-    sendToIframe(`window.mapBridge.fitToContent();`);
+    cmdToIframe('showControllers', !!showControllers);
+    cmdToIframe('showZones', !!showZones);
+    cmdToIframe('fitToContent');
   }
 
   async function handleAssetDetail(data) {
@@ -275,7 +281,7 @@ PortalRouter.register('map', async function (container) {
         const lng = asset.longitude;
         if (lat != null && lng != null) {
           const flyLabel = selectedAsset._label || '';
-          sendToIframe(`window.mapBridge.flyTo(${lat}, ${lng}, 16, ${JSON.stringify(flyLabel)});`);
+          cmdToIframe('flyTo', lat, lng, 16, flyLabel);
         }
       } else {
         selectedAsset = {
