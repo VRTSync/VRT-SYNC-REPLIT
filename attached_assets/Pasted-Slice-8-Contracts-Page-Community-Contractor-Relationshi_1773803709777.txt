@@ -1,0 +1,536 @@
+Slice 8 — Contracts Page (Community ↔ Contractor Relationship Engine) + Admin Styling Enforcement
+Objective
+
+Implement the Contracts page for the web portals as the structured system that connects contractors to communities, stores real contract documents, and defines the service obligations that govern recurring work.
+
+This slice should establish the Contracts page as both:
+
+a contract record/document system
+
+a contractor-to-community relationship engine
+
+a service obligation source for future task generation and contractor access logic
+
+For V1, this page should focus on landscape maintenance contracts.
+
+Critical Design Rule
+
+All Contracts page UI must visually match the existing admin portal styling.
+
+Use:
+
+server/public/admin/admin.css
+
+and the current shell / page layout patterns.
+
+Do not create a separate contract-management design language.
+
+The Contracts page should feel like a natural extension of the admin portal and the operational structure of VRTSync.
+
+Contract System Purpose
+
+The Contracts page is not just a PDF repository.
+
+It is the engine that connects:
+
+Community
+↕
+Contract
+↕
+Contractor
+
+And from that relationship also flows:
+
+Service Obligations
+→ future task generation
+→ contractor access to the community
+
+This page is one of the key control points in the VRTSync platform.
+
+V1 Scope
+
+For V1, the Contracts system should focus on:
+
+Landscape Maintenance Contracts
+
+Do not overbuild multiple contract types yet.
+
+The system should be architected so additional contract types can be added later, but the current workflow should stay narrow and practical.
+
+Roles Included in This Slice
+
+Build contract behavior for:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractors do not need a full Contracts page in V1 unless there is already a strong reason to expose a read-only version later.
+
+For this slice, it is acceptable to keep Contracts out of the contractor portal.
+
+Role Behavior
+Super Admin
+
+Primary operator of the Contracts system.
+
+Can:
+
+view all contracts
+
+create contracts
+
+upload contract PDFs
+
+edit contract metadata
+
+connect contractors to communities
+
+define included services
+
+view contract status
+
+This should function as the master contracts ledger.
+
+Property Manager
+
+Community-scoped visibility.
+
+Can:
+
+view active contracts for the active community
+
+open contract details
+
+view/download PDF
+
+Editing is optional depending on your desired governance, but based on the overall pattern it is best to keep creation/editing primarily with Super Admin for now unless already intended otherwise.
+
+HOA Admin
+
+Community-scoped visibility.
+
+Can:
+
+view contracts for their community
+
+open contract details
+
+view/download PDF
+
+No creation/editing required for this slice.
+
+HOA Member
+
+Read-only community visibility.
+
+Can:
+
+view contract list
+
+open contract details
+
+download/view PDF
+
+Cannot:
+
+create
+
+edit
+
+delete
+
+Contractor
+
+No contract page required in V1.
+
+Do not add Contracts to the contractor nav in this slice.
+
+Routes
+
+Add/finalize routes for:
+
+/web/admin/contracts
+/web/pm/contracts
+/web/hoa/contracts
+
+Use the existing SPA router pattern.
+
+Community Context Rule
+
+For PM / HOA roles, the Contracts page is scoped to:
+
+PortalState.getActiveCommunity()
+
+Changing the active community from the topbar should refresh contract data for the current community.
+
+For Super Admin, contracts should default to a platform-wide master list with the ability to identify the community each contract belongs to.
+
+Shared Page Header
+
+For community-scoped views, use:
+
+Contracts
+Preserve Metro District
+
+For Super Admin:
+
+Contracts
+All Communities
+Page Layout
+
+Recommended structure:
+
+Page Header
+Filter / Action Bar
+Contracts List
+Contract Detail View / Modal
+
+Use the existing admin page layout conventions.
+
+Contracts List View
+
+Create a structured contracts list.
+
+Recommended columns:
+
+Community
+
+Contractor
+
+Start Date
+
+End Date
+
+Status
+
+Services Included
+
+PDF / Document indicator
+
+For PM / HOA views, the Community column may be omitted if already scoped.
+
+The list should be easy to scan and should not feel like a legal document tracker only — it is an operational relationship page.
+
+Contract Status
+
+The page should clearly show contract status.
+
+Recommended derived states:
+
+Upcoming
+Active
+Expired
+
+Status should be based on:
+
+start date
+
+end date
+
+current date
+
+This must be visually obvious in the list and detail view.
+
+Contract Detail View
+
+Clicking a contract should open a detail view.
+
+This can be:
+
+modal
+
+side panel
+
+embedded detail area
+
+Use whichever fits best with the current admin patterns.
+
+The contract detail view should include:
+
+community
+
+contractor
+
+start date
+
+end date
+
+status
+
+included services
+
+contractor access implications if visible
+
+contract PDF action
+
+Included Services
+
+A major part of the contract detail page is the list of included services.
+
+For V1, this should support the concept of:
+
+mowing
+
+aeration
+
+fertilizer
+
+roundup spot spray
+
+irrigation-related recurring items if appropriate
+
+other included landscape maintenance obligations
+
+Important note:
+Earlier direction indicated that Aeration and Round up spot spray should be included in default included services.
+
+Preserve that assumption in the UI and data model.
+
+The services list should be clearly readable and feel operational, not buried in notes text.
+
+Contract PDF
+
+Each contract should support a linked PDF.
+
+At minimum:
+
+View PDF
+
+Download PDF
+
+Inline PDF preview is optional if easy, but not required.
+
+Super Admin Create Contract Flow
+
+Super Admin must be able to create contracts from the Contracts page.
+
+Use a modal or side panel consistent with admin patterns.
+
+Creation form should support at minimum:
+
+community
+
+contractor
+
+start date
+
+end date
+
+included services
+
+contract PDF upload
+
+notes if useful
+
+Keep the creation flow clear and structured.
+
+Contractor ↔ Community Connection
+
+This is one of the most important concepts in the page.
+
+The contract is what establishes the contractor’s relationship to the community.
+
+The UI should make it clear that the contract connects:
+
+Contractor
+↔
+Community
+
+This relationship will later govern:
+
+community visibility in contractor portals
+
+service obligations
+
+recurring work expectations
+
+Do not bury this concept.
+
+Service Obligation Philosophy
+
+The Contracts page should clearly define what work is included in the contract.
+
+However, do not turn this slice into a full task-template builder.
+
+The relationship should remain:
+
+Contract
+→ service obligations
+→ future task templates / schedules
+→ tasks
+
+This slice only needs to define the contract-side service structure clearly.
+
+Filtering
+
+Support practical first-pass filtering.
+
+Super Admin filters
+
+Community
+
+Contractor
+
+Status
+
+Date range if easy
+
+PM / HOA filters
+
+Status
+
+Contractor if useful
+
+Do not overbuild advanced legal/metadata filters.
+
+Search
+
+If easy, support simple search by:
+
+contractor
+
+community
+
+contract notes/title if present
+
+If not easy, focus on list rendering and status clarity first.
+
+Read-Only User Experience
+
+PM / HOA roles should see the same page structure with fewer actions.
+
+This should continue the platform pattern:
+same page, fewer controls based on role.
+
+Hide create/edit/delete actions for read-only roles.
+
+Data Strategy
+
+Use real contract data if already available or easy to expose.
+
+The page should support:
+
+contract records
+
+linked PDF
+
+date-based status
+
+services included
+
+contractor/community association
+
+Do not reduce this page to a simple file list.
+
+Styling Requirements
+
+Continue using the admin portal design language.
+
+Use:
+
+existing buttons
+
+existing form styles
+
+existing modal styles
+
+existing list/table patterns
+
+navy/teal palette
+
+Inter typography
+
+existing spacing/radius/shadow conventions
+
+The Contracts page should feel like the rest of VRTSync, not a standalone legal portal.
+
+Out of Scope for Slice 8
+
+Do NOT fully build the following yet unless already easy:
+
+multiple contract types
+
+automated task generation from contract services
+
+contractor self-service contract access
+
+approval workflows
+
+redlining / contract editing
+
+contract renewals engine
+
+side-by-side PDF annotation
+
+pricing package enforcement logic
+
+deep user permission automation from contract records
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 8, the system should support:
+
+Contracts page for Super Admin
+
+community-scoped Contracts page for PM / HOA roles
+
+contract list view
+
+contract status display
+
+contract detail view
+
+included services display
+
+PDF viewing/downloading
+
+Super Admin create contract flow
+
+clean admin-styled Contracts UI
+
+Success Criteria
+
+The system should be able to:
+
+open the Contracts page inside admin, PM, and HOA portals
+
+load contracts for the correct scope
+
+render a useful contracts list
+
+clearly show contract status
+
+open contract details
+
+show included services clearly
+
+allow PDF viewing/downloading
+
+allow Super Admin to create a new contract
+
+preserve admin portal visual styling throughout
+
+Important Reminder to Replit
+
+The Contracts page is one of the structural engines of VRTSync.
+
+It is not just a contract file page.
+
+Build it so the user understands:
+
+which contractor is tied to which community
+
+what services are included
+
+when the agreement is active
+
+how this relationship supports the rest of the platform
+
+Keep the visual experience anchored to the admin portal and the operational nature of VRTSync.

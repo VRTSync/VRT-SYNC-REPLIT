@@ -1,0 +1,627 @@
+Slice 9 — Users Page (Global + Community User Management) + Admin Styling Enforcement
+Objective
+
+Implement the Users page for the web portals as the structured system for managing platform users, community assignments, and role-based access.
+
+This slice should support the VRTSync hybrid user model:
+
+Super Admin manages users globally across the full platform
+
+Property Manager manages users within assigned communities
+
+HOA Admin manages users within their own community
+
+HOA Member is view-only or may not see the page depending on final nav choice
+
+Contractor does not need a Users page in V1
+
+This page should clearly separate system users from the separate Contacts directory.
+
+Critical Design Rule
+
+All Users page UI must visually match the existing admin portal styling.
+
+Use:
+
+server/public/admin/admin.css
+
+and the existing shell/page layout patterns.
+
+Do not create a new admin/user-management design language.
+
+The Users page must feel like a natural extension of the admin portal.
+
+User System Philosophy
+
+Users are people with platform logins.
+
+This page is not the same as Contacts.
+
+Examples of Users:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor
+
+Examples of non-Users / Contacts:
+
+Board President without login
+
+Vendor rep
+
+City water contact
+
+Emergency contact
+
+That distinction must stay clear in the product.
+
+Hybrid User Model
+
+VRTSync uses a hybrid model:
+
+Platform User
+↓
+Community Assignment
+↓
+Role Permissions
+
+A user may belong to one or multiple communities depending on role.
+
+Examples:
+
+Property Manager may belong to multiple communities
+
+HOA Admin belongs to one community
+
+HOA Member belongs to one community
+
+Contractor access is generally governed through contract/community relationships, not this page as the primary mechanism
+
+Roles Included in This Slice
+
+Build user-management behavior for:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member may be read-only or hidden from the Users page depending on what is easiest and cleanest.
+Contractor does not need a Users page in V1.
+
+For this slice, it is acceptable to exclude Users from HOA Member and Contractor nav if that is the cleanest experience.
+
+Role Behavior
+Super Admin
+
+Primary operator of the Users system.
+
+Can:
+
+view all users
+
+create users
+
+edit users
+
+deactivate users
+
+assign roles
+
+assign communities
+
+remove community assignments
+
+manage platform-wide user state
+
+This is the master user ledger.
+
+Property Manager
+
+Community-level user manager for assigned communities.
+
+Can:
+
+view users in the active community
+
+add HOA Admin / HOA Member users for that community
+
+edit user details for community users
+
+remove users from the community
+
+deactivate if appropriate for scoped users
+
+Cannot:
+
+create Super Admins
+
+create Property Managers
+
+manage users outside assigned communities
+
+globally assign communities
+
+They function as a community user manager, not a platform-wide admin.
+
+HOA Admin
+
+Community-level user manager for their own community.
+
+Can:
+
+view users in their community
+
+add HOA Members for their community
+
+potentially add another HOA Admin if allowed by your business rules
+
+edit community user details
+
+remove users from the community
+
+Cannot:
+
+manage users outside their community
+
+assign multiple communities
+
+create higher-level roles
+
+Keep this narrower than Super Admin.
+
+HOA Member
+
+No active management permissions.
+
+For this slice, best option is:
+
+do not expose Users page in HOA Member nav
+or
+
+expose read-only list only if that later proves helpful
+
+Preferred for now: no Users page for HOA Member.
+
+Contractor
+
+No Users page in V1.
+
+Do not add to contractor nav.
+
+Base Package Rule
+
+Important business rule:
+
+Maximum of 2 HOA Members included in base package
+
+This should be reflected in the Users system.
+
+For this slice, at minimum support displaying the count clearly.
+
+Example:
+
+HOA Members: 2 / 2 included
+
+Hard enforcement can be lightweight for now if needed, but the count must be visible and the structure must support enforcement.
+
+Routes
+
+Add/finalize routes for:
+
+/web/admin/users
+/web/pm/users
+/web/hoa/users
+
+Use the existing SPA router pattern.
+
+Scope Rules
+Super Admin
+
+Global user list across all communities.
+
+PM / HOA
+
+User list scoped to:
+
+PortalState.getActiveCommunity()
+
+Changing the active community from the topbar should refresh the list.
+
+This is a strict rule for non-admin portals.
+
+Shared Page Header
+
+Use:
+
+For Super Admin:
+
+Users
+All Communities
+
+For PM / HOA:
+
+Users
+Preserve Metro District
+Page Layout
+
+Recommended structure:
+
+Page Header
+Filter / Action Bar
+Users List
+User Detail / Edit Modal
+
+Keep it aligned with the admin portal patterns.
+
+Users List View
+
+Create a structured list/table of users.
+
+Recommended columns:
+
+Name
+
+Email
+
+Role
+
+Community or Communities
+
+Status
+
+Last Active (optional if already available)
+
+For PM / HOA scoped views, community column may be omitted if redundant.
+
+Use existing admin table/list styling patterns.
+
+Status
+
+User status should be clearly shown.
+
+Recommended first-pass states:
+
+Active
+Inactive
+
+If “deactivated” already exists in the backend, reflect that cleanly.
+
+Status should be visually obvious.
+
+Filters
+
+Support practical first-pass filters.
+
+Super Admin filters
+
+Role
+
+Community
+
+Status
+
+PM / HOA filters
+
+Role
+
+Status
+
+Do not overbuild advanced filtering yet.
+
+Search
+
+If easy, support search by:
+
+name
+
+email
+
+If not easy yet, prioritize list rendering and create/edit flow first.
+
+User Detail / Edit View
+
+Clicking a user should open a detail/edit experience.
+
+This can be:
+
+modal
+
+side panel
+
+embedded detail pane
+
+Use whatever best matches current admin patterns.
+
+The detail view should show:
+
+name
+
+email
+
+role
+
+assigned community/community list
+
+status
+
+For scoped roles, the edit controls must respect role limits.
+
+Super Admin Create User Flow
+
+Super Admin must be able to create users.
+
+Use a modal or side panel consistent with admin patterns.
+
+Form should support:
+
+name
+
+email
+
+role
+
+assigned community or communities
+
+active/inactive state if supported
+
+password setup flow if already established in the platform
+
+Keep this aligned with the current authentication model.
+
+Property Manager Create User Flow
+
+PM can create users only within the active community.
+
+The form should:
+
+pre-lock the community to the active community
+
+restrict available roles to appropriate community roles
+
+not allow assignment to other communities
+
+not allow creation of higher-level roles
+
+At minimum, PM should be able to add:
+
+HOA Admin
+
+HOA Member
+
+If you want to keep PM narrower, at minimum allow HOA Member creation.
+
+But earlier direction indicated PM should have the same permissions as HOA Admin per community they are assigned to, so mirror that community-level management power appropriately.
+
+HOA Admin Create User Flow
+
+HOA Admin should be able to create community users within their own community.
+
+The form should:
+
+lock the community to the active community
+
+restrict roles to community-safe roles
+
+not allow higher-level platform roles
+
+At minimum allow:
+
+HOA Member
+
+If multiple HOA Admins should be allowed per community, support it only if that matches your intended governance. If not, keep HOA Admin focused on HOA Member management only.
+
+Base Package Visibility
+
+The user page should clearly display the HOA Member count for the active community.
+
+Examples:
+
+HOA Members Included: 2 / 2
+
+or
+
+HOA Member Seats Used: 1 / 2
+
+This does not need to become a full billing system yet, but it should be visible and ready for later enforcement.
+
+Edit / Remove Behavior
+
+Support practical first-pass actions:
+
+edit user
+
+deactivate user
+
+remove from community
+
+Delete can be omitted if deactivation is the safer standard.
+
+For PM / HOA scoped portals:
+
+actions must only apply to users in the active community
+
+no cross-community management
+
+Role Restrictions
+
+The UI must enforce role-appropriate creation/editing options.
+
+Examples:
+
+Super Admin
+
+Can manage all roles.
+
+PM
+
+Cannot create:
+
+Super Admin
+
+Property Manager
+
+users outside assigned communities
+
+HOA Admin
+
+Cannot create:
+
+Super Admin
+
+Property Manager
+
+users outside their community
+
+Keep these controls obvious in the form logic.
+
+Community Assignment UX
+
+For Super Admin:
+
+allow one or multiple communities where applicable
+
+For PM / HOA:
+
+community assignment must be locked to the current community
+
+This is important to keep the experience safe and predictable.
+
+Read / Hide Rules by Portal
+
+Recommended V1 nav/page visibility:
+
+Admin: Users page visible
+
+PM: Users page visible
+
+HOA Admin: Users page visible
+
+HOA Member: hide Users page
+
+Contractor: hide Users page
+
+This is the cleanest initial model.
+
+Data Strategy
+
+Use real user/community assignment data from the platform if already available.
+
+This page should be built on the actual user/role system, not mock-only if it can be avoided.
+
+The page must remain consistent with:
+
+/api/auth/me
+
+session role handling
+
+existing community scoping rules
+
+Styling Requirements
+
+Continue using the admin portal design language.
+
+Use:
+
+existing buttons
+
+existing form styles
+
+existing modal styles
+
+existing list/table patterns
+
+navy/teal palette
+
+Inter typography
+
+existing spacing/radius/shadow conventions
+
+Do not make the Users page look like a separate IT admin product.
+
+It should still feel like VRTSync.
+
+Out of Scope for Slice 9
+
+Do NOT fully build the following yet unless already easy:
+
+full billing enforcement for HOA Member seat limits
+
+invitation email flows
+
+password reset management
+
+audit logs
+
+advanced permission matrix UI
+
+contractor user management driven from contract records
+
+SSO / enterprise identity integrations
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 9, the system should support:
+
+Users page for Super Admin
+
+community-scoped Users page for PM and HOA Admin
+
+user list rendering
+
+role/status display
+
+create/edit modal or side panel
+
+community-locked creation flows for PM / HOA Admin
+
+visibility of HOA Member included seat count
+
+clean admin-styled Users UI
+
+Success Criteria
+
+The system should be able to:
+
+open the Users page inside admin, PM, and HOA portals
+
+load users for the correct scope
+
+render a useful user list
+
+show role and status clearly
+
+open user detail/edit view
+
+allow Super Admin to create users globally
+
+allow PM / HOA Admin to create scoped community users
+
+show HOA Member included count clearly
+
+preserve admin portal visual styling throughout
+
+Important Reminder to Replit
+
+The Users page is one of the core governance systems of the platform.
+
+Build it so the user understands:
+
+who has access
+
+what role they have
+
+which community they belong to
+
+who can be added at the community level
+
+Keep it tightly aligned with the admin portal styling and the community-scoped permission model already established in the platform.
