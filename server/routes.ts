@@ -23,6 +23,7 @@ import {
   insertDriveFolderSchema, updateDriveFolderSchema, insertDriveFileSchema, updateDriveFileSchema,
   insertInvoiceSchema, updateInvoiceSchema,
   insertContractSchema, updateContractSchema,
+  insertContactSchema, updateContactSchema,
 } from "@shared/schema";
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
@@ -3659,6 +3660,155 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Drive file download error:", error);
       res.status(500).json({ error: "Failed to download file" });
+    }
+  });
+
+  /* ─── Contacts ──────────────────────────────────────────────────────────── */
+
+  app.get("/api/contacts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      if (user.role === "admin") {
+        const communityId = req.query.communityId as string | undefined;
+        const results = await storage.getContacts(communityId || undefined);
+        return res.json(results);
+      }
+
+      if (user.role === "property_manager") {
+        const communityId = req.query.communityId as string | undefined;
+        if (communityId) {
+          const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+          const results = await storage.getContacts(communityId);
+          return res.json(results);
+        }
+        // No communityId filter: return contacts for all PM's authorized communities
+        const pmCommunities = await storage.getUserCommunitiesList(user.id);
+        const pmCommunityIds = pmCommunities.map(c => c.id);
+        if (pmCommunityIds.length === 0) return res.json([]);
+        const results = await storage.getContactsForCommunities(pmCommunityIds);
+        return res.json(results);
+      }
+
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        const results = await storage.getContacts(user.hoaCommunityId);
+        return res.json(results);
+      }
+
+      return res.status(403).json({ error: "Access denied" });
+    } catch (err) {
+      console.error("Get contacts error:", err);
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  app.post("/api/contacts", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
+      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+
+      const parsed = insertContactSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+      const { communityId } = parsed.data;
+
+      if (user.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
+
+      if (isHoaRole(user.role) && user.hoaCommunityId && communityId !== user.hoaCommunityId) {
+        return res.status(403).json({ error: "Cannot create contacts for other communities" });
+      }
+
+      const contact = await storage.createContact({
+        communityId,
+        name: parsed.data.name,
+        title: parsed.data.title ?? null,
+        company: parsed.data.company ?? null,
+        phone: parsed.data.phone ?? null,
+        email: parsed.data.email ?? null,
+        contactType: parsed.data.contactType,
+        notes: parsed.data.notes ?? null,
+      });
+      res.status(201).json(contact);
+    } catch (err) {
+      console.error("Create contact error:", err);
+      res.status(500).json({ error: "Failed to create contact" });
+    }
+  });
+
+  app.put("/api/contacts/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
+      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+
+      const contact = await storage.getContactById(req.params.id);
+      if (!contact) return res.status(404).json({ error: "Contact not found" });
+
+      if (user.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, contact.communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
+
+      if (user.role === "hoa_admin" && user.hoaCommunityId && contact.communityId !== user.hoaCommunityId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const parsed = updateContactSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+
+      // Validate communityId changes are authorized
+      if (parsed.data.communityId && parsed.data.communityId !== contact.communityId) {
+        if (user.role === "hoa_admin") {
+          return res.status(403).json({ error: "Cannot move contacts to another community" });
+        }
+        if (user.role === "property_manager") {
+          const isMember = await storage.isUserMemberOfCommunity(user.id, parsed.data.communityId);
+          if (!isMember) return res.status(403).json({ error: "Not a member of the target community" });
+        }
+        // admin: unrestricted
+      }
+
+      const updated = await storage.updateContact(req.params.id, parsed.data);
+      if (!updated) return res.status(404).json({ error: "Contact not found" });
+      res.json(updated);
+    } catch (err) {
+      console.error("Update contact error:", err);
+      res.status(500).json({ error: "Failed to update contact" });
+    }
+  });
+
+  app.delete("/api/contacts/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
+      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+
+      const contact = await storage.getContactById(req.params.id);
+      if (!contact) return res.status(404).json({ error: "Contact not found" });
+
+      if (user.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, contact.communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
+
+      if (user.role === "hoa_admin" && user.hoaCommunityId && contact.communityId !== user.hoaCommunityId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      await storage.deleteContact(req.params.id);
+      res.status(204).send();
+    } catch (err) {
+      console.error("Delete contact error:", err);
+      res.status(500).json({ error: "Failed to delete contact" });
     }
   });
 

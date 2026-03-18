@@ -562,6 +562,22 @@ async function runStartupMigrations() {
 
       CREATE UNIQUE INDEX IF NOT EXISTS water_usage_community_month_year_idx ON water_usage(community_id, month, year);
       CREATE INDEX IF NOT EXISTS water_usage_community_idx ON water_usage(community_id);
+
+      CREATE TABLE IF NOT EXISTS contacts (
+        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        name          text NOT NULL,
+        title         text,
+        company       text,
+        phone         text,
+        email         text,
+        contact_type  text NOT NULL DEFAULT 'Other',
+        notes         text,
+        created_at    timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS contacts_community_idx ON contacts(community_id);
+      CREATE INDEX IF NOT EXISTS contacts_type_idx ON contacts(contact_type);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

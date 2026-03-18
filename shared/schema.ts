@@ -459,6 +459,58 @@ export const mapLayersRelations = relations(mapLayers, ({ one, many }) => ({
   assets: many(assets),
 }));
 
+export const CONTACT_TYPES = [
+  'HOA Board', 'Property Management', 'Contractor', 'Vendor',
+  'City/Municipality', 'Emergency', 'Other',
+] as const;
+
+export const contacts = pgTable("contacts", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  title: text("title"),
+  company: text("company"),
+  phone: text("phone"),
+  email: text("email"),
+  contactType: text("contact_type").notNull().default("Other"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("contacts_community_idx").on(table.communityId),
+  index("contacts_type_idx").on(table.contactType),
+]);
+
+export const contactsRelations = relations(contacts, ({ one }) => ({
+  community: one(communities, { fields: [contacts.communityId], references: [communities.id] }),
+}));
+
+export type Contact = typeof contacts.$inferSelect;
+export type InsertContact = typeof contacts.$inferInsert;
+
+export const insertContactSchema = z.object({
+  communityId: z.string().min(1),
+  name: z.string().min(1),
+  title: z.string().nullable().optional(),
+  company: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  contactType: z.enum(CONTACT_TYPES).default('Other'),
+  notes: z.string().nullable().optional(),
+});
+
+export const updateContactSchema = z.object({
+  communityId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  title: z.string().nullable().optional(),
+  company: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  contactType: z.enum(CONTACT_TYPES).optional(),
+  notes: z.string().nullable().optional(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,

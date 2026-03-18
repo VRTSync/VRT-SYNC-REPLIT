@@ -39,6 +39,7 @@
       { route: 'map',        label: 'Map',             icon: iconMap() },
       { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
       { route: 'reports',    label: 'Reports',         icon: iconBarChart() },
+      { route: 'contacts',   label: 'Contacts',        icon: iconUsers() },
     ],
     property_manager: [
       { route: 'dashboard',  label: 'Dashboard',       icon: iconGrid() },

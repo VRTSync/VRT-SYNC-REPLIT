@@ -4,14 +4,15 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
-  notifications, driveFolders, driveFiles, invoices, contracts,
+  notifications, driveFolders, driveFiles, invoices, contracts, contacts,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
-  type DriveFolder, type DriveFile, type Invoice, type Contract
+  type DriveFolder, type DriveFile, type Invoice, type Contract,
+  type Contact, type InsertContact,
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -2179,4 +2180,67 @@ export async function updateContract(id: string, data: Partial<{
 
 export async function deleteContract(id: string): Promise<void> {
   await db.delete(contracts).where(eq(contracts.id, id));
+}
+
+/* ─── Contacts ──────────────────────────────────────────────────────────── */
+export async function getContacts(communityId?: string): Promise<(Contact & { communityName?: string })[]> {
+  if (communityId) {
+    return db.select().from(contacts).where(eq(contacts.communityId, communityId)).orderBy(contacts.name);
+  }
+  const rows = await db.select({
+    id: contacts.id,
+    communityId: contacts.communityId,
+    name: contacts.name,
+    title: contacts.title,
+    company: contacts.company,
+    phone: contacts.phone,
+    email: contacts.email,
+    contactType: contacts.contactType,
+    notes: contacts.notes,
+    createdAt: contacts.createdAt,
+    communityName: communities.name,
+  }).from(contacts)
+    .leftJoin(communities, eq(contacts.communityId, communities.id))
+    .orderBy(contacts.name);
+  return rows.map(r => ({ ...r, communityName: r.communityName ?? undefined }));
+}
+
+export async function getContactsForCommunities(communityIds: string[]): Promise<(Contact & { communityName?: string })[]> {
+  if (communityIds.length === 0) return [];
+  const rows = await db.select({
+    id: contacts.id,
+    communityId: contacts.communityId,
+    name: contacts.name,
+    title: contacts.title,
+    company: contacts.company,
+    phone: contacts.phone,
+    email: contacts.email,
+    contactType: contacts.contactType,
+    notes: contacts.notes,
+    createdAt: contacts.createdAt,
+    communityName: communities.name,
+  }).from(contacts)
+    .leftJoin(communities, eq(contacts.communityId, communities.id))
+    .where(inArray(contacts.communityId, communityIds))
+    .orderBy(contacts.name);
+  return rows.map(r => ({ ...r, communityName: r.communityName ?? undefined }));
+}
+
+export async function getContactById(id: string): Promise<Contact | undefined> {
+  const [contact] = await db.select().from(contacts).where(eq(contacts.id, id));
+  return contact;
+}
+
+export async function createContact(data: InsertContact): Promise<Contact> {
+  const [contact] = await db.insert(contacts).values(data).returning();
+  return contact;
+}
+
+export async function updateContact(id: string, data: Partial<InsertContact>): Promise<Contact | null> {
+  const [contact] = await db.update(contacts).set(data).where(eq(contacts.id, id)).returning();
+  return contact || null;
+}
+
+export async function deleteContact(id: string): Promise<void> {
+  await db.delete(contacts).where(eq(contacts.id, id));
 }
