@@ -14,6 +14,8 @@ config.resolver.blockList = [
     ? [config.resolver.blockList]
     : []),
   new RegExp(`^${localDirPath}[/\\\\].*$`),
+  /node_modules[/\\]@unrs[/\\]resolver-binding-win32[^/\\]*(?:[/\\].*)?$/,
+  /node_modules[/\\]@unrs[/\\]resolver-binding-darwin[^/\\]*(?:[/\\].*)?$/,
 ];
 
 module.exports = config;
