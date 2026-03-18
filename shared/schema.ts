@@ -20,6 +20,7 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   role: userRoleEnum("role").notNull().default("contractor"),
   hoaCommunityId: varchar("hoa_community_id").references(() => communities.id),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

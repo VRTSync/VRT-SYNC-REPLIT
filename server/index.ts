@@ -545,6 +545,8 @@ async function runStartupMigrations() {
 
       CREATE INDEX IF NOT EXISTS contracts_community_idx ON contracts(community_id);
       CREATE INDEX IF NOT EXISTS contracts_contractor_idx ON contracts(contractor_user_id);
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

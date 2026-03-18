@@ -299,6 +299,20 @@ export async function getAllUsers(): Promise<User[]> {
   return db.select().from(users).orderBy(users.displayName);
 }
 
+export async function getUsersByCommunity(communityId: string): Promise<User[]> {
+  return db.select().from(users)
+    .where(eq(users.hoaCommunityId, communityId))
+    .orderBy(users.displayName);
+}
+
+export async function updateUserStatus(userId: string, isActive: boolean): Promise<User | null> {
+  const [updated] = await db.update(users)
+    .set({ isActive })
+    .where(eq(users.id, userId))
+    .returning();
+  return updated || null;
+}
+
 export async function updateUserRole(userId: string, role: string, hoaCommunityId?: string | null): Promise<User | null> {
   const [updated] = await db.update(users)
     .set({ role: role as any, hoaCommunityId: hoaCommunityId ?? null })

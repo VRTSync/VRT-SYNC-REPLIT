@@ -17,12 +17,13 @@ AdminRouter.register('users', async function(container) {
           <th>Name</th>
           <th>Username</th>
           <th>Role</th>
+          <th>Status</th>
           <th>Communities</th>
           <th>Created</th>
           <th class="text-right">Actions</th>
         </tr></thead>
         <tbody id="users-tbody">
-          <tr><td colspan="6" class="loading-spinner">Loading...</td></tr>
+          <tr><td colspan="7" class="loading-spinner">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -121,7 +122,7 @@ AdminRouter.register('users', async function(container) {
       const users = await apiFetch('/api/users');
       const tbody = document.getElementById('users-tbody');
       if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No users yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No users yet</td></tr>';
         return;
       }
 
@@ -155,15 +156,28 @@ AdminRouter.register('users', async function(container) {
           : u.role === 'hoa_member' ? 'HOA Member'
           : u.role;
 
+        const isActive = u.isActive !== false;
+        const statusBadge = isActive
+          ? '<span class="badge badge-teal" style="font-size:11px">Active</span>'
+          : '<span class="badge" style="background:#e5e7eb;color:#4b5563;font-size:11px">Inactive</span>';
+
+        const toggleLabel = isActive ? 'Deactivate' : 'Reactivate';
+
         let actions = '';
         if (!isHoa) {
           actions = `
             <button class="btn btn-secondary btn-xs role-btn" data-id="${u.id}" data-role="${u.role}">
               ${u.role === 'admin' ? 'Make Contractor' : 'Make Admin'}
             </button>
+            <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-left:4px">
+              ${toggleLabel}
+            </button>
           `;
         } else {
           actions = `
+            <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-right:4px">
+              ${toggleLabel}
+            </button>
             <button class="btn btn-secondary btn-xs delete-btn" data-id="${u.id}" data-name="${esc(u.displayName || u.username)}" title="Delete user">
               Delete
             </button>
@@ -175,6 +189,7 @@ AdminRouter.register('users', async function(container) {
           <td><strong>${esc(u.displayName || '—')}</strong></td>
           <td class="text-muted">${esc(u.username)}</td>
           <td><span class="badge ${roleBadgeClass}">${esc(roleLabel)}</span></td>
+          <td>${statusBadge}</td>
           <td style="max-width:250px">${commBadges}</td>
           <td class="text-sm text-muted">${new Date(u.createdAt).toLocaleDateString()}</td>
           <td class="text-right">${actions}</td>
@@ -194,6 +209,25 @@ AdminRouter.register('users', async function(container) {
             await loadUsers();
           } catch (err) {
             showToast(err.message, 'error');
+          }
+        });
+      });
+
+      tbody.querySelectorAll('.status-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const currentlyActive = btn.dataset.active === 'true';
+          const newStatus = !currentlyActive;
+          const label = newStatus ? 'reactivate' : 'deactivate';
+          if (!confirm(`Are you sure you want to ${label} this user?`)) return;
+          try {
+            await apiFetch(`/api/users/${btn.dataset.id}/status`, {
+              method: 'PUT',
+              body: { isActive: newStatus },
+            });
+            showToast(`User ${newStatus ? 'activated' : 'deactivated'}`, 'success');
+            await loadUsers();
+          } catch (err) {
+            showToast(err.message || 'Failed to update status', 'error');
           }
         });
       });

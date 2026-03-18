@@ -730,14 +730,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users", requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/users", requireAuth, async (req: Request, res: Response) => {
     try {
-      let allUsers = await storage.getAllUsers();
-      const roleFilter = req.query.role as string | undefined;
-      if (roleFilter) {
-        allUsers = allUsers.filter(u => u.role === roleFilter);
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      /* Super Admin: return all users */
+      if (actor.role === "admin") {
+        let allUsers = await storage.getAllUsers();
+        const roleFilter = req.query.role as string | undefined;
+        if (roleFilter) {
+          allUsers = allUsers.filter(u => u.role === roleFilter);
+        }
+        return res.json(allUsers.map(({ password: _, ...u }) => u));
       }
-      res.json(allUsers.map(({ password: _, ...u }) => u));
+
+      /* PM and HOA Admin: community-scoped */
+      if (actor.role === "property_manager" || actor.role === "hoa_admin") {
+        const communityId = req.query.communityId as string | undefined;
+        if (!communityId) {
+          return res.status(400).json({ error: "communityId is required for this role" });
+        }
+        if (actor.role === "property_manager") {
+          const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
+          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        } else if (actor.role === "hoa_admin") {
+          if (actor.hoaCommunityId !== communityId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        }
+        const communityUsers = await storage.getUsersByCommunity(communityId);
+        return res.json(communityUsers.map(({ password: _, ...u }) => u));
+      }
+
+      return res.status(403).json({ error: "Not authorized" });
     } catch (error) {
       console.error("Get users error:", error);
       res.status(500).json({ error: "Failed to fetch users" });
@@ -842,6 +868,248 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get user communities error:", error);
       res.status(500).json({ error: "Failed to fetch user communities" });
+    }
+  });
+
+  /* ── Status toggle (admin, PM, HOA Admin) ───────────────────────────────── */
+  app.put("/api/users/:id/status", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      const allowedActorRoles = ["admin", "property_manager", "hoa_admin"];
+      if (!allowedActorRoles.includes(actor.role)) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const targetUser = await storage.getUserById(req.params.id as string);
+      if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+      if (req.params.id === req.session.userId) {
+        return res.status(400).json({ error: "Cannot change your own status" });
+      }
+
+      /* Scope check for PM and HOA Admin */
+      if (actor.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId || '');
+        if (!targetUser.hoaCommunityId || !isMember) {
+          return res.status(403).json({ error: "User is not in your community" });
+        }
+      } else if (actor.role === "hoa_admin") {
+        if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
+          return res.status(403).json({ error: "User is not in your community" });
+        }
+        if (targetUser.role !== "hoa_member") {
+          return res.status(403).json({ error: "HOA Admins can only manage HOA Members" });
+        }
+      }
+
+      const { isActive } = req.body;
+      if (typeof isActive !== "boolean") {
+        return res.status(400).json({ error: "isActive (boolean) is required" });
+      }
+
+      const updated = await storage.updateUserStatus(req.params.id as string, isActive);
+      if (!updated) return res.status(404).json({ error: "User not found" });
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Update user status error:", error);
+      res.status(500).json({ error: "Failed to update user status" });
+    }
+  });
+
+  /* ── Community-scoped user list (PM, HOA Admin) ─────────────────────────── */
+  app.get("/api/portal/users", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      const communityId = req.query.communityId as string;
+      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+
+      if (actor.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      } else if (actor.role === "hoa_admin") {
+        if (actor.hoaCommunityId !== communityId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const communityUsers = await storage.getUsersByCommunity(communityId);
+      res.json(communityUsers.map(({ password: _, ...u }) => u));
+    } catch (error) {
+      console.error("Get portal users error:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  /* ── Create user in community (PM, HOA Admin) ───────────────────────────── */
+  app.post("/api/portal/users", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      const allowedActorRoles = ["property_manager", "hoa_admin"];
+      if (!allowedActorRoles.includes(actor.role)) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const { username, password, displayName, role, communityId } = req.body;
+      if (!username || !password || !communityId) {
+        return res.status(400).json({ error: "username, password, and communityId are required" });
+      }
+      if (password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+
+      /* Role restrictions */
+      if (actor.role === "hoa_admin") {
+        if (role !== "hoa_member") {
+          return res.status(403).json({ error: "HOA Admins can only create HOA Member users" });
+        }
+        if (communityId !== actor.hoaCommunityId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+      } else if (actor.role === "property_manager") {
+        const allowedRoles = ["hoa_admin", "hoa_member"];
+        if (!allowedRoles.includes(role)) {
+          return res.status(403).json({ error: "Property Managers can only create HOA Admin or HOA Member users" });
+        }
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+      }
+
+      const existing = await storage.getUserByUsername(username);
+      if (existing) return res.status(409).json({ error: "Username already taken" });
+
+      const validPortalRoles = ["hoa_admin", "hoa_member"] as const;
+      type PortalRole = typeof validPortalRoles[number];
+      const typedRole: PortalRole = validPortalRoles.includes(role) ? (role as PortalRole) : "hoa_member";
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        displayName: displayName || username,
+        role: typedRole,
+        hoaCommunityId: communityId,
+      });
+      await storage.addCommunityMembers(communityId, [user.id]);
+      const { password: _, ...safeUser } = user;
+      res.status(201).json(safeUser);
+    } catch (error) {
+      console.error("Create portal user error:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  /* ── Edit community user role/status (PM, HOA Admin) ───────────────────── */
+  app.put("/api/portal/users/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      const allowedActorRoles = ["property_manager", "hoa_admin"];
+      if (!allowedActorRoles.includes(actor.role)) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const targetUser = await storage.getUserById(req.params.id as string);
+      if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+      if (req.params.id === req.session.userId) {
+        return res.status(400).json({ error: "Cannot edit yourself" });
+      }
+
+      if (actor.role === "hoa_admin") {
+        if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
+          return res.status(403).json({ error: "User is not in your community" });
+        }
+        if (targetUser.role !== "hoa_member") {
+          return res.status(403).json({ error: "HOA Admins can only edit HOA Members" });
+        }
+      } else if (actor.role === "property_manager") {
+        if (!targetUser.hoaCommunityId) {
+          return res.status(403).json({ error: "User has no community assignment" });
+        }
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId);
+        if (!isMember) return res.status(403).json({ error: "User is not in your community" });
+      }
+
+      const { role, isActive } = req.body;
+      let updated = targetUser;
+
+      if (role !== undefined) {
+        if (actor.role === "hoa_admin" && role !== "hoa_member") {
+          return res.status(403).json({ error: "HOA Admins can only assign HOA Member role" });
+        }
+        if (actor.role === "property_manager") {
+          const allowedRoles = ["hoa_admin", "hoa_member"];
+          if (!allowedRoles.includes(role)) {
+            return res.status(403).json({ error: "Property Managers can only assign HOA Admin or HOA Member roles" });
+          }
+        }
+        const r = await storage.updateUserRole(req.params.id as string, role, targetUser.hoaCommunityId);
+        if (r) updated = r;
+      }
+
+      if (typeof isActive === "boolean") {
+        const r = await storage.updateUserStatus(req.params.id as string, isActive);
+        if (r) updated = r;
+      }
+
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Edit portal user error:", error);
+      res.status(500).json({ error: "Failed to edit user" });
+    }
+  });
+
+  /* ── Remove user from community (PM, HOA Admin) — unlinks, does not delete ─ */
+  app.delete("/api/portal/users/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+
+      const allowedActorRoles = ["property_manager", "hoa_admin"];
+      if (!allowedActorRoles.includes(actor.role)) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const targetUser = await storage.getUserById(req.params.id as string);
+      if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+      if (req.params.id === req.session.userId) {
+        return res.status(400).json({ error: "Cannot remove yourself" });
+      }
+
+      if (actor.role === "hoa_admin") {
+        if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
+          return res.status(403).json({ error: "User is not in your community" });
+        }
+        if (targetUser.role !== "hoa_member") {
+          return res.status(403).json({ error: "HOA Admins can only remove HOA Members" });
+        }
+      } else if (actor.role === "property_manager") {
+        if (!targetUser.hoaCommunityId) {
+          return res.status(403).json({ error: "User has no community" });
+        }
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId);
+        if (!isMember) return res.status(403).json({ error: "User is not in your community" });
+      }
+
+      /* Unlink from community (remove hoaCommunityId and community_members row), do NOT delete account */
+      await storage.removeCommunityMember(targetUser.hoaCommunityId!, req.params.id as string);
+      await storage.updateUserRole(req.params.id as string, targetUser.role, null);
+      res.json({ message: "User removed from community" });
+    } catch (error) {
+      console.error("Remove portal user error:", error);
+      res.status(500).json({ error: "Failed to remove user from community" });
     }
   });
 

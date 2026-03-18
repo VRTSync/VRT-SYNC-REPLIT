@@ -30,6 +30,7 @@
       { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
       { route: 'documents',  label: 'Documents',       icon: iconFile() },
       { route: 'reports',    label: 'Reports',         icon: iconBarChart() },
+      { route: 'users',      label: 'Users',           icon: iconUser() },
       { route: 'contacts',   label: 'Contacts',        icon: iconUsers() },
     ],
     hoa_member: [
