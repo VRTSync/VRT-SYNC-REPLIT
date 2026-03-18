@@ -33,6 +33,23 @@ window.PortalRouter = (function () {
     if (typeof window._dashMapCleanup === 'function') {
       window._dashMapCleanup();
     }
+    /* Stop any active SyncManager instances when navigating away */
+    if (window._dashSyncManager) {
+      window._dashSyncManager.stop();
+      window._dashSyncManager = null;
+    }
+    if (window._dashSyncTicker) {
+      clearInterval(window._dashSyncTicker);
+      window._dashSyncTicker = null;
+    }
+    if (window._tasksSyncManager) {
+      window._tasksSyncManager.stop();
+      window._tasksSyncManager = null;
+    }
+    if (window._tasksSyncTicker) {
+      clearInterval(window._tasksSyncTicker);
+      window._tasksSyncTicker = null;
+    }
     currentRoute = routeName;
     currentParams = params || {};
     const container = document.getElementById('page-content');

@@ -9,6 +9,16 @@ PortalRouter.register('dashboard', async function (container) {
   const ctx = PortalState.getCommunityContext();
   const { role, activeCommunity } = ctx;
 
+  /* Stop any previous dashboard sync */
+  if (window._dashSyncManager) {
+    window._dashSyncManager.stop();
+    window._dashSyncManager = null;
+  }
+  if (window._dashSyncTicker) {
+    clearInterval(window._dashSyncTicker);
+    window._dashSyncTicker = null;
+  }
+
   /* Guard: no community selected yet */
   if (!activeCommunity) {
     if (ctx.isMultiCommunityUser) {
@@ -70,6 +80,44 @@ function _partition(tasks) {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+ * Sync Badge HTML helper
+ * ────────────────────────────────────────────────────────────────────────── */
+function _syncBadgeHtml(id) {
+  return `<div class="sync-bar sync-bar--inline" id="${id}">
+    <span class="sync-label" id="${id}-label">Syncing\u2026</span>
+    <button class="sync-refresh-btn" id="${id}-btn" title="Refresh now">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+      </svg>
+    </button>
+  </div>`;
+}
+
+function _updateDashSyncLabel(container) {
+  const label = container.querySelector('#dash-sync-bar-label');
+  if (!label || !window._dashSyncManager) return;
+  const ts = window._dashSyncManager.lastSynced();
+  if (!ts) { label.textContent = 'Syncing\u2026'; return; }
+  const secs = Math.round((Date.now() - ts.getTime()) / 1000);
+  if (secs < 5)        label.textContent = 'Last synced: just now';
+  else if (secs < 60)  label.textContent = 'Last synced: ' + secs + 's ago';
+  else                 label.textContent = 'Last synced: ' + Math.round(secs / 60) + 'm ago';
+}
+
+/* Wire the sync button after the dashboard has rendered */
+function _wireDashSyncBtn(container, sm) {
+  const btn = container.querySelector('#dash-sync-bar-btn');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      btn.classList.add('sync-refresh-btn--spinning');
+      sm.forceRefresh();
+      setTimeout(() => btn.classList.remove('sync-refresh-btn--spinning'), 600);
+    });
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
  * Contractor Dashboard
  * ────────────────────────────────────────────────────────────────────────── */
 async function renderContractor(container, ctx) {
@@ -92,8 +140,13 @@ async function renderContractor(container, ctx) {
       { icon: I.done(), label: 'Upcoming',      value: upcoming.length,  color: 'var(--blue)' },
     ])}
 
-    <div class="dash-grid">
-      <div class="dash-col-8">
+    <div class="dash-tasks-header">
+      <span class="dash-tasks-title">Tasks</span>
+      ${_syncBadgeHtml('dash-sync-bar')}
+    </div>
+
+    <div class="dash-grid" id="dash-task-grid">
+      <div class="dash-col-8" id="dash-todays-work-col">
         ${M.listModule({
           title: "Today's Work",
           rows: todayWork,
@@ -114,8 +167,8 @@ async function renderContractor(container, ctx) {
       </div>
     </div>
 
-    <div class="dash-grid" style="margin-top:20px">
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
+    <div class="dash-grid" style="margin-top:20px" id="dash-hoa-grid">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-hoa-reqs-col">
         ${M.listModule({
           title: 'HOA Requests',
           rows: pendingReqs.slice(0, 5),
@@ -126,7 +179,7 @@ async function renderContractor(container, ctx) {
       <div class="${_wc('dash-col-6', 'dash-col-4w')}">
         ${M.notesModule({ title: 'Contractor Notes' })}
       </div>
-      ${_wide() ? `<div class="dash-col-4w">
+      ${_wide() ? `<div class="dash-col-4w" id="dash-completed-col">
         ${M.listModule({
           title: 'Completed Tasks',
           rows: completed.slice(0, 5),
@@ -137,6 +190,36 @@ async function renderContractor(container, ctx) {
     </div>
   `;
   requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
+
+  /* Start sync for contractor dashboard */
+  if (window.SyncManager) {
+    const sm = SyncManager.create();
+    window._dashSyncManager = sm;
+    sm.start(
+      () => _fetchTasks(activeCommunity.id),
+      function (newTasks, changed) {
+        const { active: a, overdue: od, upcoming: up, completed: comp, hoaReqs: hr } = _partition(newTasks);
+        const todayW = [...od, ...a].slice(0, 6);
+        const pending = hr.filter(t => t.status !== 'completed');
+
+        /* Patch stats row */
+        _updateStatsRow(container, [a.length, od.length, pending.length, up.length]);
+
+        /* Patch task lists in-place */
+        _patchListModule(container, '#dash-todays-work-col', todayW, 'No active or overdue tasks right now.');
+        _patchListModule(container, '#dash-hoa-reqs-col', pending.slice(0, 5), 'No pending HOA requests.');
+        if (_wide()) {
+          _patchListModule(container, '#dash-completed-col', comp.slice(0, 5), 'No completed tasks yet.');
+        }
+
+        _updateDashSyncLabel(container);
+        if (changed) PortalAPI.showToast('Tasks updated', 'info');
+      },
+      30000
+    );
+    _wireDashSyncBtn(container, sm);
+    window._dashSyncTicker = setInterval(() => _updateDashSyncLabel(container), 5000);
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -187,8 +270,13 @@ async function renderHoa(container, ctx, readOnly) {
       </div>
     </div>
 
-    <div class="dash-grid" style="margin-top:20px">
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
+    <div class="dash-tasks-header" style="margin-top:20px">
+      <span class="dash-tasks-title">Tasks</span>
+      ${_syncBadgeHtml('dash-sync-bar')}
+    </div>
+
+    <div class="dash-grid" style="margin-top:0">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recent-work-col">
         ${M.listModule({
           title: 'Recent Work',
           rows: recentDone.slice(0, 5),
@@ -196,7 +284,7 @@ async function renderHoa(container, ctx, readOnly) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-upcoming-work-col">
         ${M.listModule({
           title: 'Upcoming Work',
           rows: upcoming.slice(0, 5),
@@ -204,7 +292,7 @@ async function renderHoa(container, ctx, readOnly) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      ${_wide() ? `<div class="dash-col-4w">
+      ${_wide() ? `<div class="dash-col-4w" id="dash-open-reqs-col">
         ${M.listModule({
           title: 'Open Requests',
           rows: pendingReqs.slice(0, 5),
@@ -232,6 +320,51 @@ async function renderHoa(container, ctx, readOnly) {
     </div>
   `;
   requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
+
+  /* Start sync for HOA dashboard — re-fetches HOA dashboard + requests.
+   * The fetch function returns a normalized array of {id, status} entries
+   * so SyncManager's snapshot compares task/request identity + status only,
+   * avoiding false-positive "changed" toasts from irrelevant field changes.
+   * The raw data is stored in _hoaLatest for the onResult callback to use. */
+  if (window.SyncManager) {
+    const sm = SyncManager.create();
+    window._dashSyncManager = sm;
+    let _hoaLatest = { dashData: null, requests: [] };
+
+    sm.start(
+      async function () {
+        const [dd, reqs] = await Promise.all([_fetchHoaDashboard(), _fetchHoaRequests()]);
+        _hoaLatest = { dashData: dd, requests: reqs };
+        /* Build a normalized array for snapshot comparison */
+        const tasks = ((dd && dd.upcomingTasks) || []).concat((dd && dd.recentCompletions) || []);
+        return tasks.map(t => ({ id: t.id, status: t.status }))
+          .concat(reqs.map(r => ({ id: r.id, status: r.status })));
+      },
+      function (_normalizedArr, changed) {
+        const dd    = _hoaLatest.dashData;
+        const reqs  = _hoaLatest.requests;
+        const nc    = (dd && dd.upcomingTasks) || [];
+        const rd    = (dd && dd.recentCompletions) || [];
+        const up    = nc.filter(t => M.classifyTask(t) === 'upcoming');
+        const ac    = nc.filter(t => M.classifyTask(t) === 'active');
+        const od    = nc.filter(t => M.classifyTask(t) === 'overdue');
+        const pReqs = reqs.filter(r => r.status !== 'completed');
+
+        _updateStatsRow(container, [ac.length, od.length, pReqs.length, up.length]);
+        _patchListModule(container, '#dash-recent-work-col', rd.slice(0, 5), 'No recent completions.');
+        _patchListModule(container, '#dash-upcoming-work-col', up.slice(0, 5), 'No upcoming work scheduled.');
+        if (_wide()) {
+          _patchListModule(container, '#dash-open-reqs-col', pReqs.slice(0, 5), 'No open requests.');
+        }
+
+        _updateDashSyncLabel(container);
+        if (changed) PortalAPI.showToast('Tasks updated', 'info');
+      },
+      30000
+    );
+    _wireDashSyncBtn(container, sm);
+    window._dashSyncTicker = setInterval(() => _updateDashSyncLabel(container), 5000);
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -257,8 +390,13 @@ async function renderPM(container, ctx) {
       { icon: I.done(),  label: 'Completed Tasks',  value: completed.length,  color: 'var(--green)' },
     ])}
 
-    <div class="dash-grid">
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
+    <div class="dash-tasks-header">
+      <span class="dash-tasks-title">Tasks</span>
+      ${_syncBadgeHtml('dash-sync-bar')}
+    </div>
+
+    <div class="dash-grid" style="margin-top:0">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recently-completed-col">
         ${M.listModule({
           title: 'Recently Completed',
           rows: recentDone,
@@ -266,7 +404,7 @@ async function renderPM(container, ctx) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}">
+      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recent-reqs-col">
         ${M.listModule({
           title: 'Recent Requests',
           rows: pendingReqs.slice(0, 5),
@@ -274,7 +412,7 @@ async function renderPM(container, ctx) {
           viewAllRoute: 'tasks',
         })}
       </div>
-      ${_wide() ? `<div class="dash-col-4w">
+      ${_wide() ? `<div class="dash-col-4w" id="dash-overdue-col">
         ${M.listModule({
           title: 'Overdue Tasks',
           rows: overdue.slice(0, 5),
@@ -285,7 +423,7 @@ async function renderPM(container, ctx) {
     </div>
 
     <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-6">
+      <div class="dash-col-6" id="dash-upcoming-col">
         ${M.listModule({
           title: 'Upcoming Work',
           rows: upcoming.slice(0, 5),
@@ -309,6 +447,73 @@ async function renderPM(container, ctx) {
       </div>
     </div>
   `;
+
+  /* Start sync for PM dashboard */
+  if (window.SyncManager) {
+    const sm = SyncManager.create();
+    window._dashSyncManager = sm;
+    sm.start(
+      () => _fetchTasks(activeCommunity.id),
+      function (newTasks, changed) {
+        const { active: a, overdue: od, upcoming: up, completed: comp, hoaReqs: hr } = _partition(newTasks);
+        const pending   = hr.filter(t => t.status !== 'completed');
+        const recentD   = comp.slice(0, 5);
+
+        _updateStatsRow(container, [a.length, od.length, pending.length, comp.length]);
+        _patchListModule(container, '#dash-recently-completed-col', recentD, 'No completed tasks yet.');
+        _patchListModule(container, '#dash-recent-reqs-col', pending.slice(0, 5), 'No open requests.');
+        if (_wide()) {
+          _patchListModule(container, '#dash-overdue-col', od.slice(0, 5), 'No overdue tasks.');
+        }
+        _patchListModule(container, '#dash-upcoming-col', up.slice(0, 5), 'No upcoming work scheduled.');
+
+        _updateDashSyncLabel(container);
+        if (changed) PortalAPI.showToast('Tasks updated', 'info');
+      },
+      30000
+    );
+    _wireDashSyncBtn(container, sm);
+    window._dashSyncTicker = setInterval(() => _updateDashSyncLabel(container), 5000);
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Partial DOM patch helpers
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/* Update stat card values without full re-render
+ * values = [val0, val1, val2, val3] matching statsRow order
+ */
+function _updateStatsRow(container, values) {
+  const cards = container.querySelectorAll('.portal-stat-card');
+  cards.forEach(function (card, i) {
+    if (i >= values.length) return;
+    const valEl = card.querySelector('.psc-value');
+    if (valEl) valEl.textContent = values[i];
+  });
+}
+
+/* Re-render a listModule's body in place without touching surrounding columns.
+ * rows should already be sliced to the desired display limit by the caller. */
+function _patchListModule(container, colSelector, rows, emptyMsg) {
+  const col = container.querySelector(colSelector);
+  if (!col) return;
+  const M = PortalModules;
+  const body = rows.length > 0
+    ? rows.map(r => M.taskRow(r)).join('')
+    : `<div class="module-empty">${M.esc(emptyMsg || 'Nothing to show.')}</div>`;
+
+  const bodyEl = col.querySelector('.pm-body');
+  if (bodyEl) {
+    bodyEl.innerHTML = body;
+    bodyEl.querySelectorAll('[data-task-id]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        if (typeof window.openTaskDetail === 'function') {
+          window.openTaskDetail(row.dataset.taskId);
+        }
+      });
+    });
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────

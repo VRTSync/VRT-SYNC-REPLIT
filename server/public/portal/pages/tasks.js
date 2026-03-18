@@ -4,6 +4,16 @@ PortalRouter.register('tasks', async function (container) {
   var community = ctx.activeCommunity;
   var M = PortalModules;
 
+  /* Stop any previous sync when navigating away */
+  if (window._tasksSyncManager) {
+    window._tasksSyncManager.stop();
+    window._tasksSyncManager = null;
+  }
+  if (window._tasksSyncTicker) {
+    clearInterval(window._tasksSyncTicker);
+    window._tasksSyncTicker = null;
+  }
+
   if (!community) {
     container.innerHTML = '<div class="empty-state" style="margin-top:80px"><p>Select a community first.</p></div>';
     return;
@@ -62,6 +72,7 @@ PortalRouter.register('tasks', async function (container) {
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
   wireEvents(container, tabs, tasks, isContractor);
+  startSync(container);
 
   function renderPage(tabs, current) {
     var priorityBar = '';
@@ -82,11 +93,20 @@ PortalRouter.register('tasks', async function (container) {
     }
 
     return M.pageHeader('Tasks', community)
-      + '<div class="tf-bar">'
+      + '<div class="tf-bar tf-bar--with-sync">'
       + tabs.map(function (t) {
           return '<button class="tf-tab' + (t.key === current ? ' tf-tab--active' : '') + '" data-tab="' + t.key + '">'
             + M.esc(t.label) + '</button>';
         }).join('')
+      + '<div class="sync-bar" id="tasks-sync-bar">'
+      + '  <span class="sync-label" id="tasks-sync-label">Syncing\u2026</span>'
+      + '  <button class="sync-refresh-btn" id="tasks-sync-btn" title="Refresh now">'
+      + '    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+      + '      <polyline points="23 4 23 10 17 10"/>'
+      + '      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>'
+      + '    </svg>'
+      + '  </button>'
+      + '</div>'
       + '</div>'
       + priorityBar
       + '<div class="portal-module" style="margin-top:16px">'
@@ -114,10 +134,10 @@ PortalRouter.register('tasks', async function (container) {
     return result;
   }
 
-  function renderList(container, tasks, tab, isContractor) {
+  function renderList(container, taskData, tab, isContractor) {
     var listEl = container.querySelector('#tasks-list');
     if (!listEl) return;
-    var filtered = filterTasks(tasks, tab, isContractor);
+    var filtered = filterTasks(taskData, tab, isContractor);
     if (filtered.length === 0) {
       listEl.innerHTML = '<div class="module-empty">No tasks in this category.</div>';
     } else {
@@ -132,7 +152,52 @@ PortalRouter.register('tasks', async function (container) {
     });
   }
 
-  function wireEvents(container, tabs, tasks, isContractor) {
+  function updateSyncLabel() {
+    var label = container.querySelector('#tasks-sync-label');
+    if (!label || !window._tasksSyncManager) return;
+    var ts = window._tasksSyncManager.lastSynced();
+    if (!ts) { label.textContent = 'Syncing\u2026'; return; }
+    var secs = Math.round((Date.now() - ts.getTime()) / 1000);
+    if (secs < 5)        label.textContent = 'Last synced: just now';
+    else if (secs < 60)  label.textContent = 'Last synced: ' + secs + 's ago';
+    else                 label.textContent = 'Last synced: ' + Math.round(secs / 60) + 'm ago';
+  }
+
+  function startSync(container) {
+    if (!window.SyncManager) return;
+
+    var sm = SyncManager.create();
+    window._tasksSyncManager = sm;
+
+    sm.start(
+      function () { return PortalAPI.apiFetch('/api/tasks?communityId=' + community.id); },
+      function (newTasks, changed) {
+        if (!Array.isArray(newTasks)) return;
+        tasks = newTasks;
+        renderList(container, tasks, activeTab, isContractor);
+        updateSyncLabel();
+        if (changed) {
+          PortalAPI.showToast('Tasks updated', 'info');
+        }
+      },
+      30000
+    );
+
+    /* Update the label every 5 seconds */
+    window._tasksSyncTicker = setInterval(updateSyncLabel, 5000);
+
+    /* Wire the manual refresh button */
+    var btn = container.querySelector('#tasks-sync-btn');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        btn.classList.add('sync-refresh-btn--spinning');
+        sm.forceRefresh();
+        setTimeout(function () { btn.classList.remove('sync-refresh-btn--spinning'); }, 600);
+      });
+    }
+  }
+
+  function wireEvents(container, tabs, taskData, isContractor) {
     container.querySelectorAll('.tf-tab[data-tab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         activeTab = btn.dataset.tab;
