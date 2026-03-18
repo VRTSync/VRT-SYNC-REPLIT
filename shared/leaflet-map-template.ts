@@ -30,15 +30,15 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   }
   .ctrl-marker {
     display: flex; align-items: center; justify-content: center;
-    min-width: 28px; height: 22px; border-radius: 2px;
-    border: 2px solid #fff; color: #fff; font-size: 11px;
-    font-weight: 700; padding: 0 5px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-    white-space: nowrap; text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+    width: 26px; height: 26px; border-radius: 4px;
+    border: 2px solid #fff; color: #fff; font-size: 12px;
+    font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+    text-shadow: 0 1px 1px rgba(0,0,0,0.3);
   }
   .zone-ring {
-    width: 14px; height: 14px; border-radius: 50%;
-    border: 3px solid #fff; background: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 3px solid #fff; background: transparent;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
   }
   .user-loc {
     width: 14px; height: 14px; border-radius: 50%;
@@ -276,7 +276,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         var m = L.marker([c.latitude, c.longitude], {
           icon: L.divIcon({
             html: '<div class="ctrl-marker" style="background:'+c.color+';">'+escHtml(c.controllerKey)+'</div>',
-            className: '', iconSize: [28,22], iconAnchor: [14,11]
+            className: '', iconSize: [26,26], iconAnchor: [13,13]
           }),
           zIndex: 500
         });
@@ -297,8 +297,8 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       markers.forEach(function(z) {
         var m = L.marker([z.latitude, z.longitude], {
           icon: L.divIcon({
-            html: '<div class="zone-ring" style="background:'+z.controllerColor+';border-color:#fff;"></div>',
-            className: '', iconSize: [14,14], iconAnchor: [7,7]
+            html: '<div class="zone-ring" style="background:'+z.controllerColor+';"></div>',
+            className: '', iconSize: [16,16], iconAnchor: [8,8]
           })
         });
         m._zoneColor = z.controllerColor;
