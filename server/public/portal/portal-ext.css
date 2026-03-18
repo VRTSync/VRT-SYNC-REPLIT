@@ -1372,6 +1372,42 @@
   flex-shrink: 0;
 }
 
+.mlp-color-swatch-btn {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.7);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.18);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  outline: none;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.mlp-color-swatch-btn:hover {
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.3);
+  transform: scale(1.15);
+}
+
+.mlp-color-picker-wrap {
+  background: var(--white, #fff);
+  border: 1px solid var(--gray-200, #e5e7eb);
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+}
+
+.mlp-color-input {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  border-radius: 4px;
+}
+
 .mlp-sub-label {
   font-weight: 500;
 }

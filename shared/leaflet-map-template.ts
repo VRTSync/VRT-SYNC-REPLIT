@@ -431,6 +431,40 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       if (communityBounds && communityBounds.isValid()) {
         map.fitBounds(communityBounds, { padding: [32, 32] });
       }
+    },
+
+    updateLayerColor: function(layerId, newColor) {
+      var geoLayer = layerCache[layerId];
+      if (!geoLayer) return;
+      geoLayer.eachLayer(function(l) {
+        if (l.setStyle) {
+          l.setStyle({ color: newColor, fillColor: newColor });
+        }
+        if (l.setIcon && l._iconOpts) {
+          l._iconOpts.color = newColor;
+          l.setIcon(L.divIcon(l._iconOpts));
+        }
+      });
+    },
+
+    updateLayerColorMap: function(layerId, colorMap, fallbackColor) {
+      var geoLayer = layerCache[layerId];
+      if (!geoLayer) return;
+      geoLayer.eachLayer(function(l) {
+        var feature = l.feature;
+        if (!feature) return;
+        var props = feature.properties || {};
+        var c = fallbackColor;
+        if (props.controllerFeatureRef) {
+          c = colorMap[props.controllerFeatureRef] || fallbackColor;
+        } else if (props.featureId || feature.id) {
+          var fid = props.featureId || feature.id;
+          c = colorMap[fid] || fallbackColor;
+        }
+        if (l.setStyle) {
+          l.setStyle({ color: c, fillColor: c });
+        }
+      });
     }
   };
 

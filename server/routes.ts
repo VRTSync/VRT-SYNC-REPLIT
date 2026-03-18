@@ -280,6 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 zoneNumber: zProps.zoneNumber ? parseInt(zProps.zoneNumber) : null,
                 zoneType: zProps.zoneType || null,
                 zoneLabelShort: zProps.zoneLabelShort || null,
+                zoneColor: zProps.zoneColor || null,
                 latitude: z.latitude,
                 longitude: z.longitude,
               };

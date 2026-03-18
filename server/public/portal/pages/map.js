@@ -53,6 +53,9 @@ PortalRouter.register('map', async function (container) {
   let iframeReady = false;
   let pendingCmds = [];
   let renderGeneration = 0;
+  let controllerData = [];
+  let activeColorPicker = null;
+  let sessionColorOverrides = {};
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
@@ -94,6 +97,22 @@ PortalRouter.register('map', async function (container) {
   setupIframe();
   loadMapData();
 
+  document.addEventListener('click', dismissColorPicker, true);
+
+  function dismissColorPicker(e) {
+    if (!activeColorPicker) return;
+    if (!e.target.closest('.mlp-color-swatch-btn') && !e.target.closest('.mlp-color-picker-wrap')) {
+      closeColorPicker();
+    }
+  }
+
+  function closeColorPicker() {
+    if (activeColorPicker) {
+      activeColorPicker.remove();
+      activeColorPicker = null;
+    }
+  }
+
   function renderCategories() {
     const el = document.getElementById('mlp-categories');
     if (!el) return;
@@ -112,18 +131,28 @@ PortalRouter.register('map', async function (container) {
     });
   }
 
+  function getLayerEffectiveColor(cat, subKey) {
+    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
+    if (apiLayer && apiLayer.color) return apiLayer.color;
+    const def = (LAYER_HIERARCHY[cat] || []).find(s => s.key === subKey);
+    return def ? def.color : '#888888';
+  }
+
   function renderSublayers() {
     const el = document.getElementById('mlp-sublayers');
     if (!el) return;
     const subs = LAYER_HIERARCHY[activeCategory] || [];
+    const isAdmin = role === 'admin';
     el.innerHTML = subs.map(sub => {
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
-      const apiLayer = mapLayers.find(l => l.subLayerKey === sub.key && l.layerKey === activeCategory);
-      const dotColor = (apiLayer && apiLayer.color) ? apiLayer.color : sub.color;
+      const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
+      const swatchBtn = isAdmin
+        ? `<button class="mlp-color-swatch-btn" data-cat="${activeCategory}" data-key="${sub.key}" style="background:${dotColor}" title="Change color" aria-label="Change color for ${esc(sub.label)}"></button>`
+        : `<span class="mlp-sub-dot" style="background:${dotColor}"></span>`;
       return `
         <label class="mlp-sublayer-row">
           <input type="checkbox" ${checked} data-cat="${activeCategory}" data-key="${sub.key}">
-          <span class="mlp-sub-dot" style="background:${dotColor}"></span>
+          ${swatchBtn}
           <span class="mlp-sub-label">${esc(sub.label)}</span>
         </label>
       `;
@@ -134,6 +163,189 @@ PortalRouter.register('map', async function (container) {
         syncVisibleLayers();
       });
     });
+    if (isAdmin) {
+      el.querySelectorAll('.mlp-color-swatch-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openColorPicker(btn, btn.dataset.cat, btn.dataset.key);
+        });
+      });
+    }
+  }
+
+  function openColorPicker(swatchBtn, cat, subKey) {
+    closeColorPicker();
+    const currentColor = getLayerEffectiveColor(cat, subKey);
+    const wrap = document.createElement('div');
+    wrap.className = 'mlp-color-picker-wrap';
+    wrap.innerHTML = `<input type="color" class="mlp-color-input" value="${currentColor}">`;
+    document.body.appendChild(wrap);
+
+    const rect = swatchBtn.getBoundingClientRect();
+    wrap.style.position = 'fixed';
+    wrap.style.left = (rect.right + 6) + 'px';
+    wrap.style.top = rect.top + 'px';
+    wrap.style.zIndex = '9999';
+
+    const input = wrap.querySelector('.mlp-color-input');
+    input.focus();
+    input.click();
+    activeColorPicker = wrap;
+
+    input.addEventListener('input', () => {
+      const newColor = input.value;
+      swatchBtn.style.background = newColor;
+      applyLayerColorLive(cat, subKey, newColor);
+    });
+
+    input.addEventListener('change', () => {
+      const newColor = input.value;
+      swatchBtn.style.background = newColor;
+      applyLayerColorLive(cat, subKey, newColor);
+      persistLayerColor(cat, subKey, newColor);
+      closeColorPicker();
+    });
+  }
+
+  function buildZoneColorMap(uniformColor) {
+    const colorMap = {};
+    for (const ctrl of controllerData) {
+      if (ctrl.featureRef) {
+        colorMap[ctrl.featureRef] = uniformColor;
+      }
+    }
+    return colorMap;
+  }
+
+  function applyLayerColorLive(cat, subKey, newColor) {
+    if (cat === 'irrigation' && (subKey === 'controller' || subKey === 'zone')) {
+      setSessionColorOverride(cat, subKey, newColor);
+      const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
+      const zoneOverride = getSessionColorOverride('irrigation', 'zone');
+      sendIrrigationMarkers(ctrlOverride, zoneOverride);
+      const ctrlLayer = mapLayers.find(l => l.layerKey === 'irrigation' && l.subLayerKey === 'controller');
+      const zoneLayer = mapLayers.find(l => l.layerKey === 'irrigation' && l.subLayerKey === 'zone');
+      if (subKey === 'controller') {
+        const updatedColorMap = buildControllerColorMap(ctrlOverride);
+        if (ctrlLayer) {
+          cmdToIframe('updateLayerColorMap', ctrlLayer.id, updatedColorMap, ctrlOverride || getLayerEffectiveColor('irrigation', 'controller'));
+        }
+        if (zoneLayer) {
+          const effectiveZone = zoneOverride || getLayerEffectiveColor('irrigation', 'zone');
+          const zoneGeoMap = zoneOverride
+            ? buildZoneColorMap(effectiveZone)
+            : updatedColorMap;
+          cmdToIframe('updateLayerColorMap', zoneLayer.id, zoneGeoMap, effectiveZone);
+        }
+      } else {
+        if (zoneLayer) {
+          const zoneColorMap = buildZoneColorMap(newColor);
+          cmdToIframe('updateLayerColorMap', zoneLayer.id, zoneColorMap, newColor);
+        }
+      }
+      return;
+    }
+    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
+    if (!apiLayer) return;
+    cmdToIframe('updateLayerColor', apiLayer.id, newColor);
+  }
+
+  function sendIrrigationMarkers(ctrlColorOverride, zoneColorOverride) {
+    const fallbackCtrlColor = getLayerEffectiveColor('irrigation', 'controller');
+
+    const ctrlMarkers = controllerData
+      .filter(c => c.latitude != null && c.longitude != null)
+      .map(c => {
+        const perCtrlColor = ctrlColorOverride !== null
+          ? ctrlColorOverride
+          : (c.controllerColor || fallbackCtrlColor);
+        return {
+          id: c.id,
+          label: c.label || c.controllerKey || 'Controller',
+          featureRef: c.featureRef,
+          controllerKey: c.controllerKey || '',
+          color: perCtrlColor,
+          latitude: c.latitude,
+          longitude: c.longitude,
+          zoneCount: c.zoneCount || (c.zones ? c.zones.length : 0),
+        };
+      });
+
+    const fallbackZoneColor = getLayerEffectiveColor('irrigation', 'zone');
+    const zoneMarkers = controllerData.flatMap(c => {
+      const perCtrlColor = ctrlColorOverride !== null
+        ? ctrlColorOverride
+        : (c.controllerColor || fallbackCtrlColor);
+      const zColor = zoneColorOverride !== null ? zoneColorOverride : perCtrlColor;
+      return (c.zones || [])
+        .filter(z => z.latitude != null && z.longitude != null)
+        .map(z => ({
+          id: z.id,
+          label: z.label || z.zoneLabelShort || `Zone ${z.zoneNumber || ''}`,
+          featureRef: z.featureRef,
+          zoneNumber: z.zoneNumber,
+          controllerColor: zColor,
+          controllerLabel: c.label || c.controllerKey || 'Controller',
+          latitude: z.latitude,
+          longitude: z.longitude,
+        }));
+    });
+
+    if (ctrlMarkers.length > 0) {
+      cmdToIframe('setControllerMarkers', ctrlMarkers);
+    }
+    if (zoneMarkers.length > 0) {
+      cmdToIframe('setZoneMarkers', zoneMarkers);
+    }
+  }
+
+  async function persistLayerColor(cat, subKey, newColor) {
+    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
+    if (apiLayer) {
+      try {
+        const updated = await apiFetch(`/api/map-layers/${apiLayer.id}`, {
+          method: 'PATCH',
+          body: { color: newColor, version: apiLayer.version },
+        });
+        if (updated && updated.id) {
+          const idx = mapLayers.findIndex(l => l.id === apiLayer.id);
+          if (idx !== -1) {
+            mapLayers[idx] = { ...mapLayers[idx], color: newColor, version: updated.version };
+          }
+        }
+      } catch (err) {
+        console.error('Failed to save layer color:', err);
+      }
+    }
+
+    if (cat === 'irrigation' && subKey === 'controller' && controllerData.length > 0) {
+      const updates = controllerData
+        .filter(c => c.id)
+        .map(c => apiFetch(`/api/assets/${c.id}/properties`, {
+          method: 'PUT',
+          body: { properties: [{ key: 'controllerColor', value: newColor }] },
+        }).then(result => {
+          const idx = controllerData.findIndex(cd => cd.id === c.id);
+          if (idx !== -1) controllerData[idx] = { ...controllerData[idx], controllerColor: newColor };
+          return result;
+        }).catch(err => console.error('Failed to update controller color for', c.id, err)));
+      await Promise.allSettled(updates);
+    }
+
+    if (cat === 'irrigation' && subKey === 'zone') {
+      const allZones = controllerData.flatMap(c => c.zones || []).filter(z => z.id);
+      const updates = allZones.map(z => apiFetch(`/api/assets/${z.id}/properties`, {
+        method: 'PUT',
+        body: { properties: [{ key: 'zoneColor', value: newColor }] },
+      }).then(() => {
+        for (const ctrl of controllerData) {
+          const zi = (ctrl.zones || []).findIndex(zz => zz.id === z.id);
+          if (zi !== -1) ctrl.zones[zi] = { ...ctrl.zones[zi], zoneColor: newColor };
+        }
+      }).catch(err => console.error('Failed to update zone color for', z.id, err)));
+      await Promise.allSettled(updates);
+    }
   }
 
   function setupIframe() {
@@ -164,6 +376,8 @@ PortalRouter.register('map', async function (container) {
     window.addEventListener('message', handler);
     window._portalMapCleanup = function () {
       window.removeEventListener('message', handler);
+      document.removeEventListener('click', dismissColorPicker, true);
+      closeColorPicker();
       window._portalMapCleanup = null;
     };
   }
@@ -206,8 +420,13 @@ PortalRouter.register('map', async function (container) {
 
   async function loadMapData() {
     try {
-      const layers = await apiFetch(`/api/map-layers?communityId=${community.id}`);
+      const [layers, controllers] = await Promise.all([
+        apiFetch(`/api/map-layers?communityId=${community.id}`),
+        apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),
+      ]);
       mapLayers = layers || [];
+      controllerData = controllers || [];
+
       for (const layer of mapLayers) {
         try {
           const geojson = await apiFetch(`/api/map-layers/${layer.id}/geojson`);
@@ -217,8 +436,10 @@ PortalRouter.register('map', async function (container) {
         } catch (_) {}
       }
       pushLayersToIframe();
+      pushIrrigationToIframe();
       syncVisibleLayers();
       loadCommunityOutline();
+      renderSublayers();
     } catch (err) {
       console.error('Failed to load map layers:', err);
     }
@@ -234,19 +455,67 @@ PortalRouter.register('map', async function (container) {
     }
   }
 
+  function getSessionColorOverride(cat, subKey) {
+    return sessionColorOverrides[cat + '/' + subKey] || null;
+  }
+
+  function setSessionColorOverride(cat, subKey, color) {
+    sessionColorOverrides[cat + '/' + subKey] = color;
+  }
+
+  function buildControllerColorMap(uniformColorOverride) {
+    const colorMap = {};
+    const fallback = getLayerEffectiveColor('irrigation', 'controller');
+    for (const ctrl of controllerData) {
+      if (ctrl.featureRef) {
+        colorMap[ctrl.featureRef] = uniformColorOverride !== null
+          ? uniformColorOverride
+          : (ctrl.controllerColor || fallback);
+      }
+    }
+    return colorMap;
+  }
+
   function pushLayersToIframe() {
-    const layerData = mapLayers.filter(l => l._geojson && l.layerKey !== 'outline').map(l => ({
-      id: l.id,
-      layerKey: l.layerKey,
-      subLayerKey: l.subLayerKey,
-      displayName: l.displayName,
-      color: l.color || '#25C1AC',
-      geojson: l._geojson,
-      controllerColorMap: l.controllerColorMap || {},
-    }));
+    const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
+    const ctrlColorMap = buildControllerColorMap(ctrlOverride);
+    const storedZoneColor = getStoredZoneColor();
+    const layerData = mapLayers.filter(l => l._geojson && l.layerKey !== 'outline').map(l => {
+      let colorMap = {};
+      if (l.subLayerKey === 'controller') {
+        colorMap = ctrlColorMap;
+      } else if (l.subLayerKey === 'zone') {
+        colorMap = storedZoneColor ? buildZoneColorMap(storedZoneColor) : ctrlColorMap;
+      }
+      return {
+        id: l.id,
+        layerKey: l.layerKey,
+        subLayerKey: l.subLayerKey,
+        displayName: l.displayName,
+        color: l.color || '#25C1AC',
+        geojson: l._geojson,
+        controllerColorMap: colorMap,
+      };
+    });
     if (layerData.length > 0) {
       cmdToIframe('addLayers', layerData);
     }
+  }
+
+  function getStoredZoneColor() {
+    for (const ctrl of controllerData) {
+      for (const z of (ctrl.zones || [])) {
+        if (z.zoneColor) return z.zoneColor;
+      }
+    }
+    return null;
+  }
+
+  function pushIrrigationToIframe() {
+    if (!controllerData || controllerData.length === 0) return;
+    const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
+    const zoneOverride = getSessionColorOverride('irrigation', 'zone') || getStoredZoneColor();
+    sendIrrigationMarkers(ctrlOverride, zoneOverride);
   }
 
   function syncVisibleLayers(fitMap) {
