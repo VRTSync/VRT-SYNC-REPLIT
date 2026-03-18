@@ -214,6 +214,7 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.get("/leaflet-map.html", (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
     res.type("html").send(LEAFLET_MAP_HTML);
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
