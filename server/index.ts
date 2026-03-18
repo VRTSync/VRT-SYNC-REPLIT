@@ -7,7 +7,7 @@ import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import { db, pool } from "./db";
-import { users, invoices, communities } from "../shared/schema";
+import { users, invoices, communities, contacts, type InsertContact } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { LEAFLET_MAP_HTML } from "../shared/leaflet-map-template";
@@ -638,6 +638,92 @@ async function seedInvoices() {
   }
 }
 
+async function seedContacts() {
+  try {
+    const existing = await db.select().from(contacts).limit(1);
+    if (existing.length > 0) return;
+    const allCommunities = await db.select().from(communities).limit(5);
+    if (allCommunities.length === 0) return;
+    const community = allCommunities[0];
+    const seedData: InsertContact[] = [
+      {
+        communityId: community.id,
+        name: 'Patricia Hernandez',
+        title: 'Board President',
+        company: community.name + ' HOA',
+        phone: '(303) 555-0182',
+        email: 'phernandez@hoaboard.com',
+        contactType: 'HOA Board',
+        notes: 'Primary board contact for budget and governance matters.',
+      },
+      {
+        communityId: community.id,
+        name: 'Marcus Webb',
+        title: 'Vice President',
+        company: community.name + ' HOA',
+        phone: '(303) 555-0241',
+        email: 'mwebb@hoaboard.com',
+        contactType: 'HOA Board',
+        notes: null,
+      },
+      {
+        communityId: community.id,
+        name: 'Jennifer Park',
+        title: 'Community Manager',
+        company: 'Front Range Property Management',
+        phone: '(720) 555-0133',
+        email: 'jpark@frontrangpm.com',
+        contactType: 'Property Management',
+        notes: 'Main point of contact for maintenance requests and resident concerns.',
+      },
+      {
+        communityId: community.id,
+        name: 'Carlos Rivera',
+        title: 'Crew Lead',
+        company: 'Summit Landscape & Snow',
+        phone: '(720) 555-0378',
+        email: 'crivera@summitlandscape.com',
+        contactType: 'Contractor',
+        notes: 'Handles mowing, mulching, and snow removal contracts.',
+      },
+      {
+        communityId: community.id,
+        name: 'Aqua Systems Supply',
+        title: 'Account Rep',
+        company: 'Aqua Systems Supply Co.',
+        phone: '(303) 555-0094',
+        email: 'orders@aquasystems.com',
+        contactType: 'Vendor',
+        notes: 'Irrigation parts and controller supplies.',
+      },
+      {
+        communityId: community.id,
+        name: '911 Emergency',
+        title: null,
+        company: null,
+        phone: '911',
+        email: null,
+        contactType: 'Emergency',
+        notes: 'Police, Fire, and Medical emergencies.',
+      },
+      {
+        communityId: community.id,
+        name: 'Aurora Utilities',
+        title: 'Customer Service',
+        company: 'City of Aurora Utilities',
+        phone: '(303) 739-7388',
+        email: 'utilities@auroragov.org',
+        contactType: 'City/Municipality',
+        notes: 'Water and sewer service for the community.',
+      },
+    ];
+    await db.insert(contacts).values(seedData);
+    log("Seeded " + seedData.length + " contacts");
+  } catch (err) {
+    console.error("Contacts seed failed (non-fatal):", err);
+  }
+}
+
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
@@ -647,6 +733,7 @@ async function seedInvoices() {
   await runStartupMigrations();
   await seedProductionAdmin();
   await seedInvoices();
+  await seedContacts();
 
   configureExpoAndLanding(app);
   configureAdminHub(app);
