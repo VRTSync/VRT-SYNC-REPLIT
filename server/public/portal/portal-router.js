@@ -30,6 +30,9 @@ window.PortalRouter = (function () {
   }
 
   function render(routeName, params) {
+    if (typeof window._dashMapCleanup === 'function') {
+      window._dashMapCleanup();
+    }
     currentRoute = routeName;
     currentParams = params || {};
     const container = document.getElementById('page-content');

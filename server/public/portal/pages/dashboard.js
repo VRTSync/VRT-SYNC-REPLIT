@@ -136,6 +136,7 @@ async function renderContractor(container, ctx) {
       </div>` : ''}
     </div>
   `;
+  requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -230,6 +231,7 @@ async function renderHoa(container, ctx, readOnly) {
       </div>
     </div>
   `;
+  requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -307,4 +309,95 @@ async function renderPM(container, ctx) {
       </div>
     </div>
   `;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * Dashboard Map Preview — Leaflet bridge
+ * ────────────────────────────────────────────────────────────────────────── */
+async function _initMapPreview(communityId) {
+  if (typeof window._dashMapCleanup === 'function') {
+    window._dashMapCleanup();
+    window._dashMapCleanup = null;
+  }
+
+  const iframe = document.getElementById('dash-map-iframe');
+  if (!iframe) return;
+
+  let ready = false;
+  const pending = [];
+
+  function send(fn) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    if (!ready) { pending.push({ fn, args }); return; }
+    if (iframe.contentWindow) {
+      iframe.contentWindow.postMessage({ type: 'cmd', fn, args }, '*');
+    }
+  }
+
+  function handler(e) {
+    if (e.source !== iframe.contentWindow) return;
+    if (!e.data || typeof e.data !== 'string') return;
+    var msg;
+    try { msg = JSON.parse(e.data); } catch (_) { return; }
+    if (msg.type !== 'mapReady') return;
+    ready = true;
+    var cmds = pending.splice(0);
+    cmds.forEach(function(c) {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'cmd', fn: c.fn, args: c.args }, '*');
+      }
+    });
+    _loadPreviewCommunity(communityId, send);
+  }
+
+  window.addEventListener('message', handler);
+  window._dashMapCleanup = function() {
+    window.removeEventListener('message', handler);
+    window._dashMapCleanup = null;
+  };
+  return window._dashMapCleanup;
+}
+
+async function _loadPreviewCommunity(communityId, send) {
+  try {
+    const layers = await PortalAPI.apiFetch(`/api/map-layers?communityId=${communityId}`);
+    const mapLayers = Array.isArray(layers) ? layers : [];
+
+    for (const layer of mapLayers) {
+      try {
+        const geojson = await PortalAPI.apiFetch(`/api/map-layers/${layer.id}/geojson`);
+        if (geojson) layer._geojson = geojson;
+      } catch (_) {}
+    }
+
+    const communitySubKeys = ['bluegrass_area', 'native_area', 'landscape_bed', 'pet_station'];
+    const layerData = mapLayers
+      .filter(function(l) { return l._geojson && l.layerKey !== 'outline'; })
+      .map(function(l) {
+        return {
+          id: l.id,
+          layerKey: l.layerKey,
+          subLayerKey: l.subLayerKey,
+          displayName: l.displayName,
+          color: l.color || '#25C1AC',
+          geojson: l._geojson,
+          controllerColorMap: l.controllerColorMap || {},
+        };
+      });
+
+    if (layerData.length > 0) send('addLayers', layerData);
+
+    const visibleIds = mapLayers
+      .filter(function(l) { return l.layerKey === 'community' && communitySubKeys.indexOf(l.subLayerKey) !== -1; })
+      .map(function(l) { return l.id; });
+    send('showLayerIds', visibleIds);
+
+    const outlineLayer = mapLayers.find(function(l) { return l.layerKey === 'outline' && l._geojson; });
+    if (outlineLayer) {
+      send('setCommunityOutline', outlineLayer._geojson);
+      send('fitToOutline');
+    }
+  } catch (err) {
+    console.error('Dashboard map preview failed:', err);
+  }
 }

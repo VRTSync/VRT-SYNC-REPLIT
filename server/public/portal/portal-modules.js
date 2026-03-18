@@ -201,7 +201,6 @@ window.PortalModules = (function () {
    * MODULE: Map Preview (placeholder — real embed in later slice)
    * ══════════════════════════════════════════════════════════════════════ */
   function mapPreviewModule({ community, tall }) {
-    const name = community ? community.name : 'Community Map';
     const h = tall ? '340px' : '200px';
     return `
       <div class="portal-module portal-module--map" style="--map-h:${h}">
@@ -210,10 +209,7 @@ window.PortalModules = (function () {
           <button class="module-view-all" onclick="PortalRouter.navigate('map')">Open full map</button>
         </div>
         <div class="map-preview-body">
-          <div class="map-preview-bg">
-            ${_svg('<polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>', 40)}
-            <span class="map-preview-lbl">${esc(name)}</span>
-          </div>
+          <iframe id="dash-map-iframe" src="/leaflet-map.html" class="map-preview-iframe" tabindex="-1" aria-hidden="true"></iframe>
         </div>
       </div>
     `;
