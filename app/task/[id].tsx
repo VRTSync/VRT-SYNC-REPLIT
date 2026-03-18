@@ -264,7 +264,7 @@ export default function TaskDetailScreen() {
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
 
       Alert.alert('Task Completed', 'The task has been marked as complete.', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: () => router.replace('/(tabs)/tasks') },
       ]);
     } catch (e: any) {
       if (e.message?.includes('409')) {

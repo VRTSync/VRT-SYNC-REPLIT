@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { useAuth, getNotificationPreferences } from './AuthContext';
@@ -80,6 +80,7 @@ type PendingCompletion = {
   serverCompletionId?: string;
   lastError?: string;
   createdAt: string;
+  _dismissUnrecoverable?: boolean;
 };
 
 type PendingCompletionInput = Omit<PendingCompletion, 'state' | 'photos' | 'serverCompletionId'> & {
@@ -411,21 +412,63 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       } catch (e: any) {
         let errorMsg: string;
         let newState: 'failed' | 'conflict' = 'failed';
-        if (e.message?.includes('409')) {
-          errorMsg = 'Version conflict — task was modified by another user. Open the task to get the latest version, then retry.';
+        const statusMatch = e.message?.match(/^(\d+):/);
+        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+
+        if (statusCode === 409) {
+          errorMsg = 'Version conflict — this task was modified by another user. Open the task to load the latest version, then try completing it again.';
           newState = 'conflict';
+          updatedList = updateItem(updatedList, i, { state: newState, lastError: errorMsg });
+          if (Platform.OS !== 'web') {
+            Alert.alert(
+              'Task Not Completed',
+              `Your queued completion could not be submitted.\n\nReason: ${errorMsg}\n\nThe task has NOT been marked as complete.`,
+              [{ text: 'OK' }],
+            );
+          }
+          failed++;
+        } else if (statusCode === 400 || statusCode === 403) {
+          let reason = 'The server rejected this completion.';
+          try {
+            const bodyText = e.message.replace(/^\d+:\s*/, '');
+            const parsed = JSON.parse(bodyText);
+            if (parsed?.error) reason = parsed.error;
+            else if (typeof bodyText === 'string' && bodyText.length < 200) reason = bodyText;
+          } catch (_) {}
+
+          updatedList = updateItem(updatedList, i, { state: 'failed', lastError: reason, _dismissUnrecoverable: true });
+
+          if (Platform.OS !== 'web') {
+            Alert.alert(
+              'Task Not Completed',
+              `Your queued completion could not be submitted.\n\nReason: ${reason}\n\nThe task has NOT been marked as complete. Please open the task and try again when the issue is resolved.`,
+              [{ text: 'OK' }],
+            );
+          }
+          failed++;
+        } else if (statusCode >= 400) {
+          errorMsg = e.message || 'Sync failed';
+          updatedList = updateItem(updatedList, i, { state: newState, lastError: errorMsg });
+          if (Platform.OS !== 'web') {
+            Alert.alert(
+              'Task Not Completed',
+              `Your queued completion could not be submitted.\n\nReason: ${errorMsg}\n\nThe task has NOT been marked as complete. It will be retried automatically.`,
+              [{ text: 'OK' }],
+            );
+          }
+          failed++;
         } else {
           errorMsg = e.message || 'Sync failed';
+          updatedList = updateItem(updatedList, i, { state: newState, lastError: errorMsg });
+          failed++;
         }
-        updatedList = updateItem(updatedList, i, { state: newState, lastError: errorMsg });
-        failed++;
       }
 
       setPendingCompletions([...updatedList]);
       pendingRef.current = [...updatedList];
     }
 
-    const remaining = updatedList.filter(c => c.state !== 'synced');
+    const remaining = updatedList.filter(c => c.state !== 'synced' && !c._dismissUnrecoverable);
     await persistQueue(remaining);
     setPendingCompletions(remaining);
     pendingRef.current = remaining;

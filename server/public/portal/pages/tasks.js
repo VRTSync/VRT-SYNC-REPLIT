@@ -72,6 +72,7 @@ PortalRouter.register('tasks', async function (container) {
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
   wireEvents(container, tabs, tasks, isContractor);
+  prevTaskStatuses = buildStatusMap(tasks);
   startSync(container);
 
   function renderPage(tabs, current) {
@@ -163,6 +164,60 @@ PortalRouter.register('tasks', async function (container) {
     else                 label.textContent = 'Last synced: ' + Math.round(secs / 60) + 'm ago';
   }
 
+  var prevTaskStatuses = null;
+
+  function detectNewCompletions(newTasks) {
+    if (!prevTaskStatuses || !Array.isArray(newTasks)) return false;
+    var hasNewCompletion = false;
+    newTasks.forEach(function (t) {
+      if (t.status === 'completed' && prevTaskStatuses[t.id] && prevTaskStatuses[t.id] !== 'completed') {
+        hasNewCompletion = true;
+      }
+    });
+    return hasNewCompletion;
+  }
+
+  function buildStatusMap(taskList) {
+    var map = {};
+    if (!Array.isArray(taskList)) return map;
+    taskList.forEach(function (t) { map[t.id] = t.status; });
+    return map;
+  }
+
+  function switchToCompletedTab() {
+    var completedBtn = container.querySelector('.tf-tab[data-tab="completed"]');
+    if (!completedBtn) return;
+    activeTab = 'completed';
+    container.querySelectorAll('.tf-tab[data-tab]').forEach(function (b) { b.classList.remove('tf-tab--active'); });
+    completedBtn.classList.add('tf-tab--active');
+  }
+
+  function showCompletionBanner() {
+    var existing = container.querySelector('#task-completed-banner');
+    if (existing) return;
+    var banner = document.createElement('div');
+    banner.id = 'task-completed-banner';
+    banner.style.cssText = 'background:#e6f9f6;border:1px solid #25C1AC;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:#0d7a68;';
+    banner.innerHTML = '<span>A task was just marked as complete.</span>'
+      + '<div style="display:flex;gap:8px;flex-shrink:0">'
+      + '<button id="task-completed-banner-view" style="background:#25C1AC;color:#fff;border:none;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:12px;">View Completed</button>'
+      + '<button id="task-completed-banner-dismiss" style="background:transparent;color:#0d7a68;border:1px solid #25C1AC;border-radius:5px;padding:4px 10px;cursor:pointer;font-size:12px;">Dismiss</button>'
+      + '</div>';
+    var moduleEl = container.querySelector('#tasks-list') && container.querySelector('#tasks-list').closest('.portal-module');
+    var insertTarget = moduleEl || container.querySelector('#tasks-list');
+    if (insertTarget && insertTarget.parentNode) {
+      insertTarget.parentNode.insertBefore(banner, insertTarget);
+    }
+    banner.querySelector('#task-completed-banner-view').addEventListener('click', function () {
+      switchToCompletedTab();
+      renderList(container, tasks, activeTab, isContractor);
+      banner.remove();
+    });
+    banner.querySelector('#task-completed-banner-dismiss').addEventListener('click', function () {
+      banner.remove();
+    });
+  }
+
   function startSync(container) {
     if (!window.SyncManager) return;
 
@@ -173,10 +228,14 @@ PortalRouter.register('tasks', async function (container) {
       function () { return PortalAPI.apiFetch('/api/tasks?communityId=' + community.id); },
       function (newTasks, changed) {
         if (!Array.isArray(newTasks)) return;
+        var newlyCompleted = detectNewCompletions(newTasks);
+        prevTaskStatuses = buildStatusMap(newTasks);
         tasks = newTasks;
         renderList(container, tasks, activeTab, isContractor);
         updateSyncLabel();
-        if (changed) {
+        if (newlyCompleted && activeTab !== 'completed') {
+          showCompletionBanner();
+        } else if (changed) {
           PortalAPI.showToast('Tasks updated', 'info');
         }
       },
