@@ -1,0 +1,500 @@
+Slice 10 — Contacts Page (Community Relationship Directory) + Admin Styling Enforcement
+Objective
+
+Implement the Contacts page for the web portals as the structured community relationship directory for storing and viewing important people connected to a community.
+
+This page should support both:
+
+HOA / board / management contacts
+
+contractor / vendor / city / emergency contacts
+
+This page is not the same as the Users page.
+It is a community address book / relationship directory, not a login management system.
+
+Critical Design Rule
+
+All Contacts page UI must visually match the existing admin portal styling.
+
+Use:
+
+server/public/admin/admin.css
+
+and existing shell/page layout patterns.
+
+Do not create a separate CRM-style design language.
+
+The Contacts page should feel like a natural extension of the admin portal and the broader VRTSync product.
+
+Contact System Philosophy
+
+Contacts are people connected to the community, but they do not necessarily have platform logins.
+
+Examples of Contacts:
+
+HOA Board President
+
+HOA Treasurer
+
+Property management representative
+
+Landscape contractor rep
+
+Irrigation subcontractor
+
+City water department contact
+
+Emergency contact
+
+Vendor contact
+
+Examples of non-Contacts / Users:
+
+authenticated portal users managed in the Users page
+
+The distinction between Users and Contacts must remain clear in the product.
+
+Roles Included in This Slice
+
+Build Contacts behavior for:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor access can be kept out for now unless already easy and clearly useful.
+
+If contractor visibility is added later, it should likely be read-only.
+
+For this slice, it is acceptable to keep Contacts out of the contractor nav.
+
+Role Behavior
+Super Admin
+
+Primary operator at platform level.
+
+Can:
+
+view all contacts across all communities
+
+create contacts
+
+edit contacts
+
+delete contacts
+
+filter by community and type
+
+This should function as the master contacts directory.
+
+Property Manager
+
+Community-scoped manager for contacts in assigned communities.
+
+Can:
+
+view contacts in the active community
+
+create contacts
+
+edit contacts
+
+delete contacts
+
+This is a practical community operations directory.
+
+HOA Admin
+
+Community-scoped contact manager.
+
+Can:
+
+view contacts in the active community
+
+create contacts
+
+edit contacts
+
+delete contacts
+
+HOA Member
+
+Read-only.
+
+Can:
+
+view contacts in the active community
+
+Cannot:
+
+create
+
+edit
+
+delete
+
+Contractor
+
+No Contacts page required in V1.
+
+Do not add to contractor nav in this slice.
+
+Community Scope Rule
+
+For PM / HOA roles, the Contacts page is always scoped to:
+
+PortalState.getActiveCommunity()
+
+Changing the active community from the topbar should refresh the contacts list.
+
+Super Admin should default to a platform-wide list with the ability to identify the community for each contact.
+
+Routes
+
+Add/finalize routes for:
+
+/web/admin/contacts
+/web/pm/contacts
+/web/hoa/contacts
+
+Use the existing SPA router pattern.
+
+Shared Page Header
+
+For Super Admin:
+
+Contacts
+All Communities
+
+For PM / HOA:
+
+Contacts
+Preserve Metro District
+
+Reuse the shared page header structure already established.
+
+Page Layout
+
+Recommended structure:
+
+Page Header
+Filter / Action Bar
+Contacts List
+Contact Detail / Edit Modal
+
+Keep it consistent with the rest of the admin-style portal pages.
+
+Contacts List View
+
+Create a structured list/table of contacts.
+
+Recommended columns:
+
+Name
+
+Title / Role
+
+Company
+
+Phone
+
+Email
+
+Contact Type
+
+For Super Admin, include:
+
+Community
+
+Use existing admin table/list styling patterns.
+
+Contact Types
+
+Support a simple contact type field.
+
+Recommended first-pass values:
+
+HOA Board
+
+Property Management
+
+Contractor
+
+Vendor
+
+City / Municipality
+
+Emergency
+
+Other
+
+This should allow useful grouping/filtering without overcomplicating the page.
+
+Filters
+
+Support practical first-pass filtering.
+
+Super Admin filters
+
+Community
+
+Contact Type
+
+PM / HOA filters
+
+Contact Type
+
+Do not overbuild advanced filtering in this slice.
+
+Search
+
+If easy, support search by:
+
+name
+
+company
+
+email
+
+If not easy yet, prioritize list rendering and create/edit flow first.
+
+Contact Detail / Edit View
+
+Clicking a contact should open a detail/edit experience.
+
+This can be:
+
+modal
+
+side panel
+
+embedded detail pane
+
+Use the same pattern that best fits the current admin portal architecture.
+
+The detail view should show:
+
+name
+
+company
+
+title / role
+
+phone
+
+email
+
+contact type
+
+notes if used
+
+community assignment
+
+Contact Fields
+
+The create/edit form should support at minimum:
+
+name
+
+company
+
+title / role
+
+phone
+
+email
+
+contact type
+
+notes (optional)
+
+community (Super Admin only)
+
+For PM / HOA roles, community should be locked to the active community.
+
+Super Admin Create Contact Flow
+
+Super Admin must be able to create contacts from the Contacts page.
+
+Use a modal or side panel consistent with admin portal patterns.
+
+Form should support:
+
+all basic contact fields
+
+community assignment
+
+type selection
+
+PM / HOA Create Contact Flow
+
+PM and HOA Admin should be able to create contacts for the active community only.
+
+The form should:
+
+lock the community to the active community
+
+not allow assigning contacts to other communities
+
+stay lightweight and practical
+
+Read-Only HOA Member Experience
+
+HOA Members should see:
+
+same list structure
+
+same detail view structure
+
+But with:
+
+no create button
+
+no edit actions
+
+no delete actions
+
+This continues the platform rule:
+same page, fewer actions for read-only users.
+
+Community Directory Philosophy
+
+The Contacts page should feel like a useful working directory for a community.
+
+Practical example entries might include:
+
+board president
+
+HOA manager
+
+irrigation subcontractor
+
+city water rep
+
+emergency after-hours contact
+
+It should not feel like a sales CRM.
+
+Keep it simple, useful, and operational.
+
+Data Strategy
+
+Use real contact/community data if already available or easy to expose.
+
+The page should support:
+
+community-scoped records
+
+contact type
+
+clean list rendering
+
+editable fields for authorized users
+
+Do not block the slice trying to build tagging systems, relationship graphs, or communication workflows.
+
+Styling Requirements
+
+Continue using the admin portal design language.
+
+Use:
+
+existing buttons
+
+existing form styles
+
+existing modal styles
+
+existing list/table patterns
+
+navy/teal palette
+
+Inter typography
+
+existing spacing/radius/shadow conventions
+
+The Contacts page must visually belong to the admin portal family.
+
+Out of Scope for Slice 10
+
+Do NOT fully build the following yet unless already easy:
+
+contractor-facing contacts page
+
+messaging integration
+
+contact-to-user linking logic
+
+advanced tags
+
+communication history
+
+reminder systems
+
+export tools
+
+relationship graphs
+
+CRM pipeline behavior
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 10, the system should support:
+
+Contacts page for Super Admin
+
+community-scoped Contacts page for PM / HOA roles
+
+contacts list rendering
+
+contact type display
+
+create/edit modal or side panel
+
+community-locked creation flows for PM / HOA Admin
+
+read-only HOA Member experience
+
+clean admin-styled Contacts UI
+
+Success Criteria
+
+The system should be able to:
+
+open the Contacts page inside admin, PM, and HOA portals
+
+load contacts for the correct scope
+
+render a useful contacts list
+
+show type and contact details clearly
+
+open contact detail/edit view
+
+allow Super Admin to create contacts globally
+
+allow PM / HOA Admin to create scoped community contacts
+
+preserve admin portal visual styling throughout
+
+Important Reminder to Replit
+
+The Contacts page is the community relationship directory, not the user/login system.
+
+Build it so the user understands:
+
+who is connected to the community
+
+what role they play
+
+how to reach them
+
+which community they belong to
+
+Keep the experience operational, simple, and fully aligned with the admin portal styling.
