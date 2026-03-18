@@ -1,0 +1,513 @@
+Slice 11 — Reports Page (Community Reporting Layer) + Admin Styling Enforcement
+Objective
+
+Implement the Reports page for the web portals as the structured reporting layer for VRTSync, beginning with the three V1 reports already defined:
+
+Water Usage Report
+
+Tree Inventory Report
+
+Monthly Invoice Report
+
+This slice should establish a clean, community-aware reporting experience for:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+The Reports page should feel like a natural extension of the operational platform, not a separate analytics product.
+
+Critical Design Rule
+
+All Reports page UI must visually match the existing admin portal styling.
+
+Use:
+
+server/public/admin/admin.css
+
+and the current shell / page layout patterns.
+
+Do not create a separate BI-dashboard or analytics design language.
+
+The Reports page must feel like a native VRTSync admin-style page.
+
+Reporting Philosophy
+
+VRTSync reporting should be community-first.
+
+For most users, reports should answer:
+
+what is happening in this community
+
+what assets do we have
+
+what work/invoicing has occurred
+
+how is water usage trending
+
+Super Admin may eventually support broader cross-community reporting, but the V1 experience should stay simple and grounded.
+
+V1 Reports Included in This Slice
+1. Water Usage Report
+
+Tracks irrigation water usage trends over time.
+
+2. Tree Inventory Report
+
+Summarizes tree counts by species based on mapped tree assets.
+
+3. Monthly Invoice Report
+
+Summarizes invoices/work completed in a selected month.
+
+These are the only required reports for this slice.
+
+Roles Included in This Slice
+
+Build Reports behavior for:
+
+Super Admin
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor does not need a Reports page in V1.
+
+Do not add Reports to contractor nav in this slice.
+
+Role Behavior
+Super Admin
+
+Can:
+
+view all report types
+
+select community scope
+
+eventually support broader scope later
+
+For this slice, it is acceptable for Super Admin to run reports one community at a time if that keeps things clean.
+
+Property Manager
+
+Can:
+
+view reports for the active community
+
+switch communities via topbar selector
+
+access all 3 report types
+
+HOA Admin
+
+Can:
+
+view reports for their community
+
+access all 3 report types
+
+HOA Member
+
+Read-only.
+
+Can:
+
+view reports for their community
+
+No create/edit/admin actions needed.
+
+Contractor
+
+No Reports page in V1.
+
+Community Scope Rule
+
+For PM / HOA roles, Reports are always scoped to:
+
+PortalState.getActiveCommunity()
+
+Changing the active community from the topbar should refresh the report context.
+
+For Super Admin:
+
+allow selecting/reporting by community
+
+“All Communities” can remain future-facing if cross-community reporting is not yet needed
+
+Routes
+
+Add/finalize routes for:
+
+/web/admin/reports
+/web/pm/reports
+/web/hoa/reports
+
+Use the existing SPA router pattern.
+
+Shared Page Header
+
+For PM / HOA:
+
+Reports
+Preserve Metro District
+
+For Super Admin:
+
+Reports
+All Communities
+
+or a selected community label if using a report scope selector.
+
+Page Layout
+
+Recommended structure:
+
+Page Header
+Report Selector / Report Cards
+Active Report View
+Export Actions
+
+The Reports page should begin with a simple report selection experience rather than trying to show all reports at once.
+
+Reports Landing View
+
+The Reports page should initially present the three available reports as selectable cards or list items.
+
+Recommended options:
+
+Water Usage Report
+
+Tree Inventory Report
+
+Monthly Invoice Report
+
+Each should have:
+
+title
+
+short description
+
+open/view action
+
+This can be done as cards styled with the existing admin portal card language.
+
+Report Viewer Pattern
+
+Selecting a report should open a report view area on the same page.
+
+This can be:
+
+inline content area below the selector
+
+tabbed report viewer
+
+routed subview if that fits the current SPA pattern better
+
+Use the simplest pattern that best matches the current admin portal structure.
+
+Water Usage Report
+Purpose
+
+Show water usage trend for the active community.
+
+V1 Behavior
+
+Render a simple graph-based view if data exists.
+
+At minimum show:
+
+month
+
+usage amount
+
+trend across recent periods
+
+If graphing is already easy, use a clean chart.
+If not, a structured row/chart hybrid is acceptable, but a visual trend is preferred.
+
+Data Source
+
+Manual water usage entries already defined in the platform context.
+
+Empty State
+
+If no water data exists:
+
+No water usage data available yet
+Tree Inventory Report
+Purpose
+
+Show tree counts by species for the active community.
+
+V1 Behavior
+
+Render a summary list or chart showing:
+
+species
+
+count
+
+Example:
+
+Blue Spruce — 42
+Honeylocust — 18
+Maple — 11
+
+A simple bar/list style is acceptable if charting is not needed.
+
+Data Source
+
+Tree Layer / tree asset records.
+
+Empty State
+
+If no tree data exists:
+
+No tree inventory data available yet
+Monthly Invoice Report
+Purpose
+
+Summarize invoiced work for a selected month.
+
+V1 Behavior
+
+Allow the user to choose a month and then render a structured summary of invoices for that period.
+
+Recommended output includes:
+
+service type
+
+contractor
+
+cost
+
+grouped totals if easy
+
+monthly total
+
+Example summary structure:
+
+Month: May 2026
+
+Landscape Maintenance
+Mowing — $2,850
+Aeration — $1,200
+
+Irrigation
+Valve Repair — $320
+
+Tree Work
+Pruning — $600
+
+Total — $4,970
+Data Source
+
+Invoice records scoped to the active community.
+
+Month Selector
+
+A simple month picker/dropdown is required.
+
+Empty State
+
+If no invoice data exists for the selected month:
+
+No invoices found for this month
+Report Export Actions
+
+Each report should support export actions if already practical.
+
+Preferred V1 exports:
+
+PDF
+
+CSV where appropriate
+
+At minimum, structure the page so export actions can exist clearly in the UI, even if one export path is added first.
+
+Priority:
+
+Monthly Invoice Report export is especially valuable
+
+Water Usage export is useful
+
+Tree Inventory export is useful
+
+If full export generation is too much for this slice, add the UI structure and implement at least one basic export path.
+
+Filters / Inputs
+
+Keep report inputs simple.
+
+Water Usage
+
+No advanced filters required beyond active community for V1.
+
+Tree Inventory
+
+No advanced filters required beyond active community for V1.
+
+Monthly Invoice Report
+
+Require:
+
+month selector
+
+Optional if easy:
+
+contractor filter
+
+service type filter
+
+Do not overbuild.
+
+Super Admin Scope Selector
+
+For Super Admin, it is acceptable in this slice to use a simple community selector at the report level.
+
+Do not overbuild multi-community rollups yet unless it is already easy.
+
+The key goal is:
+
+Super Admin can run the 3 report types
+
+PM / HOA roles get community-scoped report access
+
+Read-Only Experience
+
+For HOA Member:
+
+same report page structure
+
+same report viewer
+
+no admin-only controls
+
+Reports are naturally read-only, so this should be straightforward.
+
+Styling Requirements
+
+Continue using the admin portal design language.
+
+Use:
+
+existing buttons
+
+existing card styles
+
+existing form/input styles
+
+existing spacing and typography
+
+navy/teal palette
+
+Inter typography
+
+Charts/graphs, if used, should feel visually consistent with the rest of VRTSync and not introduce a dramatically different design language.
+
+Data Strategy
+
+Use real platform data where possible:
+
+water usage records
+
+tree assets
+
+invoice records
+
+Do not block the slice trying to build a giant reporting engine.
+
+This slice is about:
+
+report page structure
+
+the three V1 reports
+
+community-scoped reporting UX
+
+Keep the implementation practical.
+
+Out of Scope for Slice 11
+
+Do NOT fully build the following yet unless already easy:
+
+cross-community dashboard analytics
+
+ad hoc/custom report builder
+
+saved report presets
+
+advanced chart libraries and drilldowns
+
+comparative benchmarking across communities
+
+contractor-facing reporting
+
+automated report emailing
+
+board packet assembly
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 11, the system should support:
+
+Reports page for Super Admin
+
+community-scoped Reports page for PM / HOA roles
+
+report selector/landing view
+
+Water Usage Report
+
+Tree Inventory Report
+
+Monthly Invoice Report
+
+month selector for invoice report
+
+clean admin-styled report UI
+
+Success Criteria
+
+The system should be able to:
+
+open the Reports page inside admin, PM, and HOA portals
+
+render a report selection experience
+
+open and display Water Usage Report
+
+open and display Tree Inventory Report
+
+open and display Monthly Invoice Report
+
+scope reports correctly to the active community
+
+allow basic month selection for the invoice report
+
+preserve admin portal visual styling throughout
+
+Important Reminder to Replit
+
+The Reports page should feel like a community intelligence layer inside VRTSync, not like a generic analytics dashboard.
+
+Keep it:
+
+clear
+
+community-focused
+
+operationally useful
+
+visually aligned with the admin portal
+
+Start with the three V1 reports only and make them clean and reliable.
