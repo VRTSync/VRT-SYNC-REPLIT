@@ -325,6 +325,13 @@ window._renderMapLayers = async function(container, communityId) {
         grouped[key].push(l);
       });
 
+      let controllerGroups = null;
+      if (grouped['irrigation']) {
+        try {
+          controllerGroups = await apiFetch(`/api/communities/${communityId}/controllers`);
+        } catch {}
+      }
+
       let html = '';
       for (const [layerKey, groupLayers] of Object.entries(grouped)) {
         html += `<div class="layer-group" style="margin-bottom:24px">`;
@@ -332,41 +339,14 @@ window._renderMapLayers = async function(container, communityId) {
           <span style="display:inline-block;width:8px;height:8px;background:var(--teal);border-radius:50%;margin-right:8px"></span>
           ${esc(layerKey)}
         </h3>`;
-        html += `<div class="table-container"><table><thead><tr>
-          <th>Name</th>
-          <th>Sub Layer</th>
-          <th>Format</th>
-          <th>Features</th>
-          <th>Active</th>
-          <th>Archived</th>
-          <th>Incomplete</th>
-          <th class="text-right">Actions</th>
-        </tr></thead><tbody>`;
 
-        groupLayers.forEach(l => {
-          const s = summaries[l.id] || {};
-          html += `<tr>
-            <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${esc(l.color||'#25C1AC')};border:1px solid rgba(0,0,0,0.15);vertical-align:middle;margin-right:6px"></span><strong>${esc(l.displayName)}</strong></td>
-            <td><span class="badge badge-blue">${esc(l.subLayerKey || '—')}</span></td>
-            <td>${formatBadge(s.sourceFormat || l.sourceFormat)}</td>
-            <td>${s.featureCount ?? '—'}</td>
-            <td>${s.activeAssetCount ?? '—'}</td>
-            <td>${s.archivedAssetCount ?? '—'}</td>
-            <td>${s.incompleteAssetCount != null ? (s.incompleteAssetCount > 0 ? `<span class="badge badge-amber">${s.incompleteAssetCount}</span>` : '0') : '—'}</td>
-            <td class="text-right" style="white-space:nowrap">
-              <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
-                <button class="btn btn-xs validate-btn" data-id="${l.id}" style="background:#8e44ad;color:#fff;border:none">Validate</button>
-                <button class="btn btn-xs preview-btn" data-id="${l.id}" style="background:#2980b9;color:#fff;border:none">Preview</button>
-                <button class="btn btn-xs unlinked-btn" data-id="${l.id}" style="background:#e67e22;color:#fff;border:none">Unlinked</button>
-                <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>
-                <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
-                <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>
-              </div>
-            </td>
-          </tr>`;
-        });
+        if (layerKey === 'irrigation' && controllerGroups && controllerGroups.length > 0) {
+          html += renderIrrigationGrouped(groupLayers, summaries, controllerGroups);
+        } else {
+          html += renderLayerTable(groupLayers, summaries);
+        }
 
-        html += `</tbody></table></div></div>`;
+        html += `</div>`;
       }
 
       treeEl.innerHTML = html;
@@ -449,9 +429,168 @@ window._renderMapLayers = async function(container, communityId) {
           }
         });
       });
+
+      treeEl.querySelectorAll('.ctrl-color-swatch-btn').forEach(swatchBtn => {
+        const hiddenPicker = swatchBtn.querySelector('.ctrl-color-picker');
+        swatchBtn.addEventListener('click', () => hiddenPicker && hiddenPicker.click());
+        if (hiddenPicker) {
+          hiddenPicker.addEventListener('change', async () => {
+            const ctrlKey = hiddenPicker.dataset.ctrlKey;
+            const newColor = hiddenPicker.value;
+            const prevColor = swatchBtn.style.background;
+            swatchBtn.style.background = newColor;
+            try {
+              const allAssets = (controllerGroups || []).flatMap(c => {
+                const cKey = c.controllerKey || c.label || c.id || '';
+                if (cKey !== ctrlKey) return [];
+                return [c, ...(c.zones || [])];
+              });
+              if (allAssets.length === 0) {
+                showToast('No assets found for this controller', 'error');
+                swatchBtn.style.background = prevColor;
+                return;
+              }
+              const results = await Promise.allSettled(allAssets.filter(a => a.id).map(a =>
+                apiFetch(`/api/assets/${a.id}/properties`, {
+                  method: 'PUT',
+                  body: { properties: [{ key: 'controllerColor', value: newColor }] },
+                })
+              ));
+              const failed = results.filter(r => r.status === 'rejected').length;
+              if (failed === 0) {
+                showToast('Controller color updated', 'success');
+              } else if (failed < results.length) {
+                showToast(`Color updated with ${failed} error(s)`, 'error');
+              } else {
+                swatchBtn.style.background = prevColor;
+                showToast('Failed to update controller color', 'error');
+              }
+            } catch (err) {
+              swatchBtn.style.background = prevColor;
+              showToast('Failed to update color: ' + err.message, 'error');
+            }
+          });
+        }
+      });
     } catch (err) {
       showToast('Failed to load layers', 'error');
     }
+  }
+
+  function renderLayerTable(groupLayers, summaries) {
+    let html = `<div class="table-container"><table><thead><tr>
+      <th>Name</th>
+      <th>Sub Layer</th>
+      <th>Format</th>
+      <th>Features</th>
+      <th>Active</th>
+      <th>Archived</th>
+      <th>Incomplete</th>
+      <th class="text-right">Actions</th>
+    </tr></thead><tbody>`;
+
+    groupLayers.forEach(l => {
+      const s = summaries[l.id] || {};
+      html += `<tr>
+        <td><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${esc(l.color||'#25C1AC')};border:1px solid rgba(0,0,0,0.15);vertical-align:middle;margin-right:6px"></span><strong>${esc(l.displayName)}</strong></td>
+        <td><span class="badge badge-blue">${esc(l.subLayerKey || '—')}</span></td>
+        <td>${formatBadge(s.sourceFormat || l.sourceFormat)}</td>
+        <td>${s.featureCount ?? '—'}</td>
+        <td>${s.activeAssetCount ?? '—'}</td>
+        <td>${s.archivedAssetCount ?? '—'}</td>
+        <td>${s.incompleteAssetCount != null ? (s.incompleteAssetCount > 0 ? `<span class="badge badge-amber">${s.incompleteAssetCount}</span>` : '0') : '—'}</td>
+        <td class="text-right" style="white-space:nowrap">
+          <div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+            <button class="btn btn-xs validate-btn" data-id="${l.id}" style="background:#8e44ad;color:#fff;border:none">Validate</button>
+            <button class="btn btn-xs preview-btn" data-id="${l.id}" style="background:#2980b9;color:#fff;border:none">Preview</button>
+            <button class="btn btn-xs unlinked-btn" data-id="${l.id}" style="background:#e67e22;color:#fff;border:none">Unlinked</button>
+            <button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>
+            <button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>
+            <button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    return html;
+  }
+
+  function renderIrrigationGrouped(groupLayers, summaries, controllerGroups) {
+    const controllerLayer = groupLayers.find(l => l.subLayerKey === 'controller');
+    const zoneLayer = groupLayers.find(l => l.subLayerKey === 'zone');
+    const otherLayers = groupLayers.filter(l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone');
+
+    let html = '';
+
+    html += `<div style="margin-bottom:12px;padding:10px 12px;background:#f0f7ff;border:1px solid #c3daf7;border-radius:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
+    html += `<span style="font-size:12px;color:#4a7fa8;font-weight:600;margin-right:4px">Layer actions:</span>`;
+    [controllerLayer, zoneLayer, ...otherLayers].filter(Boolean).forEach(l => {
+      html += `<span style="font-size:12px;color:var(--gray-600);margin-right:2px">${esc(l.subLayerKey)}</span>`;
+      html += `<div style="display:inline-flex;gap:3px;margin-right:8px">`;
+      html += `<button class="btn btn-xs validate-btn" data-id="${l.id}" style="background:#8e44ad;color:#fff;border:none">Validate</button>`;
+      html += `<button class="btn btn-xs preview-btn" data-id="${l.id}" style="background:#2980b9;color:#fff;border:none">Preview</button>`;
+      html += `<button class="btn btn-xs unlinked-btn" data-id="${l.id}" style="background:#e67e22;color:#fff;border:none">Unlinked</button>`;
+      html += `<button class="btn btn-primary btn-xs sync-btn" data-id="${l.id}">Sync</button>`;
+      html += `<button class="btn btn-secondary btn-xs edit-btn" data-id="${l.id}">Edit</button>`;
+      html += `<button class="btn btn-danger btn-xs delete-btn" data-id="${l.id}" data-name="${esc(l.displayName)}">Delete</button>`;
+      html += `</div>`;
+    });
+    html += `</div>`;
+
+    html += `<div style="display:flex;flex-direction:column;gap:10px">`;
+    controllerGroups.forEach(ctrl => {
+      const color = ctrl.controllerColor || '#999999';
+      const ctrlKey = ctrl.controllerKey || ctrl.label || ctrl.id;
+      const label = ctrl.label || ctrl.controllerKey || 'Controller';
+      const zones = ctrl.zones || [];
+
+      html += `<div style="border:1px solid #dde3ea;border-radius:8px;overflow:hidden">`;
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafb;border-bottom:1px solid #dde3ea">`;
+      html += `<div class="ctrl-color-swatch-btn" title="Click to change controller color" style="display:inline-block;width:20px;height:20px;border-radius:4px;background:${esc(color)};border:2px solid rgba(0,0,0,0.2);flex-shrink:0;cursor:pointer;position:relative">`;
+      html += `<input type="color" class="ctrl-color-picker" data-ctrl-key="${esc(ctrlKey)}" value="${esc(color)}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;padding:0" />`;
+      html += `</div>`;
+      html += `<strong style="font-size:13px;color:var(--navy);flex:1">${esc(label)}</strong>`;
+      html += `<span style="font-size:12px;color:var(--gray-500)">${zones.length} zone${zones.length !== 1 ? 's' : ''}</span>`;
+      html += `</div>`;
+
+      if (zones.length > 0) {
+        html += `<div style="padding:0">`;
+        html += `<table style="width:100%;border-collapse:collapse;font-size:12px">`;
+        html += `<thead><tr style="background:#f0f3f6">`;
+        html += `<th style="padding:6px 14px;text-align:left;color:var(--gray-600);font-weight:600">Zone</th>`;
+        html += `<th style="padding:6px 14px;text-align:left;color:var(--gray-600);font-weight:600">Zone #</th>`;
+        html += `<th style="padding:6px 14px;text-align:center;color:var(--gray-600);font-weight:600">Features</th>`;
+        html += `<th style="padding:6px 14px;text-align:left;color:var(--gray-600);font-weight:600">Feature Ref</th>`;
+        html += `</tr></thead><tbody>`;
+        zones.forEach((z, i) => {
+          const bg = i % 2 === 0 ? '#fff' : '#fafbfc';
+          const zoneLabel = z.label || z.zoneLabelShort || `Zone ${z.zoneNumber || ''}`;
+          const featureCount = z.featureCount != null ? z.featureCount : 1;
+          html += `<tr style="background:${bg}">`;
+          html += `<td style="padding:5px 14px;color:var(--navy)">${esc(zoneLabel)}</td>`;
+          html += `<td style="padding:5px 14px;color:var(--gray-500)">${z.zoneNumber != null ? z.zoneNumber : '—'}</td>`;
+          html += `<td style="padding:5px 14px;text-align:center;color:var(--gray-600)">${featureCount}</td>`;
+          html += `<td style="padding:5px 14px;color:var(--gray-400);font-family:monospace;font-size:11px">${esc(z.featureRef || '—')}</td>`;
+          html += `</tr>`;
+        });
+        html += `</tbody></table>`;
+        html += `</div>`;
+      } else {
+        html += `<div style="padding:10px 14px;font-size:12px;color:var(--gray-400)">No zones linked to this controller.</div>`;
+      }
+
+      html += `</div>`;
+    });
+    html += `</div>`;
+
+    if (otherLayers.length > 0) {
+      html += `<div style="margin-top:12px">`;
+      html += renderLayerTable(otherLayers, summaries);
+      html += `</div>`;
+    }
+
+    return html;
   }
 
   function formatBadge(format) {
