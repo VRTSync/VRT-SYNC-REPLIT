@@ -547,6 +547,21 @@ async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS contracts_contractor_idx ON contracts(contractor_user_id);
 
       ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
+
+      CREATE TABLE IF NOT EXISTS water_usage (
+        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+        month         integer NOT NULL CHECK (month BETWEEN 1 AND 12),
+        year          integer NOT NULL,
+        usage_amount  double precision NOT NULL,
+        unit          text NOT NULL DEFAULT 'gallons',
+        notes         text,
+        created_at    timestamp NOT NULL DEFAULT now(),
+        updated_at    timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS water_usage_community_month_year_idx ON water_usage(community_id, month, year);
+      CREATE INDEX IF NOT EXISTS water_usage_community_idx ON water_usage(community_id);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

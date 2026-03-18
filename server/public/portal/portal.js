@@ -38,6 +38,7 @@
       { route: 'requests',   label: 'Requests',        icon: iconInbox() },
       { route: 'map',        label: 'Map',             icon: iconMap() },
       { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
+      { route: 'reports',    label: 'Reports',         icon: iconBarChart() },
     ],
     property_manager: [
       { route: 'dashboard',  label: 'Dashboard',       icon: iconGrid() },
