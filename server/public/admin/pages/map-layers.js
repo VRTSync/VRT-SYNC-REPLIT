@@ -472,6 +472,19 @@ window._renderMapLayers = async function(container, communityId) {
           });
         }
       });
+
+      treeEl.addEventListener('click', (e) => {
+        if (e.target.closest('.ctrl-color-swatch-btn')) return;
+        const header = e.target.closest('.ctrl-collapse-header');
+        if (!header) return;
+        const zoneTableId = header.dataset.zoneTable;
+        const zoneTable = zoneTableId ? document.getElementById(zoneTableId) : null;
+        const chevron = header.querySelector('.ctrl-chevron');
+        if (!zoneTable) return;
+        const isHidden = zoneTable.style.display === 'none';
+        zoneTable.style.display = isHidden ? '' : 'none';
+        if (chevron) chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+      });
     } catch (err) {
       showToast('Failed to load layers', 'error');
     }
@@ -539,23 +552,25 @@ window._renderMapLayers = async function(container, communityId) {
     html += `</div>`;
 
     html += `<div style="display:flex;flex-direction:column;gap:10px">`;
-    controllerGroups.forEach(ctrl => {
+    controllerGroups.forEach((ctrl, ctrlIdx) => {
       const color = ctrl.controllerColor || '#999999';
       const ctrlKey = ctrl.controllerKey || ctrl.label || ctrl.id;
       const label = ctrl.label || ctrl.controllerKey || 'Controller';
       const zones = ctrl.zones || [];
+      const zoneTableId = `ctrl-zones-${ctrlIdx}`;
 
       html += `<div style="border:1px solid #dde3ea;border-radius:8px;overflow:hidden">`;
-      html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafb;border-bottom:1px solid #dde3ea">`;
+      html += `<div class="ctrl-collapse-header" data-zone-table="${zoneTableId}" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafb;border-bottom:1px solid #dde3ea;cursor:pointer;user-select:none">`;
       html += `<div class="ctrl-color-swatch-btn" title="Click to change controller color" style="display:inline-block;width:20px;height:20px;border-radius:4px;background:${esc(color)};border:2px solid rgba(0,0,0,0.2);flex-shrink:0;cursor:pointer;position:relative">`;
       html += `<input type="color" class="ctrl-color-picker" data-ctrl-key="${esc(ctrlKey)}" value="${esc(color)}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:none;padding:0" />`;
       html += `</div>`;
       html += `<strong style="font-size:13px;color:var(--navy);flex:1">${esc(label)}</strong>`;
       html += `<span style="font-size:12px;color:var(--gray-500)">${zones.length} zone${zones.length !== 1 ? 's' : ''}</span>`;
+      html += `<span class="ctrl-chevron" style="font-size:14px;color:var(--gray-400);transition:transform 0.2s;display:inline-block;transform:rotate(0deg)">&#8250;</span>`;
       html += `</div>`;
 
       if (zones.length > 0) {
-        html += `<div style="padding:0">`;
+        html += `<div id="${zoneTableId}" style="padding:0;display:none">`;
         html += `<table style="width:100%;border-collapse:collapse;font-size:12px">`;
         html += `<thead><tr style="background:#f0f3f6">`;
         html += `<th style="padding:6px 14px;text-align:left;color:var(--gray-600);font-weight:600">Zone</th>`;
@@ -577,7 +592,7 @@ window._renderMapLayers = async function(container, communityId) {
         html += `</tbody></table>`;
         html += `</div>`;
       } else {
-        html += `<div style="padding:10px 14px;font-size:12px;color:var(--gray-400)">No zones linked to this controller.</div>`;
+        html += `<div id="${zoneTableId}" style="padding:10px 14px;font-size:12px;color:var(--gray-400);display:none">No zones linked to this controller.</div>`;
       }
 
       html += `</div>`;
