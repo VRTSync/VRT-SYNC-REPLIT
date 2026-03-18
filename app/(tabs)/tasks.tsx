@@ -11,6 +11,7 @@ import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import CalendarView from '@/components/CalendarView';
 import LogVisitModal from '@/components/LogVisitModal';
+import SyncBar from '@/components/SyncBar';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -129,6 +130,7 @@ export default function TasksScreen() {
     syncPendingServiceVisits,
   } = useOffline();
   const [syncing, setSyncing] = React.useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = React.useState<Date | null>(null);
   const [searchVisible, setSearchVisible] = React.useState(false);
   const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
   const [filterMode, setFilterMode] = React.useState<FilterMode>(
@@ -148,17 +150,20 @@ export default function TasksScreen() {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      const result = await syncPendingCompletions();
-      if (result.synced > 0 || result.failed > 0) {
-        refetch();
+      const syncResult = await syncPendingCompletions();
+      const fetchResult = await refetch();
+      if (fetchResult.error) throw fetchResult.error;
+      if (syncResult.failed > 0) {
+        throw new Error(`${syncResult.failed} task(s) failed to upload`);
       }
+      setLastSyncedAt(new Date());
     } finally {
       setSyncing(false);
     }
   };
 
   const communityId = activeCommunity?.id;
-  const { data: serverTasks, isLoading, refetch } = useQuery<Task[]>({
+  const { data: serverTasks, isLoading, refetch, dataUpdatedAt } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
     queryFn: async () => {
       const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
@@ -167,6 +172,16 @@ export default function TasksScreen() {
     },
     enabled: !!activeCommunity && isOnline,
   });
+
+  React.useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      setLastSyncedAt(prev => {
+        const queryDate = new Date(dataUpdatedAt);
+        if (!prev || queryDate > prev) return queryDate;
+        return prev;
+      });
+    }
+  }, [dataUpdatedAt]);
 
   const { data: schedules, refetch: refetchSchedules } = useQuery({
     queryKey: ['service-schedules', communityId],
@@ -452,6 +467,14 @@ export default function TasksScreen() {
           </View>
         </View>
       </NavyHeader>
+
+      {viewMode === 'list' && (
+        <SyncBar
+          onSync={handleSyncNow}
+          isSyncing={syncing}
+          lastSyncedAt={lastSyncedAt}
+        />
+      )}
 
       {viewMode === 'list' && (
         <View style={styles.filterRow}>

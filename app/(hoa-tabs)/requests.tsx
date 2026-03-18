@@ -13,6 +13,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import SyncBar from '@/components/SyncBar';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -276,11 +277,28 @@ export default function HoaRequestsScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('submitted');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [showCreateRequest, setShowCreateRequest] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const isHoaAdmin = user?.role === 'hoa_admin';
 
-  const { data, isLoading, isRefetching, refetch } = useQuery<HoaRequest[]>({
+  const { data, isLoading, isRefetching, refetch, dataUpdatedAt } = useQuery<HoaRequest[]>({
     queryKey: ['/api/hoa/requests'],
   });
+
+  React.useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      setLastSyncedAt(prev => {
+        const queryDate = new Date(dataUpdatedAt);
+        if (!prev || queryDate > prev) return queryDate;
+        return prev;
+      });
+    }
+  }, [dataUpdatedAt]);
+
+  const handleSyncNow = useCallback(async () => {
+    const result = await refetch();
+    if (result.error) throw result.error;
+    setLastSyncedAt(new Date());
+  }, [refetch]);
 
   const filteredData = useMemo(() => {
     if (!data) return [];
@@ -357,6 +375,14 @@ export default function HoaRequestsScreen() {
           </View>
         </View>
       </NavyHeader>
+
+      {viewMode === 'list' && (
+        <SyncBar
+          onSync={handleSyncNow}
+          isSyncing={isRefetching}
+          lastSyncedAt={lastSyncedAt}
+        />
+      )}
 
       {viewMode === 'map' ? (
         isLoading ? (

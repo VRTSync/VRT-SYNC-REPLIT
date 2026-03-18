@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ActivityIndicator, RefreshControl, Platform,
@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { apiRequest } from '@/lib/query-client';
 import StatusBarFill from '@/components/StatusBarFill';
+import SyncBar from '@/components/SyncBar';
 
 type NotificationItem = {
   id: string;
@@ -46,10 +47,27 @@ export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
-  const { data: notifications, isLoading, refetch, isRefetching } = useQuery<NotificationItem[]>({
+  const { data: notifications, isLoading, refetch, isRefetching, dataUpdatedAt } = useQuery<NotificationItem[]>({
     queryKey: ['/api/notifications'],
   });
+
+  React.useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      setLastSyncedAt(prev => {
+        const queryDate = new Date(dataUpdatedAt);
+        if (!prev || queryDate > prev) return queryDate;
+        return prev;
+      });
+    }
+  }, [dataUpdatedAt]);
+
+  const handleSyncNow = useCallback(async () => {
+    const result = await refetch();
+    if (result.error) throw result.error;
+    setLastSyncedAt(new Date());
+  }, [refetch]);
 
   const handleMarkAllRead = useCallback(async () => {
     try {
@@ -118,6 +136,12 @@ export default function NotificationsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      <SyncBar
+        onSync={handleSyncNow}
+        isSyncing={isRefetching}
+        lastSyncedAt={lastSyncedAt}
+      />
 
       {isLoading ? (
         <View style={styles.centered}>

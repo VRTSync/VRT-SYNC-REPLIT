@@ -14,6 +14,7 @@ import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import NotificationBell from '@/components/NotificationBell';
+import SyncBar from '@/components/SyncBar';
 
 type UpcomingTask = {
   id: string;
@@ -146,13 +147,30 @@ export default function HoaDashboardScreen() {
   const navyHeaderProps = useNavyHeaderProps();
   const isHoaAdmin = user?.role === 'hoa_admin';
   const [showCreateRequest, setShowCreateRequest] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
-  const { data, isLoading, isRefetching, refetch, isError } = useQuery<DashboardData>({
+  const { data, isLoading, isRefetching, refetch, isError, dataUpdatedAt } = useQuery<DashboardData>({
     queryKey: ['/api/hoa/dashboard'],
   });
 
+  React.useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      setLastSyncedAt(prev => {
+        const queryDate = new Date(dataUpdatedAt);
+        if (!prev || queryDate > prev) return queryDate;
+        return prev;
+      });
+    }
+  }, [dataUpdatedAt]);
+
   const handleRefresh = useCallback(() => {
     refetch();
+  }, [refetch]);
+
+  const handleSyncNow = useCallback(async () => {
+    const result = await refetch();
+    if (result.error) throw result.error;
+    setLastSyncedAt(new Date());
   }, [refetch]);
 
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom + 90;
@@ -209,6 +227,12 @@ export default function HoaDashboardScreen() {
           </View>
         </View>
       </NavyHeader>
+
+      <SyncBar
+        onSync={handleSyncNow}
+        isSyncing={isRefetching}
+        lastSyncedAt={lastSyncedAt}
+      />
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: bottomPad }}

@@ -17,6 +17,7 @@ import SearchModal from '@/components/SearchModal';
 import MowingDayCard from '@/components/MowingDayCard';
 import LogVisitModal from '@/components/LogVisitModal';
 import NotificationBell from '@/components/NotificationBell';
+import SyncBar from '@/components/SyncBar';
 
 type Task = {
   id: string;
@@ -96,12 +97,13 @@ export default function DashboardScreen() {
     syncPendingServiceVisits,
   } = useOffline();
   const [syncing, setSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [logVisitSchedule, setLogVisitSchedule] = useState<ServiceSchedule | null>(null);
 
   const communityId = activeCommunity?.id;
 
-  const { data: dashboard, isLoading, refetch } = useQuery<DashboardData>({
+  const { data: dashboard, isLoading, refetch, dataUpdatedAt } = useQuery<DashboardData>({
     queryKey: ['/api/dashboard', { communityId }],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/dashboard?communityId=${communityId}`);
@@ -109,6 +111,16 @@ export default function DashboardScreen() {
     },
     enabled: !!communityId && isOnline,
   });
+
+  useEffect(() => {
+    if (dataUpdatedAt > 0) {
+      setLastSyncedAt(prev => {
+        const queryDate = new Date(dataUpdatedAt);
+        if (!prev || queryDate > prev) return queryDate;
+        return prev;
+      });
+    }
+  }, [dataUpdatedAt]);
 
   const { data: schedules, isLoading: schedulesLoading, refetch: refetchSchedules } = useQuery({
     queryKey: ['service-schedules', communityId],
@@ -161,10 +173,16 @@ export default function DashboardScreen() {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      await Promise.all([syncPendingCompletions(), syncPendingServiceVisits()]);
-      refetch();
-      refetchVisits();
-      refetchSchedules();
+      const [syncResult, serviceResult] = await Promise.all([
+        syncPendingCompletions(),
+        syncPendingServiceVisits(),
+      ]);
+      const [dashResult] = await Promise.all([refetch(), refetchVisits(), refetchSchedules()]);
+      if (dashResult.error) throw dashResult.error;
+      if ((syncResult?.failed ?? 0) > 0 || (serviceResult?.failed ?? 0) > 0) {
+        throw new Error('Some items failed to upload');
+      }
+      setLastSyncedAt(new Date());
     } finally {
       setSyncing(false);
     }
@@ -269,6 +287,11 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
+            <SyncBar
+              onSync={handleSyncNow}
+              isSyncing={syncing}
+              lastSyncedAt={lastSyncedAt}
+            />
             {dashboard?.overdueTasks && dashboard.overdueTasks.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeaderRow}>
