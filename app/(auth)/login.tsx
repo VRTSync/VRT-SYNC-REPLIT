@@ -50,7 +50,7 @@ export default function LoginScreen() {
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={styles.subtitle}>Contractor Portal</Text>
+          <Text style={styles.subtitle}>VRTSync Mobile Portal</Text>
         </View>
 
         <View style={styles.formCard}>
