@@ -6,6 +6,7 @@ import { sendDueReminders } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
+import * as http from "http";
 import { db, pool } from "./db";
 import { users, invoices, communities, contacts, type InsertContact } from "../shared/schema";
 import { eq } from "drizzle-orm";
@@ -122,7 +123,27 @@ function getAppName(): string {
   }
 }
 
-function serveExpoManifest(platform: string, res: Response) {
+function proxyToMetro(req: Request, res: Response) {
+  const metroUrl = new URL(req.url || "/", "http://localhost:8081");
+  const options: http.RequestOptions = {
+    hostname: "localhost",
+    port: 8081,
+    path: metroUrl.pathname + metroUrl.search,
+    method: req.method,
+    headers: { ...req.headers, host: "localhost:8081" },
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+  proxyReq.on("error", (err) => {
+    log("Metro proxy error:", err.message);
+    res.status(502).json({ error: "Metro bundler unavailable" });
+  });
+  req.pipe(proxyReq, { end: true });
+}
+
+function serveExpoManifest(platform: string, req: Request, res: Response) {
   const manifestPath = path.resolve(
     process.cwd(),
     "static-build",
@@ -131,9 +152,7 @@ function serveExpoManifest(platform: string, res: Response) {
   );
 
   if (!fs.existsSync(manifestPath)) {
-    return res
-      .status(404)
-      .json({ error: `Manifest not found for platform: ${platform}` });
+    return proxyToMetro(req, res);
   }
 
   res.setHeader("expo-protocol-version", "1");
@@ -197,7 +216,7 @@ function configureExpoAndLanding(app: express.Application) {
 
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+      return serveExpoManifest(platform, req, res);
     }
 
     if (req.path === "/") {
@@ -218,6 +237,21 @@ function configureExpoAndLanding(app: express.Application) {
     res.type("html").send(LEAFLET_MAP_HTML);
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  if (process.env.NODE_ENV !== "production") {
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (
+        req.path.startsWith("/api") ||
+        req.path.startsWith("/web") ||
+        req.path.startsWith("/admin-static") ||
+        req.path.startsWith("/portal-static") ||
+        req.path.startsWith("/leaflet-map")
+      ) {
+        return next();
+      }
+      proxyToMetro(req, res);
+    });
+  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
