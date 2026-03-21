@@ -480,7 +480,12 @@ PortalRouter.register('map', async function (container) {
     const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
     const ctrlColorMap = buildControllerColorMap(ctrlOverride);
     const storedZoneColor = getStoredZoneColor();
-    const layerData = mapLayers.filter(l => l._geojson && l.layerKey !== 'outline').map(l => {
+    const hasControllerData = controllerData && controllerData.length > 0;
+    const layerData = mapLayers.filter(l => {
+      if (!l._geojson || l.layerKey === 'outline') return false;
+      if (hasControllerData && (l.subLayerKey === 'controller' || l.subLayerKey === 'zone')) return false;
+      return true;
+    }).map(l => {
       let colorMap = {};
       if (l.subLayerKey === 'controller') {
         colorMap = ctrlColorMap;
@@ -519,10 +524,12 @@ PortalRouter.register('map', async function (container) {
   }
 
   function syncVisibleLayers(fitMap) {
+    const hasControllerData = controllerData && controllerData.length > 0;
     const visibleIds = [];
     mapLayers.forEach(layer => {
       const cat = layer.layerKey;
       const sub = layer.subLayerKey;
+      if (hasControllerData && (sub === 'controller' || sub === 'zone')) return;
       if (cat === activeCategory && sublayerState[cat] && sublayerState[cat][sub]) {
         visibleIds.push(layer.id);
       }
