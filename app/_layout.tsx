@@ -37,7 +37,7 @@ function LoadingScreen() {
       <View style={loadingStyles.overlay} />
       <View style={loadingStyles.content}>
         <Image
-          source={require('@/assets/images/splash-icon.png')}
+          source={require('@/assets/images/vrtsync-logo-vertical.png')}
           style={loadingStyles.logo}
           resizeMode="contain"
         />
@@ -49,14 +49,14 @@ function LoadingScreen() {
 const loadingStyles = StyleSheet.create({
   background: {
     flex: 1,
-    backgroundColor: '#0C1D31',
+    backgroundColor: '#1A6FD6',
   },
   imageStyle: {
-    opacity: 0.15,
+    opacity: 0.30,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(12, 29, 49, 0.4)',
+    backgroundColor: 'rgba(10, 60, 150, 0.2)',
   },
   content: {
     flex: 1,
@@ -64,8 +64,8 @@ const loadingStyles = StyleSheet.create({
     alignItems: 'center',
   },
   logo: {
-    width: 220,
-    height: 220,
+    width: 260,
+    height: 260,
   },
 });
 
