@@ -22,16 +22,16 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "your-deployed-domain.replit.app"
+        "EXPO_PUBLIC_DOMAIN": "https://vrt-sync-mobile.replit.app"
       }
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "your-apple-id@example.com",
-        "ascAppId": "your-app-store-connect-app-id",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
+        "appleId": "rmangel@vrtsync.com",
+        "ascAppId": "6760938002",
+        "appleTeamId": "WXT25AZD43"
       }
     }
   }
