@@ -897,3 +897,48 @@ export const updateContractSchema = z.object({
   pdfObjectKey: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Water Usage
+// ---------------------------------------------------------------------------
+
+export const waterUsage = pgTable("water_usage", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  communityId: varchar("community_id")
+    .notNull()
+    .references(() => communities.id, { onDelete: "cascade" }),
+  month: integer("month").notNull(),   // 1–12
+  year: integer("year").notNull(),
+  usageAmount: doublePrecision("usage_amount").notNull(),
+  unit: text("unit").notNull().default("gallons"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("water_usage_community_month_year_idx").on(table.communityId, table.month, table.year),
+  index("water_usage_community_idx").on(table.communityId),
+]);
+
+export type WaterUsage = typeof waterUsage.$inferSelect;
+export type InsertWaterUsage = typeof waterUsage.$inferInsert;
+
+export const waterUsageRelations = relations(waterUsage, ({ one }) => ({
+  community: one(communities, { fields: [waterUsage.communityId], references: [communities.id] }),
+}));
+
+export const insertWaterUsageSchema = z.object({
+  communityId: z.string().min(1, "Community is required"),
+  month: z.number().int().min(1).max(12),
+  year: z.number().int().min(2000).max(2100),
+  usageAmount: z.number().min(0, "Usage must be non-negative"),
+  unit: z.string().default("gallons"),
+  notes: z.string().optional().nullable(),
+});
+
+export const updateWaterUsageSchema = z.object({
+  usageAmount: z.number().min(0).optional(),
+  unit: z.string().optional(),
+  notes: z.string().optional().nullable(),
+});

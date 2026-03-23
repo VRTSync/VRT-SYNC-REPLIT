@@ -7,7 +7,7 @@ import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
 import * as http from "http";
-import { db, pool } from "./db";
+import { db } from "./db";
 import { users, invoices, communities, contacts, type InsertContact } from "../shared/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -517,111 +517,6 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-async function runStartupMigrations() {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS color text;
-
-      CREATE TABLE IF NOT EXISTS drive_folders (
-        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        parent_id     varchar REFERENCES drive_folders(id) ON DELETE SET NULL,
-        name          text NOT NULL,
-        created_by    varchar NOT NULL REFERENCES users(id) ON DELETE SET NULL,
-        created_at    timestamp NOT NULL DEFAULT now(),
-        updated_at    timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE TABLE IF NOT EXISTS drive_files (
-        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        folder_id     varchar REFERENCES drive_folders(id) ON DELETE SET NULL,
-        name          text NOT NULL,
-        file_ref      text NOT NULL,
-        mime_type     text,
-        size_bytes    integer,
-        uploaded_by   varchar NOT NULL REFERENCES users(id) ON DELETE SET NULL,
-        created_at    timestamp NOT NULL DEFAULT now(),
-        updated_at    timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE TABLE IF NOT EXISTS invoices (
-        id                  varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id        varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        contractor          text NOT NULL,
-        completion_date     date NOT NULL,
-        service_type        text NOT NULL,
-        cost                double precision NOT NULL,
-        notes               text,
-        pdf_object_key      text,
-        attachment_label    text,
-        attachment_layer_id varchar REFERENCES map_layers(id) ON DELETE SET NULL,
-        created_at          timestamp NOT NULL DEFAULT now(),
-        updated_at          timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE INDEX IF NOT EXISTS invoices_community_idx ON invoices(community_id);
-      CREATE INDEX IF NOT EXISTS invoices_completion_date_idx ON invoices(completion_date);
-
-      CREATE TABLE IF NOT EXISTS contracts (
-        id                  varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id        varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        contractor_user_id  varchar NOT NULL REFERENCES users(id),
-        contract_type       text NOT NULL,
-        start_date          date NOT NULL,
-        end_date            date NOT NULL,
-        services_included   jsonb NOT NULL DEFAULT '[]'::jsonb,
-        pdf_object_key      text,
-        is_active           boolean NOT NULL DEFAULT true,
-        created_at          timestamp NOT NULL DEFAULT now(),
-        updated_at          timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE INDEX IF NOT EXISTS contracts_community_idx ON contracts(community_id);
-      CREATE INDEX IF NOT EXISTS contracts_contractor_idx ON contracts(contractor_user_id);
-
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT true;
-
-      CREATE TABLE IF NOT EXISTS water_usage (
-        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        month         integer NOT NULL CHECK (month BETWEEN 1 AND 12),
-        year          integer NOT NULL,
-        usage_amount  double precision NOT NULL,
-        unit          text NOT NULL DEFAULT 'gallons',
-        notes         text,
-        created_at    timestamp NOT NULL DEFAULT now(),
-        updated_at    timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE UNIQUE INDEX IF NOT EXISTS water_usage_community_month_year_idx ON water_usage(community_id, month, year);
-      CREATE INDEX IF NOT EXISTS water_usage_community_idx ON water_usage(community_id);
-
-      CREATE TABLE IF NOT EXISTS contacts (
-        id            varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-        community_id  varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
-        name          text NOT NULL,
-        title         text,
-        company       text,
-        phone         text,
-        email         text,
-        contact_type  text NOT NULL DEFAULT 'Other',
-        notes         text,
-        created_at    timestamp NOT NULL DEFAULT now()
-      );
-
-      CREATE INDEX IF NOT EXISTS contacts_community_idx ON contacts(community_id);
-      CREATE INDEX IF NOT EXISTS contacts_type_idx ON contacts(contact_type);
-    `);
-    console.log("Startup migrations applied.");
-  } catch (err) {
-    console.error("Startup migration error:", err);
-    throw err;
-  } finally {
-    client.release();
-  }
-}
 
 async function seedProductionAdmin() {
   try {
@@ -765,7 +660,6 @@ async function seedContacts() {
   setupSession(app);
   setupRequestLogging(app);
 
-  await runStartupMigrations();
   await seedProductionAdmin();
   await seedInvoices();
   await seedContacts();

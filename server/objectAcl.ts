@@ -1,6 +1,11 @@
-import { File } from "@google-cloud/storage";
+import { s3Client, S3_BUCKET_NAME } from "./s3Config";
+import {
+  HeadObjectCommand,
+  CopyObjectCommand,
+} from "@aws-sdk/client-s3";
 
-const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
+// We store ACL policy as a custom S3 object metadata field
+const ACL_POLICY_METADATA_KEY = "x-amz-meta-aclpolicy";
 
 export enum ObjectAccessGroupType {}
 
@@ -52,30 +57,56 @@ function createObjectAccessGroup(
   }
 }
 
-export async function setObjectAclPolicy(
-  objectFile: File,
-  aclPolicy: ObjectAclPolicy,
-): Promise<void> {
-  const [exists] = await objectFile.exists();
-  if (!exists) {
-    throw new Error(`Object not found: ${objectFile.name}`);
-  }
-  await objectFile.setMetadata({
-    metadata: {
-      [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy),
-    },
-  });
-}
+// ---------------------------------------------------------------------------
+// S3-backed ACL helpers (objectFile is an S3 key string)
+// ---------------------------------------------------------------------------
 
+/** Read ACL policy from S3 object metadata. */
 export async function getObjectAclPolicy(
-  objectFile: File,
+  objectFile: string,
 ): Promise<ObjectAclPolicy | null> {
-  const [metadata] = await objectFile.getMetadata();
-  const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (!aclPolicy) {
+  try {
+    const res = await s3Client.send(
+      new HeadObjectCommand({ Bucket: S3_BUCKET_NAME, Key: objectFile }),
+    );
+    const raw = res.Metadata?.[ACL_POLICY_METADATA_KEY];
+    if (!raw) return null;
+    return JSON.parse(decodeURIComponent(raw));
+  } catch {
     return null;
   }
-  return JSON.parse(aclPolicy as string);
+}
+
+/**
+ * Persist ACL policy as user-defined metadata on the S3 object.
+ * S3 does not support in-place metadata updates, so we do a server-side copy.
+ */
+export async function setObjectAclPolicy(
+  objectFile: string,
+  aclPolicy: ObjectAclPolicy,
+): Promise<void> {
+  // Fetch existing metadata first so we don't lose it
+  const head = await s3Client.send(
+    new HeadObjectCommand({ Bucket: S3_BUCKET_NAME, Key: objectFile }),
+  );
+
+  const existingMeta = head.Metadata ?? {};
+  const newMeta = {
+    ...existingMeta,
+    [ACL_POLICY_METADATA_KEY]: encodeURIComponent(JSON.stringify(aclPolicy)),
+  };
+
+  // Server-side copy with MetadataDirective=REPLACE to update metadata in place
+  await s3Client.send(
+    new CopyObjectCommand({
+      Bucket: S3_BUCKET_NAME,
+      CopySource: `${S3_BUCKET_NAME}/${objectFile}`,
+      Key: objectFile,
+      Metadata: newMeta,
+      MetadataDirective: "REPLACE",
+      ContentType: head.ContentType,
+    }),
+  );
 }
 
 export async function canAccessObject({
@@ -84,7 +115,7 @@ export async function canAccessObject({
   requestedPermission,
 }: {
   userId?: string;
-  objectFile: File;
+  objectFile: string;
   requestedPermission: ObjectPermission;
 }): Promise<boolean> {
   const aclPolicy = await getObjectAclPolicy(objectFile);

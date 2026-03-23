@@ -1,0 +1,82 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  migrate-and-sync:
+    name: RDS Migration & AWS Sync
+    runs-on: ubuntu-latest
+    environment: dev
+
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+      AWS_DB_SECURITY_GROUP_ID: ${{ secrets.AWS_DB_SECURITY_GROUP_ID }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Step A: Get runner public IP ─────────────────────────────────────────
+      - name: Get runner public IP
+        id: runner-ip
+        run: |
+          RUNNER_IP=$(curl -s https://checkip.amazonaws.com)
+          echo "ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "Runner public IP: ${RUNNER_IP}"
+
+      # ── Step B: Punch a hole in the RDS security group ───────────────────────
+      - name: Authorize runner IP on RDS port 5432
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${{ env.AWS_DB_SECURITY_GROUP_ID }}" \
+            --protocol tcp \
+            --port 5432 \
+            --cidr "${{ steps.runner-ip.outputs.ip }}/32"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      # ── Step C: Run Drizzle migrations ───────────────────────────────────────
+      - name: Run Drizzle migrations
+        run: DATABASE_URL="${{ secrets.DATABASE_URL }}" npx tsx ./node_modules/.bin/drizzle-kit migrate
+
+      # ── Step D: Revoke runner IP (always runs — even on failure) ─────────────
+      - name: Revoke runner IP from RDS security group
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "${{ env.AWS_DB_SECURITY_GROUP_ID }}" \
+            --protocol tcp \
+            --port 5432 \
+            --cidr "${{ steps.runner-ip.outputs.ip }}/32"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      # ── S3 / environment awareness ───────────────────────────────────────────
+      - name: Confirm S3 and region configuration
+        run: |
+          echo "S3 bucket  : ${{ secrets.S3_BUCKET_NAME }}"
+          echo "AWS region : ${{ secrets.AWS_REGION }}"
+          aws s3 ls "s3://${{ secrets.S3_BUCKET_NAME }}" --region "${{ secrets.AWS_REGION }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}

@@ -3,7 +3,9 @@ import archiver from "archiver";
 import { db } from "./db";
 import { exports as exportsTable, taskCompletions, tasks, attachments, taskLinks, assets, assetProperties, users, communities } from "@shared/schema";
 import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
-import { objectStorageClient } from "./objectStorage";
+import { uploadObject } from "./objectStorage";
+import { s3Client, S3_BUCKET_NAME } from "./s3Config";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Writable } from "stream";
 
 interface ExportFilters {
@@ -46,20 +48,10 @@ function getPrivateDir(): string {
   return dir;
 }
 
-function parseObjectPath(path: string): { bucketName: string; objectName: string } {
-  if (!path.startsWith("/")) path = `/${path}`;
-  const parts = path.split("/");
-  if (parts.length < 3) throw new Error("Invalid path");
-  return { bucketName: parts[1], objectName: parts.slice(2).join("/") };
-}
-
 async function uploadBuffer(buffer: Buffer, fileName: string, contentType: string): Promise<string> {
   const privateDir = getPrivateDir();
-  const fullPath = `${privateDir}/exports/${fileName}`;
-  const { bucketName, objectName } = parseObjectPath(fullPath);
-  const bucket = objectStorageClient.bucket(bucketName);
-  const file = bucket.file(objectName);
-  await file.save(buffer, { contentType, resumable: false });
+  const key = `${privateDir}/exports/${fileName}`;
+  await uploadObject(key, buffer, contentType);
   return `/objects/exports/${fileName}`;
 }
 
@@ -78,23 +70,25 @@ async function downloadAttachmentBuffer(fileRef: string): Promise<Buffer | null>
     let objectEntityDir = privateDir;
     if (!objectEntityDir.endsWith("/")) objectEntityDir += "/";
 
-    let fullPath: string;
+    let key: string;
     if (fileRef.startsWith("/objects/")) {
       const entityId = fileRef.slice("/objects/".length);
-      fullPath = `${objectEntityDir}${entityId}`;
+      key = `${objectEntityDir}${entityId}`;
     } else {
-      fullPath = fileRef;
+      key = fileRef;
     }
 
-    const { bucketName, objectName } = parseObjectPath(fullPath);
-    const bucket = objectStorageClient.bucket(bucketName);
-    const file = bucket.file(objectName);
-    const [exists] = await file.exists();
-    if (!exists) return null;
-    const [contents] = await file.download();
-    return contents;
+    const res = await s3Client.send(
+      new GetObjectCommand({ Bucket: S3_BUCKET_NAME, Key: key }),
+    );
+    if (!res.Body) return null;
+    const chunks: Buffer[] = [];
+    for await (const chunk of res.Body as AsyncIterable<Buffer>) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
   } catch (err) {
-    console.error("Failed to download attachment:", fileRef, err);
+    console.error("[exportGenerator] Failed to download attachment:", fileRef, err);
     return null;
   }
 }
