@@ -31,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ── Step A: Get runner public IP ─────────────────────────────────────────
+      # Step A: Get runner public IP
       - name: Get runner public IP
         id: runner-ip
         run: |
@@ -39,7 +39,7 @@ jobs:
           echo "ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
           echo "Runner public IP: ${RUNNER_IP}"
 
-      # ── Step B: Punch a hole in the RDS security group ───────────────────────
+      # Step B: Punch a hole in the RDS security group
       - name: Authorize runner IP on RDS port 5432
         run: |
           aws ec2 authorize-security-group-ingress \
@@ -52,13 +52,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
-      # ── Step C: Run Drizzle migrations ───────────────────────────────────────
+      # Step C: Run Drizzle migrations
       - name: Run Drizzle migrations
         run: DATABASE_URL="${{ secrets.DATABASE_URL }}" npx tsx ./node_modules/.bin/drizzle-kit migrate
         env:
           NODE_TLS_REJECT_UNAUTHORIZED: 0
 
-      # ── Step D: Revoke runner IP (always runs — even on failure) ─────────────
+      # Step D: Revoke runner IP (always runs, even on failure)
       - name: Revoke runner IP from RDS security group
         if: always()
         run: |
@@ -72,7 +72,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
-      # ── S3 / environment awareness ───────────────────────────────────────────
+      # S3 environment awareness
       - name: Confirm S3 and region configuration
         run: |
           echo "S3 bucket  : ${{ secrets.S3_BUCKET_NAME }}"
@@ -82,3 +82,33 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+  # Job 2: Build Docker image and push to ECR
+  build-and-push:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+    environment: dev
+    needs: migrate-and-sync
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.AWS_ECR_REPOSITORY_URI }}:latest .
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ secrets.AWS_ECR_REPOSITORY_URI }}:latest
