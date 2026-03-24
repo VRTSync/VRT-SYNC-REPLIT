@@ -137,6 +137,11 @@ export async function getTasksForUser(userId: string, communityId?: string): Pro
     .orderBy(desc(tasks.createdAt));
 }
 
+export async function deleteTask(id: string): Promise<boolean> {
+  const result = await db.delete(tasks).where(eq(tasks.id, id)).returning();
+  return result.length > 0;
+}
+
 export async function updateTask(id: string, expectedVersion: number, data: Partial<{
   title: string;
   description: string;

@@ -104,6 +104,7 @@ window._renderTasks = async function(container, communityId) {
           <td class="text-right">
             <button class="btn btn-secondary btn-xs edit-btn" data-id="${t.id}">Edit</button>
             <button class="btn btn-secondary btn-xs link-btn" data-id="${t.id}">Link Asset</button>
+            <button class="btn btn-danger btn-xs delete-btn" data-id="${t.id}" title="Delete task">&#x1F5D1;</button>
           </td>
         </tr>
       `;
@@ -118,6 +119,48 @@ window._renderTasks = async function(container, communityId) {
 
     tbody.querySelectorAll('.link-btn').forEach(btn => {
       btn.addEventListener('click', () => showLinkModal(btn.dataset.id));
+    });
+
+    tbody.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => confirmDeleteTask(btn.dataset.id));
+    });
+  }
+
+  async function confirmDeleteTask(taskId) {
+    const task = allTasks.find(t => t.id === taskId);
+    const title = task ? task.title : 'this task';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <h2>Delete Task</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to permanently delete <strong>${esc(title)}</strong>? This cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary cancel-btn">Cancel</button>
+          <button class="btn btn-danger confirm-btn">Delete</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    overlay.querySelector('.confirm-btn').addEventListener('click', async () => {
+      try {
+        await apiFetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+        showToast('Task deleted', 'success');
+        overlay.remove();
+        await loadTasks();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
     });
   }
 
