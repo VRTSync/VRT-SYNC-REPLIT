@@ -1860,6 +1860,16 @@ export async function createAssetNote(data: {
   return note;
 }
 
+export async function deleteAssetNote(noteId: string): Promise<boolean> {
+  const result = await db.delete(assetNotes).where(eq(assetNotes.id, noteId)).returning();
+  return result.length > 0;
+}
+
+export async function getAssetNoteById(noteId: string): Promise<AssetNote | undefined> {
+  const [note] = await db.select().from(assetNotes).where(eq(assetNotes.id, noteId));
+  return note;
+}
+
 export async function getCommunityBounds(communityId: string): Promise<{ bounds: [[number, number], [number, number]]; center: [number, number] } | null> {
   const layers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, communityId));
   if (layers.length === 0) return null;

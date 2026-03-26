@@ -1327,6 +1327,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/assets/:assetId/notes/:noteId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { assetId, noteId } = req.params as { assetId: string; noteId: string };
+      const note = await storage.getAssetNoteById(noteId);
+      if (!note) return res.status(404).json({ error: "Note not found" });
+      if (note.assetId !== assetId) return res.status(404).json({ error: "Note not found" });
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.role !== "admin" && note.createdBy !== user.id) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteAssetNote(noteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Delete asset note error:", error);
+      res.status(500).json({ error: "Failed to delete note" });
+    }
+  });
+
   app.post("/api/assets", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertAssetSchema.safeParse(req.body);

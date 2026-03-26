@@ -839,19 +839,45 @@ PortalRouter.register('map', async function (container) {
         body.innerHTML = '<div class="mdp-empty-tab">No contractor notes for this asset.</div>';
         return;
       }
+      const currentUserId = ctx.user ? ctx.user.id : null;
+      const isAdmin = role === 'admin';
       body.innerHTML = `
         <div class="mdp-notes-list">
-          ${notes.map(note => `
-            <div class="mdp-note-item">
+          ${notes.map(note => {
+            const canDelete = isAdmin || (currentUserId && note.createdBy === currentUserId);
+            const noteText = note.noteText || note.content || note.text || note.note || '';
+            const authorName = note.creatorName || note.authorName || note.author || 'Unknown';
+            const noteDate = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : '';
+            return `
+            <div class="mdp-note-item" data-note-id="${esc(note.id)}">
               <div class="mdp-note-meta">
-                <span class="mdp-note-author">${esc(note.authorName || note.author || 'Unknown')}</span>
-                <span class="mdp-note-date">${note.createdAt ? new Date(note.createdAt).toLocaleDateString() : ''}</span>
+                <span class="mdp-note-author">${esc(authorName)}</span>
+                <div class="mdp-note-meta-right">
+                  <span class="mdp-note-date">${noteDate}</span>
+                  ${canDelete ? `<button class="mdp-note-delete-btn" data-note-id="${esc(note.id)}" title="Delete note" aria-label="Delete note">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  </button>` : ''}
+                </div>
               </div>
-              <div class="mdp-note-text">${esc(note.content || note.text || note.note || '')}</div>
+              <div class="mdp-note-text">${esc(noteText)}</div>
             </div>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       `;
+
+      body.querySelectorAll('.mdp-note-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this note?')) return;
+          const noteId = btn.dataset.noteId;
+          try {
+            await apiFetch(`/api/assets/${asset.id}/notes/${noteId}`, { method: 'DELETE' });
+            loadNotesTab(body, asset);
+          } catch (err) {
+            showToast('Failed to delete note', 'error');
+          }
+        });
+      });
     } catch (err) {
       body.innerHTML = '<div class="mdp-empty-tab">No contractor notes for this asset.</div>';
     }

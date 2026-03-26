@@ -1711,6 +1711,29 @@
   white-space: pre-wrap;
 }
 
+.mdp-note-meta-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mdp-note-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--gray-400);
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.mdp-note-delete-btn:hover {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.08);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Sync Bar — Last synced label + refresh button
  * ══════════════════════════════════════════════════════════════════════════ */

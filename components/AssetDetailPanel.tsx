@@ -522,6 +522,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
               );
             } else {
               const n = item.data as AssetNoteItem;
+              const canDelete = user?.role === 'admin' || n.createdBy === user?.id;
               return (
                 <View key={n.id} style={styles.noteCard}>
                   <View style={styles.noteHeader}>
@@ -529,7 +530,38 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
                       <Ionicons name="person-circle-outline" size={18} color="#25C1AC" />
                       <Text style={styles.noteCreatorName} numberOfLines={1} ellipsizeMode="tail">{n.creatorName || 'Unknown'}</Text>
                     </View>
-                    <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
+                    <View style={styles.noteHeaderRight}>
+                      <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
+                      {canDelete && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            Alert.alert(
+                              'Delete Note',
+                              'Are you sure you want to delete this note?',
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    try {
+                                      await apiRequest('DELETE', `/api/assets/${assetId}/notes/${n.id}`);
+                                      queryClient.invalidateQueries({ queryKey: [`/api/assets/${assetId}/notes`] });
+                                    } catch (e: any) {
+                                      Alert.alert('Error', e.message || 'Failed to delete note');
+                                    }
+                                  },
+                                },
+                              ]
+                            );
+                          }}
+                          style={styles.noteDeleteBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#e74c3c" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                   <Text style={styles.noteText}>{n.noteText}</Text>
                 </View>
@@ -993,6 +1025,14 @@ const styles = StyleSheet.create({
   },
   noteCreatorName: { fontSize: 14, fontWeight: '600', color: '#0C1D31', flexShrink: 1 },
   noteDate: { fontSize: 12, color: '#999', flexShrink: 0 },
+  noteHeaderRight: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  noteDeleteBtn: {
+    padding: 2,
+  },
   noteText: { fontSize: 14, color: '#333', lineHeight: 20 },
   stateBadge: {
     borderRadius: 6,
