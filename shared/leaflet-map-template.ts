@@ -107,28 +107,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup().addTo(map);
-  var zoneClusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 40,
-    disableClusteringAtZoom: 17,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false,
-    iconCreateFunction: function(cluster) {
-      var count = cluster.getChildCount();
-      var size = count < 10 ? 30 : count < 50 ? 36 : 42;
-      var colors = {};
-      cluster.getAllChildMarkers().forEach(function(m) {
-        if (m._zoneColor) colors[m._zoneColor] = true;
-      });
-      var colorKeys = Object.keys(colors);
-      var bg = colorKeys.length === 1 ? colorKeys[0] : '#6b7280';
-      return L.divIcon({
-        html: '<div class="cluster-badge" style="width:'+size+'px;height:'+size+'px;background:'+bg+';">'+count+'</div>',
-        className: '',
-        iconSize: [size, size],
-        iconAnchor: [size/2, size/2]
-      });
-    }
-  }).addTo(map);
+  var controllerClusterGroups = {};
   var userLocMarker = null;
   var targetMarker = null;
 
@@ -145,6 +124,40 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 
   function clearGroup(group) {
     group.clearLayers();
+  }
+
+  function makeClusterGroup(color) {
+    return L.markerClusterGroup({
+      maxClusterRadius: 40,
+      disableClusteringAtZoom: 17,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      iconCreateFunction: function(cluster) {
+        var count = cluster.getChildCount();
+        var size = count < 10 ? 30 : count < 50 ? 36 : 42;
+        return L.divIcon({
+          html: '<div class="cluster-badge" style="width:'+size+'px;height:'+size+'px;background:'+color+';">'+count+'</div>',
+          className: '',
+          iconSize: [size, size],
+          iconAnchor: [size/2, size/2]
+        });
+      }
+    });
+  }
+
+  function getOrCreateClusterGroup(controllerId, color) {
+    if (!controllerClusterGroups[controllerId]) {
+      controllerClusterGroups[controllerId] = makeClusterGroup(color || '#6b7280');
+      map.addLayer(controllerClusterGroups[controllerId]);
+    }
+    return controllerClusterGroups[controllerId];
+  }
+
+  function clearAllClusterGroups() {
+    Object.keys(controllerClusterGroups).forEach(function(id) {
+      map.removeLayer(controllerClusterGroups[id]);
+    });
+    controllerClusterGroups = {};
   }
 
   window.mapBridge = {
@@ -293,7 +306,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     },
 
     setZoneMarkers: function(markers) {
-      zoneClusterGroup.clearLayers();
+      clearAllClusterGroups();
       markers.forEach(function(z) {
         var m = L.marker([z.latitude, z.longitude], {
           icon: L.divIcon({
@@ -301,7 +314,6 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
             className: '', iconSize: [16,16], iconAnchor: [8,8]
           })
         });
-        m._zoneColor = z.controllerColor;
         var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+z.controllerColor+';"></div><div class="popup-body">';
         popupHtml += '<span class="popup-type" style="background:'+z.controllerColor+';">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + '</span>';
         popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
@@ -310,13 +322,14 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(z.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(z.label)+'" data-asset-type="zone" data-layer-name="'+escHtml(z.controllerLabel || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
         popupHtml += '</div></div>';
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
-        zoneClusterGroup.addLayer(m);
+        var group = getOrCreateClusterGroup(z.controllerFeatureRef || z.controllerKey || z.controllerColor, z.controllerColor);
+        group.addLayer(m);
       });
     },
 
     clearIrrigation: function() {
       clearGroup(ctrlLayer);
-      zoneClusterGroup.clearLayers();
+      clearAllClusterGroups();
     },
 
     flyTo: function(lat, lng, zoom, label) {
@@ -359,14 +372,17 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           }
         });
       }
-      if (map.hasLayer(zoneClusterGroup)) {
-        zoneClusterGroup.eachLayer(function(m) {
-          var ll = m.getLatLng();
-          if (ll) {
-            bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
-          }
-        });
-      }
+      Object.keys(controllerClusterGroups).forEach(function(id) {
+        var cg = controllerClusterGroups[id];
+        if (map.hasLayer(cg)) {
+          cg.eachLayer(function(m) {
+            var ll = m.getLatLng();
+            if (ll) {
+              bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+            }
+          });
+        }
+      });
       if (taskCoords && taskCoords.length > 0) {
         taskCoords.forEach(function(c) {
           var ll = L.latLng(c[0], c[1]);
@@ -390,8 +406,11 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     },
 
     showZones: function(show) {
-      if (show) { if (!map.hasLayer(zoneClusterGroup)) map.addLayer(zoneClusterGroup); }
-      else { if (map.hasLayer(zoneClusterGroup)) map.removeLayer(zoneClusterGroup); }
+      Object.keys(controllerClusterGroups).forEach(function(id) {
+        var cg = controllerClusterGroups[id];
+        if (show) { if (!map.hasLayer(cg)) map.addLayer(cg); }
+        else { if (map.hasLayer(cg)) map.removeLayer(cg); }
+      });
     },
 
     setCommunityOutline: function(geojson) {
