@@ -109,6 +109,14 @@ A RESTful JSON API (`/api/`) provides endpoints for authentication, communities,
 ### Build & Deployment
 Development uses separate processes for Expo and Express. Production includes a static Expo web build and a bundled Express server. `drizzle-kit` manages database migrations.
 
+### EAS OTA Updates
+EAS Update is configured for over-the-air (OTA) JS/TS delivery to existing TestFlight and production builds. EAS project: `@rmangel03/vrtsyncmobile` (ID: `0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2`).
+
+- `runtimeVersion` policy is `"appVersion"` — updates only apply to matching native build versions.
+- Build channels: `development`, `preview`, `production` (each profile in `eas.json` has a `channel` field).
+- To push an OTA update to production TestFlight builds: `eas update --branch production --message "describe changes"`
+- To push to preview/internal testers: `eas update --branch preview --message "describe changes"`
+
 ## External Dependencies
 
 ### Database

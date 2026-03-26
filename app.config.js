@@ -20,6 +20,12 @@ export default {
     scheme: "vrtsyncmobile",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
+    runtimeVersion: {
+      policy: "appVersion",
+    },
+    updates: {
+      url: "https://u.expo.dev/0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2",
+    },
     splash: {
       image: "./assets/images/splash-icon.png",
       resizeMode: "contain",
@@ -68,6 +74,11 @@ export default {
     experiments: {
       typedRoutes: true,
       reactCompiler: true,
+    },
+    extra: {
+      eas: {
+        projectId: "0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2",
+      },
     },
   },
 };
