@@ -132,14 +132,14 @@ export default function MapScreen() {
 
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
 
-  const outlineLayer = React.useMemo(() => {
+  const communityBoundaryLayer = React.useMemo(() => {
     return onlineLayers.find(l => l.layerKey === 'outline' && l.subLayerKey === 'community_boundary' && l.isEnabled !== false) || null;
   }, [onlineLayers]);
 
   const communityOutline = React.useMemo(() => {
-    if (!outlineLayer) return null;
-    return loadedGeoJSON[outlineLayer.id] || null;
-  }, [outlineLayer, loadedGeoJSON]);
+    if (!communityBoundaryLayer) return null;
+    return loadedGeoJSON[communityBoundaryLayer.id] || null;
+  }, [communityBoundaryLayer, loadedGeoJSON]);
 
   useEffect(() => {
     if (params.targetLat && params.targetLng) {
