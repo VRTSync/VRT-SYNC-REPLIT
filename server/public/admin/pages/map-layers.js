@@ -75,11 +75,23 @@ window._renderMapLayers = async function(container, communityId) {
         const currentStrokeColor = outline.strokeColor || '#0C1D31';
         const currentStrokeWeight = outline.strokeWeight || 3;
         const currentFillOpacity = outline.fillOpacity != null ? parseFloat(outline.fillOpacity) : 0.08;
+        const isEnabled = outline.isEnabled !== false;
         html += `
-          <div style="display:flex;gap:16px;font-size:13px;color:var(--gray-600);margin-bottom:12px">
-            <div><strong>Name:</strong> ${esc(outline.displayName)}</div>
-            <div><strong>Format:</strong> ${formatBadge(outline.sourceFormat)}</div>
-            <div><strong>Features:</strong> ${featureCount}</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+            <div style="display:flex;gap:16px;font-size:13px;color:var(--gray-600)">
+              <div><strong>Name:</strong> ${esc(outline.displayName)}</div>
+              <div><strong>Format:</strong> ${formatBadge(outline.sourceFormat)}</div>
+              <div><strong>Features:</strong> ${featureCount}</div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--gray-600);cursor:pointer">
+              <span>Show on map</span>
+              <span class="toggle-track" style="position:relative;display:inline-block;width:40px;height:22px">
+                <input type="checkbox" id="outline-enabled-toggle" ${isEnabled ? 'checked' : ''} style="opacity:0;width:0;height:0;position:absolute">
+                <span class="toggle-slider" style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:${isEnabled ? '#25C1AC' : '#ccc'};border-radius:22px;transition:background 0.2s">
+                  <span style="position:absolute;content:'';height:16px;width:16px;left:${isEnabled ? '20px' : '3px'};bottom:3px;background:#fff;border-radius:50%;transition:left 0.2s;display:block"></span>
+                </span>
+              </span>
+            </label>
           </div>
           <div style="border-top:1px solid #e0e4ea;padding-top:12px;margin-top:4px">
             <div style="font-size:12px;font-weight:700;color:#0C1D31;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Style</div>
@@ -119,6 +131,24 @@ window._renderMapLayers = async function(container, communityId) {
             showToast('Delete failed: ' + err.message, 'error');
           }
         });
+
+        const enabledToggle = document.getElementById('outline-enabled-toggle');
+        if (enabledToggle) {
+          enabledToggle.addEventListener('change', async () => {
+            const newEnabled = enabledToggle.checked;
+            try {
+              await apiFetch(`/api/map-layers/${outline.id}`, {
+                method: 'PATCH',
+                body: { isEnabled: newEnabled, version: outline.version },
+              });
+              showToast(newEnabled ? 'Outline enabled' : 'Outline disabled', 'success');
+              await loadOutlineSection();
+            } catch (err) {
+              showToast('Failed to update: ' + err.message, 'error');
+              enabledToggle.checked = !newEnabled;
+            }
+          });
+        }
 
         const opacitySlider = document.getElementById('outline-fill-opacity');
         const opacityVal = document.getElementById('outline-opacity-val');

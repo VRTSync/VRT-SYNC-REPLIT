@@ -19,6 +19,7 @@ type MapLayerMeta = {
   displayName: string;
   version: number;
   color?: string;
+  isEnabled?: boolean;
 };
 
 type ControllerInfo = {
@@ -96,6 +97,15 @@ export default function HoaMapScreen() {
     },
     enabled: !!communityId,
   });
+
+  const outlineLayer = React.useMemo(() => {
+    return allLayers.find(l => l.layerKey === 'outline' && l.subLayerKey === 'community_boundary' && l.isEnabled !== false) || null;
+  }, [allLayers]);
+
+  const communityOutline = React.useMemo(() => {
+    if (!outlineLayer) return null;
+    return loadedGeoJSON[outlineLayer.id] || null;
+  }, [outlineLayer, loadedGeoJSON]);
 
   useEffect(() => {
     setMapReady(true);
@@ -357,6 +367,7 @@ export default function HoaMapScreen() {
       )}
 
       <LeafletMap
+        key={communityId}
         tasks={[]}
         userLocation={userLocation}
         onTaskPress={() => {}}
@@ -369,6 +380,7 @@ export default function HoaMapScreen() {
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
         initialBounds={boundsData?.bounds ?? null}
+        communityOutline={communityOutline}
       />
 
       {showLayerPanel && (

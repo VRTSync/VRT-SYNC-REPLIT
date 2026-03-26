@@ -24,6 +24,7 @@ type MapLayerMeta = {
   strokeColor?: string;
   strokeWeight?: number;
   fillOpacity?: string;
+  isEnabled?: boolean;
 };
 
 type ControllerInfo = {
@@ -130,6 +131,16 @@ export default function MapScreen() {
   }, [useOfflineData, localPack]);
 
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
+
+  const outlineLayer = React.useMemo(() => {
+    return onlineLayers.find(l => l.layerKey === 'outline' && l.subLayerKey === 'community_boundary' && l.isEnabled !== false) || null;
+  }, [onlineLayers]);
+
+  const communityOutline = React.useMemo(() => {
+    if (!outlineLayer) return null;
+    return loadedGeoJSON[outlineLayer.id] || null;
+  }, [outlineLayer, loadedGeoJSON]);
+
   useEffect(() => {
     if (params.targetLat && params.targetLng) {
       const lat = parseFloat(params.targetLat);
@@ -468,6 +479,7 @@ export default function MapScreen() {
       )}
 
       <LeafletMap
+        key={communityId}
         tasks={[]}
         userLocation={userLocation}
         onTaskPress={() => {}}
@@ -484,6 +496,7 @@ export default function MapScreen() {
         initialBounds={boundsData?.bounds ?? null}
         communityOutlineGeojson={showCommunityOutline ? communityOutlineGeojson : null}
         communityOutlineStyle={communityOutlineStyle}
+        communityOutline={communityOutline}
       />
 
       {showLayerPanel && (

@@ -403,7 +403,9 @@ PortalRouter.register('map', async function (container) {
         loadCommunity(community.id);
       } else if (msg.type === 'fitToContentResult') {
         if (!msg.data || !msg.data.hadContent) {
-          cmdToIframe('fitToOutline');
+          if (_communityBoundsCache && _communityBoundsCache.length > 0) {
+            cmdToIframe('fitBounds', _communityBoundsCache);
+          }
         }
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
@@ -500,7 +502,7 @@ PortalRouter.register('map', async function (container) {
     const outlineLayers = mapLayers.filter(l => l.layerKey === 'outline');
     if (outlineLayers.some(l => l.communityId !== activeCommunityId)) return;
 
-    const outlineLayer = outlineLayers.find(l => l._geojson);
+    const outlineLayer = outlineLayers.find(l => l._geojson && l.isEnabled !== false);
     if (outlineLayer) {
       _outlineGeojson = outlineLayer._geojson;
       _outlineStyle = buildOutlineStyle(outlineLayer);

@@ -232,6 +232,7 @@ export const mapLayers = pgTable("map_layers", {
   strokeColor: text("stroke_color"),
   strokeWeight: integer("stroke_weight"),
   fillOpacity: text("fill_opacity"),
+  isEnabled: boolean("is_enabled").notNull().default(true),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -637,6 +638,7 @@ export const updateMapLayerSchema = z.object({
   strokeColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   strokeWeight: z.number().int().min(1).max(10).optional(),
   fillOpacity: z.string().refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0 && n <= 1; }, { message: 'fillOpacity must be a number between 0 and 1' }).optional(),
+  isEnabled: z.boolean().optional(),
   version: z.number(),
 });
 

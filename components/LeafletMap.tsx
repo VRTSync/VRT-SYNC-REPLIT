@@ -82,6 +82,7 @@ type LeafletMapProps = {
   initialBounds?: [[number, number], [number, number]] | null;
   communityOutlineGeojson?: any | null;
   communityOutlineStyle?: OutlineStyle | null;
+  communityOutline?: any | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -108,6 +109,7 @@ export default function LeafletMap({
   initialBounds,
   communityOutlineGeojson,
   communityOutlineStyle,
+  communityOutline,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -155,14 +157,24 @@ export default function LeafletMap({
 
   const initialBoundsRef = useRef(initialBounds);
   initialBoundsRef.current = initialBounds;
+  const communityOutlineRef = useRef(communityOutline);
+  communityOutlineRef.current = communityOutline;
   const initialBoundsAppliedRef = useRef(false);
+  const outlineSentRef = useRef(false);
   const fitToContentKeyRef = useRef<string | undefined>(undefined);
 
   const processMsg = useCallback((msg: any) => {
     switch (msg.type) {
       case 'mapReady':
         mapReadyRef.current = true;
-        if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
+        if (!outlineSentRef.current && communityOutlineRef.current) {
+          outlineSentRef.current = true;
+          initialBoundsAppliedRef.current = true;
+          pendingRef.current.unshift(
+            { fn: 'setCommunityOutline', args: [communityOutlineRef.current] },
+            { fn: 'fitToOutline', args: [] },
+          );
+        } else if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
           initialBoundsAppliedRef.current = true;
           const b = initialBoundsRef.current;
           pendingRef.current.unshift({ fn: 'fitBounds', args: [[[b[0][0], b[0][1]], [b[1][0], b[1][1]]]] });
@@ -171,12 +183,23 @@ export default function LeafletMap({
         break;
       case 'fitToContentResult':
         if (!msg.data?.hadContent) {
-          if (isWeb && iframeRef.current?.contentWindow) {
-            iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn: 'fitToOutline', args: [] }, '*');
-          } else if (!isWeb && webViewRef.current) {
-            webViewRef.current.injectJavaScript(
-              `window.mapBridge.fitToOutline.apply(window.mapBridge, []); true;`
-            );
+          if (outlineSentRef.current) {
+            if (isWeb && iframeRef.current?.contentWindow) {
+              iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn: 'fitToOutline', args: [] }, '*');
+            } else if (!isWeb && webViewRef.current) {
+              webViewRef.current.injectJavaScript(
+                `window.mapBridge.fitToOutline.apply(window.mapBridge, []); true;`
+              );
+            }
+          } else if (initialBoundsRef.current) {
+            const b = initialBoundsRef.current;
+            if (isWeb && iframeRef.current?.contentWindow) {
+              iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn: 'fitBounds', args: [[[b[0][0], b[0][1]], [b[1][0], b[1][1]]]] }, '*');
+            } else if (!isWeb && webViewRef.current) {
+              webViewRef.current.injectJavaScript(
+                `window.mapBridge.fitBounds.apply(window.mapBridge, ${JSON.stringify([[[b[0][0], b[0][1]], [b[1][0], b[1][1]]]])}); true;`
+              );
+            }
           }
         }
         break;
@@ -331,6 +354,18 @@ export default function LeafletMap({
       sendCmd('fitToContent');
     }
   }, [fitToContentKey, sendCmd]);
+
+  useEffect(() => {
+    if (communityOutline === undefined) return;
+    if (!outlineSentRef.current && communityOutline) {
+      outlineSentRef.current = true;
+      initialBoundsAppliedRef.current = true;
+      sendCmd('setCommunityOutline', communityOutline);
+      sendCmd('fitToOutline');
+    } else if (outlineSentRef.current) {
+      sendCmd('setCommunityOutline', communityOutline);
+    }
+  }, [communityOutline, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 

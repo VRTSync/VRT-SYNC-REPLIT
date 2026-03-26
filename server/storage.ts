@@ -698,6 +698,7 @@ export async function updateMapLayer(id: string, expectedVersion: number, data: 
   strokeColor: string;
   strokeWeight: number;
   fillOpacity: string;
+  isEnabled: boolean;
 }>): Promise<MapLayer | null> {
   const [updated] = await db.update(mapLayers)
     .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })

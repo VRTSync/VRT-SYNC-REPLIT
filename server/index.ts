@@ -617,6 +617,7 @@ async function runStartupMigrations() {
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS stroke_color text;
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS stroke_weight integer;
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS fill_opacity text;
+      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
     `);
     console.log("Startup migrations applied.");
   } catch (err) {
