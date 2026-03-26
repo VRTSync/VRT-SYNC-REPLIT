@@ -66,21 +66,51 @@
   border-color: var(--teal-dark);
 }
 
-/* Notification badge dot */
+/* Notification badge — VRT teal count label */
 .topbar-icon-btn .notif-dot {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  background: var(--red);
-  border-radius: 50%;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  background: var(--teal);
+  border-radius: 8px;
   border: 1.5px solid white;
   display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 
 .topbar-icon-btn .notif-dot.visible {
-  display: block;
+  display: flex;
+}
+
+/* Sonar pulse rings radiating from bell button */
+@keyframes vrt-sonar-ring {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+#notif-btn.has-unread::before,
+#notif-btn.has-unread::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--teal);
+  pointer-events: none;
+  animation: vrt-sonar-ring 3s ease-out infinite;
+}
+
+#notif-btn.has-unread::after {
+  animation-delay: 1s;
 }
 
 /* ── Topbar divider ── */

@@ -73,8 +73,13 @@ window.PortalTopbar = (function () {
 
   function _updateBadge() {
     const dot = document.getElementById('notif-dot');
+    const btn = document.getElementById('notif-btn');
     if (dot) {
       dot.classList.toggle('visible', _unreadCount > 0);
+      dot.textContent = _unreadCount > 0 ? (_unreadCount > 99 ? '99+' : String(_unreadCount)) : '';
+    }
+    if (btn) {
+      btn.classList.toggle('has-unread', _unreadCount > 0);
     }
     const countEl = document.querySelector('.tb-notif-count');
     if (countEl) {
