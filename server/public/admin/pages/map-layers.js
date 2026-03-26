@@ -72,11 +72,32 @@ window._renderMapLayers = async function(container, communityId) {
           </div>`;
 
       if (outline) {
+        const currentStrokeColor = outline.strokeColor || '#0C1D31';
+        const currentStrokeWeight = outline.strokeWeight || 3;
+        const currentFillOpacity = outline.fillOpacity != null ? parseFloat(outline.fillOpacity) : 0.08;
         html += `
-          <div style="display:flex;gap:16px;font-size:13px;color:var(--gray-600)">
+          <div style="display:flex;gap:16px;font-size:13px;color:var(--gray-600);margin-bottom:12px">
             <div><strong>Name:</strong> ${esc(outline.displayName)}</div>
             <div><strong>Format:</strong> ${formatBadge(outline.sourceFormat)}</div>
             <div><strong>Features:</strong> ${featureCount}</div>
+          </div>
+          <div style="border-top:1px solid #e0e4ea;padding-top:12px;margin-top:4px">
+            <div style="font-size:12px;font-weight:700;color:#0C1D31;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Style</div>
+            <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
+              <div>
+                <label style="display:block;font-size:12px;color:var(--gray-500);margin-bottom:4px">Stroke Color</label>
+                <input type="color" id="outline-stroke-color" value="${currentStrokeColor}" style="width:40px;height:30px;padding:0;border:1px solid #ddd;border-radius:4px;cursor:pointer">
+              </div>
+              <div>
+                <label style="display:block;font-size:12px;color:var(--gray-500);margin-bottom:4px">Line Width (1–10)</label>
+                <input type="number" id="outline-stroke-weight" value="${currentStrokeWeight}" min="1" max="10" style="width:60px;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:13px">
+              </div>
+              <div style="flex:1;min-width:120px">
+                <label style="display:block;font-size:12px;color:var(--gray-500);margin-bottom:4px">Fill Opacity: <span id="outline-opacity-val">${currentFillOpacity.toFixed(2)}</span></label>
+                <input type="range" id="outline-fill-opacity" min="0" max="1" step="0.01" value="${currentFillOpacity}" style="width:100%">
+              </div>
+              <button class="btn btn-primary btn-xs" id="outline-style-save-btn">Save Style</button>
+            </div>
           </div>`;
       } else {
         html += `
@@ -96,6 +117,38 @@ window._renderMapLayers = async function(container, communityId) {
             await loadOutlineSection();
           } catch (err) {
             showToast('Delete failed: ' + err.message, 'error');
+          }
+        });
+
+        const opacitySlider = document.getElementById('outline-fill-opacity');
+        const opacityVal = document.getElementById('outline-opacity-val');
+        if (opacitySlider && opacityVal) {
+          opacitySlider.addEventListener('input', () => {
+            opacityVal.textContent = parseFloat(opacitySlider.value).toFixed(2);
+          });
+        }
+
+        document.getElementById('outline-style-save-btn')?.addEventListener('click', async () => {
+          const saveBtn = document.getElementById('outline-style-save-btn');
+          const strokeColor = document.getElementById('outline-stroke-color')?.value || '#0C1D31';
+          const strokeWeight = parseInt(document.getElementById('outline-stroke-weight')?.value || '3', 10);
+          const fillOpacity = parseFloat(document.getElementById('outline-fill-opacity')?.value || '0.08');
+          if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+          try {
+            await apiFetch(`/api/map-layers/${outline.id}`, {
+              method: 'PATCH',
+              body: {
+                strokeColor,
+                strokeWeight,
+                fillOpacity: String(fillOpacity),
+                version: outline.version,
+              },
+            });
+            showToast('Outline style saved', 'success');
+            await loadOutlineSection();
+          } catch (err) {
+            showToast('Save failed: ' + err.message, 'error');
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Style'; }
           }
         });
       } else {

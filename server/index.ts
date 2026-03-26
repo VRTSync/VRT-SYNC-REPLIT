@@ -613,6 +613,10 @@ async function runStartupMigrations() {
 
       CREATE INDEX IF NOT EXISTS contacts_community_idx ON contacts(community_id);
       CREATE INDEX IF NOT EXISTS contacts_type_idx ON contacts(contact_type);
+
+      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS stroke_color text;
+      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS stroke_weight integer;
+      ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS fill_opacity text;
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

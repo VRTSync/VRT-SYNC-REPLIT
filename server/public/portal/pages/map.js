@@ -57,6 +57,9 @@ PortalRouter.register('map', async function (container) {
   let activeColorPicker = null;
   let sessionColorOverrides = {};
   let _communityBoundsCache = null;
+  let _outlineGeojson = null;
+  let _outlineStyle = null;
+  let _showCommunityOutline = true;
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
@@ -144,7 +147,21 @@ PortalRouter.register('map', async function (container) {
     if (!el) return;
     const subs = LAYER_HIERARCHY[activeCategory] || [];
     const isAdmin = role === 'admin';
-    el.innerHTML = subs.map(sub => {
+    const hasOutline = !!_outlineGeojson;
+
+    let outlineHtml = '';
+    if (hasOutline) {
+      const outlineChecked = _showCommunityOutline ? 'checked' : '';
+      outlineHtml = `
+        <label class="mlp-sublayer-row" style="border-bottom:1px solid #eef1f5;margin-bottom:6px;padding-bottom:6px">
+          <input type="checkbox" id="mlp-outline-toggle" ${outlineChecked}>
+          <span class="mlp-sub-dot" style="background:#0C1D31;border-radius:2px"></span>
+          <span class="mlp-sub-label">Community Outline</span>
+        </label>
+      `;
+    }
+
+    el.innerHTML = outlineHtml + subs.map(sub => {
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
       const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
       const swatchBtn = isAdmin
@@ -158,7 +175,22 @@ PortalRouter.register('map', async function (container) {
         </label>
       `;
     }).join('');
-    el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+
+    if (hasOutline) {
+      const outlineToggle = document.getElementById('mlp-outline-toggle');
+      if (outlineToggle) {
+        outlineToggle.addEventListener('change', () => {
+          _showCommunityOutline = outlineToggle.checked;
+          if (_showCommunityOutline) {
+            cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
+          } else {
+            cmdToIframe('setCommunityOutline', null);
+          }
+        });
+      }
+    }
+
+    el.querySelectorAll('input[type="checkbox"]:not(#mlp-outline-toggle)').forEach(cb => {
       cb.addEventListener('change', () => {
         sublayerState[cb.dataset.cat][cb.dataset.key] = cb.checked;
         syncVisibleLayers();
@@ -451,6 +483,18 @@ PortalRouter.register('map', async function (container) {
     }
   }
 
+  function buildOutlineStyle(outlineLayer) {
+    if (!outlineLayer) return null;
+    const style = {};
+    if (outlineLayer.strokeColor) style.strokeColor = outlineLayer.strokeColor;
+    if (outlineLayer.strokeWeight) style.strokeWeight = outlineLayer.strokeWeight;
+    if (outlineLayer.fillOpacity != null) {
+      const fo = parseFloat(outlineLayer.fillOpacity);
+      if (!isNaN(fo) && fo >= 0 && fo <= 1) style.fillOpacity = fo;
+    }
+    return Object.keys(style).length ? style : null;
+  }
+
   function loadCommunityOutline() {
     const activeCommunityId = PortalState.getActiveCommunity().id;
     const outlineLayers = mapLayers.filter(l => l.layerKey === 'outline');
@@ -458,14 +502,21 @@ PortalRouter.register('map', async function (container) {
 
     const outlineLayer = outlineLayers.find(l => l._geojson);
     if (outlineLayer) {
-      cmdToIframe('setCommunityOutline', outlineLayer._geojson);
+      _outlineGeojson = outlineLayer._geojson;
+      _outlineStyle = buildOutlineStyle(outlineLayer);
+      if (_showCommunityOutline) {
+        cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
+      }
       cmdToIframe('fitToOutline');
     } else {
+      _outlineGeojson = null;
+      _outlineStyle = null;
       cmdToIframe('setCommunityOutline', null);
       if (_communityBoundsCache && _communityBoundsCache.length > 0) {
         cmdToIframe('fitBounds', _communityBoundsCache);
       }
     }
+    renderSublayers();
   }
 
   function getSessionColorOverride(cat, subKey) {

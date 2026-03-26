@@ -229,6 +229,9 @@ export const mapLayers = pgTable("map_layers", {
   sourceFormat: text("source_format").notNull().default("geojson"),
   geojsonData: text("geojson_data"),
   color: text("color"),
+  strokeColor: text("stroke_color"),
+  strokeWeight: integer("stroke_weight"),
+  fillOpacity: text("fill_opacity"),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -631,6 +634,9 @@ export const updateMapLayerSchema = z.object({
   sourceFormat: z.enum(["geojson", "kml"]).optional(),
   geojsonData: z.string().optional(),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  strokeColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  strokeWeight: z.number().int().min(1).max(10).optional(),
+  fillOpacity: z.string().refine(v => { const n = parseFloat(v); return !isNaN(n) && n >= 0 && n <= 1; }, { message: 'fillOpacity must be a number between 0 and 1' }).optional(),
   version: z.number(),
 });
 

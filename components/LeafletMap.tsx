@@ -59,6 +59,12 @@ type ZoneMarkerData = {
   longitude: number;
 };
 
+type OutlineStyle = {
+  strokeColor?: string;
+  strokeWeight?: number;
+  fillOpacity?: number;
+};
+
 type LeafletMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -74,6 +80,8 @@ type LeafletMapProps = {
   activeCategory?: string;
   fitToContentKey?: string;
   initialBounds?: [[number, number], [number, number]] | null;
+  communityOutlineGeojson?: any | null;
+  communityOutlineStyle?: OutlineStyle | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -98,6 +106,8 @@ export default function LeafletMap({
   activeCategory = 'community',
   fitToContentKey,
   initialBounds,
+  communityOutlineGeojson,
+  communityOutlineStyle,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -287,6 +297,12 @@ export default function LeafletMap({
       sendCmd('showZones', false);
     }
   }, [showZones, zoneMarkers, sendCmd]);
+
+  useEffect(() => {
+    if (communityOutlineGeojson !== undefined) {
+      sendCmd('setCommunityOutline', communityOutlineGeojson || null, communityOutlineStyle || null);
+    }
+  }, [communityOutlineGeojson, communityOutlineStyle, sendCmd]);
 
   useEffect(() => {
     if (targetRegion) {
