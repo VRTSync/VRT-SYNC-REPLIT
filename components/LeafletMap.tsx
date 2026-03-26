@@ -302,6 +302,16 @@ export default function LeafletMap({
     }
     if (fitToContentKey !== fitToContentKeyRef.current) {
       fitToContentKeyRef.current = fitToContentKey;
+      // Race condition fix: if communityBounds has not yet been sent to the template
+      // (initialBoundsAppliedRef is still false) but we have the bounds available,
+      // send fitBounds first to establish communityBounds in the template before
+      // calling fitToContent — otherwise fitToContent finds no communityBounds and
+      // fitToOutline falls through to revealMap() at the default US-wide zoom.
+      if (!initialBoundsAppliedRef.current && initialBoundsRef.current) {
+        initialBoundsAppliedRef.current = true;
+        const b = initialBoundsRef.current;
+        sendCmd('fitBounds', [[b[0][0], b[0][1]], [b[1][0], b[1][1]]]);
+      }
       sendCmd('fitToContent');
     }
   }, [fitToContentKey, sendCmd]);

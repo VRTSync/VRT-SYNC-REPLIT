@@ -475,9 +475,10 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       if (communityBounds && communityBounds.isValid()) {
         map.fitBounds(communityBounds, { padding: [32, 32] });
         revealMap();
-      } else {
-        revealMap();
       }
+      // else: do nothing — no outline layer and no communityBounds available yet.
+      // A fitBounds call will arrive shortly to establish communityBounds; revealing
+      // the map here would show the default US-wide zoom before bounds are applied.
     },
 
     updateLayerColor: function(layerId, newColor) {
