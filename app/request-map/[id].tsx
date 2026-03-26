@@ -16,7 +16,7 @@ if (Platform.OS !== 'web') {
 function generateRequestMapHTML(lat: number, lng: number, title: string, priority: string, status: string, taskId: string): string {
   const escaped = (s: string) => s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const priorityColor = priority === 'urgent' ? '#e74c3c' : '#25C1AC';
-  const priorityLabel = priority === 'urgent' ? 'Urgent' : 'Normal';
+  const priorityLabel = priority === 'urgent' ? 'Urgent' : 'General';
   const statusLabel = status === 'submitted' ? 'Submitted' : status === 'acknowledged' ? 'Acknowledged' : status === 'completed' ? 'Completed' : status.charAt(0).toUpperCase() + status.slice(1);
 
   return `<!DOCTYPE html>
@@ -184,7 +184,7 @@ export default function RequestMapScreen() {
         pinLat,
         pinLng,
         request?.title ?? 'Request',
-        request?.priority ?? 'Normal',
+        request?.priority ?? 'General',
         request?.status ?? 'submitted',
         id ?? ''
       )

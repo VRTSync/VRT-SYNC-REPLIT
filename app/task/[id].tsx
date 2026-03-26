@@ -421,7 +421,7 @@ export default function TaskDetailScreen() {
           <View style={styles.hoaPriorityRow}>
             <Text style={styles.hoaPriorityLabel}>Priority:</Text>
             <Text style={[styles.hoaPriorityValue, { color: task.priority === 'urgent' ? '#c62828' : '#555' }]}>
-              {task.priority === 'urgent' ? 'Urgent' : 'Normal'}
+              {task.priority === 'urgent' ? 'Urgent' : 'General'}
             </Text>
           </View>
           {task.status === 'submitted' && (

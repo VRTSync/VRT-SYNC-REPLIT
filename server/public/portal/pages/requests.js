@@ -79,7 +79,7 @@ PortalRouter.register('requests', async function (container) {
       + '  <div class="cf-group"><label class="cf-label">Description *</label><textarea class="cf-input cf-textarea" id="req-desc" placeholder="Detailed description" required></textarea></div>'
       + '  <div class="cf-row">'
       + '    <div class="cf-group cf-half"><label class="cf-label">Priority</label>'
-      + '      <select class="cf-input" id="req-priority"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>'
+      + '      <select class="cf-input" id="req-priority"><option value="General">General</option><option value="Urgent">Urgent</option></select>'
       + '    </div>'
       + '    <div class="cf-group cf-half"><label class="cf-label">Category</label>'
       + '      <select class="cf-input" id="req-category">'
@@ -156,7 +156,7 @@ PortalRouter.register('requests', async function (container) {
       overlay.style.display = 'none';
       overlay.querySelector('#req-title').value = '';
       overlay.querySelector('#req-desc').value = '';
-      overlay.querySelector('#req-priority').value = 'Normal';
+      overlay.querySelector('#req-priority').value = 'General';
       overlay.querySelector('#req-category').value = '';
       overlay.querySelector('#req-assigned').value = '';
     }

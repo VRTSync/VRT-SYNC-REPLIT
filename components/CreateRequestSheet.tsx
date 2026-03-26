@@ -24,7 +24,7 @@ type Props = {
 };
 
 const CATEGORIES = ['Irrigation', 'Landscape', 'Snow', 'Other'] as const;
-const PRIORITIES = ['Normal', 'Urgent'] as const;
+const PRIORITIES = ['General', 'Urgent'] as const;
 
 function generatePinPickerHTML(lat: number, lng: number): string {
   return `<!DOCTYPE html>
@@ -84,7 +84,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const { activeCommunity } = useCommunity();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<'Normal' | 'Urgent'>('Normal');
+  const [priority, setPriority] = useState<'General' | 'Urgent'>('General');
   const [category, setCategory] = useState<string | undefined>(undefined);
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
@@ -132,7 +132,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const resetForm = () => {
     setTitle('');
     setDescription('');
-    setPriority('Normal');
+    setPriority('General');
     setCategory(undefined);
     setAssignedTo(undefined);
     setPinLat(null);
@@ -358,12 +358,12 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
                   key={p}
                   style={[
                     styles.toggleItem,
-                    priority === p && (p === 'Normal' ? styles.toggleActiveNormal : styles.toggleActiveUrgent),
+                    priority === p && (p === 'General' ? styles.toggleActiveNormal : styles.toggleActiveUrgent),
                   ]}
                   onPress={() => setPriority(p)}
                 >
                   <Ionicons
-                    name={p === 'Normal' ? 'flag-outline' : 'warning-outline'}
+                    name={p === 'General' ? 'flag-outline' : 'warning-outline'}
                     size={16}
                     color={priority === p ? '#fff' : '#666'}
                   />

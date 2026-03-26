@@ -88,7 +88,7 @@ function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void 
             color={isUrgent ? '#D32F2F' : '#25C1AC'}
           />
           <Text style={[styles.priorityText, { color: isUrgent ? '#D32F2F' : '#25C1AC' }]}>
-            {isUrgent ? 'Urgent' : 'Normal'}
+            {isUrgent ? 'Urgent' : 'General'}
           </Text>
         </View>
         {!isCompleted && (
@@ -129,7 +129,7 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
   const escaped = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const markersJs = requests.map(r => {
     const color = r.priority === 'urgent' ? '#e74c3c' : '#25C1AC';
-    const priorityLabel = r.priority === 'urgent' ? 'Urgent' : 'Normal';
+    const priorityLabel = r.priority === 'urgent' ? 'Urgent' : 'General';
     const statusLabel = r.status === 'submitted' ? 'Submitted' : r.status === 'acknowledged' ? 'Acknowledged' : r.status === 'completed' ? 'Completed' : r.status.charAt(0).toUpperCase() + r.status.slice(1);
     return `addPin(${r.latitude}, ${r.longitude}, '${color}', '${escaped(r.title)}', '${priorityLabel}', '${statusLabel}', '${r.id}');`;
   }).join('\n  ');
