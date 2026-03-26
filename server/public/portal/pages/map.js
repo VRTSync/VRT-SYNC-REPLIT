@@ -414,12 +414,16 @@ PortalRouter.register('map', async function (container) {
   }
 
   async function loadMapData() {
+    const loadCommunityId = community.id;
     try {
       const [layers, controllers, boundsResult] = await Promise.all([
         apiFetch(`/api/map-layers?communityId=${community.id}`),
         apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),
         apiFetch(`/api/communities/${community.id}/bounds`).catch(() => null),
       ]);
+
+      if (PortalState.getActiveCommunity().id !== loadCommunityId) return;
+
       mapLayers = layers || [];
       controllerData = controllers || [];
       if (boundsResult && boundsResult.bounds && boundsResult.bounds.length > 0) {
@@ -434,6 +438,9 @@ PortalRouter.register('map', async function (container) {
           }
         } catch (_) {}
       }
+
+      if (PortalState.getActiveCommunity().id !== loadCommunityId) return;
+
       pushLayersToIframe();
       pushIrrigationToIframe();
       syncVisibleLayers();
@@ -445,7 +452,11 @@ PortalRouter.register('map', async function (container) {
   }
 
   function loadCommunityOutline() {
-    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
+    const activeCommunityId = PortalState.getActiveCommunity().id;
+    const outlineLayers = mapLayers.filter(l => l.layerKey === 'outline');
+    if (outlineLayers.some(l => l.communityId !== activeCommunityId)) return;
+
+    const outlineLayer = outlineLayers.find(l => l._geojson);
     if (outlineLayer) {
       cmdToIframe('setCommunityOutline', outlineLayer._geojson);
       cmdToIframe('fitToOutline');
