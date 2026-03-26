@@ -56,6 +56,7 @@ PortalRouter.register('map', async function (container) {
   let controllerData = [];
   let activeColorPicker = null;
   let sessionColorOverrides = {};
+  let _communityBoundsCache = null;
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
@@ -368,6 +369,10 @@ PortalRouter.register('map', async function (container) {
           }
         });
         loadCommunity(community.id);
+      } else if (msg.type === 'fitToContentResult') {
+        if (!msg.data || !msg.data.hadContent) {
+          cmdToIframe('fitToOutline');
+        }
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
       }
@@ -405,27 +410,21 @@ PortalRouter.register('map', async function (container) {
     });
     renderCategories();
     renderSublayers();
-
     cmdToIframe('clearIrrigation');
-
-    try {
-      const bounds = await apiFetch(`/api/communities/${communityId}/bounds`);
-      if (bounds && bounds.bounds && bounds.bounds.length > 0) {
-        cmdToIframe('fitBounds', bounds.bounds);
-      }
-    } catch (err) {
-      console.error('Failed to load community bounds:', err);
-    }
   }
 
   async function loadMapData() {
     try {
-      const [layers, controllers] = await Promise.all([
+      const [layers, controllers, boundsResult] = await Promise.all([
         apiFetch(`/api/map-layers?communityId=${community.id}`),
         apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),
+        apiFetch(`/api/communities/${community.id}/bounds`).catch(() => null),
       ]);
       mapLayers = layers || [];
       controllerData = controllers || [];
+      if (boundsResult && boundsResult.bounds && boundsResult.bounds.length > 0) {
+        _communityBoundsCache = boundsResult.bounds;
+      }
 
       for (const layer of mapLayers) {
         try {
@@ -452,6 +451,9 @@ PortalRouter.register('map', async function (container) {
       cmdToIframe('fitToOutline');
     } else {
       cmdToIframe('setCommunityOutline', null);
+      if (_communityBoundsCache && _communityBoundsCache.length > 0) {
+        cmdToIframe('fitBounds', _communityBoundsCache);
+      }
     }
   }
 

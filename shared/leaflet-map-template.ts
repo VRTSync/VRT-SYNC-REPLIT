@@ -24,6 +24,13 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body, #map { width: 100%; height: 100%; }
+  #map-loading-overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: #f5f7fa; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #map-loading-overlay.hidden { display: none; }
   .task-marker {
     width: 12px; height: 12px; border-radius: 50%;
     border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
@@ -87,6 +94,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 </head>
 <body>
 <div id="map"></div>
+<div id="map-loading-overlay"><div style="color:#25C1AC;font-size:13px;font-family:-apple-system,system-ui,sans-serif;">Loading map...</div></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
@@ -110,6 +118,14 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   var controllerClusterGroups = {};
   var userLocMarker = null;
   var targetMarker = null;
+  var mapRevealed = false;
+
+  function revealMap() {
+    if (mapRevealed) return;
+    mapRevealed = true;
+    var overlay = document.getElementById('map-loading-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }
 
   function post(type, data) {
     try {
@@ -352,6 +368,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       var bounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
       communityBounds = bounds;
       map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+      revealMap();
     },
 
     fitToContent: function(taskCoords, userLoc) {
@@ -393,11 +410,18 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         var ul = L.latLng(userLoc[0], userLoc[1]);
         bounds = bounds ? bounds.extend(ul) : L.latLngBounds(ul, ul);
       }
+      var hadContent = !!(bounds && bounds.isValid());
+      if (hadContent && communityBounds && communityBounds.isValid()) {
+        bounds = bounds.extend(communityBounds);
+      }
       if (bounds && bounds.isValid()) {
         map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+        revealMap();
       } else if (communityBounds && communityBounds.isValid()) {
         map.fitBounds(communityBounds, { padding: [60, 40], maxZoom: 16 });
+        revealMap();
       }
+      post('fitToContentResult', { hadContent: hadContent });
     },
 
     showControllers: function(show) {
@@ -443,12 +467,16 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           if (b && b.isValid()) {
             communityBounds = b;
             map.fitBounds(b, { padding: [32, 32] });
+            revealMap();
             return;
           }
         } catch(e) {}
       }
       if (communityBounds && communityBounds.isValid()) {
         map.fitBounds(communityBounds, { padding: [32, 32] });
+        revealMap();
+      } else {
+        revealMap();
       }
     },
 
@@ -531,6 +559,10 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   _readyRetries.forEach(function(delay) {
     setTimeout(function() { post('mapReady', {}); }, delay);
   });
+
+  setTimeout(function() {
+    if (!mapRevealed) revealMap();
+  }, 8000);
 })();
 </script>
 </body>

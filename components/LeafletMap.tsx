@@ -146,6 +146,7 @@ export default function LeafletMap({
   const initialBoundsRef = useRef(initialBounds);
   initialBoundsRef.current = initialBounds;
   const initialBoundsAppliedRef = useRef(false);
+  const fitToContentKeyRef = useRef<string | undefined>(undefined);
 
   const processMsg = useCallback((msg: any) => {
     switch (msg.type) {
@@ -157,6 +158,17 @@ export default function LeafletMap({
           pendingRef.current.unshift({ fn: 'fitBounds', args: [[[b[0][0], b[0][1]], [b[1][0], b[1][1]]]] });
         }
         flushPending();
+        break;
+      case 'fitToContentResult':
+        if (!msg.data?.hadContent) {
+          if (isWeb && iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage({ type: 'cmd', fn: 'fitToOutline', args: [] }, '*');
+          } else if (!isWeb && webViewRef.current) {
+            webViewRef.current.injectJavaScript(
+              `window.mapBridge.fitToOutline.apply(window.mapBridge, []); true;`
+            );
+          }
+        }
         break;
       case 'taskPress':
         onTaskPressRef.current(msg.data.id);
@@ -173,7 +185,7 @@ export default function LeafletMap({
         onTargetReachedRef.current?.();
         break;
     }
-  }, [flushPending]);
+  }, [flushPending, isWeb]);
 
   const handleMessage = useCallback((event: any) => {
     try {
@@ -281,6 +293,18 @@ export default function LeafletMap({
       sendCmd('flyTo', targetRegion.latitude, targetRegion.longitude, 16, targetRegion.label || '');
     }
   }, [targetRegion, sendCmd]);
+
+  useEffect(() => {
+    if (fitToContentKey === undefined) return;
+    if (fitToContentKeyRef.current === undefined) {
+      fitToContentKeyRef.current = fitToContentKey;
+      return;
+    }
+    if (fitToContentKey !== fitToContentKeyRef.current) {
+      fitToContentKeyRef.current = fitToContentKey;
+      sendCmd('fitToContent');
+    }
+  }, [fitToContentKey, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 

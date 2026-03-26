@@ -273,11 +273,12 @@ export default function HoaMapScreen() {
 
   const fitToContentKey = useMemo(() => {
     const parts = [
+      activeCategory,
       Array.from(enabledControllers).sort().join(','),
       allLayers.filter(l => !disabledLayerIds.has(l.id)).map(l => l.id).sort().join(','),
     ];
     return parts.join('|');
-  }, [enabledControllers, disabledLayerIds, allLayers]);
+  }, [activeCategory, enabledControllers, disabledLayerIds, allLayers]);
 
   const [detailPanelAssetId, setDetailPanelAssetId] = useState<string | null>(null);
 
