@@ -69,6 +69,7 @@ export default function MapScreen() {
   const [enabledControllers, setEnabledControllers] = useState<Set<string>>(new Set());
   const [showControllerLayer, setShowControllerLayer] = useState(true);
   const [showZoneLayer, setShowZoneLayer] = useState(true);
+  const [dismissedOfflineBanner, setDismissedOfflineBanner] = useState(false);
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -94,6 +95,12 @@ export default function MapScreen() {
       setEnabledControllers(new Set(allRefs));
     }
   }, [controllers.length]);
+
+  React.useEffect(() => {
+    if (isOnline) {
+      setDismissedOfflineBanner(false);
+    }
+  }, [isOnline]);
 
   const { data: onlineLayers = [] } = useQuery<MapLayerMeta[]>({
     queryKey: ['/api/map-layers', { communityId }],
@@ -422,12 +429,15 @@ export default function MapScreen() {
         </View>
       )}
 
-      {offlineNoPack && (
-        <View style={[styles.offlineNoPackBanner, { top: (allLayers.length > 0 || controllers.length > 0) ? layersButtonTop : topOffset + 14 }]}>
+      {offlineNoPack && !dismissedOfflineBanner && (
+        <View style={[styles.offlineNoPackBanner, { top: (allLayers.length > 0 || controllers.length > 0) ? layerPanelTop : topOffset + 14 }]}>
           <Ionicons name="cloud-offline-outline" size={18} color="#f44336" />
           <Text style={styles.offlineNoPackText}>
             Offline map pack not downloaded for this community.
           </Text>
+          <TouchableOpacity onPress={() => setDismissedOfflineBanner(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close" size={18} color="#f44336" />
+          </TouchableOpacity>
         </View>
       )}
 
