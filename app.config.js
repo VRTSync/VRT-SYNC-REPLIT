@@ -32,7 +32,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.vrtsyncmobile.app",
-      buildNumber: "2",
+      buildNumber: "3",
       infoPlist: {
         NSCameraUsageDescription:
           "VRTSync uses your camera to take photos of site conditions and attach them to maintenance requests.",
