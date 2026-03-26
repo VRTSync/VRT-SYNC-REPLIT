@@ -467,8 +467,10 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
                 return (
                   <View key={n.id} style={[styles.noteCard, styles.noteCardPending]}>
                     <View style={styles.noteHeader}>
-                      <View style={[styles.stateBadge, { backgroundColor: stateColor(n.state) + '20', borderColor: stateColor(n.state) }]}>
-                        <Text style={[styles.stateBadgeText, { color: stateColor(n.state) }]}>{stateLabel(n.state)}</Text>
+                      <View style={styles.noteBadgeWrapper}>
+                        <View style={[styles.stateBadge, { backgroundColor: stateColor(n.state) + '20', borderColor: stateColor(n.state) }]}>
+                          <Text style={[styles.stateBadgeText, { color: stateColor(n.state) }]}>{stateLabel(n.state)}</Text>
+                        </View>
                       </View>
                       <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                     </View>
@@ -496,7 +498,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
                     <View style={styles.noteHeader}>
                       <View style={styles.noteCreator}>
                         <Ionicons name="person-circle-outline" size={18} color="#25C1AC" />
-                        <Text style={styles.noteCreatorName}>{n.creatorName || 'Unknown'}</Text>
+                        <Text style={styles.noteCreatorName} numberOfLines={1} ellipsizeMode="tail">{n.creatorName || 'Unknown'}</Text>
                       </View>
                       <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                     </View>
@@ -852,14 +854,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
+    gap: 8,
+    flexWrap: 'wrap',
   },
   noteCreator: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
   },
-  noteCreatorName: { fontSize: 14, fontWeight: '600', color: '#0C1D31' },
-  noteDate: { fontSize: 12, color: '#999' },
+  noteBadgeWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  noteCreatorName: { fontSize: 14, fontWeight: '600', color: '#0C1D31', flexShrink: 1 },
+  noteDate: { fontSize: 12, color: '#999', flexShrink: 0 },
   noteText: { fontSize: 14, color: '#333', lineHeight: 20 },
   stateBadge: {
     borderRadius: 6,
