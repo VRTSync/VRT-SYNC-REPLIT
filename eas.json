@@ -22,7 +22,7 @@
         "buildConfiguration": "Release"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "https://vrt-sync-mobile.replit.app"
+        "EXPO_PUBLIC_DOMAIN": "vrt-sync-mobile.replit.app"
       }
     }
   },

@@ -1,18 +1,14 @@
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 
-if (!domain) {
-  const isLocalDev =
-    process.env.NODE_ENV === "development" ||
-    process.env.REPLIT_DEV_DOMAIN !== undefined;
-  if (!isLocalDev) {
-    throw new Error(
-      "EXPO_PUBLIC_DOMAIN is required for non-development builds. " +
-        "Set it in your eas.json env block or as an EAS secret."
-    );
-  }
-}
+const isLocalDev =
+  process.env.NODE_ENV === "development" ||
+  process.env.REPLIT_DEV_DOMAIN !== undefined;
 
-const origin = domain ? `https://${domain}` : "https://localhost:8081";
+const origin = domain
+  ? `https://${domain}`
+  : isLocalDev
+  ? "https://localhost:8081"
+  : "https://vrt-sync-mobile.replit.app";
 
 export default {
   expo: {
