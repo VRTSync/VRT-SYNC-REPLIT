@@ -1,0 +1,19 @@
+GenerateDSYMFile /Users/randymangel/Library/Developer/Xcode/DerivedData/VRTSyncMobile-dmefidfekyapfjgcrstactbvrxqi/Build/Intermediates.noindex/ArchiveIntermediates/VRTSyncMobile/BuildProductsPath/Release-iphoneos/VRTSyncMobile.app.dSYM /Users/randymangel/Library/Developer/Xcode/DerivedData/VRTSyncMobile-dmefidfekyapfjgcrstactbvrxqi/Build/Intermediates.noindex/ArchiveIntermediates/VRTSyncMobile/InstallationBuildProductsLocation/Applications/VRTSyncMobile.app/VRTSyncMobile (in target 'VRTSyncMobile' from project 'VRTSyncMobile')
+    cd /Users/randymangel/VRT-SYNC-REPLIT/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/dsymutil /Users/randymangel/Library/Developer/Xcode/DerivedData/VRTSyncMobile-dmefidfekyapfjgcrstactbvrxqi/Build/Intermediates.noindex/ArchiveIntermediates/VRTSyncMobile/InstallationBuildProductsLocation/Applications/VRTSyncMobile.app/VRTSyncMobile -o /Users/randymangel/Library/Developer/Xcode/DerivedData/VRTSyncMobile-dmefidfekyapfjgcrstactbvrxqi/Build/Intermediates.noindex/ArchiveIntermediates/VRTSyncMobile/BuildProductsPath/Release-iphoneos/VRTSyncMobile.app.dSYM
+
+warning: Run script build phase '[CP-User] [Hermes] Replace Hermes for the right configuration, if needed' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'hermes-engine' from project 'Pods')
+note: Run script build phase '[CP-User] [RNDeps] Replace React Native Dependencies for the right configuration, if needed' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'ReactNativeDependencies' from project 'Pods')
+note: Run script build phase '[CP-User] [RN]Check FBReactNativeSpec' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'React-RCTFBReactNativeSpec' from project 'Pods')
+note: Run script build phase '[CP-User] [RNDeps] Replace React Native Core for the right configuration, if needed' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'React-Core-prebuilt' from project 'Pods')
+note: Run script build phase 'Bundle React Native code and images' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'VRTSyncMobile' from project 'VRTSyncMobile')
+note: Run script build phase '[Expo] Configure project' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'VRTSyncMobile' from project 'VRTSyncMobile')
+/Users/randymangel/VRT-SYNC-REPLIT/ios/Pods/Pods.xcodeproj: warning: The iOS deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to 9.0, but the range of supported deployment target versions is 12.0 to 26.2.99. (in target 'SDWebImage-SDWebImage' from project 'Pods')
+note: Run script build phase '[CP-User] Generate app.config for prebuilt Constants.manifest' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'EXConstants' from project 'Pods')
+** ARCHIVE FAILED **
+
+
+The following build commands failed:
+	PhaseScriptExecution Bundle\ React\ Native\ code\ and\ images /Users/randymangel/Library/Developer/Xcode/DerivedData/VRTSyncMobile-dmefidfekyapfjgcrstactbvrxqi/Build/Intermediates.noindex/ArchiveIntermediates/VRTSyncMobile/IntermediateBuildFilesPath/VRTSyncMobile.build/Release-iphoneos/VRTSyncMobile.build/Script-00DD1BFF1BD5951E006B06BC.sh (in target 'VRTSyncMobile' from project 'VRTSyncMobile')
+	Archiving workspace VRTSyncMobile with scheme VRTSyncMobile
+(2 failures)
