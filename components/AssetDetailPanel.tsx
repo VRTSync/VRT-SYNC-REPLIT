@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Platform, Image, Modal, Dimensions,
@@ -106,6 +106,9 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const [noteText, setNoteText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(60);
+  const [tabBarHeight, setTabBarHeight] = useState(44);
+  const [webKeyboardHeight, setWebKeyboardHeight] = useState(0);
   const { isOnline, addPendingAssetNote, syncPendingAssetNotes, getPendingNotesForAsset, retryAssetNote, dismissAssetNote } = useOffline();
   const { localPack, getOfflineWorkHistory } = useOfflinePack();
   const useOfflineData = !isOnline && !!localPack;
@@ -169,6 +172,25 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   };
 
   const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      const keyboardH = window.innerHeight - vv.height - vv.offsetTop;
+      setWebKeyboardHeight(Math.max(0, keyboardH));
+    };
+    vv.addEventListener('resize', onResize);
+    vv.addEventListener('scroll', onResize);
+    return () => {
+      vv.removeEventListener('resize', onResize);
+      vv.removeEventListener('scroll', onResize);
+    };
+  }, []);
+
+  const keyboardVerticalOffset = insets.top + headerHeight + tabBarHeight;
+
   const [rawPropsExpanded, setRawPropsExpanded] = useState(false);
 
   const sqFtProp = asset?.properties.find(p => p.key === 'sqFt');
@@ -445,92 +467,182 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
       ...serverNotes.map(n => ({ type: 'server' as const, data: n })),
     ];
 
-    return (
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={90}
-      >
-        {notesLoading && isOnline ? (
-          <View style={styles.center}><ActivityIndicator color="#25C1AC" size="large" /></View>
-        ) : allNotes.length === 0 ? (
-          <View style={styles.center}>
+    const noteInputBarStyle = Platform.OS === 'web'
+      ? [styles.noteInputBar, { paddingBottom: 10 }]
+      : styles.noteInputBar;
+
+    const renderNotesList = () => {
+      if (notesLoading && isOnline) {
+        return <View style={styles.center}><ActivityIndicator color="#25C1AC" size="large" /></View>;
+      }
+      if (allNotes.length === 0) {
+        return (
+          <View style={styles.notesEmptyState}>
             <Ionicons name="chatbubble-outline" size={48} color="#ddd" />
             <Text style={styles.emptyTitle}>No notes yet</Text>
             <Text style={styles.emptySubtitle}>Add a note about this asset</Text>
           </View>
-        ) : (
-          <ScrollView contentContainerStyle={styles.tabContent}>
-            {allNotes.map((item) => {
-              if (item.type === 'pending') {
-                const n = item.data as PendingAssetNote;
-                return (
-                  <View key={n.id} style={[styles.noteCard, styles.noteCardPending]}>
-                    <View style={styles.noteHeader}>
-                      <View style={styles.noteBadgeWrapper}>
-                        <View style={[styles.stateBadge, { backgroundColor: stateColor(n.state) + '20', borderColor: stateColor(n.state) }]}>
-                          <Text style={[styles.stateBadgeText, { color: stateColor(n.state) }]}>{stateLabel(n.state)}</Text>
-                        </View>
+        );
+      }
+      return (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.tabContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {allNotes.map((item) => {
+            if (item.type === 'pending') {
+              const n = item.data as PendingAssetNote;
+              return (
+                <View key={n.id} style={[styles.noteCard, styles.noteCardPending]}>
+                  <View style={styles.noteHeader}>
+                    <View style={styles.noteBadgeWrapper}>
+                      <View style={[styles.stateBadge, { backgroundColor: stateColor(n.state) + '20', borderColor: stateColor(n.state) }]}>
+                        <Text style={[styles.stateBadgeText, { color: stateColor(n.state) }]}>{stateLabel(n.state)}</Text>
                       </View>
-                      <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                     </View>
-                    <Text style={styles.noteText}>{n.noteText}</Text>
-                    {n.state === 'failed' && (
-                      <View style={styles.noteActions}>
-                        {n.lastError && <Text style={styles.errorText}>{n.lastError}</Text>}
-                        <View style={styles.noteActionRow}>
-                          <TouchableOpacity style={styles.retryBtn} onPress={() => retryAssetNote(n.id)}>
-                            <Ionicons name="refresh-outline" size={14} color="#fff" />
-                            <Text style={styles.retryBtnText}>Retry</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.dismissBtn} onPress={() => dismissAssetNote(n.id)}>
-                            <Text style={styles.dismissBtnText}>Dismiss</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
+                    <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                   </View>
-                );
-              } else {
-                const n = item.data as AssetNoteItem;
-                return (
-                  <View key={n.id} style={styles.noteCard}>
-                    <View style={styles.noteHeader}>
-                      <View style={styles.noteCreator}>
-                        <Ionicons name="person-circle-outline" size={18} color="#25C1AC" />
-                        <Text style={styles.noteCreatorName} numberOfLines={1} ellipsizeMode="tail">{n.creatorName || 'Unknown'}</Text>
+                  <Text style={styles.noteText}>{n.noteText}</Text>
+                  {n.state === 'failed' && (
+                    <View style={styles.noteActions}>
+                      {n.lastError && <Text style={styles.errorText}>{n.lastError}</Text>}
+                      <View style={styles.noteActionRow}>
+                        <TouchableOpacity style={styles.retryBtn} onPress={() => retryAssetNote(n.id)}>
+                          <Ionicons name="refresh-outline" size={14} color="#fff" />
+                          <Text style={styles.retryBtnText}>Retry</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.dismissBtn} onPress={() => dismissAssetNote(n.id)}>
+                          <Text style={styles.dismissBtnText}>Dismiss</Text>
+                        </TouchableOpacity>
                       </View>
-                      <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                     </View>
-                    <Text style={styles.noteText}>{n.noteText}</Text>
+                  )}
+                </View>
+              );
+            } else {
+              const n = item.data as AssetNoteItem;
+              return (
+                <View key={n.id} style={styles.noteCard}>
+                  <View style={styles.noteHeader}>
+                    <View style={styles.noteCreator}>
+                      <Ionicons name="person-circle-outline" size={18} color="#25C1AC" />
+                      <Text style={styles.noteCreatorName} numberOfLines={1} ellipsizeMode="tail">{n.creatorName || 'Unknown'}</Text>
+                    </View>
+                    <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
                   </View>
-                );
-              }
-            })}
-          </ScrollView>
-        )}
-        <View style={[styles.noteInputBar, Platform.OS === 'web' && { paddingBottom: 34 }]}>
-          <TextInput
-            style={styles.noteInput}
-            placeholder="Add a note..."
-            placeholderTextColor="#999"
-            value={noteText}
-            onChangeText={setNoteText}
-            multiline
-            maxLength={2000}
-          />
-          <TouchableOpacity
-            style={[styles.noteSendBtn, (!noteText.trim() || submitting) && styles.noteSendBtnDisabled]}
-            onPress={handleSubmitNote}
-            disabled={!noteText.trim() || submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Ionicons name="send" size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </View>
+                  <Text style={styles.noteText}>{n.noteText}</Text>
+                </View>
+              );
+            }
+          })}
+        </ScrollView>
+      );
+    };
+
+    const inputBar = (
+      <View style={noteInputBarStyle}>
+        <TextInput
+          style={styles.noteInput}
+          placeholder="Add a note..."
+          placeholderTextColor="#999"
+          value={noteText}
+          onChangeText={setNoteText}
+          multiline
+          maxLength={2000}
+        />
+        <TouchableOpacity
+          style={[styles.noteSendBtn, (!noteText.trim() || submitting) && styles.noteSendBtnDisabled]}
+          onPress={handleSubmitNote}
+          disabled={!noteText.trim() || submitting}
+        >
+          {submitting ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Ionicons name="send" size={18} color="#fff" />
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+
+    if (Platform.OS === 'web') {
+      return (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: webKeyboardHeight }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {notesLoading && isOnline ? (
+            <View style={styles.center}><ActivityIndicator color="#25C1AC" size="large" /></View>
+          ) : allNotes.length === 0 ? (
+            <View style={styles.notesEmptyState}>
+              <Ionicons name="chatbubble-outline" size={48} color="#ddd" />
+              <Text style={styles.emptyTitle}>No notes yet</Text>
+              <Text style={styles.emptySubtitle}>Add a note about this asset</Text>
+            </View>
+          ) : (
+            <View style={styles.tabContent}>
+              {allNotes.map((item) => {
+                if (item.type === 'pending') {
+                  const n = item.data as PendingAssetNote;
+                  return (
+                    <View key={n.id} style={[styles.noteCard, styles.noteCardPending]}>
+                      <View style={styles.noteHeader}>
+                        <View style={styles.noteBadgeWrapper}>
+                          <View style={[styles.stateBadge, { backgroundColor: stateColor(n.state) + '20', borderColor: stateColor(n.state) }]}>
+                            <Text style={[styles.stateBadgeText, { color: stateColor(n.state) }]}>{stateLabel(n.state)}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
+                      </View>
+                      <Text style={styles.noteText}>{n.noteText}</Text>
+                      {n.state === 'failed' && (
+                        <View style={styles.noteActions}>
+                          {n.lastError && <Text style={styles.errorText}>{n.lastError}</Text>}
+                          <View style={styles.noteActionRow}>
+                            <TouchableOpacity style={styles.retryBtn} onPress={() => retryAssetNote(n.id)}>
+                              <Ionicons name="refresh-outline" size={14} color="#fff" />
+                              <Text style={styles.retryBtnText}>Retry</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.dismissBtn} onPress={() => dismissAssetNote(n.id)}>
+                              <Text style={styles.dismissBtnText}>Dismiss</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                } else {
+                  const n = item.data as AssetNoteItem;
+                  return (
+                    <View key={n.id} style={styles.noteCard}>
+                      <View style={styles.noteHeader}>
+                        <View style={styles.noteCreator}>
+                          <Ionicons name="person-circle-outline" size={18} color="#25C1AC" />
+                          <Text style={styles.noteCreatorName} numberOfLines={1} ellipsizeMode="tail">{n.creatorName || 'Unknown'}</Text>
+                        </View>
+                        <Text style={styles.noteDate}>{formatDateTime(n.createdAt)}</Text>
+                      </View>
+                      <Text style={styles.noteText}>{n.noteText}</Text>
+                    </View>
+                  );
+                }
+              })}
+            </View>
+          )}
+          {inputBar}
+        </ScrollView>
+      );
+    }
+
+    return (
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior="padding"
+        keyboardVerticalOffset={keyboardVerticalOffset}
+      >
+        {renderNotesList()}
+        {inputBar}
       </KeyboardAvoidingView>
     );
   };
@@ -580,7 +692,10 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={[styles.container, { paddingTop: topPad }]}>
-        <View style={styles.header}>
+        <View
+          style={styles.header}
+          onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}
+        >
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
@@ -606,7 +721,10 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           )}
         </View>
 
-        <View style={styles.tabBar}>
+        <View
+          style={styles.tabBar}
+          onLayout={(e) => setTabBarHeight(e.nativeEvent.layout.height)}
+        >
           {(['details', 'history', 'notes'] as Tab[]).map((tab) => (
             <TouchableOpacity
               key={tab}
@@ -663,6 +781,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  notesEmptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
   header: {
     backgroundColor: '#0C1D31',
     flexDirection: 'row',
