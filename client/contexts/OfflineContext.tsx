@@ -198,7 +198,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
-        await fetch('/api/auth/me', { signal: controller.signal, credentials: 'include' });
+        const apiUrl = getApiUrl();
+        await fetch(`${apiUrl}/api/auth/me`, { signal: controller.signal, credentials: 'include' });
         clearTimeout(timeout);
         setIsOnline(true);
       } catch {

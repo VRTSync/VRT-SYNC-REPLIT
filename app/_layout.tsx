@@ -1,13 +1,14 @@
-import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
-import * as Updates from "expo-updates";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
@@ -26,6 +27,11 @@ Notifications.setNotificationHandler({
 });
 
 SplashScreen.preventAutoHideAsync();
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "vrt-sync-rq-cache",
+});
 
 function LoadingScreen() {
   return (
@@ -150,38 +156,38 @@ function AuthNavigator() {
 }
 
 export default function RootLayout() {
-  useEffect(() => {
-    if (__DEV__ || Platform.OS === 'web') return;
-    (async () => {
-      try {
-        const update = await Updates.checkForUpdateAsync();
-        if (update.isAvailable) {
-          await Updates.fetchUpdateAsync();
-          await Updates.reloadAsync();
-        }
-      } catch {
-      }
-    })();
-  }, []);
+  const [cacheRestored, setCacheRestored] = useState(false);
 
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{
+            persister: asyncStoragePersister,
+            maxAge: 1000 * 60 * 60 * 24,
+            dehydrateOptions: {
+              shouldDehydrateQuery: (query) =>
+                query.state.status === "success" &&
+                query.queryKey[0] !== "/api/objects/upload",
+            },
+          }}
+          onSuccess={() => setCacheRestored(true)}
+        >
           <GestureHandlerRootView>
             <KeyboardProvider>
               <AuthProvider>
                 <CommunityProvider>
                   <OfflineProvider>
                     <OfflinePackProvider>
-                      <AuthNavigator />
+                      {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
                     </OfflinePackProvider>
                   </OfflineProvider>
                 </CommunityProvider>
               </AuthProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
   );
