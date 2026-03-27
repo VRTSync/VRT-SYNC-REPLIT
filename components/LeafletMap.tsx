@@ -74,6 +74,8 @@ type LeafletMapProps = {
   activeCategory?: string;
   fitToContentKey?: string;
   initialBounds?: [[number, number], [number, number]] | null;
+  communityOutlineGeojson?: any | null;
+  communityOutlineStyle?: { strokeColor?: string; strokeWeight?: number; fillOpacity?: number } | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -98,6 +100,8 @@ export default function LeafletMap({
   activeCategory = 'community',
   fitToContentKey,
   initialBounds,
+  communityOutlineGeojson,
+  communityOutlineStyle,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -281,6 +285,10 @@ export default function LeafletMap({
       sendCmd('flyTo', targetRegion.latitude, targetRegion.longitude, 16, targetRegion.label || '');
     }
   }, [targetRegion, sendCmd]);
+
+  useEffect(() => {
+    sendCmd('setCommunityOutline', communityOutlineGeojson ?? null, communityOutlineStyle ?? null);
+  }, [communityOutlineGeojson, communityOutlineStyle, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 

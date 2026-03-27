@@ -413,19 +413,23 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       });
     },
 
-    setCommunityOutline: function(geojson) {
+    setCommunityOutline: function(geojson, style) {
       if (this._outlineLayer) {
         map.removeLayer(this._outlineLayer);
         this._outlineLayer = null;
       }
       if (!geojson) return;
+      var s = style || {};
+      var strokeColor = s.strokeColor || '#0C1D31';
+      var strokeWeight = typeof s.strokeWeight === 'number' ? s.strokeWeight : 3;
+      var fillOpacity = typeof s.fillOpacity === 'number' ? s.fillOpacity : 0.08;
       this._outlineLayer = L.geoJSON(geojson, {
         style: function() {
           return {
-            color: '#0C1D31',
-            weight: 3,
-            fillColor: '#0C1D31',
-            fillOpacity: 0.08,
+            color: strokeColor,
+            weight: strokeWeight,
+            fillColor: strokeColor,
+            fillOpacity: fillOpacity,
             opacity: 0.9,
             dashArray: null
           };

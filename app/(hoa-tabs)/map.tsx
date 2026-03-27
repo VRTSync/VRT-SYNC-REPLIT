@@ -19,6 +19,9 @@ type MapLayerMeta = {
   displayName: string;
   version: number;
   color?: string;
+  strokeColor?: string;
+  strokeWeight?: number;
+  fillOpacity?: string;
   isEnabled?: boolean;
 };
 
@@ -99,13 +102,25 @@ export default function HoaMapScreen() {
   });
 
   const outlineLayer = React.useMemo(() => {
-    return allLayers.find(l => l.layerKey === 'outline' && l.subLayerKey === 'community_boundary' && l.isEnabled !== false) || null;
+    return allLayers.find((l: MapLayerMeta) => l.layerKey === 'outline' && l.isEnabled !== false) || null;
   }, [allLayers]);
 
-  const communityOutline = React.useMemo(() => {
+  const communityOutlineGeojson = React.useMemo(() => {
     if (!outlineLayer) return null;
     return loadedGeoJSON[outlineLayer.id] || null;
   }, [outlineLayer, loadedGeoJSON]);
+
+  const communityOutlineStyle = React.useMemo(() => {
+    if (!outlineLayer) return null;
+    const s: { strokeColor?: string; strokeWeight?: number; fillOpacity?: number } = {};
+    if (outlineLayer.strokeColor) s.strokeColor = outlineLayer.strokeColor;
+    if (outlineLayer.strokeWeight) s.strokeWeight = outlineLayer.strokeWeight;
+    if (outlineLayer.fillOpacity != null) {
+      const fo = parseFloat(outlineLayer.fillOpacity);
+      if (!isNaN(fo) && fo >= 0 && fo <= 1) s.fillOpacity = fo;
+    }
+    return Object.keys(s).length ? s : null;
+  }, [outlineLayer]);
 
   useEffect(() => {
     setMapReady(true);
@@ -380,7 +395,8 @@ export default function HoaMapScreen() {
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
         initialBounds={boundsData?.bounds ?? null}
-        communityOutline={communityOutline}
+        communityOutlineGeojson={communityOutlineGeojson}
+        communityOutlineStyle={communityOutlineStyle}
       />
 
       {showLayerPanel && (

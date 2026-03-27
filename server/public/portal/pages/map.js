@@ -56,6 +56,9 @@ PortalRouter.register('map', async function (container) {
   let controllerData = [];
   let activeColorPicker = null;
   let sessionColorOverrides = {};
+  let _outlineGeojson = null;
+  let _outlineStyle = null;
+  let _showCommunityOutline = true;
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
@@ -143,7 +146,17 @@ PortalRouter.register('map', async function (container) {
     if (!el) return;
     const subs = LAYER_HIERARCHY[activeCategory] || [];
     const isAdmin = role === 'admin';
-    el.innerHTML = subs.map(sub => {
+
+    const outlineColor = (_outlineStyle && _outlineStyle.strokeColor) || '#0C1D31';
+    const outlineRow = _outlineGeojson ? `
+      <label class="mlp-sublayer-row" style="border-bottom:1px solid #eef1f5;margin-bottom:6px;padding-bottom:6px">
+        <input type="checkbox" id="mlp-outline-toggle" ${_showCommunityOutline ? 'checked' : ''}>
+        <span class="mlp-sub-dot" style="background:${outlineColor};border-radius:2px"></span>
+        <span class="mlp-sub-label">Community Outline</span>
+      </label>
+    ` : '';
+
+    el.innerHTML = outlineRow + subs.map(sub => {
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
       const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
       const swatchBtn = isAdmin
@@ -157,7 +170,16 @@ PortalRouter.register('map', async function (container) {
         </label>
       `;
     }).join('');
-    el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+
+    const outlineToggle = document.getElementById('mlp-outline-toggle');
+    if (outlineToggle) {
+      outlineToggle.addEventListener('change', () => {
+        _showCommunityOutline = outlineToggle.checked;
+        cmdToIframe('setCommunityOutline', _showCommunityOutline ? _outlineGeojson : null, _outlineStyle);
+      });
+    }
+
+    el.querySelectorAll('input[type="checkbox"]:not(#mlp-outline-toggle)').forEach(cb => {
       cb.addEventListener('change', () => {
         sublayerState[cb.dataset.cat][cb.dataset.key] = cb.checked;
         syncVisibleLayers();
@@ -445,14 +467,33 @@ PortalRouter.register('map', async function (container) {
     }
   }
 
+  function buildOutlineStyle(layer) {
+    if (!layer) return null;
+    const s = {};
+    if (layer.strokeColor) s.strokeColor = layer.strokeColor;
+    if (layer.strokeWeight) s.strokeWeight = layer.strokeWeight;
+    if (layer.fillOpacity != null) {
+      const fo = parseFloat(layer.fillOpacity);
+      if (!isNaN(fo) && fo >= 0 && fo <= 1) s.fillOpacity = fo;
+    }
+    return Object.keys(s).length ? s : null;
+  }
+
   function loadCommunityOutline() {
-    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
+    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson && l.isEnabled !== false);
     if (outlineLayer) {
-      cmdToIframe('setCommunityOutline', outlineLayer._geojson);
+      _outlineGeojson = outlineLayer._geojson;
+      _outlineStyle = buildOutlineStyle(outlineLayer);
+      if (_showCommunityOutline) {
+        cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
+      }
       cmdToIframe('fitToOutline');
     } else {
+      _outlineGeojson = null;
+      _outlineStyle = null;
       cmdToIframe('setCommunityOutline', null);
     }
+    renderSublayers();
   }
 
   function getSessionColorOverride(cat, subKey) {

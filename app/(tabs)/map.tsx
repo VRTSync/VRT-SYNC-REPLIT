@@ -21,6 +21,10 @@ type MapLayerMeta = {
   displayName: string;
   version: number;
   color?: string;
+  strokeColor?: string;
+  strokeWeight?: number;
+  fillOpacity?: string;
+  isEnabled?: boolean;
 };
 
 type ControllerInfo = {
@@ -70,6 +74,7 @@ export default function MapScreen() {
   const [showControllerLayer, setShowControllerLayer] = useState(true);
   const [showZoneLayer, setShowZoneLayer] = useState(true);
   const [dismissedOfflineBanner, setDismissedOfflineBanner] = useState(false);
+  const [showCommunityOutline, setShowCommunityOutline] = useState(true);
 
   const communityId = activeCommunity?.id;
   const useOfflineData = !isOnline && !!localPack;
@@ -126,6 +131,28 @@ export default function MapScreen() {
   }, [useOfflineData, localPack]);
 
   const allLayers = useOfflineData ? offlineLayers : onlineLayers;
+
+  const outlineLayer = React.useMemo(() => {
+    return onlineLayers.find(l => l.layerKey === 'outline' && l.isEnabled !== false) || null;
+  }, [onlineLayers]);
+
+  const communityOutlineGeojson = React.useMemo(() => {
+    if (!outlineLayer) return null;
+    return loadedGeoJSON[outlineLayer.id] || null;
+  }, [outlineLayer, loadedGeoJSON]);
+
+  const communityOutlineStyle = React.useMemo(() => {
+    if (!outlineLayer) return null;
+    const s: { strokeColor?: string; strokeWeight?: number; fillOpacity?: number } = {};
+    if (outlineLayer.strokeColor) s.strokeColor = outlineLayer.strokeColor;
+    if (outlineLayer.strokeWeight) s.strokeWeight = outlineLayer.strokeWeight;
+    if (outlineLayer.fillOpacity != null) {
+      const fo = parseFloat(outlineLayer.fillOpacity);
+      if (!isNaN(fo) && fo >= 0 && fo <= 1) s.fillOpacity = fo;
+    }
+    return Object.keys(s).length ? s : null;
+  }, [outlineLayer]);
+
   useEffect(() => {
     if (params.targetLat && params.targetLng) {
       const lat = parseFloat(params.targetLat);
@@ -456,6 +483,8 @@ export default function MapScreen() {
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
         initialBounds={boundsData?.bounds ?? null}
+        communityOutlineGeojson={showCommunityOutline ? communityOutlineGeojson : null}
+        communityOutlineStyle={communityOutlineStyle}
       />
 
       {showLayerPanel && (
@@ -467,11 +496,23 @@ export default function MapScreen() {
               );
               const hasLayers = catLayers.length > 0;
               const hasControllers = activeCategory === 'irrigation' && controllers.length > 0;
-              if (!hasLayers && !hasControllers) {
+              if (!hasLayers && !hasControllers && !communityOutlineGeojson) {
                 return <Text style={styles.layerPanelEmpty}>No layers available for this category.</Text>;
               }
+              const outlineColor = (communityOutlineStyle?.strokeColor) || '#0C1D31';
               return (
                 <>
+                  {communityOutlineGeojson && (
+                    <View style={[styles.layerToggleRow, { borderBottomWidth: 1, borderBottomColor: '#eee', marginBottom: 4, paddingBottom: 4 }]}>
+                      <View style={[styles.layerColorDot, { backgroundColor: outlineColor, borderRadius: 2 }]} />
+                      <Text style={styles.layerToggleName}>Community Outline</Text>
+                      <Switch
+                        value={showCommunityOutline}
+                        onValueChange={(v) => setShowCommunityOutline(v)}
+                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                      />
+                    </View>
+                  )}
                   {catLayers.map((layer, idx) => (
                     <View key={layer.id} style={styles.layerToggleRow}>
                       <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
