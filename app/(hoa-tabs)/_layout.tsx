@@ -6,6 +6,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 import React from "react";
 
+// NativeTabs (expo-router v6) uses a navigator pattern that automatically renders
+// screen content via its internal NativeTabsView — no separate Slot component is needed.
+// Only NativeTabs.Trigger children are required here to configure the tab bar items.
 function NativeHoaTabLayout() {
   return (
     <NativeTabs>
