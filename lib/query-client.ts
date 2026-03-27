@@ -5,11 +5,16 @@ import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
  * @returns {string} The API base URL
  */
+const PRODUCTION_DOMAIN = "vrt-sync-mobile.replit.app";
+
 export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+    if (__DEV__) {
+      throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+    }
+    host = PRODUCTION_DOMAIN;
   }
 
   let url = new URL(`https://${host}`);
