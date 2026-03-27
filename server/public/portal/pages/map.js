@@ -56,10 +56,6 @@ PortalRouter.register('map', async function (container) {
   let controllerData = [];
   let activeColorPicker = null;
   let sessionColorOverrides = {};
-  let _communityBoundsCache = null;
-  let _outlineGeojson = null;
-  let _outlineStyle = null;
-  let _showCommunityOutline = true;
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
@@ -147,21 +143,7 @@ PortalRouter.register('map', async function (container) {
     if (!el) return;
     const subs = LAYER_HIERARCHY[activeCategory] || [];
     const isAdmin = role === 'admin';
-    const hasOutline = !!_outlineGeojson;
-
-    let outlineHtml = '';
-    if (hasOutline) {
-      const outlineChecked = _showCommunityOutline ? 'checked' : '';
-      outlineHtml = `
-        <label class="mlp-sublayer-row" style="border-bottom:1px solid #eef1f5;margin-bottom:6px;padding-bottom:6px">
-          <input type="checkbox" id="mlp-outline-toggle" ${outlineChecked}>
-          <span class="mlp-sub-dot" style="background:#0C1D31;border-radius:2px"></span>
-          <span class="mlp-sub-label">Community Outline</span>
-        </label>
-      `;
-    }
-
-    el.innerHTML = outlineHtml + subs.map(sub => {
+    el.innerHTML = subs.map(sub => {
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
       const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
       const swatchBtn = isAdmin
@@ -175,22 +157,7 @@ PortalRouter.register('map', async function (container) {
         </label>
       `;
     }).join('');
-
-    if (hasOutline) {
-      const outlineToggle = document.getElementById('mlp-outline-toggle');
-      if (outlineToggle) {
-        outlineToggle.addEventListener('change', () => {
-          _showCommunityOutline = outlineToggle.checked;
-          if (_showCommunityOutline) {
-            cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
-          } else {
-            cmdToIframe('setCommunityOutline', null);
-          }
-        });
-      }
-    }
-
-    el.querySelectorAll('input[type="checkbox"]:not(#mlp-outline-toggle)').forEach(cb => {
+    el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', () => {
         sublayerState[cb.dataset.cat][cb.dataset.key] = cb.checked;
         syncVisibleLayers();
@@ -401,12 +368,6 @@ PortalRouter.register('map', async function (container) {
           }
         });
         loadCommunity(community.id);
-      } else if (msg.type === 'fitToContentResult') {
-        if (!msg.data || !msg.data.hadContent) {
-          if (_communityBoundsCache && _communityBoundsCache.length > 0) {
-            cmdToIframe('fitBounds', _communityBoundsCache);
-          }
-        }
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
       }
@@ -444,25 +405,27 @@ PortalRouter.register('map', async function (container) {
     });
     renderCategories();
     renderSublayers();
+
     cmdToIframe('clearIrrigation');
+
+    try {
+      const bounds = await apiFetch(`/api/communities/${communityId}/bounds`);
+      if (bounds && bounds.bounds && bounds.bounds.length > 0) {
+        cmdToIframe('fitBounds', bounds.bounds);
+      }
+    } catch (err) {
+      console.error('Failed to load community bounds:', err);
+    }
   }
 
   async function loadMapData() {
-    const loadCommunityId = community.id;
     try {
-      const [layers, controllers, boundsResult] = await Promise.all([
+      const [layers, controllers] = await Promise.all([
         apiFetch(`/api/map-layers?communityId=${community.id}`),
         apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),
-        apiFetch(`/api/communities/${community.id}/bounds`).catch(() => null),
       ]);
-
-      if (PortalState.getActiveCommunity().id !== loadCommunityId) return;
-
       mapLayers = layers || [];
       controllerData = controllers || [];
-      if (boundsResult && boundsResult.bounds && boundsResult.bounds.length > 0) {
-        _communityBoundsCache = boundsResult.bounds;
-      }
 
       for (const layer of mapLayers) {
         try {
@@ -472,9 +435,6 @@ PortalRouter.register('map', async function (container) {
           }
         } catch (_) {}
       }
-
-      if (PortalState.getActiveCommunity().id !== loadCommunityId) return;
-
       pushLayersToIframe();
       pushIrrigationToIframe();
       syncVisibleLayers();
@@ -485,40 +445,14 @@ PortalRouter.register('map', async function (container) {
     }
   }
 
-  function buildOutlineStyle(outlineLayer) {
-    if (!outlineLayer) return null;
-    const style = {};
-    if (outlineLayer.strokeColor) style.strokeColor = outlineLayer.strokeColor;
-    if (outlineLayer.strokeWeight) style.strokeWeight = outlineLayer.strokeWeight;
-    if (outlineLayer.fillOpacity != null) {
-      const fo = parseFloat(outlineLayer.fillOpacity);
-      if (!isNaN(fo) && fo >= 0 && fo <= 1) style.fillOpacity = fo;
-    }
-    return Object.keys(style).length ? style : null;
-  }
-
   function loadCommunityOutline() {
-    const activeCommunityId = PortalState.getActiveCommunity().id;
-    const outlineLayers = mapLayers.filter(l => l.layerKey === 'outline');
-    if (outlineLayers.some(l => l.communityId !== activeCommunityId)) return;
-
-    const outlineLayer = outlineLayers.find(l => l._geojson && l.isEnabled !== false);
+    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson);
     if (outlineLayer) {
-      _outlineGeojson = outlineLayer._geojson;
-      _outlineStyle = buildOutlineStyle(outlineLayer);
-      if (_showCommunityOutline) {
-        cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
-      }
+      cmdToIframe('setCommunityOutline', outlineLayer._geojson);
       cmdToIframe('fitToOutline');
     } else {
-      _outlineGeojson = null;
-      _outlineStyle = null;
       cmdToIframe('setCommunityOutline', null);
-      if (_communityBoundsCache && _communityBoundsCache.length > 0) {
-        cmdToIframe('fitBounds', _communityBoundsCache);
-      }
     }
-    renderSublayers();
   }
 
   function getSessionColorOverride(cat, subKey) {
