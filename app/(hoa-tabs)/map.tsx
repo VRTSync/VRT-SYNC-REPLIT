@@ -68,6 +68,7 @@ export default function HoaMapScreen() {
   const [enabledControllers, setEnabledControllers] = useState<Set<string>>(new Set());
   const [showControllerLayer, setShowControllerLayer] = useState(true);
   const [showZoneLayer, setShowZoneLayer] = useState(true);
+  const [showCommunityOutline, setShowCommunityOutline] = useState(true);
 
   const communityId = activeCommunity?.id;
 
@@ -395,7 +396,7 @@ export default function HoaMapScreen() {
         activeCategory={activeCategory}
         fitToContentKey={fitToContentKey}
         initialBounds={boundsData?.bounds ?? null}
-        communityOutlineGeojson={communityOutlineGeojson}
+        communityOutlineGeojson={showCommunityOutline ? communityOutlineGeojson : null}
         communityOutlineStyle={communityOutlineStyle}
       />
 
@@ -408,11 +409,23 @@ export default function HoaMapScreen() {
               );
               const hasLayers = catLayers.length > 0;
               const hasControllers = activeCategory === 'irrigation' && controllers.length > 0;
-              if (!hasLayers && !hasControllers) {
+              if (!hasLayers && !hasControllers && !communityOutlineGeojson) {
                 return <Text style={styles.layerPanelEmpty}>No layers available for this category.</Text>;
               }
+              const outlineColor = (communityOutlineStyle?.strokeColor) || '#0C1D31';
               return (
                 <>
+                  {communityOutlineGeojson && (
+                    <View style={styles.layerToggleRow}>
+                      <View style={[styles.layerColorDot, { backgroundColor: outlineColor, borderRadius: 2 }]} />
+                      <Text style={styles.layerToggleName} numberOfLines={1}>Community Outline</Text>
+                      <Switch
+                        value={showCommunityOutline}
+                        onValueChange={(v) => setShowCommunityOutline(v)}
+                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                      />
+                    </View>
+                  )}
                   {catLayers.map((layer, idx) => (
                     <View key={layer.id} style={styles.layerToggleRow}>
                       <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
