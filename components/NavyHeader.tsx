@@ -1,11 +1,7 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-type Community = {
-  id: string;
-  name: string;
-};
+import type { Community } from '@/client/contexts/CommunityContext';
 
 type NavyHeaderProps = {
   communityName: string;

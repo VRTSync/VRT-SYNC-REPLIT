@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, typ
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 
-type Community = {
+export type Community = {
   id: string;
   name: string;
   description: string | null;

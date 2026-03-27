@@ -531,7 +531,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   });
 
   post('mapReady', {});
-  var _readyRetries = [100, 300, 800, 1500];
+  var _readyRetries = [100, 300, 800, 1500, 3000, 5000];
   _readyRetries.forEach(function(delay) {
     setTimeout(function() { post('mapReady', {}); }, delay);
   });

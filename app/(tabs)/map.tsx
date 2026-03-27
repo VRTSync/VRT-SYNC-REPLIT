@@ -130,7 +130,8 @@ export default function MapScreen() {
     }));
   }, [useOfflineData, localPack]);
 
-  const allLayers = useOfflineData ? offlineLayers : onlineLayers;
+  const allLayersRaw = useOfflineData ? offlineLayers : onlineLayers;
+  const allLayers = React.useMemo(() => allLayersRaw.filter(l => l.layerKey !== 'outline'), [allLayersRaw]);
 
   const outlineLayer = React.useMemo(() => {
     return onlineLayers.find(l => l.layerKey === 'outline' && l.isEnabled !== false) || null;
@@ -224,6 +225,12 @@ export default function MapScreen() {
       }
     });
   }, [allLayers, fetchGeoJSON]);
+
+  useEffect(() => {
+    if (outlineLayer && !loadedGeoJSONRef.current[outlineLayer.id] && !loadingGeoJSONRef.current.has(outlineLayer.id)) {
+      fetchGeoJSON(outlineLayer.id);
+    }
+  }, [outlineLayer, fetchGeoJSON]);
 
   const toggleLayer = (id: string) => {
     setDisabledLayerIds((prev) => {

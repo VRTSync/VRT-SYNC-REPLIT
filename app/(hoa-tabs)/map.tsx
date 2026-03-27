@@ -93,7 +93,7 @@ export default function HoaMapScreen() {
     }
   }, [controllers.length]);
 
-  const { data: allLayers = [] } = useQuery<MapLayerMeta[]>({
+  const { data: allLayersRaw = [] } = useQuery<MapLayerMeta[]>({
     queryKey: ['/api/map-layers', { communityId }],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/map-layers?communityId=${communityId}`);
@@ -102,9 +102,11 @@ export default function HoaMapScreen() {
     enabled: !!communityId,
   });
 
+  const allLayers = React.useMemo(() => allLayersRaw.filter((l: MapLayerMeta) => l.layerKey !== 'outline'), [allLayersRaw]);
+
   const outlineLayer = React.useMemo(() => {
-    return allLayers.find((l: MapLayerMeta) => l.layerKey === 'outline' && l.isEnabled !== false) || null;
-  }, [allLayers]);
+    return allLayersRaw.find((l: MapLayerMeta) => l.layerKey === 'outline' && l.isEnabled !== false) || null;
+  }, [allLayersRaw]);
 
   const communityOutlineGeojson = React.useMemo(() => {
     if (!outlineLayer) return null;
@@ -176,6 +178,12 @@ export default function HoaMapScreen() {
       }
     });
   }, [allLayers, fetchGeoJSON]);
+
+  useEffect(() => {
+    if (outlineLayer && !loadedGeoJSONRef.current[outlineLayer.id] && !loadingGeoJSONRef.current.has(outlineLayer.id)) {
+      fetchGeoJSON(outlineLayer.id);
+    }
+  }, [outlineLayer, fetchGeoJSON]);
 
   const toggleLayer = (id: string) => {
     setDisabledLayerIds((prev) => {

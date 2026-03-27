@@ -107,6 +107,7 @@ export default function LeafletMap({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const mapReadyRef = useRef(false);
   const pendingRef = useRef<{ fn: string; args: any[] }[]>([]);
+  const outlineEverSentRef = useRef(false);
   const onViewAssetDetailRef = useRef(onViewAssetDetail);
   onViewAssetDetailRef.current = onViewAssetDetail;
   const onTargetReachedRef = useRef(onTargetReached);
@@ -287,6 +288,8 @@ export default function LeafletMap({
   }, [targetRegion, sendCmd]);
 
   useEffect(() => {
+    if (communityOutlineGeojson == null && !outlineEverSentRef.current) return;
+    if (communityOutlineGeojson != null) outlineEverSentRef.current = true;
     sendCmd('setCommunityOutline', communityOutlineGeojson ?? null, communityOutlineStyle ?? null);
   }, [communityOutlineGeojson, communityOutlineStyle, sendCmd]);
 
