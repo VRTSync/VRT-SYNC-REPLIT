@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { subtitleStyles } from '@/components/NavyHeader';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -54,23 +55,24 @@ export default function NotificationBell() {
       style={styles.bellBtn}
       testID="notification-bell"
     >
-      <Animated.View style={animatedStyle}>
-        <Ionicons name="notifications-outline" size={22} color="#fff" />
-      </Animated.View>
-      {count > 0 && (
-        <View style={styles.badgeOuter}>
-          <View style={styles.badgeInner}>
-            <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+      <View style={subtitleStyles.headerIconBtn}>
+        <Animated.View style={animatedStyle}>
+          <Ionicons name="notifications-outline" size={20} color="#0C1D31" />
+        </Animated.View>
+        {count > 0 && (
+          <View style={styles.badgeOuter}>
+            <View style={styles.badgeInner}>
+              <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
+            </View>
           </View>
-        </View>
-      )}
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   bellBtn: {
-    padding: 8,
     position: 'relative' as const,
   },
   badgeOuter: {
