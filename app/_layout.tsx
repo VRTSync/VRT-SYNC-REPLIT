@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
+import * as Updates from "expo-updates";
 import React, { useEffect, useRef } from "react";
 import { Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -149,6 +150,20 @@ function AuthNavigator() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    if (__DEV__ || Platform.OS === 'web') return;
+    (async () => {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+      }
+    })();
+  }, []);
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
