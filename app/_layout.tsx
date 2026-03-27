@@ -173,6 +173,7 @@ export default function RootLayout() {
             },
           }}
           onSuccess={() => setCacheRestored(true)}
+          onError={() => setCacheRestored(true)}
         >
           <GestureHandlerRootView>
             <KeyboardProvider>
