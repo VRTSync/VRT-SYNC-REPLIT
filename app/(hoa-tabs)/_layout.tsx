@@ -1,10 +1,39 @@
+import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
+import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, useColorScheme } from "react-native";
 import React from "react";
 
-export default function HoaTabLayout() {
+function NativeHoaTabLayout() {
+  return (
+    <NativeTabs>
+      <NativeTabs.Trigger name="index">
+        <Icon sf={{ default: "house", selected: "house.fill" }} />
+        <Label>Dashboard</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="calendar">
+        <Icon sf={{ default: "checklist", selected: "checklist" }} />
+        <Label>Tasks</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="map">
+        <Icon sf={{ default: "map", selected: "map.fill" }} />
+        <Label>Map</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="requests">
+        <Icon sf={{ default: "doc.text", selected: "doc.text.fill" }} />
+        <Label>Requests</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+        <Label>Settings</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
+  );
+}
+
+function ClassicHoaTabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
 
@@ -82,4 +111,11 @@ export default function HoaTabLayout() {
       />
     </Tabs>
   );
+}
+
+export default function HoaTabLayout() {
+  if (isLiquidGlassAvailable()) {
+    return <NativeHoaTabLayout />;
+  }
+  return <ClassicHoaTabLayout />;
 }
