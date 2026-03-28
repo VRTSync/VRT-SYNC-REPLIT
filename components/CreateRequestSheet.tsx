@@ -21,6 +21,8 @@ type Props = {
   onClose: () => void;
   assetId?: string;
   assetName?: string;
+  assetLat?: number;
+  assetLng?: number;
 };
 
 const CATEGORIES = ['Irrigation', 'Landscape', 'Snow', 'Other'] as const;
@@ -78,7 +80,41 @@ function generatePinPickerHTML(lat: number, lng: number): string {
 </html>`;
 }
 
-export default function CreateRequestSheet({ visible, onClose, assetId, assetName }: Props) {
+function generateReadOnlyMapHTML(lat: number, lng: number): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #map { width: 100%; height: 100%; }
+  .pin-icon {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #25C1AC; border: 3px solid #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  var map = L.map('map', { zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false })
+    .setView([${lat}, ${lng}], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  L.marker([${lat}, ${lng}], {
+    icon: L.divIcon({ html: '<div class="pin-icon"></div>', className: '', iconSize: [24,24], iconAnchor: [12,12] })
+  }).addTo(map);
+  setTimeout(function() { map.invalidateSize(); }, 200);
+})();
+</script>
+</body>
+</html>`;
+}
+
+export default function CreateRequestSheet({ visible, onClose, assetId, assetName, assetLat, assetLng }: Props) {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { activeCommunity } = useCommunity();
@@ -104,7 +140,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
     enabled: visible && !!communityId && !assetId,
   });
 
-  const { data: membersData } = useQuery<any[]>({
+  const { data: membersData, isError: membersError } = useQuery<any[]>({
     queryKey: [`/api/communities/${communityId}/members`],
     enabled: visible && !!communityId,
   });
@@ -392,9 +428,24 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
             </View>
           </View>
 
-          {contractors.length > 0 && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Assign To (optional)</Text>
+          <View style={styles.field}>
+            <Text style={styles.label}>Assign To (optional)</Text>
+            {membersError ? (
+              <View style={styles.contractorEmpty}>
+                <Ionicons name="alert-circle-outline" size={16} color="#e74c3c" />
+                <Text style={[styles.contractorEmptyText, { color: '#e74c3c', fontStyle: 'normal' as const }]}>Could not load members</Text>
+              </View>
+            ) : membersData === undefined ? (
+              <View style={styles.contractorLoading}>
+                <ActivityIndicator size="small" color="#25C1AC" />
+                <Text style={styles.contractorLoadingText}>Loading members...</Text>
+              </View>
+            ) : contractors.length === 0 ? (
+              <View style={styles.contractorEmpty}>
+                <Ionicons name="person-outline" size={16} color="#999" />
+                <Text style={styles.contractorEmptyText}>No contractors assigned to this community yet</Text>
+              </View>
+            ) : (
               <View style={styles.contractorList}>
                 <TouchableOpacity
                   style={[styles.contractorChip, !assignedTo && styles.contractorChipActive]}
@@ -421,8 +472,8 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
-          )}
+            )}
+          </View>
 
           <View style={styles.field}>
             <Text style={styles.label}>Photos (optional)</Text>
@@ -460,13 +511,32 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
           <View style={styles.field}>
             <Text style={styles.label}>Location</Text>
             {assetId ? (
-              <View style={styles.assetLocationBox}>
-                <Ionicons name="location" size={18} color="#25C1AC" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.assetLocationName}>{assetName || 'Selected Asset'}</Text>
-                  <Text style={styles.assetLocationNote}>Location from asset</Text>
+              <>
+                <View style={styles.assetLocationBox}>
+                  <Ionicons name="location" size={18} color="#25C1AC" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.assetLocationName}>{assetName || 'Selected Asset'}</Text>
+                    <Text style={styles.assetLocationNote}>Location from asset</Text>
+                  </View>
                 </View>
-              </View>
+                {assetLat != null && assetLng != null && (
+                  <View style={[styles.mapContainer, { marginTop: 10 }]}>
+                    {isWeb ? (
+                      <iframe
+                        srcDoc={generateReadOnlyMapHTML(assetLat, assetLng)}
+                        style={{ width: '100%', height: 200, border: 'none', borderRadius: 12 }}
+                      />
+                    ) : WebView ? (
+                      <WebView
+                        source={{ html: generateReadOnlyMapHTML(assetLat, assetLng) }}
+                        style={styles.mapWebView}
+                        scrollEnabled={false}
+                        javaScriptEnabled
+                      />
+                    ) : null}
+                  </View>
+                )}
+              </>
             ) : (
               <View style={styles.mapContainer}>
                 {pinLat !== null && pinLng !== null && (
@@ -531,9 +601,9 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   submitBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#25C1AC',
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
@@ -680,6 +750,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#25C1AC',
     fontWeight: '500' as const,
+  },
+  contractorLoading: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  contractorLoadingText: {
+    fontSize: 13,
+    color: '#999',
+  },
+  contractorEmpty: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  contractorEmptyText: {
+    fontSize: 13,
+    color: '#999',
+    fontStyle: 'italic' as const,
   },
   contractorList: {
     flexDirection: 'row' as const,

@@ -804,6 +804,8 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           onClose={() => setShowCreateRequest(false)}
           assetId={assetId}
           assetName={asset?.label}
+          assetLat={asset?.latitude ?? undefined}
+          assetLng={asset?.longitude ?? undefined}
         />
       </View>
     </Modal>
