@@ -269,10 +269,20 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         body.pinLat = pinLat;
         body.pinLng = pinLng;
       }
-      const response = await apiRequest('POST', '/api/hoa/requests', body);
-      const result = await response.json();
 
-      if (photos.length > 0 && result?.id) {
+      let result: any;
+      try {
+        const response = await apiRequest('POST', '/api/hoa/requests', body);
+        result = await response.json();
+      } catch (e: any) {
+        throw new Error(e.message || 'Failed to submit request. Please try again.');
+      }
+
+      if (!result?.id) {
+        throw new Error('Server returned an unexpected response. Please try again.');
+      }
+
+      if (photos.length > 0) {
         const apiUrl = getApiUrl();
         for (let i = 0; i < photos.length; i++) {
           setUploadProgress(`Uploading photo ${i + 1} of ${photos.length}...`);
@@ -318,7 +328,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
 
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/hoa'] });
-      Alert.alert('Success', 'Your request has been submitted.');
+      queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
       handleClose();
     } catch (e: any) {
       setError(e.message || 'Failed to submit request');
@@ -338,17 +348,6 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
             <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>New Request</Text>
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={submitting}
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Ionicons name="checkmark" size={24} color="#fff" />
-            )}
-          </TouchableOpacity>
         </View>
 
         <KeyboardAwareScrollViewCompat contentContainerStyle={styles.formContent} bottomOffset={60}>
@@ -570,6 +569,21 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
             )}
           </View>
         </KeyboardAwareScrollViewCompat>
+
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Platform.OS === 'web' ? 34 : 16) }]}>
+          <TouchableOpacity
+            style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+            onPress={handleSubmit}
+            disabled={submitting}
+            activeOpacity={0.85}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.submitButtonText}>Submit Request</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </Modal>
   );
@@ -581,8 +595,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0C1D31',
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 14,
     gap: 12,
   },
@@ -596,24 +610,37 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700' as const,
     color: '#fff',
   },
-  submitBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#25C1AC',
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
-  submitBtnDisabled: {
-    opacity: 0.5,
-  },
   formContent: {
     padding: 20,
-    paddingBottom: 60,
+    paddingBottom: 20,
+  },
+  footer: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e0e0e0',
+  },
+  submitButton: {
+    backgroundColor: '#25C1AC',
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    minHeight: 54,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#fff',
+    letterSpacing: 0.3,
   },
   errorBanner: {
     flexDirection: 'row' as const,
