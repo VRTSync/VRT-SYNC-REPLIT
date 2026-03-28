@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Circle } from 'react-native-svg';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { subtitleStyles } from '@/components/NavyHeader';
@@ -12,6 +12,41 @@ import Animated, {
   withRepeat,
   Easing,
 } from 'react-native-reanimated';
+
+function BellIcon({ hasNotifications }: { hasNotifications: boolean }) {
+  const color = '#0C1D31';
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      {hasNotifications ? (
+        <>
+          <Path
+            d="M12 2a1 1 0 0 1 1 1v.55A7 7 0 0 1 19 10.5v3.17l1.7 2.55A1 1 0 0 1 19.87 18H4.13a1 1 0 0 1-.83-1.55L5 13.67V10.5A7 7 0 0 1 11 3.55V3a1 1 0 0 1 1-1Z"
+            fill={color}
+          />
+          <Path
+            d="M9.27 20a3 3 0 0 0 5.46 0H9.27Z"
+            fill={color}
+          />
+          <Circle cx={18} cy={5} r={4} fill="#25C1AC" />
+        </>
+      ) : (
+        <>
+          <Path
+            d="M12 2a1 1 0 0 1 1 1v.55A7 7 0 0 1 19 10.5v3.17l1.7 2.55A1 1 0 0 1 19.87 18H4.13a1 1 0 0 1-.83-1.55L5 13.67V10.5A7 7 0 0 1 11 3.55V3a1 1 0 0 1 1-1Z"
+            fill="none"
+            stroke={color}
+            strokeWidth={1.8}
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M9.27 20a3 3 0 0 0 5.46 0H9.27Z"
+            fill={color}
+          />
+        </>
+      )}
+    </Svg>
+  );
+}
 
 export default function NotificationBell() {
   const router = useRouter();
@@ -57,13 +92,11 @@ export default function NotificationBell() {
     >
       <View style={subtitleStyles.headerIconBtn}>
         <Animated.View style={animatedStyle}>
-          <Ionicons name="notifications-outline" size={20} color="#0C1D31" />
+          <BellIcon hasNotifications={count > 0} />
         </Animated.View>
         {count > 0 && (
-          <View style={styles.badgeOuter}>
-            <View style={styles.badgeInner}>
-              <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
-            </View>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{count > 99 ? '99+' : count}</Text>
           </View>
         )}
       </View>
@@ -75,30 +108,24 @@ const styles = StyleSheet.create({
   bellBtn: {
     position: 'relative' as const,
   },
-  badgeOuter: {
+  badge: {
     position: 'absolute' as const,
-    top: 2,
-    right: 2,
-    width: 18,
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 9,
+    minWidth: 18,
     height: 18,
+    paddingHorizontal: 4,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    transform: [{ rotate: '30deg' }],
-  },
-  badgeInner: {
-    backgroundColor: '#25C1AC',
-    borderRadius: 5,
-    minWidth: 14,
-    minHeight: 14,
-    paddingHorizontal: 2,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    transform: [{ rotate: '-30deg' }],
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   badgeText: {
     color: '#fff',
     fontSize: 9,
-    fontWeight: '700' as const,
-    lineHeight: 12,
+    fontWeight: '800' as const,
+    lineHeight: 11,
   },
 });

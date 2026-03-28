@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Platform,
+  View, Text, StyleSheet, SectionList, TouchableOpacity,
+  ActivityIndicator, RefreshControl, Platform, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -23,11 +24,48 @@ type NotificationItem = {
   readAt: string | null;
 };
 
+type Section = {
+  title: string;
+  data: NotificationItem[];
+};
+
 const TYPE_ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
   TASK_COMPLETED: { name: 'checkmark-circle', color: '#4caf50' },
   HOA_REQUEST_COMPLETED: { name: 'checkmark-done-circle', color: '#25C1AC' },
   HOA_REQUEST_SUBMITTED: { name: 'mail-unread', color: '#3498db' },
 };
+
+function getDateLabel(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const itemDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  if (itemDay.getTime() === today.getTime()) return 'Today';
+  if (itemDay.getTime() === yesterday.getTime()) return 'Yesterday';
+  const isCurrentYear = date.getFullYear() === now.getFullYear();
+  return isCurrentYear
+    ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+    : date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+function groupByDate(notifications: NotificationItem[]): Section[] {
+  const groups: Record<string, NotificationItem[]> = {};
+  const order: string[] = [];
+
+  for (const n of notifications) {
+    const label = getDateLabel(n.createdAt);
+    if (!groups[label]) {
+      groups[label] = [];
+      order.push(label);
+    }
+    groups[label].push(n);
+  }
+
+  return order.map(label => ({ title: label, data: groups[label] }));
+}
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -42,6 +80,73 @@ function timeAgo(dateStr: string): string {
   if (days < 7) return `${days}d ago`;
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+function EmptyBellIllustration() {
+  return (
+    <Svg width={100} height={100} viewBox="0 0 100 100" fill="none">
+      <Circle cx={50} cy={50} r={48} fill="#EEF2F8" />
+      <Path
+        d="M50 18a3 3 0 0 1 3 3v1.8A20 20 0 0 1 70 42v10l5.2 7.8A2.5 2.5 0 0 1 73 64H27a2.5 2.5 0 0 1-2.2-4.2L30 52V42A20 20 0 0 1 47 22.8V21a3 3 0 0 1 3-3Z"
+        fill="#C9D6E8"
+      />
+      <Path
+        d="M44 64a6 6 0 0 0 12 0H44Z"
+        fill="#B0BDD0"
+      />
+      <Circle cx={68} cy={30} r={8} fill="#E0E6EF" />
+      <Ellipse cx={50} cy={50} rx={18} ry={3} fill="rgba(0,0,0,0.06)" />
+    </Svg>
+  );
+}
+
+function EmptyState() {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 1400, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1400, useNativeDriver: true }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  return (
+    <View style={emptyStyles.container}>
+      <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+        <EmptyBellIllustration />
+      </Animated.View>
+      <Text style={emptyStyles.headline}>You're all caught up</Text>
+      <Text style={emptyStyles.subtitle}>No new notifications right now.{'\n'}Check back later for updates.</Text>
+    </View>
+  );
+}
+
+const emptyStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+  },
+  headline: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0C1D31',
+    marginTop: 24,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#8A9BB0',
+    marginTop: 10,
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+});
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
@@ -119,13 +224,20 @@ export default function NotificationsScreen() {
     );
   }, [handleTapNotification]);
 
+  const renderSectionHeader = useCallback(({ section }: { section: Section }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+    </View>
+  ), []);
+
   const hasUnread = notifications?.some(n => !n.readAt);
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const sections = groupByDate(notifications || []);
 
   return (
     <View style={styles.container}>
       <StatusBarFill />
-      <View style={[styles.header, { paddingTop: topPad + 8 }]}>
+      <View style={[styles.header, { paddingTop: topPad + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} testID="notifications-back">
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -147,15 +259,19 @@ export default function NotificationsScreen() {
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#25C1AC" />
         </View>
+      ) : (notifications || []).length === 0 ? (
+        <EmptyState />
       ) : (
-        <FlatList
-          data={notifications || []}
+        <SectionList
+          sections={sections}
           renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
           keyExtractor={item => item.id}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: Platform.OS === 'web' ? 34 : insets.bottom + 20 },
           ]}
+          stickySectionHeadersEnabled={false}
           refreshControl={
             <RefreshControl
               refreshing={isRefetching}
@@ -164,13 +280,6 @@ export default function NotificationsScreen() {
               colors={['#25C1AC']}
             />
           }
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Ionicons name="notifications-off-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No notifications yet</Text>
-            </View>
-          }
-          scrollEnabled={(notifications?.length ?? 0) > 0}
         />
       )}
     </View>
@@ -184,7 +293,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#0C1D31',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -195,7 +304,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#fff',
   },
@@ -217,6 +326,19 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+  },
+  sectionHeader: {
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  sectionHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8A9BB0',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   notifCard: {
     flexDirection: 'row',
@@ -272,14 +394,5 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#25C1AC',
     marginLeft: 8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: 80,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#999',
-    marginTop: 12,
   },
 });
