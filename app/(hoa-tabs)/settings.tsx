@@ -14,14 +14,22 @@ export default function HoaSettingsScreen() {
 
   const roleLabel = user?.role === 'hoa_admin' ? 'HOA Admin' : 'HOA Member';
 
+  const doLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      Alert.alert('Error', 'Could not sign out. Please try again.');
+    }
+  };
+
   const handleLogout = () => {
     if (Platform.OS === 'web') {
-      logout();
+      doLogout();
       return;
     }
     Alert.alert('Log Out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: () => logout() },
+      { text: 'Log Out', style: 'destructive', onPress: doLogout },
     ]);
   };
 

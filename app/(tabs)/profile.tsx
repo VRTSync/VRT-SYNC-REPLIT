@@ -32,16 +32,24 @@ export default function ProfileScreen() {
     });
   }, []);
 
+  const doLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      Alert.alert('Error', 'Could not sign out. Please try again.');
+    }
+  };
+
   const handleLogout = () => {
     if (Platform.OS === 'web') {
       if (window.confirm('Are you sure you want to sign out?')) {
-        logout();
+        doLogout();
       }
       return;
     }
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
+      { text: 'Sign Out', style: 'destructive', onPress: doLogout },
     ]);
   };
 

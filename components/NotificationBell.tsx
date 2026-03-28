@@ -4,6 +4,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { subtitleStyles } from '@/components/NavyHeader';
+import { useAuth } from '@/client/contexts/AuthContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -50,10 +51,12 @@ function BellIcon({ hasNotifications }: { hasNotifications: boolean }) {
 
 export default function NotificationBell() {
   const router = useRouter();
+  const { user } = useAuth();
 
   const { data } = useQuery<{ count: number }>({
     queryKey: ['/api/notifications/unread-count'],
     refetchInterval: 30000,
+    enabled: !!user,
   });
 
   const count = data?.count ?? 0;

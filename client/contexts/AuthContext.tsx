@@ -120,7 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: bootstrap, isLoading } = useQuery<BootstrapPayload | null>({
     queryKey: ['/api/auth/me'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
+    refetchOnMount: true,
   });
 
   const user = bootstrap?.user ?? null;
@@ -173,9 +174,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await unregisterPushToken();
       await apiRequest('POST', '/api/auth/logout');
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+    onSuccess: async () => {
       queryClient.clear();
+      try {
+        await AsyncStorage.removeItem('vrt-sync-rq-cache');
+      } catch {}
     },
   });
 

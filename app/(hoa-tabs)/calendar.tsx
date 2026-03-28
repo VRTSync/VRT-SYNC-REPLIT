@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/query-client';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
@@ -122,8 +123,16 @@ export default function HoaTasksScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchVisible, setSearchVisible] = useState(false);
 
+  const communityId = activeCommunity?.id;
+
   const { data: tasks, isLoading, refetch } = useQuery<Task[]>({
-    queryKey: ['/api/tasks'],
+    queryKey: ['/api/tasks', { communityId }],
+    queryFn: async () => {
+      const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
+      const res = await apiRequest('GET', route);
+      return res.json();
+    },
+    enabled: !!communityId,
   });
 
   const today = getTodayDenver();
