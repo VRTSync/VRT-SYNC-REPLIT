@@ -270,27 +270,11 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         body.pinLng = pinLng;
       }
 
-      let result: any;
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-        let response: Response;
-        try {
-          response = await apiRequest('POST', '/api/hoa/requests', body, controller.signal);
-        } finally {
-          clearTimeout(timeoutId);
-        }
-        result = await response.json();
-      } catch (e: any) {
-        const isAbort = e.name === 'AbortError' || e instanceof DOMException || e?.code === 20;
-        if (isAbort) {
-          throw new Error('Request timed out. Please check your connection and try again.');
-        }
-        throw new Error(e.message || 'Failed to submit request. Please try again.');
-      }
+      const response = await apiRequest('POST', '/api/hoa/requests', body);
+      const result = await response.json();
 
       if (!result?.id) {
-        throw new Error('Server returned an unexpected response. Please try again.');
+        throw new Error(result?.error || 'Server returned an unexpected response. Please try again.');
       }
 
       if (photos.length > 0) {
@@ -342,7 +326,15 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
       queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
       handleClose();
     } catch (e: any) {
-      setError(e.message || 'Failed to submit request');
+      let msg = e.message || 'Failed to submit request';
+      try {
+        const match = msg.match(/^\d+:\s*(.*)/s);
+        if (match) {
+          const parsed = JSON.parse(match[1]);
+          msg = parsed.error || parsed.message || msg;
+        }
+      } catch {}
+      setError(msg);
     } finally {
       setSubmitting(false);
       setUploadProgress(null);
