@@ -120,8 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { data: bootstrap, isLoading } = useQuery<BootstrapPayload | null>({
     queryKey: ['/api/auth/me'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
-    staleTime: 5 * 60 * 1000,
-    refetchOnMount: true,
+    staleTime: Infinity,
   });
 
   const user = bootstrap?.user ?? null;

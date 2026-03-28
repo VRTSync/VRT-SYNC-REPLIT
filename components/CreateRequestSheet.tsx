@@ -270,7 +270,13 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         body.pinLng = pinLng;
       }
 
-      const response = await apiRequest('POST', '/api/hoa/requests', body);
+      const fetchTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timed out. Check your connection and try again.')), 45000)
+      );
+      const response = await Promise.race([
+        apiRequest('POST', '/api/hoa/requests', body),
+        fetchTimeout,
+      ]);
       const result = await response.json();
 
       if (!result?.id) {
