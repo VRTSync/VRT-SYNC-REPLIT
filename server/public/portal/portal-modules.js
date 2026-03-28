@@ -148,16 +148,24 @@ window.PortalModules = (function () {
   }
 
   function taskRow(task) {
-    const cls = classifyTask(task);
     const priority = task.priority || 'low';
     const isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
 
     let badge = '';
-    if (cls === 'overdue')  badge = `<span class="tr-badge tr-overdue">Overdue</span>`;
-    else if (cls === 'active') badge = `<span class="tr-badge tr-active">Active</span>`;
-    else if (task.status === 'submitted') badge = `<span class="tr-badge tr-new">New</span>`;
-    else if (task.status === 'acknowledged') badge = `<span class="tr-badge tr-acked">Acked</span>`;
-    else if (task.status === 'completed') badge = `<span class="tr-badge tr-done">Done</span>`;
+    if (isHoa) {
+      if (task.status === 'submitted') badge = `<span class="tr-badge tr-new">Submitted</span>`;
+      else if (task.status === 'acknowledged') badge = `<span class="tr-badge tr-acked">Acknowledged</span>`;
+      else if (task.status === 'in_progress') badge = `<span class="tr-badge tr-active">In Progress</span>`;
+      else if (task.status === 'completed') badge = `<span class="tr-badge tr-done">Completed</span>`;
+      else badge = `<span class="tr-badge tr-new">${esc(task.status || 'Submitted')}</span>`;
+    } else {
+      const cls = classifyTask(task);
+      if (cls === 'overdue')  badge = `<span class="tr-badge tr-overdue">Overdue</span>`;
+      else if (cls === 'active') badge = `<span class="tr-badge tr-active">Active</span>`;
+      else if (task.status === 'submitted') badge = `<span class="tr-badge tr-new">New</span>`;
+      else if (task.status === 'acknowledged') badge = `<span class="tr-badge tr-acked">Acked</span>`;
+      else if (task.status === 'completed') badge = `<span class="tr-badge tr-done">Done</span>`;
+    }
 
     const window = fmtDateRange(task.windowStart, task.windowEnd);
 

@@ -3,6 +3,7 @@ PortalRouter.register('tasks', async function (container) {
   var role = ctx.role;
   var community = ctx.activeCommunity;
   var M = PortalModules;
+  var isPMorAdmin = role === 'property_manager' || role === 'admin';
 
   /* Stop any previous sync when navigating away */
   if (window._tasksSyncManager) {
@@ -13,6 +14,8 @@ PortalRouter.register('tasks', async function (container) {
     clearInterval(window._tasksSyncTicker);
     window._tasksSyncTicker = null;
   }
+  /* Clear stale global modal reference from previous render */
+  window.showCreateTaskModal = null;
 
   if (!community) {
     container.innerHTML = '<div class="empty-state" style="margin-top:80px"><p>Select a community first.</p></div>';
@@ -69,11 +72,34 @@ PortalRouter.register('tasks', async function (container) {
   var priorityFilter = 'all';
   var isPM = role === 'property_manager';
 
+  var contractors = [];
+  if (isPMorAdmin) {
+    try {
+      contractors = await PortalAPI.apiFetch('/api/contractors?communityId=' + community.id);
+      if (!Array.isArray(contractors)) contractors = [];
+    } catch (e) { contractors = []; }
+  }
+
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
   wireEvents(container, tabs, tasks, isContractor);
   prevTaskStatuses = buildStatusMap(tasks);
   startSync(container);
+
+  window.showCreateTaskModal = function () { showCreateTaskModal(); };
+
+  if (window._pendingOpenCreateTask) {
+    window._pendingOpenCreateTask = false;
+    if (isPMorAdmin) showCreateTaskModal();
+  }
+
+  if (window._pendingOpenTaskDetail) {
+    var pendingTaskId = window._pendingOpenTaskDetail;
+    window._pendingOpenTaskDetail = null;
+    if (typeof window.openTaskDetail === 'function') {
+      window.openTaskDetail(pendingTaskId);
+    }
+  }
 
   function renderPage(tabs, current) {
     var priorityBar = '';
@@ -93,12 +119,17 @@ PortalRouter.register('tasks', async function (container) {
         + '</div>';
     }
 
+    var newTaskBtn = isPMorAdmin
+      ? '<button class="tf-tab tf-tab--accent" id="btn-new-task">+ New Task</button>'
+      : '';
+
     return M.pageHeader('Tasks', community)
       + '<div class="tf-bar tf-bar--with-sync">'
       + tabs.map(function (t) {
           return '<button class="tf-tab' + (t.key === current ? ' tf-tab--active' : '') + '" data-tab="' + t.key + '">'
             + M.esc(t.label) + '</button>';
         }).join('')
+      + newTaskBtn
       + '<div class="sync-bar" id="tasks-sync-bar">'
       + '  <span class="sync-label" id="tasks-sync-label">Syncing\u2026</span>'
       + '  <button class="sync-refresh-btn" id="tasks-sync-btn" title="Refresh now">'
@@ -113,6 +144,95 @@ PortalRouter.register('tasks', async function (container) {
       + '<div class="portal-module" style="margin-top:16px">'
       + '  <div class="pm-body pm-body--list" id="tasks-list"></div>'
       + '</div>';
+  }
+
+  function showCreateTaskModal() {
+    var contractorOpts = '<option value="">— Unassigned —</option>';
+    contractors.forEach(function (c) {
+      var name = c.displayName || c.username || c.id;
+      contractorOpts += '<option value="' + M.esc(c.id) + '">' + M.esc(name) + '</option>';
+    });
+
+    var overlay = document.createElement('div');
+    overlay.className = 'req-form-overlay';
+    overlay.id = 'create-task-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = '<div class="req-form-card">'
+      + '  <div class="req-form-header">'
+      + '    <h3 class="req-form-title">New Task</h3>'
+      + '    <button class="td-close" id="ct-close">&times;</button>'
+      + '  </div>'
+      + '  <div class="cf-group"><label class="cf-label">Title *</label><input type="text" class="cf-input" id="ct-title" placeholder="Task title"></div>'
+      + '  <div class="cf-group"><label class="cf-label">Description</label><textarea class="cf-input cf-textarea" id="ct-desc" placeholder="Optional description"></textarea></div>'
+      + '  <div class="cf-row">'
+      + '    <div class="cf-group cf-half"><label class="cf-label">Priority</label>'
+      + '      <select class="cf-input" id="ct-priority">'
+      + '        <option value="low">Low</option>'
+      + '        <option value="medium" selected>Medium</option>'
+      + '        <option value="high">High</option>'
+      + '        <option value="urgent">Urgent</option>'
+      + '      </select>'
+      + '    </div>'
+      + '    <div class="cf-group cf-half"><label class="cf-label">Assign to Contractor</label>'
+      + '      <select class="cf-input" id="ct-assigned">' + contractorOpts + '</select>'
+      + '    </div>'
+      + '  </div>'
+      + '  <div class="cf-row">'
+      + '    <div class="cf-group cf-half"><label class="cf-label">Start Date</label><input type="date" class="cf-input" id="ct-start"></div>'
+      + '    <div class="cf-group cf-half"><label class="cf-label">Due Date</label><input type="date" class="cf-input" id="ct-due"></div>'
+      + '  </div>'
+      + '  <div class="cf-actions">'
+      + '    <button class="btn btn-ghost btn-sm" id="ct-cancel">Cancel</button>'
+      + '    <button class="btn btn-primary btn-sm" id="ct-submit">Create Task</button>'
+      + '  </div>'
+      + '</div>';
+
+    document.body.appendChild(overlay);
+
+    function hideModal() {
+      overlay.remove();
+    }
+
+    overlay.querySelector('#ct-close').addEventListener('click', hideModal);
+    overlay.querySelector('#ct-cancel').addEventListener('click', hideModal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) hideModal(); });
+
+    overlay.querySelector('#ct-submit').addEventListener('click', async function () {
+      var title = overlay.querySelector('#ct-title').value.trim();
+      if (!title) { PortalAPI.showToast('Title is required', 'error'); return; }
+
+      var startVal = overlay.querySelector('#ct-start').value;
+      var dueVal = overlay.querySelector('#ct-due').value;
+
+      var body = {
+        communityId: community.id,
+        title: title,
+        description: overlay.querySelector('#ct-desc').value.trim() || undefined,
+        priority: overlay.querySelector('#ct-priority').value,
+        assignedTo: overlay.querySelector('#ct-assigned').value || undefined,
+        startDate: startVal || undefined,
+        dueDate: dueVal || undefined,
+      };
+
+      var submitBtn = overlay.querySelector('#ct-submit');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating\u2026';
+      try {
+        await PortalAPI.apiFetch('/api/tasks', {
+          method: 'POST',
+          body: body
+        });
+        PortalAPI.showToast('Task created!', 'success');
+        hideModal();
+        var fresh = await PortalAPI.apiFetch('/api/tasks?communityId=' + community.id);
+        if (Array.isArray(fresh)) { tasks = fresh; }
+        renderList(container, tasks, activeTab, isContractor);
+      } catch (e) {
+        PortalAPI.showToast('Failed: ' + (e.message || 'Unknown error'), 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Task';
+      }
+    });
   }
 
   function filterTasks(tasks, tab, isContractor) {
@@ -273,5 +393,11 @@ PortalRouter.register('tasks', async function (container) {
         renderList(container, tasks, activeTab, isContractor);
       });
     });
+    var newTaskBtn = container.querySelector('#btn-new-task');
+    if (newTaskBtn) {
+      newTaskBtn.addEventListener('click', function () {
+        showCreateTaskModal();
+      });
+    }
   }
 });

@@ -51,7 +51,7 @@
     var statusLabel = M.STATUS_LABEL[task.status] || task.status;
     var statusColor = M.STATUS_COLOR[task.status] || '#6b7280';
     var isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
-    var window = M.fmtDateRange(task.windowStart, task.windowEnd);
+    var windowRange = (!isHoa) ? M.fmtDateRange(task.windowStart, task.windowEnd) : '';
 
     var actionsHtml = '';
     if (isContractor && task.status !== 'completed') {
@@ -102,7 +102,7 @@
       + '<div class="td-body">'
       + (task.description ? '<div class="td-section"><h4 class="td-section-title">Description</h4><p class="td-desc">' + M.esc(task.description) + '</p></div>' : '')
       + '<div class="td-section"><h4 class="td-section-title">Details</h4>'
-      + (window ? '<div class="td-field"><span class="td-label">Window</span><span class="td-value">' + window + '</span></div>' : '')
+      + (windowRange ? '<div class="td-field"><span class="td-label">Window</span><span class="td-value">' + windowRange + '</span></div>' : '')
       + (task.category ? '<div class="td-field"><span class="td-label">Category</span><span class="td-value">' + M.esc(task.category) + '</span></div>' : '')
       + (task.assignedToName || task.assignedTo ? '<div class="td-field"><span class="td-label">Assigned to</span><span class="td-value">' + M.esc(task.assignedToName || task.assignedTo) + '</span></div>' : '')
       + (task.address ? '<div class="td-field"><span class="td-label">Address</span><span class="td-value">' + M.esc(task.address) + '</span></div>' : '')

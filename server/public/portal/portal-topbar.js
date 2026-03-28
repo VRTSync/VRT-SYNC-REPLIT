@@ -177,6 +177,7 @@ window.PortalTopbar = (function () {
     if (!router) return;
 
     if (taskId) {
+      window._pendingOpenTaskDetail = taskId;
       router.navigate('tasks', true, {});
     } else if (type && type.includes('invoice')) {
       router.navigate('invoices', true, {});
@@ -304,18 +305,18 @@ window.PortalTopbar = (function () {
     let items = [];
     if (role === 'property_manager') {
       items = [
-        { label: 'Create Task', icon: _menuIcon('task'), action: 'tasks', enabled: true },
+        { label: 'Create Task', icon: _menuIcon('task'), action: 'create_task', enabled: true },
         { label: 'Add User', icon: _menuIcon('user'), action: null, enabled: false },
         { label: 'Upload Document', icon: _menuIcon('doc'), action: 'documents', enabled: false },
       ];
     } else if (role === 'hoa_admin') {
       items = [
-        { label: 'Create Task', icon: _menuIcon('task'), action: 'tasks', enabled: true },
+        { label: 'New Request', icon: _menuIcon('task'), action: 'requests', enabled: true },
         { label: 'Upload Document', icon: _menuIcon('doc'), action: 'documents', enabled: false },
       ];
     } else if (role === 'admin') {
       items = [
-        { label: 'Create Task', icon: _menuIcon('task'), action: 'tasks', enabled: true },
+        { label: 'Create Task', icon: _menuIcon('task'), action: 'create_task', enabled: true },
         { label: 'Add User', icon: _menuIcon('user'), action: 'users', enabled: true },
         { label: 'Upload Document', icon: _menuIcon('doc'), action: null, enabled: false },
       ];
@@ -341,6 +342,12 @@ window.PortalTopbar = (function () {
       item.addEventListener('click', () => {
         const action = item.dataset.action;
         _closeAllDropdowns();
+        if (action === 'create_task') {
+          window._pendingOpenCreateTask = true;
+          const router = window.PortalRouter || window.AdminRouter;
+          if (router) router.navigate('tasks', true, {});
+          return;
+        }
         const router = window.PortalRouter || window.AdminRouter;
         if (router && action) router.navigate(action, true, {});
       });

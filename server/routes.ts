@@ -378,11 +378,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/tasks", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     try {
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "User not found" });
+      if (actor.role !== "admin" && actor.role !== "property_manager") {
+        return res.status(403).json({ error: "Only admins and property managers can create tasks" });
+      }
       const parsed = insertTaskSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      if (actor.role === "property_manager") {
+        const isMember = await storage.isUserMemberOfCommunity(actor.id, parsed.data.communityId);
+        if (!isMember) {
+          return res.status(403).json({ error: "You are not a member of this community" });
+        }
       }
       const task = await storage.createTask({
         communityId: parsed.data.communityId,
@@ -736,9 +747,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/contractors", requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/contractors", requireAuth, async (req: Request, res: Response) => {
     try {
-      const contractors = await storage.getAllContractors();
+      const actor = await storage.getUserById(req.session.userId!);
+      if (!actor) return res.status(401).json({ error: "User not found" });
+      if (actor.role !== "admin" && actor.role !== "property_manager") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const communityId = req.query.communityId as string | undefined;
+      let contractors: Awaited<ReturnType<typeof storage.getAllContractors>>;
+      if (communityId) {
+        if (actor.role === "property_manager") {
+          const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
+          if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        }
+        contractors = await storage.getContractorsForCommunity(communityId);
+      } else {
+        if (actor.role !== "admin") {
+          return res.status(400).json({ error: "communityId is required" });
+        }
+        contractors = await storage.getAllContractors();
+      }
       res.json(contractors.map(({ password: _, ...c }) => c));
     } catch (error) {
       console.error("Get contractors error:", error);
