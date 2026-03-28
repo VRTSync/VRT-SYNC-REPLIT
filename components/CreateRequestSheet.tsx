@@ -6,6 +6,7 @@ import {
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import StatusBarFill from '@/components/StatusBarFill';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -130,7 +131,6 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const topPad = Platform.OS === 'web' ? 67 + insets.top : insets.top;
   const isWeb = Platform.OS === 'web';
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
@@ -342,7 +342,8 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
-      <View style={[styles.container, { paddingTop: topPad }]}>
+      <View style={styles.container}>
+        <StatusBarFill />
         <View style={styles.header}>
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
             <Ionicons name="close" size={24} color="#fff" />
