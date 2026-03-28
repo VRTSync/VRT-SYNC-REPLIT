@@ -272,9 +272,20 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
 
       let result: any;
       try {
-        const response = await apiRequest('POST', '/api/hoa/requests', body);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        let response: Response;
+        try {
+          response = await apiRequest('POST', '/api/hoa/requests', body, controller.signal);
+        } finally {
+          clearTimeout(timeoutId);
+        }
         result = await response.json();
       } catch (e: any) {
+        const isAbort = e.name === 'AbortError' || e instanceof DOMException || e?.code === 20;
+        if (isAbort) {
+          throw new Error('Request timed out. Please check your connection and try again.');
+        }
         throw new Error(e.message || 'Failed to submit request. Please try again.');
       }
 

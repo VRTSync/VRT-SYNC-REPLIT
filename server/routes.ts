@@ -3034,13 +3034,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/hoa/requests", requireAuth, async (req: Request, res: Response) => {
+    const DB_TIMEOUT_MS = 15000;
+    const withTimeout = <T>(promise: Promise<T>, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          const err: any = new Error(`${label} timed out after ${DB_TIMEOUT_MS}ms`);
+          err.isDbTimeout = true;
+          console.error(`HOA request handler: ${label} timed out after ${DB_TIMEOUT_MS}ms`);
+          reject(err);
+        }, DB_TIMEOUT_MS);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    };
+
     try {
-      const user = await storage.getUserById(req.session.userId!);
+      const user = await withTimeout(storage.getUserById(req.session.userId!), "getUserById");
       if (!user || user.role !== "hoa_admin") {
         return res.status(403).json({ error: "Only HOA Admins can create requests" });
       }
 
-      const communityId = req.session.hoaCommunityId;
+      const communityId = user.hoaCommunityId;
       if (!communityId) {
         return res.status(400).json({ error: "No HOA community associated with this user" });
       }
@@ -3057,7 +3071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let resolvedAssetId: string | undefined;
 
       if (assetId) {
-        const asset = await storage.getAssetById(assetId);
+        const asset = await withTimeout(storage.getAssetById(assetId), "getAssetById");
         if (!asset) {
           return res.status(404).json({ error: "Asset not found" });
         }
@@ -3078,7 +3092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       let validatedAssignedTo: string | undefined;
       if (assignedTo) {
-        const members = await storage.getCommunityMembers(communityId);
+        const members = await withTimeout(storage.getCommunityMembers(communityId), "getCommunityMembers");
         const match = members.find((m: any) => m.userId === assignedTo && (m.user.role === 'contractor' || m.user.role === 'admin'));
         if (!match) {
           return res.status(400).json({ error: "Selected contractor is not a member of this community" });
@@ -3088,34 +3102,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const mappedPriority = priority === "Urgent" ? "urgent" as const : "medium" as const;
 
-      const task = await storage.createTask({
-        communityId,
-        title,
-        description,
-        priority: mappedPriority,
-        status: "submitted",
-        origin: "HOA",
-        category: category ?? undefined,
-        assignedTo: validatedAssignedTo,
-        latitude,
-        longitude,
-        createdBy: req.session.userId!,
-      });
-
-      if (resolvedAssetId) {
-        await storage.setTaskLink(task.id, {
-          linkType: "asset",
-          assetId: resolvedAssetId,
+      const task = await withTimeout(
+        storage.createTask({
+          communityId,
+          title,
+          description,
+          priority: mappedPriority,
+          status: "submitted",
+          origin: "HOA",
+          category: category ?? undefined,
+          assignedTo: validatedAssignedTo,
           latitude,
           longitude,
-        });
+          createdBy: req.session.userId!,
+        }),
+        "createTask"
+      );
+
+      if (resolvedAssetId) {
+        await withTimeout(
+          storage.setTaskLink(task.id, {
+            linkType: "asset",
+            assetId: resolvedAssetId,
+            latitude,
+            longitude,
+          }),
+          "setTaskLink"
+        );
       }
 
       notifyHoaRequestSubmitted(task).catch(err => console.error("notifyHoaRequestSubmitted error:", err));
 
       res.status(201).json(task);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Create HOA request error:", error);
+      if (error?.isDbTimeout) {
+        return res.status(504).json({ error: "Request timed out. Please try again." });
+      }
       res.status(500).json({ error: "Failed to create HOA request" });
     }
   });
