@@ -398,9 +398,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!task) return res.status(404).json({ error: "Task not found" });
       if (!allowed) return res.status(403).json({ error: "You do not have access to this task" });
 
-      const [rawCompletions, taskAttachments] = await Promise.all([
+      const [rawCompletions, taskAttachments, taskLink] = await Promise.all([
         storage.getTaskCompletions(taskId),
         storage.getAttachmentsByTaskId(taskId),
+        storage.getTaskLink(taskId),
       ]);
 
       const completions = await Promise.all(
@@ -411,7 +412,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
 
       console.log(`[GET /api/tasks/:id/detail] task=${taskId} served (${Date.now() - t0}ms)`);
-      res.json({ task, completions, taskAttachments });
+      res.json({ task, completions, taskAttachments, taskLink: taskLink ?? null });
     } catch (error) {
       console.error("Get task detail bundle error:", error);
       res.status(500).json({ error: "Failed to fetch task detail" });

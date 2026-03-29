@@ -132,7 +132,7 @@ export default function TaskDetailScreen() {
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
 
-  type TaskDetailBundle = { task: Task; completions: Completion[]; taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[] };
+  type TaskDetailBundle = { task: Task; completions: Completion[]; taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[]; taskLink: TaskLinkData | null };
 
   const { data: bundle, isLoading, isError: isBundleError, error: bundleError, refetch: refetchBundle } = useQuery<TaskDetailBundle>({
     queryKey: [`/api/tasks/${id}/detail`],
@@ -144,20 +144,13 @@ export default function TaskDetailScreen() {
   const task = bundle?.task ?? null;
   const completions: Completion[] = bundle?.completions ?? [];
   const taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[] = bundle?.taskAttachments ?? [];
+  const taskLink: TaskLinkData | null = bundle?.taskLink ?? null;
 
-  const { data: taskLink, isError: isLinkError, error: linkError, refetch: refetchLink } = useQuery<TaskLinkData | null>({
-    queryKey: [`/api/tasks/${id}/link`],
-    queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id && !!task,
-  });
-
-  const isError = isBundleError || isLinkError;
-  const anyError: Error | null = (bundleError instanceof Error ? bundleError : null)
-    ?? (linkError instanceof Error ? linkError : null);
+  const isError = isBundleError;
+  const anyError: Error | null = bundleError instanceof Error ? bundleError : null;
 
   const handleRetryAll = () => {
     if (isBundleError) refetchBundle();
-    if (isLinkError) refetchLink();
   };
 
   const pickPhoto = async () => {
