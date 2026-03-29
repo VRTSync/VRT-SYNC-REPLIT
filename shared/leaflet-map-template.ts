@@ -232,7 +232,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           },
           onEachFeature: function(feature, l) {
             var props = feature.properties || {};
-            var ref = props.featureRef || props.featureId || props.id || props.name;
+            var ref = (feature.id != null && feature.id !== '' ? String(feature.id) : null) || props.featureId || props.id || props.featureRef || props.name;
             var label = props.label || props.name || props.displayName || props.title || (layer.displayName + (ref ? ' - ' + ref : ''));
             var assetType = props.assetType || layer.subLayerKey || layer.layerKey;
             var featureColor = layer.color || '#25C1AC';
@@ -512,8 +512,8 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   setTimeout(function() { map.invalidateSize(); }, 500);
   setTimeout(function() { map.invalidateSize(); }, 1500);
 
-  document.addEventListener('click', function(e) {
-    var el = e.target;
+  function handlePopupActionClick(e) {
+    var el = e.target || e.srcElement;
     while (el && el !== document.body) {
       if (el.classList && el.classList.contains('popup-action') && el.dataset && el.dataset.action) {
         var action = el.dataset.action;
@@ -522,11 +522,25 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         } else if (action === 'viewDetail') {
           window.mapBridge._viewDetail(el.dataset.ref, el.dataset.layer, el.dataset.label, el.dataset.assetType, el.dataset.layerName);
         }
-        e.preventDefault();
-        e.stopPropagation();
+        if (e.preventDefault) e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
         return;
       }
       el = el.parentElement;
+    }
+  }
+
+  map.on('popupopen', function(ev) {
+    var popupEl = ev.popup.getElement();
+    if (popupEl) {
+      L.DomEvent.on(popupEl, 'click', handlePopupActionClick);
+    }
+  });
+
+  map.on('popupclose', function(ev) {
+    var popupEl = ev.popup.getElement();
+    if (popupEl) {
+      L.DomEvent.off(popupEl, 'click', handlePopupActionClick);
     }
   });
 
