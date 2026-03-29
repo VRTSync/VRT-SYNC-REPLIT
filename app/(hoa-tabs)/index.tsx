@@ -278,6 +278,48 @@ export default function HoaDashboardScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Completions</Text>
+        </View>
+        {recentCompletions.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyText}>No recent completions</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {recentCompletions.map((comp) => {
+              const isRequest = comp.origin === 'HOA';
+              return (
+                <View key={comp.id} style={styles.completionCard}>
+                  <View style={styles.completionCardTop}>
+                    {isRequest && (
+                      <View style={styles.originBadge}>
+                        <Text style={styles.originBadgeText}>REQUEST</Text>
+                      </View>
+                    )}
+                    {comp.hasPhotos && (
+                      <View style={styles.photoBadge}>
+                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
+                  <View style={styles.completionDateRow}>
+                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
+                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Upcoming Tasks</Text>
           <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/calendar')}>
@@ -412,46 +454,6 @@ export default function HoaDashboardScreen() {
           </View>
         )}
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Completions</Text>
-        </View>
-        {recentCompletions.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyText}>No recent completions</Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {recentCompletions.map((comp) => {
-              const isRequest = comp.origin === 'HOA';
-              return (
-                <View key={comp.id} style={styles.completionCard}>
-                  <View style={styles.completionCardTop}>
-                    {isRequest && (
-                      <View style={styles.originBadge}>
-                        <Text style={styles.originBadgeText}>REQUEST</Text>
-                      </View>
-                    )}
-                    {comp.hasPhotos && (
-                      <View style={styles.photoBadge}>
-                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
-                  <View style={styles.completionDateRow}>
-                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
-                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        )}
       </ScrollView>
 
       <CreateRequestSheet
