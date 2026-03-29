@@ -60,7 +60,11 @@ export const getQueryFn: <T>(options: {
     const url = new URL(queryKey.join("/") as string, baseUrl);
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let didTimeout = false;
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+      controller.abort();
+    }, 15000);
     signal?.addEventListener('abort', () => {
       clearTimeout(timeoutId);
       controller.abort();
@@ -81,7 +85,7 @@ export const getQueryFn: <T>(options: {
       return await res.json();
     } catch (err) {
       clearTimeout(timeoutId);
-      if ((err as any)?.name === 'AbortError') {
+      if (didTimeout && err instanceof Error && err.name === 'AbortError') {
         throw new Error('Request timed out. Please check your connection and try again.');
       }
       throw err;

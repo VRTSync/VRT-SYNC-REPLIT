@@ -136,6 +136,7 @@ export default function TaskDetailScreen() {
     queryKey: [`/api/tasks/${id}`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
+    staleTime: 0,
   });
 
   const { data: completions = [], isError: isCompletionsError, error: completionsError, refetch: refetchCompletions } = useQuery<Completion[]>({
