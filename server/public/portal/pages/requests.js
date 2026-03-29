@@ -37,7 +37,7 @@ PortalRouter.register('requests', async function (container) {
       var members = await PortalAPI.apiFetch('/api/communities/' + community.id + '/members');
       if (Array.isArray(members)) {
         contractors = members.filter(function (m) {
-          return m.user && (m.user.role === 'contractor' || m.user.role === 'admin');
+          return m.role === 'contractor' || m.role === 'admin';
         });
       }
     } catch (e) { /* optional field — OK if it fails */ }
@@ -47,11 +47,6 @@ PortalRouter.register('requests', async function (container) {
   renderList();
   wireEvents();
   wireForm();
-  if (window._pendingOpenNewRequest) {
-    window._pendingOpenNewRequest = false;
-    var overlay = document.getElementById('req-form-overlay');
-    if (overlay) overlay.style.display = 'flex';
-  }
 
   function renderPage() {
     return M.pageHeader('Requests', community)
@@ -70,9 +65,12 @@ PortalRouter.register('requests', async function (container) {
   function renderForm() {
     var contractorOpts = '<option value="">— None (unassigned) —</option>';
     contractors.forEach(function (m) {
-      var name = m.user.displayName || m.user.username || m.userId;
+      var name = m.displayName || m.username || m.userId;
       contractorOpts += '<option value="' + M.esc(m.userId) + '">' + M.esc(name) + '</option>';
     });
+
+    var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
+    var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
 
     return '<div class="req-form-overlay" id="req-form-overlay" style="display:none">'
       + '<div class="req-form-card">'
@@ -98,6 +96,13 @@ PortalRouter.register('requests', async function (container) {
       + '  </div>'
       + '  <div class="cf-group"><label class="cf-label">Assign to Contractor</label>'
       + '    <select class="cf-input" id="req-assigned">' + contractorOpts + '</select>'
+      + '  </div>'
+      + '  <div class="cf-group"><label class="cf-label">Location (optional)</label>'
+      + '    <div class="cf-row" style="gap:8px">'
+      + '      <div class="cf-group cf-half" style="margin-bottom:0"><input type="number" step="any" class="cf-input" id="req-lat" placeholder="Latitude" value="' + centerLat + '"></div>'
+      + '      <div class="cf-group cf-half" style="margin-bottom:0"><input type="number" step="any" class="cf-input" id="req-lng" placeholder="Longitude" value="' + centerLng + '"></div>'
+      + '    </div>'
+      + '    <p style="font-size:11px;color:var(--text-muted,#888);margin-top:4px">Defaults to community center if left unchanged.</p>'
       + '  </div>'
       + '  <div class="cf-actions">'
       + '    <button class="btn btn-ghost btn-sm" id="req-cancel">Cancel</button>'
@@ -164,6 +169,12 @@ PortalRouter.register('requests', async function (container) {
       overlay.querySelector('#req-priority').value = 'General';
       overlay.querySelector('#req-category').value = '';
       overlay.querySelector('#req-assigned').value = '';
+      var latEl = overlay.querySelector('#req-lat');
+      var lngEl = overlay.querySelector('#req-lng');
+      var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
+      var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
+      if (latEl) latEl.value = centerLat;
+      if (lngEl) lngEl.value = centerLng;
     }
 
     if (closeBtn) closeBtn.addEventListener('click', hideForm);
@@ -185,12 +196,18 @@ PortalRouter.register('requests', async function (container) {
           showToast('Description is required', true);
           return;
         }
+        var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
+        var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
+        var latVal = parseFloat(overlay.querySelector('#req-lat').value);
+        var lngVal = parseFloat(overlay.querySelector('#req-lng').value);
         var body = {
           title: title,
           description: desc,
           priority: overlay.querySelector('#req-priority').value,
           category: overlay.querySelector('#req-category').value || undefined,
-          assignedTo: overlay.querySelector('#req-assigned').value || undefined
+          assignedTo: overlay.querySelector('#req-assigned').value || undefined,
+          pinLat: isNaN(latVal) ? centerLat : latVal,
+          pinLng: isNaN(lngVal) ? centerLng : lngVal
         };
 
         submitBtn.disabled = true;
@@ -212,6 +229,11 @@ PortalRouter.register('requests', async function (container) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit Request';
       });
+    }
+
+    if (window._pendingOpenNewRequest) {
+      window._pendingOpenNewRequest = false;
+      overlay.style.display = 'flex';
     }
   }
 

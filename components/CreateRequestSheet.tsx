@@ -248,9 +248,6 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   const handleSubmit = async () => {
     if (!title.trim()) { setError('Title is required'); return; }
     if (!description.trim()) { setError('Description is required'); return; }
-    if (!assetId && (pinLat === null || pinLng === null)) {
-      setError('Please tap the map to place a pin'); return;
-    }
 
     setSubmitting(true);
     setError(null);
@@ -266,8 +263,8 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
       if (assetId) {
         body.assetId = assetId;
       } else {
-        body.pinLat = pinLat;
-        body.pinLng = pinLng;
+        body.pinLat = pinLat !== null ? pinLat : communityLat;
+        body.pinLng = pinLng !== null ? pinLng : communityLng;
       }
 
       const fetchTimeout = new Promise<never>((_, reject) =>
@@ -283,6 +280,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         throw new Error(result?.error || 'Server returned an unexpected response. Please try again.');
       }
 
+      let photoFailCount = 0;
       if (photos.length > 0) {
         const apiUrl = getApiUrl();
         for (let i = 0; i < photos.length; i++) {
@@ -322,6 +320,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
             });
           } catch (photoErr) {
             console.error(`Photo ${i + 1} upload failed:`, photoErr);
+            photoFailCount++;
           }
         }
         setUploadProgress(null);
@@ -330,6 +329,18 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/hoa'] });
       queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
+
+      if (photoFailCount > 0) {
+        const total = photos.length;
+        const succeeded = total - photoFailCount;
+        setError(
+          `Request submitted${succeeded > 0 ? ` with ${succeeded} of ${total} photo${total !== 1 ? 's' : ''} uploaded` : ''}. ${photoFailCount} photo${photoFailCount !== 1 ? 's' : ''} failed to upload — check your connection and try editing the request to re-attach them.`
+        );
+        setSubmitting(false);
+        setUploadProgress(null);
+        return;
+      }
+
       handleClose();
     } catch (e: any) {
       let msg = e.message || 'Failed to submit request';
@@ -518,7 +529,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
           )}
 
           <View style={styles.field}>
-            <Text style={styles.label}>Location</Text>
+            <Text style={styles.label}>Location (optional — tap map to pin)</Text>
             {assetId ? (
               <>
                 <View style={styles.assetLocationBox}>
