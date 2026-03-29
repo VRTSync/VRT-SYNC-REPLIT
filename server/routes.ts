@@ -1238,6 +1238,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         pushTokenLastReg.delete(deviceId);
       } else if (token) {
         await storage.removePushToken(req.session.userId!, token);
+        // Clear any Map entry whose stored token matches, so account-switch flows
+        // don't leave a stale throttle behind when there is no deviceId to key on.
+        for (const [key, entry] of pushTokenLastReg.entries()) {
+          if (entry.token === token) {
+            pushTokenLastReg.delete(key);
+            break;
+          }
+        }
       } else {
         return res.status(400).json({ error: "token or deviceId is required" });
       }
