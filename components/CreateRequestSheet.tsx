@@ -140,6 +140,11 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
     enabled: visible && !!communityId && !assetId,
   });
 
+  const { data: boundsData } = useQuery<{ bounds: [[number, number], [number, number]]; center: [number, number] } | null>({
+    queryKey: [`/api/communities/${communityId}/bounds`],
+    enabled: visible && !!communityId,
+  });
+
   const { data: membersData, isError: membersError } = useQuery<any[]>({
     queryKey: [`/api/communities/${communityId}/members`],
     enabled: visible && !!communityId,
@@ -151,6 +156,9 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
   }, [membersData]);
 
   const center = React.useMemo(() => {
+    if (boundsData?.center) {
+      return { lat: boundsData.center[0], lng: boundsData.center[1] };
+    }
     if (assetsData && assetsData.length > 0) {
       const withCoords = assetsData.filter((a: any) => a.latitude != null && a.longitude != null);
       if (withCoords.length > 0) {
@@ -160,7 +168,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
       }
     }
     return { lat: 39.5, lng: -104.9 };
-  }, [assetsData]);
+  }, [boundsData, assetsData]);
 
   const communityLat = center.lat;
   const communityLng = center.lng;
