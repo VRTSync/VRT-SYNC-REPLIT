@@ -6,7 +6,7 @@ import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoa
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
 import * as storage from "./storage";
-import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted } from "./pushNotifications";
+import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "./pushNotifications";
 import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "./assetSync";
 import { parseIrrigationKml } from "./kmlIrrigationParser";
 import { validateLayerGeoJSON } from "./layerValidation";
@@ -527,6 +527,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (updated.assignedTo && updated.assignedTo !== previousAssignee) {
         const community = await storage.getCommunityById(updated.communityId);
         notifyTaskAssigned(updated.id, updated.title, community?.name || 'Unknown', updated.assignedTo).catch(() => {});
+      }
+
+      if (updated.origin === "HOA" && data.status === "acknowledged") {
+        notifyRequestAcknowledged(updated.id).catch(() => {});
       }
 
       res.json(updated);

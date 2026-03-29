@@ -907,3 +907,16 @@ export const updateContractSchema = z.object({
   pdfObjectKey: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
+
+export const pushTickets = pgTable("push_tickets", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  ticketId: text("ticket_id").notNull(),
+  token: text("token").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("push_tickets_created_at_idx").on(table.createdAt),
+]);
+
+export type PushTicket = typeof pushTickets.$inferSelect;

@@ -2,7 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes, pushTokenLastReg, PUSH_TOKEN_RATE_LIMIT_MS } from "./routes";
 import { setupSession } from "./auth";
-import { sendDueReminders } from "./pushNotifications";
+import { sendDueReminders, processReceiptsForPendingTickets } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import * as fs from "fs";
 import * as path from "path";
@@ -691,6 +691,15 @@ async function runStartupMigrations() {
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS stroke_weight integer;
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS fill_opacity text;
       ALTER TABLE map_layers ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
+
+      CREATE TABLE IF NOT EXISTS push_tickets (
+        id         varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticket_id  text NOT NULL,
+        token      text NOT NULL,
+        created_at timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS push_tickets_created_at_idx ON push_tickets(created_at);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {
@@ -888,6 +897,12 @@ async function seedContacts() {
         log("Running daily due reminder check...");
         sendDueReminders().catch(err => console.error("Due reminder error:", err));
       }, TWENTY_FOUR_HOURS);
+
+      const THIRTY_MINUTES = 30 * 60 * 1000;
+      setInterval(() => {
+        log("Running push receipt processing...");
+        processReceiptsForPendingTickets().catch(err => console.error("Push receipt processing error:", err));
+      }, THIRTY_MINUTES);
 
       startSchedulerInterval(3600000);
     },

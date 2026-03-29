@@ -4,7 +4,7 @@ import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
-  notifications, driveFolders, driveFiles, invoices, contracts, contacts,
+  notifications, driveFolders, driveFiles, invoices, contracts, contacts, pushTickets,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
@@ -12,7 +12,7 @@ import {
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
   type DriveFolder, type DriveFile, type Invoice, type Contract,
-  type Contact, type InsertContact,
+  type Contact, type InsertContact, type PushTicket,
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -2271,4 +2271,18 @@ export async function updateContact(id: string, data: Partial<InsertContact>): P
 
 export async function deleteContact(id: string): Promise<void> {
   await db.delete(contacts).where(eq(contacts.id, id));
+}
+
+export async function insertPushTickets(entries: { ticketId: string; token: string }[]): Promise<void> {
+  if (entries.length === 0) return;
+  await db.insert(pushTickets).values(entries);
+}
+
+export async function getPendingPushTicketsOlderThan(cutoff: Date): Promise<PushTicket[]> {
+  return db.select().from(pushTickets).where(lt(pushTickets.createdAt, cutoff));
+}
+
+export async function deletePushTicketsByIds(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.delete(pushTickets).where(inArray(pushTickets.id, ids));
 }

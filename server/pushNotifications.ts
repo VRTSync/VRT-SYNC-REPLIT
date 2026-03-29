@@ -33,10 +33,18 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
       const result = await response.json();
       const data = result.data;
       if (Array.isArray(data)) {
+        const ticketEntries: { ticketId: string; token: string }[] = [];
         for (let i = 0; i < data.length; i++) {
           if (data[i].status === "error" && data[i].details?.error === "DeviceNotRegistered") {
             await storage.pruneInvalidToken(tokens[i].token);
+          } else if (data[i].status === "ok" && data[i].id) {
+            ticketEntries.push({ ticketId: data[i].id, token: tokens[i].token });
           }
+        }
+        if (ticketEntries.length > 0) {
+          await storage.insertPushTickets(ticketEntries).catch((err) =>
+            console.error("Failed to persist push tickets:", err)
+          );
         }
       }
     }
@@ -45,12 +53,102 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
   }
 }
 
+export async function processReceiptsForPendingTickets(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - 15 * 60 * 1000);
+    const pendingTickets = await storage.getPendingPushTicketsOlderThan(cutoff);
+    if (pendingTickets.length === 0) return;
+
+    const BATCH_SIZE = 300;
+    for (let i = 0; i < pendingTickets.length; i += BATCH_SIZE) {
+      const batch = pendingTickets.slice(i, i + BATCH_SIZE);
+      const ticketIdToToken = new Map(batch.map((t) => [t.ticketId, t.token]));
+
+      try {
+        const response = await fetch("https://exp.host/--/api/v2/push/getReceipts", {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ids: Array.from(ticketIdToToken.keys()) }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          const receipts = result.data as Record<string, { status: string; details?: { error?: string } }>;
+          for (const [ticketId, receipt] of Object.entries(receipts)) {
+            if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") {
+              const token = ticketIdToToken.get(ticketId);
+              if (token) {
+                await storage.pruneInvalidToken(token);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching push receipts batch:", err);
+      }
+
+      await storage.deletePushTicketsByIds(batch.map((t) => t.id));
+    }
+  } catch (error) {
+    console.error("processReceiptsForPendingTickets error:", error);
+  }
+}
+
 export async function notifyTaskAssigned(taskId: string, taskTitle: string, communityName: string, assignedToUserId: string): Promise<void> {
-  await sendPushToUser(assignedToUserId, {
-    title: "New task assigned",
-    body: `${taskTitle} – ${communityName}`,
-    data: { type: "task_assigned", taskId },
-  });
+  try {
+    const task = await storage.getTaskById(taskId);
+    if (!task) return;
+
+    const title = "New task assigned";
+    const body = `${taskTitle} – ${communityName}`;
+
+    await storage.createNotification({
+      communityId: task.communityId,
+      recipientUserId: assignedToUserId,
+      type: "TASK_ASSIGNED",
+      title,
+      body,
+      relatedTaskId: taskId,
+    });
+
+    await sendPushToUser(assignedToUserId, {
+      title,
+      body,
+      data: { type: "task_assigned", taskId },
+    });
+  } catch (error) {
+    console.error("notifyTaskAssigned error:", error);
+  }
+}
+
+export async function notifyRequestAcknowledged(taskId: string): Promise<void> {
+  try {
+    const task = await storage.getTaskById(taskId);
+    if (!task || !task.createdBy) return;
+
+    const title = "Request Acknowledged";
+    const body = task.title;
+
+    await storage.createNotification({
+      communityId: task.communityId,
+      recipientUserId: task.createdBy,
+      type: "HOA_REQUEST_ACKNOWLEDGED",
+      title,
+      body,
+      relatedTaskId: taskId,
+    });
+
+    await sendPushToUser(task.createdBy, {
+      title,
+      body,
+      data: { type: "HOA_REQUEST_ACKNOWLEDGED", taskId },
+    });
+  } catch (error) {
+    console.error("notifyRequestAcknowledged error:", error);
+  }
 }
 
 export async function sendDueReminders(): Promise<void> {
@@ -73,9 +171,20 @@ export async function sendDueReminders(): Promise<void> {
   }
 
   for (const [userId, info] of byUser) {
+    const title = "Tasks due today";
+    const body = `You have ${info.count} task${info.count > 1 ? 's' : ''} due today`;
+
+    await storage.createNotification({
+      communityId: info.communityId,
+      recipientUserId: userId,
+      type: "TASK_DUE_REMINDER",
+      title,
+      body,
+    });
+
     await sendPushToUser(userId, {
-      title: "Tasks due today",
-      body: `You have ${info.count} task${info.count > 1 ? 's' : ''} due today`,
+      title,
+      body,
       data: { type: "task_due", communityId: info.communityId },
     });
   }
@@ -112,28 +221,25 @@ export async function notifyTaskCompleted(task: Task): Promise<void> {
 
 export async function notifyHoaRequestSubmitted(task: Task): Promise<void> {
   try {
-    const contractors = await storage.getContractorsForCommunity(task.communityId);
-    if (contractors.length === 0) return;
+    if (!task.assignedTo) return;
 
     const title = "New HOA request";
     const body = task.title;
 
-    for (const contractor of contractors) {
-      await storage.createNotification({
-        communityId: task.communityId,
-        recipientUserId: contractor.id,
-        type: "HOA_REQUEST_SUBMITTED",
-        title,
-        body,
-        relatedTaskId: task.id,
-      });
+    await storage.createNotification({
+      communityId: task.communityId,
+      recipientUserId: task.assignedTo,
+      type: "HOA_REQUEST_SUBMITTED",
+      title,
+      body,
+      relatedTaskId: task.id,
+    });
 
-      await sendPushToUser(contractor.id, {
-        title,
-        body,
-        data: { type: "HOA_REQUEST_SUBMITTED", taskId: task.id },
-      });
-    }
+    await sendPushToUser(task.assignedTo, {
+      title,
+      body,
+      data: { type: "HOA_REQUEST_SUBMITTED", taskId: task.id },
+    });
   } catch (error) {
     console.error("notifyHoaRequestSubmitted error:", error);
   }
