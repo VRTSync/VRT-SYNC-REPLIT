@@ -469,29 +469,32 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       pendingRef.current = [...updatedList];
     }
 
-    const remaining = updatedList.filter(c => c.state !== 'synced' && !c._dismissUnrecoverable);
-    await persistQueue(remaining);
-    setPendingCompletions(remaining);
-    pendingRef.current = remaining;
-    syncingRef.current = false;
+    try {
+      const remaining = updatedList.filter(c => c.state !== 'synced' && !c._dismissUnrecoverable);
+      await persistQueue(remaining);
+      setPendingCompletions(remaining);
+      pendingRef.current = remaining;
 
-    if (synced > 0) {
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-    }
+      if (synced > 0) {
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      }
 
-    if (failed > 0 && Platform.OS !== 'web') {
-      getNotificationPreferences().then(prefs => {
-        if (prefs.syncFailure) {
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: 'Sync failed',
-              body: `${failed} completion${failed > 1 ? 's' : ''} failed to sync. Tap to review.`,
-              data: { type: 'sync_failed' },
-            },
-            trigger: null,
-          }).catch(() => {});
-        }
-      });
+      if (failed > 0 && Platform.OS !== 'web') {
+        getNotificationPreferences().then(prefs => {
+          if (prefs.syncFailure) {
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'Sync failed',
+                body: `${failed} completion${failed > 1 ? 's' : ''} failed to sync. Tap to review.`,
+                data: { type: 'sync_failed' },
+              },
+              trigger: null,
+            }).catch(() => {});
+          }
+        });
+      }
+    } finally {
+      syncingRef.current = false;
     }
 
     return { synced, failed };
@@ -591,15 +594,18 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       pendingSvcRef.current = [...updatedList];
     }
 
-    const remaining = updatedList.filter(v => v.state !== 'synced');
-    await persistSvcQueue(remaining);
-    setPendingServiceVisits(remaining);
-    pendingSvcRef.current = remaining;
-    svcSyncingRef.current = false;
+    try {
+      const remaining = updatedList.filter(v => v.state !== 'synced');
+      await persistSvcQueue(remaining);
+      setPendingServiceVisits(remaining);
+      pendingSvcRef.current = remaining;
 
-    if (synced > 0) {
-      queryClient.invalidateQueries({ queryKey: ['service-visits'] });
-      queryClient.invalidateQueries({ queryKey: ['service-schedules'] });
+      if (synced > 0) {
+        queryClient.invalidateQueries({ queryKey: ['service-visits'] });
+        queryClient.invalidateQueries({ queryKey: ['service-schedules'] });
+      }
+    } finally {
+      svcSyncingRef.current = false;
     }
 
     return { synced, failed };
@@ -675,15 +681,18 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
       pendingNotesRef.current = [...updatedList];
     }
 
-    const remaining = updatedList.filter(n => n.state !== 'synced');
-    await persistNotesQueue(remaining);
-    setPendingAssetNotes(remaining);
-    pendingNotesRef.current = remaining;
-    notesSyncingRef.current = false;
+    try {
+      const remaining = updatedList.filter(n => n.state !== 'synced');
+      await persistNotesQueue(remaining);
+      setPendingAssetNotes(remaining);
+      pendingNotesRef.current = remaining;
 
-    if (synced > 0) {
-      const assetIds = new Set(currentQueue.filter(n => n.state === 'queued' || n.state === 'failed').map(n => n.assetId));
-      assetIds.forEach(aid => queryClient.invalidateQueries({ queryKey: [`/api/assets/${aid}/notes`] }));
+      if (synced > 0) {
+        const assetIds = new Set(currentQueue.filter(n => n.state === 'queued' || n.state === 'failed').map(n => n.assetId));
+        assetIds.forEach(aid => queryClient.invalidateQueries({ queryKey: [`/api/assets/${aid}/notes`] }));
+      }
+    } finally {
+      notesSyncingRef.current = false;
     }
 
     return { synced, failed };
