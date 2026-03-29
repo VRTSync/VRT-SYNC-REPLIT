@@ -170,13 +170,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutMutation = useMutation({
     mutationFn: async () => {
-      await unregisterPushToken();
-      await apiRequest('POST', '/api/auth/logout');
-    },
-    onSuccess: async () => {
       queryClient.clear();
       try {
         await AsyncStorage.removeItem('vrt-sync-rq-cache');
+      } catch {}
+      try {
+        await unregisterPushToken();
+      } catch {}
+      try {
+        await apiRequest('POST', '/api/auth/logout');
       } catch {}
     },
   });
