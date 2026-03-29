@@ -236,6 +236,78 @@ function configureExpoAndLanding(app: express.Application) {
     res.setHeader("Cache-Control", "no-store");
     res.type("html").send(LEAFLET_MAP_HTML);
   });
+
+  app.get("/pin-picker.html", (req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store");
+    const latParsed = parseFloat(req.query.lat as string);
+    const lngParsed = parseFloat(req.query.lng as string);
+    const zoomParsed = parseInt(req.query.zoom as string);
+    const lat = Number.isFinite(latParsed) ? latParsed : 39.5;
+    const lng = Number.isFinite(lngParsed) ? lngParsed : -104.9;
+    const zoom = Number.isFinite(zoomParsed) ? zoomParsed : 15;
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #map { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+  var initLat = ${lat};
+  var initLng = ${lng};
+  var initZoom = ${zoom};
+
+  var map = L.map('map', { zoomControl: true, attributionControl: false })
+    .setView([initLat, initLng], initZoom);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+
+  var pinIcon = L.divIcon({
+    html: '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 0C6.27 0 0 6.27 0 14c0 9.33 14 22 14 22S28 23.33 28 14C28 6.27 21.73 0 14 0z" fill="#E53935"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>',
+    className: '',
+    iconSize: [28, 36],
+    iconAnchor: [14, 36]
+  });
+
+  var marker = L.marker([initLat, initLng], { icon: pinIcon, draggable: true }).addTo(map);
+
+  function emitPin(lat, lng) {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'pin', lat: lat, lng: lng }, '*');
+    }
+  }
+
+  marker.on('dragend', function() {
+    var ll = marker.getLatLng();
+    emitPin(ll.lat, ll.lng);
+  });
+
+  map.on('click', function(e) {
+    marker.setLatLng(e.latlng);
+    emitPin(e.latlng.lat, e.latlng.lng);
+  });
+
+  window.addEventListener('message', function(e) {
+    if (!e.data) return;
+    var msg = e.data;
+    if (msg.type === 'setPin' && msg.lat != null && msg.lng != null) {
+      marker.setLatLng([msg.lat, msg.lng]);
+      map.setView([msg.lat, msg.lng], map.getZoom());
+    }
+  });
+})();
+</script>
+</body>
+</html>`;
+    res.type("html").send(html);
+  });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
   if (process.env.NODE_ENV !== "production") {
@@ -245,7 +317,8 @@ function configureExpoAndLanding(app: express.Application) {
         req.path.startsWith("/web") ||
         req.path.startsWith("/admin-static") ||
         req.path.startsWith("/portal-static") ||
-        req.path.startsWith("/leaflet-map")
+        req.path.startsWith("/leaflet-map") ||
+        req.path.startsWith("/pin-picker")
       ) {
         return next();
       }

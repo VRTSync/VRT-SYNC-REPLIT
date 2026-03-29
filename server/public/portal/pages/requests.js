@@ -5,10 +5,19 @@ PortalRouter.register('requests', async function (container) {
   var M = PortalModules;
   var isAdmin = role === 'hoa_admin';
 
+  if (window._portalRequestsCleanup) {
+    window._portalRequestsCleanup();
+  }
+
   if (!community) {
     container.innerHTML = '<div class="empty-state" style="margin-top:80px"><p>Select a community first.</p></div>';
     return;
   }
+
+  var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
+  var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
+  var reqPinLat = centerLat;
+  var reqPinLng = centerLng;
 
   container.innerHTML = '<div class="loading-spinner" style="margin-top:80px">Loading requests\u2026</div>';
 
@@ -69,8 +78,7 @@ PortalRouter.register('requests', async function (container) {
       contractorOpts += '<option value="' + M.esc(m.userId) + '">' + M.esc(name) + '</option>';
     });
 
-    var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
-    var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
+    var iframeSrc = '/pin-picker.html?lat=' + encodeURIComponent(centerLat) + '&lng=' + encodeURIComponent(centerLng) + '&zoom=15';
 
     return '<div class="req-form-overlay" id="req-form-overlay" style="display:none">'
       + '<div class="req-form-card">'
@@ -98,11 +106,10 @@ PortalRouter.register('requests', async function (container) {
       + '    <select class="cf-input" id="req-assigned">' + contractorOpts + '</select>'
       + '  </div>'
       + '  <div class="cf-group"><label class="cf-label">Location (optional)</label>'
-      + '    <div class="cf-row" style="gap:8px">'
-      + '      <div class="cf-group cf-half" style="margin-bottom:0"><input type="number" step="any" class="cf-input" id="req-lat" placeholder="Latitude" value="' + centerLat + '"></div>'
-      + '      <div class="cf-group cf-half" style="margin-bottom:0"><input type="number" step="any" class="cf-input" id="req-lng" placeholder="Longitude" value="' + centerLng + '"></div>'
+      + '    <div style="border:1px solid var(--border,#e2e8f0);border-radius:8px;overflow:hidden;height:280px;">'
+      + '      <iframe id="req-pin-iframe" src="' + iframeSrc + '" style="width:100%;height:100%;border:none;display:block;" allowfullscreen></iframe>'
       + '    </div>'
-      + '    <p style="font-size:11px;color:var(--text-muted,#888);margin-top:4px">Defaults to community center if left unchanged.</p>'
+      + '    <p id="req-pin-label" style="font-size:11px;color:var(--text-muted,#888);margin-top:4px">Lat: ' + centerLat.toFixed(6) + ', Lng: ' + centerLng.toFixed(6) + '</p>'
       + '  </div>'
       + '  <div class="cf-actions">'
       + '    <button class="btn btn-ghost btn-sm" id="req-cancel">Cancel</button>'
@@ -162,6 +169,17 @@ PortalRouter.register('requests', async function (container) {
     var cancelBtn = overlay.querySelector('#req-cancel');
     var submitBtn = overlay.querySelector('#req-submit');
 
+    function resetPin() {
+      reqPinLat = centerLat;
+      reqPinLng = centerLng;
+      var label = overlay.querySelector('#req-pin-label');
+      if (label) label.textContent = 'Lat: ' + centerLat.toFixed(6) + ', Lng: ' + centerLng.toFixed(6);
+      var iframe = overlay.querySelector('#req-pin-iframe');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: 'setPin', lat: centerLat, lng: centerLng }, '*');
+      }
+    }
+
     function hideForm() {
       overlay.style.display = 'none';
       overlay.querySelector('#req-title').value = '';
@@ -169,13 +187,31 @@ PortalRouter.register('requests', async function (container) {
       overlay.querySelector('#req-priority').value = 'General';
       overlay.querySelector('#req-category').value = '';
       overlay.querySelector('#req-assigned').value = '';
-      var latEl = overlay.querySelector('#req-lat');
-      var lngEl = overlay.querySelector('#req-lng');
-      var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
-      var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
-      if (latEl) latEl.value = centerLat;
-      if (lngEl) lngEl.value = centerLng;
+      resetPin();
     }
+
+    function pinMessageHandler(e) {
+      if (!e.data || e.data.type !== 'pin') return;
+      var pinIframe = overlay.querySelector('#req-pin-iframe');
+      if (pinIframe && e.source !== pinIframe.contentWindow) return;
+      var lat = e.data.lat;
+      var lng = e.data.lng;
+      if (lat == null || lng == null) return;
+      reqPinLat = lat;
+      reqPinLng = lng;
+      var label = overlay.querySelector('#req-pin-label');
+      if (label) label.textContent = 'Lat: ' + lat.toFixed(6) + ', Lng: ' + lng.toFixed(6);
+    }
+
+    window.addEventListener('message', pinMessageHandler);
+
+    if (window._portalRequestsCleanup) {
+      window._portalRequestsCleanup();
+    }
+    window._portalRequestsCleanup = function () {
+      window.removeEventListener('message', pinMessageHandler);
+      window._portalRequestsCleanup = null;
+    };
 
     if (closeBtn) closeBtn.addEventListener('click', hideForm);
     if (cancelBtn) cancelBtn.addEventListener('click', hideForm);
@@ -196,18 +232,14 @@ PortalRouter.register('requests', async function (container) {
           showToast('Description is required', true);
           return;
         }
-        var centerLat = (community && community.centerLat) ? community.centerLat : 39.5;
-        var centerLng = (community && community.centerLng) ? community.centerLng : -104.9;
-        var latVal = parseFloat(overlay.querySelector('#req-lat').value);
-        var lngVal = parseFloat(overlay.querySelector('#req-lng').value);
         var body = {
           title: title,
           description: desc,
           priority: overlay.querySelector('#req-priority').value,
           category: overlay.querySelector('#req-category').value || undefined,
           assignedTo: overlay.querySelector('#req-assigned').value || undefined,
-          pinLat: isNaN(latVal) ? centerLat : latVal,
-          pinLng: isNaN(lngVal) ? centerLng : lngVal
+          pinLat: reqPinLat,
+          pinLng: reqPinLng
         };
 
         submitBtn.disabled = true;
