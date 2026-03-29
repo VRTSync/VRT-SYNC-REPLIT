@@ -139,6 +139,7 @@ export default function TaskDetailScreen() {
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
     staleTime: 0,
+    retry: 1,
   });
 
   const task = bundle?.task ?? null;
@@ -322,9 +323,9 @@ export default function TaskDetailScreen() {
     );
   }
 
-  if (isError || !task) {
+  if (!task && !isLoading) {
     const msg = anyError?.message ?? '';
-    const errorMessage = !task && !isError
+    const errorMessage = !isError
       ? 'Task not found.'
       : msg.includes('403')
         ? 'You do not have access to this task.'
@@ -428,6 +429,16 @@ export default function TaskDetailScreen() {
               </TouchableOpacity>
             </View>
           )}
+        </View>
+      )}
+
+      {isBundleError && task && (
+        <View style={styles.staleBanner}>
+          <Ionicons name="cloud-offline-outline" size={15} color="#b45309" />
+          <Text style={styles.staleBannerText}>Couldn't refresh — showing cached data.</Text>
+          <TouchableOpacity onPress={() => refetchBundle()}>
+            <Text style={styles.staleBannerRetry}>Retry</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -906,6 +917,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   content: { padding: 16, paddingBottom: 100 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  staleBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fffbeb', borderColor: '#fcd34d', borderWidth: 1,
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12,
+  },
+  staleBannerText: { flex: 1, fontSize: 13, color: '#92400e' },
+  staleBannerRetry: { fontSize: 13, fontWeight: '600' as const, color: '#b45309' },
   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 16 },
   errorText: { fontSize: 16, color: '#555', textAlign: 'center', lineHeight: 24 },
   retryBtn: { backgroundColor: '#25C1AC', borderRadius: 8, paddingHorizontal: 24, paddingVertical: 12 },
