@@ -3,6 +3,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   const DEFAULT_COST_PER_SF = 6.00;
   const DEFAULT_SAVINGS_PER_SF = 0.50;
+  const PROPERTY_NAME = 'Huntington Trails';
 
   const breadcrumb = document.getElementById('breadcrumb-area');
   if (breadcrumb) breadcrumb.innerHTML = '';
@@ -96,6 +97,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             <span id="xp-groups-count-badge" style="font-size:11px;font-weight:700;background:var(--teal);color:#fff;padding:2px 7px;border-radius:20px"></span>
           </div>
           <div id="xp-groups-list" style="display:flex;flex-direction:column;gap:10px"></div>
+          <div id="xp-compare-all-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--gray-100)">
+            <button id="xp-compare-all-btn" class="btn btn-sm" style="width:100%;background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:7px 10px">Compare All Groups</button>
+          </div>
         </div>
 
         <!-- Scenario Comparison panel -->
@@ -111,6 +115,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Summary overlay (hidden by default) -->
+    <div id="xp-summary-overlay" style="display:none;position:fixed;inset:0;z-index:9000;background:#f8fafc;overflow-y:auto">
+      <div id="xp-summary-content" style="max-width:860px;margin:0 auto;padding:40px 32px 80px"></div>
     </div>
 
     <style>
@@ -170,6 +179,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       .xp-group-actions {
         display: flex;
         gap: 6px;
+        flex-wrap: wrap;
       }
       .xp-group-btn {
         font-size: 11px;
@@ -185,6 +195,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       .xp-group-btn:hover { background: var(--gray-100); }
       .xp-group-btn.xp-btn-view { border-color: #d97706; color: #d97706; }
       .xp-group-btn.xp-btn-view:hover { background: #fffbeb; }
+      .xp-group-btn.xp-btn-summary { border-color: var(--teal); color: var(--teal); }
+      .xp-group-btn.xp-btn-summary:hover { background: #f0fdfa; }
+      .xp-group-btn.xp-btn-print { border-color: #6366f1; color: #6366f1; }
+      .xp-group-btn.xp-btn-print:hover { background: #eef2ff; }
       .xp-group-btn.xp-btn-delete { border-color: #dc2626; color: #dc2626; }
       .xp-group-btn.xp-btn-delete:hover { background: #fef2f2; }
       .xp-comparison-table {
@@ -225,6 +239,248 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       }
       #xp-right-panel::-webkit-scrollbar { width: 4px; }
       #xp-right-panel::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 2px; }
+
+      /* ── Summary styles ─────────────────────────── */
+      .xps-header {
+        border-bottom: 3px solid var(--teal);
+        padding-bottom: 20px;
+        margin-bottom: 28px;
+      }
+      .xps-property {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--teal);
+        margin-bottom: 6px;
+      }
+      .xps-title {
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--navy);
+        margin: 0 0 6px;
+        line-height: 1.2;
+      }
+      .xps-meta {
+        font-size: 12px;
+        color: var(--gray-500);
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .xps-meta-item { display: flex; gap: 4px; }
+      .xps-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+      .xps-kpi-card {
+        background: var(--white);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 16px;
+        page-break-inside: avoid;
+      }
+      .xps-kpi-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--gray-400);
+        margin-bottom: 6px;
+      }
+      .xps-kpi-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--navy);
+        line-height: 1;
+      }
+      .xps-kpi-value.accent { color: var(--teal); }
+      .xps-section-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--navy);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin: 0 0 12px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--gray-200);
+      }
+      .xps-block {
+        background: var(--white);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        page-break-inside: avoid;
+      }
+      .xps-assumptions-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 24px;
+        font-size: 13px;
+        color: var(--gray-700);
+        margin-bottom: 10px;
+      }
+      .xps-disclaimer {
+        font-size: 12px;
+        color: var(--gray-500);
+        line-height: 1.6;
+        font-style: italic;
+        border-top: 1px solid var(--gray-100);
+        padding-top: 10px;
+        margin-top: 10px;
+      }
+      .xps-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .xps-table th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--gray-400);
+        padding: 6px 8px;
+        border-bottom: 2px solid var(--gray-200);
+        white-space: nowrap;
+      }
+      .xps-table td {
+        padding: 8px 8px;
+        border-bottom: 1px solid var(--gray-100);
+        color: var(--navy);
+        vertical-align: top;
+      }
+      .xps-table tr:last-child td { border-bottom: none; }
+      .xps-compare-table th { text-align: right; }
+      .xps-compare-table th:first-child { text-align: left; }
+      .xps-compare-table td { text-align: right; }
+      .xps-compare-table td:first-child { text-align: left; font-weight: 700; }
+      .xps-map-container {
+        background: var(--gray-100);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        margin-bottom: 20px;
+        overflow: hidden;
+        page-break-inside: avoid;
+      }
+      .xps-map-label {
+        font-size: 11px;
+        color: var(--gray-400);
+        font-style: italic;
+        text-align: center;
+        padding: 6px 0;
+        background: var(--white);
+        border-top: 1px solid var(--gray-100);
+      }
+      .xps-map-placeholder {
+        height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--gray-400);
+        font-size: 13px;
+      }
+      .xps-back-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--gray-600);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 7px 14px;
+        margin-bottom: 24px;
+        transition: background 0.12s;
+      }
+      .xps-back-btn:hover { background: var(--gray-100); }
+      .xps-print-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        cursor: pointer;
+        background: var(--navy);
+        border: none;
+        border-radius: var(--radius);
+        padding: 7px 16px;
+        margin-bottom: 24px;
+        margin-left: 8px;
+        transition: opacity 0.12s;
+      }
+      .xps-print-btn:hover { opacity: 0.87; }
+      .xps-admin-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        background: #fef9c3;
+        color: #854d0e;
+        border: 1px solid #fde68a;
+        border-radius: 4px;
+        padding: 2px 8px;
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+      .xps-group-detail-section {
+        margin-bottom: 24px;
+        page-break-inside: avoid;
+      }
+
+      /* ── Print styles ──────────────────────────── */
+      @media print {
+        #sidebar,
+        #topbar,
+        .xps-back-btn,
+        .xps-print-btn,
+        .xps-map-container,
+        #xp-map,
+        #xp-right-panel,
+        .page-header {
+          display: none !important;
+        }
+        #xp-summary-overlay {
+          position: static !important;
+          background: #fff !important;
+          overflow: visible !important;
+        }
+        #xp-summary-content {
+          max-width: 100% !important;
+          padding: 20px !important;
+        }
+        body, #app, #main-content, #page-content {
+          overflow: visible !important;
+        }
+        .xps-kpi-card,
+        .xps-block,
+        .xps-group-detail-section,
+        .xps-map-container {
+          page-break-inside: avoid;
+        }
+        .xps-map-print-placeholder {
+          display: block !important;
+          height: 60px;
+          background: #f1f5f9;
+          border: 1px dashed #cbd5e1;
+          border-radius: 6px;
+          text-align: center;
+          line-height: 60px;
+          font-size: 12px;
+          color: #94a3b8;
+          margin-bottom: 20px;
+        }
+        .xps-no-print { display: none !important; }
+      }
+      .xps-map-print-placeholder { display: none; }
     </style>
   `;
 
@@ -234,7 +490,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   let leafletLayers = {};
   let map = null;
   let groups = [];            // PlannerGroup[]
-  let highlightedGroupId = null; // id of currently map-highlighted group
+  let highlightedGroupId = null;
+  let summaryMiniMaps = [];   // track mini-map instances for cleanup
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function genId() {
@@ -249,10 +506,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
 
+  function formatDate(isoOrDate) {
+    const d = isoOrDate ? new Date(isoOrDate) : new Date();
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
   function getAssumptions() {
     const costPerSf = parseFloat(document.getElementById('xp-cost-per-sf').value) || 0;
     const savingsPerSf = parseFloat(document.getElementById('xp-savings-per-sf').value) || 0;
     return { costPerSf, savingsPerSf };
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   // ── Group computation (pure functions) ─────────────────────────────────────
@@ -276,6 +546,60 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       ...g,
       ...computeGroupOutputs(g.polygonIds, assumptions),
     }));
+  }
+
+  // ── buildGroupSummary — pure, reusable ─────────────────────────────────────
+  // Accepts the group, the full polygon feature collection, assumptions, and optional
+  // overrides for propertyName and generatedDate so the function is fully deterministic
+  // and testable without side-effects.
+  function buildGroupSummary(group, polygonFeatures, assumptions, opts) {
+    opts = opts || {};
+    const propertyName = opts.propertyName !== undefined ? opts.propertyName : PROPERTY_NAME;
+    const generatedDate = opts.generatedDate !== undefined ? opts.generatedDate : formatDate(new Date());
+
+    const paybackStr = group.estimatedPaybackYears === null
+      ? '—'
+      : group.estimatedPaybackYears < 1
+        ? '< 1 yr'
+        : group.estimatedPaybackYears.toFixed(1) + ' yrs';
+
+    const polygonDetails = polygonFeatures
+      .filter(f => group.polygonIds.includes(f.properties.id))
+      .map(f => ({ name: f.properties.name || f.properties.id, sqft: f.properties.area_sqft || 0 }))
+      .sort((a, b) => b.sqft - a.sqft);
+
+    return {
+      propertyName,
+      groupName: group.name,
+      generatedDate,
+      polygonCount: group.polygonCount,
+      totalSquareFootage: group.totalSquareFootage,
+      costPerSf: assumptions.costPerSf,
+      savingsPerSf: assumptions.savingsPerSf,
+      estimatedConversionCost: group.estimatedConversionCost,
+      estimatedAnnualWaterSavings: group.estimatedAnnualWaterSavings,
+      estimatedPaybackYears: group.estimatedPaybackYears,
+      paybackStr,
+      polygonDetails,
+      polygonIds: group.polygonIds,
+    };
+  }
+
+  // ── renderAssumptionsBlock — reusable HTML component ──────────────────────
+  function renderAssumptionsBlock(assumptions) {
+    return `
+      <div class="xps-block">
+        <div class="xps-section-title">Assumptions &amp; Disclaimer</div>
+        <div class="xps-assumptions-grid">
+          <div><strong>Conversion cost:</strong> ${formatCurrency(assumptions.costPerSf)} / SF</div>
+          <div><strong>Annual water savings:</strong> ${formatCurrency(assumptions.savingsPerSf)} / SF</div>
+          <div style="grid-column:1/-1"><strong>Payback basis:</strong> Water-only savings (does not include maintenance savings or utility rate escalation)</div>
+        </div>
+        <div class="xps-disclaimer">
+          Estimates shown are planning-level figures based on selected assumptions and mapped polygon area. Actual project cost, water savings, and payback may vary based on final design, utility rates, site conditions, and operational factors.
+        </div>
+      </div>
+    `;
   }
 
   // ── Map styles ─────────────────────────────────────────────────────────────
@@ -446,6 +770,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const panel = document.getElementById('xp-groups-panel');
     const list = document.getElementById('xp-groups-list');
     const badge = document.getElementById('xp-groups-count-badge');
+    const compareAllWrap = document.getElementById('xp-compare-all-wrap');
 
     if (!panel || !list) return;
 
@@ -484,6 +809,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         </div>
         <div class="xp-group-actions">
           <button class="xp-group-btn xp-btn-view" data-action="view" data-id="${group.id}">View on Map</button>
+          <button class="xp-group-btn xp-btn-summary" data-action="summary" data-id="${group.id}">View Summary</button>
+          <button class="xp-group-btn xp-btn-print" data-action="print" data-id="${group.id}">Print Summary</button>
           <button class="xp-group-btn" data-action="rename" data-id="${group.id}">Rename</button>
           <button class="xp-group-btn xp-btn-delete" data-action="delete" data-id="${group.id}">Delete</button>
         </div>
@@ -492,8 +819,17 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       list.appendChild(row);
     });
 
-    // event delegation — assign once per render (replaces prior handler, never accumulates)
+    if (compareAllWrap) {
+      compareAllWrap.style.display = groups.length >= 2 ? 'block' : 'none';
+    }
+
+    // event delegation
     list.onclick = handleGroupListClick;
+
+    const compareAllBtn = document.getElementById('xp-compare-all-btn');
+    if (compareAllBtn) {
+      compareAllBtn.onclick = showComparisonSummary;
+    }
   }
 
   function handleGroupListClick(e) {
@@ -502,6 +838,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       const action = btn.dataset.action;
       const id = btn.dataset.id;
       if (action === 'view') viewGroupOnMap(id);
+      else if (action === 'summary') showGroupSummary(id);
+      else if (action === 'print') printGroupSummary(id);
       else if (action === 'rename') startRenameGroup(id);
       else if (action === 'delete') deleteGroup(id);
       return;
@@ -636,13 +974,302 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     `;
   }
 
-  // ── Utility ────────────────────────────────────────────────────────────────
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  // ── Summary overlay helpers ────────────────────────────────────────────────
+  function destroyMiniMaps() {
+    summaryMiniMaps.forEach(m => { try { m.remove(); } catch {} });
+    summaryMiniMaps = [];
+  }
+
+  function showOverlay(htmlContent) {
+    destroyMiniMaps();
+    const overlay = document.getElementById('xp-summary-overlay');
+    const content = document.getElementById('xp-summary-content');
+    if (!overlay || !content) return;
+    content.innerHTML = htmlContent;
+    overlay.style.display = 'block';
+    overlay.scrollTop = 0;
+  }
+
+  function hideSummaryOverlay() {
+    destroyMiniMaps();
+    const overlay = document.getElementById('xp-summary-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  // ── Mini-map rendering ─────────────────────────────────────────────────────
+  function renderMiniMap(containerId, polygonIdSets, colorSets) {
+    // polygonIdSets: array of arrays (one per group/color)
+    // colorSets: array of color strings matching each set
+    const el = document.getElementById(containerId);
+    if (!el) return;
+
+    if (typeof L === 'undefined') {
+      el.innerHTML = '<div class="xps-map-placeholder">Map preview unavailable — map library not loaded.</div>';
+      return;
+    }
+
+    try {
+      const miniMap = L.map(el, {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        touchZoom: false,
+        keyboard: false,
+      });
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 20,
+      }).addTo(miniMap);
+
+      const bounds = L.latLngBounds([]);
+
+      polygonIdSets.forEach((ids, idx) => {
+        const color = colorSets[idx] || '#14b8a6';
+        const features = allFeatures.filter(f => ids.includes(f.properties.id));
+        features.forEach(feature => {
+          const layer = L.geoJSON(feature, {
+            style: () => ({ color, weight: 2, fillColor: color, fillOpacity: 0.35, opacity: 1 }),
+            interactive: false,
+          }).addTo(miniMap);
+          try { bounds.extend(layer.getBounds()); } catch {}
+        });
+      });
+
+      if (bounds.isValid()) {
+        miniMap.fitBounds(bounds, { padding: [16, 16] });
+      } else {
+        miniMap.remove();
+        el.innerHTML = '<div class="xps-map-placeholder">Map preview unavailable — no polygon geometry found.</div>';
+        return;
+      }
+
+      summaryMiniMaps.push(miniMap);
+    } catch (err) {
+      const el2 = document.getElementById(containerId);
+      if (el2) el2.innerHTML = '<div class="xps-map-placeholder">Map preview unavailable.</div>';
+    }
+  }
+
+  // ── Single-group summary view ──────────────────────────────────────────────
+  function showGroupSummary(id) {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+
+    const assumptions = getAssumptions();
+    const summary = buildGroupSummary(group, allFeatures, assumptions);
+
+    const polygonRows = summary.polygonDetails.map((p, i) => `
+      <tr>
+        <td style="color:var(--gray-500);font-size:12px">${i + 1}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td style="text-align:right">${formatNumber(p.sqft)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px" class="xps-no-print">
+          <button class="xps-back-btn" id="xps-back-btn">&#8592; Back to Planner</button>
+          <button class="xps-print-btn" id="xps-print-btn">&#128438; Print Summary</button>
+        </div>
+
+        <div class="xps-header">
+          <div class="xps-property">${escapeHtml(summary.propertyName)}</div>
+          <h1 class="xps-title">${escapeHtml(summary.groupName)} <span class="xps-admin-badge">Admin Planning Tool &mdash; Internal Use Only</span></h1>
+          <div class="xps-meta">
+            <span class="xps-meta-item"><strong>Generated:</strong>&nbsp;${escapeHtml(summary.generatedDate)}</span>
+            <span class="xps-meta-item"><strong>Polygons:</strong>&nbsp;${summary.polygonCount}</span>
+            <span class="xps-meta-item"><strong>Total SF:</strong>&nbsp;${formatNumber(summary.totalSquareFootage)}</span>
+          </div>
+        </div>
+
+        <div class="xps-kpi-row">
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Conversion Cost</div>
+            <div class="xps-kpi-value">${formatCurrency(summary.estimatedConversionCost)}</div>
+          </div>
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Annual Water Savings</div>
+            <div class="xps-kpi-value accent">${summary.estimatedAnnualWaterSavings > 0 ? formatCurrency(summary.estimatedAnnualWaterSavings) + '/yr' : '—'}</div>
+          </div>
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Payback Period</div>
+            <div class="xps-kpi-value">${summary.paybackStr}</div>
+          </div>
+        </div>
+
+        <div class="xps-map-container xps-no-print">
+          <div id="xps-mini-map-single" style="height:220px"></div>
+          <div class="xps-map-label">Planning reference map — not to scale. Shows selected polygons only.</div>
+        </div>
+        <div class="xps-map-print-placeholder">Map preview omitted from print. See digital summary for spatial reference.</div>
+
+        ${renderAssumptionsBlock(assumptions)}
+
+        <div class="xps-block">
+          <div class="xps-section-title">Polygon Detail</div>
+          <table class="xps-table">
+            <thead>
+              <tr>
+                <th style="width:32px">#</th>
+                <th>Polygon Name</th>
+                <th style="text-align:right">Square Footage</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${polygonRows}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" style="font-weight:700;border-top:2px solid var(--gray-200);padding-top:10px">Total</td>
+                <td style="text-align:right;font-weight:700;border-top:2px solid var(--gray-200);padding-top:10px">${formatNumber(summary.totalSquareFootage)} SF</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+
+    showOverlay(html);
+
+    document.getElementById('xps-back-btn').addEventListener('click', hideSummaryOverlay);
+    document.getElementById('xps-print-btn').addEventListener('click', function() { window.print(); });
+
+    // Render mini-map after DOM is ready
+    setTimeout(() => {
+      renderMiniMap('xps-mini-map-single', [summary.polygonIds], ['#14b8a6']);
+    }, 100);
+  }
+
+  // ── Print shortcut (generate + print in one step) ──────────────────────────
+  function printGroupSummary(id) {
+    const group = groups.find(g => g.id === id);
+    if (!group) return;
+    showGroupSummary(id);
+    // slight delay so the overlay renders before print dialog
+    setTimeout(() => { window.print(); }, 300);
+  }
+
+  // ── Comparison summary view ─────────────────────────────────────────────────
+  function showComparisonSummary() {
+    if (groups.length < 2) {
+      showToast('Save at least two groups to compare', 'error');
+      return;
+    }
+
+    const assumptions = getAssumptions();
+    const summaries = groups.map(g => buildGroupSummary(g, allFeatures, assumptions));
+
+    const GROUP_COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#0ea5e9', '#f97316'];
+
+    const comparisonRows = summaries.map(s => {
+      const paybackStr = s.paybackStr;
+      return `<tr>
+        <td>${escapeHtml(s.groupName)}</td>
+        <td>${s.polygonCount}</td>
+        <td>${formatNumber(s.totalSquareFootage)}</td>
+        <td>${formatCurrency(s.estimatedConversionCost)}</td>
+        <td>${s.estimatedAnnualWaterSavings > 0 ? formatCurrency(s.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+        <td>${paybackStr}</td>
+      </tr>`;
+    }).join('');
+
+    const detailSections = summaries.map((s, idx) => {
+      const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+      const polygonRows = s.polygonDetails.map((p, i) => `
+        <tr>
+          <td style="color:var(--gray-500);font-size:12px">${i + 1}</td>
+          <td>${escapeHtml(p.name)}</td>
+          <td style="text-align:right">${formatNumber(p.sqft)}</td>
+        </tr>
+      `).join('');
+
+      return `
+        <div class="xps-group-detail-section">
+          <div class="xps-section-title" style="border-left:4px solid ${color};padding-left:10px">${escapeHtml(s.groupName)}</div>
+          <table class="xps-table" style="margin-bottom:0">
+            <thead>
+              <tr>
+                <th style="width:32px">#</th>
+                <th>Polygon Name</th>
+                <th style="text-align:right">Square Footage</th>
+              </tr>
+            </thead>
+            <tbody>${polygonRows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" style="font-weight:700;border-top:2px solid var(--gray-200);padding-top:10px">Total</td>
+                <td style="text-align:right;font-weight:700;border-top:2px solid var(--gray-200);padding-top:10px">${formatNumber(s.totalSquareFootage)} SF</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    const html = `
+      <div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px" class="xps-no-print">
+          <button class="xps-back-btn" id="xps-back-btn">&#8592; Back to Planner</button>
+          <button class="xps-print-btn" id="xps-print-btn">&#128438; Print Comparison</button>
+        </div>
+
+        <div class="xps-header">
+          <div class="xps-property">${escapeHtml(PROPERTY_NAME)}</div>
+          <h1 class="xps-title">Scenario Comparison &mdash; All Groups <span class="xps-admin-badge">Admin Planning Tool &mdash; Internal Use Only</span></h1>
+          <div class="xps-meta">
+            <span class="xps-meta-item"><strong>Generated:</strong>&nbsp;${formatDate(new Date())}</span>
+            <span class="xps-meta-item"><strong>Groups compared:</strong>&nbsp;${groups.length}</span>
+          </div>
+        </div>
+
+        <div class="xps-block" style="page-break-inside:avoid">
+          <div class="xps-section-title">Side-by-Side Comparison</div>
+          <div style="overflow-x:auto">
+            <table class="xps-table xps-compare-table">
+              <thead>
+                <tr>
+                  <th style="text-align:left">Group Name</th>
+                  <th>Polygons</th>
+                  <th>Total SF</th>
+                  <th>Est. Cost</th>
+                  <th>Annual Savings</th>
+                  <th>Payback</th>
+                </tr>
+              </thead>
+              <tbody>${comparisonRows}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="xps-map-container xps-no-print">
+          <div id="xps-mini-map-compare" style="height:260px"></div>
+          <div class="xps-map-label">Planning reference map — all groups shown. Not to scale.</div>
+        </div>
+        <div class="xps-map-print-placeholder">Map preview omitted from print. See digital summary for spatial reference.</div>
+
+        ${renderAssumptionsBlock(assumptions)}
+
+        <div class="xps-block">
+          <div class="xps-section-title">Polygon Detail by Group</div>
+          ${detailSections}
+        </div>
+      </div>
+    `;
+
+    showOverlay(html);
+
+    document.getElementById('xps-back-btn').addEventListener('click', hideSummaryOverlay);
+    document.getElementById('xps-print-btn').addEventListener('click', function() { window.print(); });
+
+    // Render comparison mini-map
+    setTimeout(() => {
+      const polygonIdSets = summaries.map(s => s.polygonIds);
+      const colorSets = summaries.map((_, i) => GROUP_COLORS[i % GROUP_COLORS.length]);
+      renderMiniMap('xps-mini-map-compare', polygonIdSets, colorSets);
+    }, 100);
   }
 
   // ── Map init ───────────────────────────────────────────────────────────────
