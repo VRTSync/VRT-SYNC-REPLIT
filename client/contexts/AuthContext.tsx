@@ -110,7 +110,9 @@ async function registerPushTokenWithServer() {
     const platform = Platform.OS as 'ios' | 'android';
     const deviceId = await getOrCreateDeviceId();
 
-    await apiRequest('POST', '/api/push-tokens', { token, platform, deviceId });
+    const regRes = await apiRequest('POST', '/api/push-tokens', { token, platform, deviceId });
+    const regData = await regRes.json() as { rateLimited?: boolean };
+    if (regData.rateLimited) return; // Server already has this token; skip updating local throttle
     await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
     await AsyncStorage.setItem(PUSH_TOKEN_LAST_REG_KEY, JSON.stringify({ ts: Date.now(), token }));
   } catch (e) {

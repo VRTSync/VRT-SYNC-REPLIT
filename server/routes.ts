@@ -33,7 +33,7 @@ import { db, pool } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
-export const pushTokenLastReg = new Map<string, number>();
+export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -1210,18 +1210,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const deviceId = parsed.data.deviceId;
+      const newToken = parsed.data.token;
       const now = Date.now();
       const lastReg = pushTokenLastReg.get(deviceId);
-      if (lastReg && now - lastReg < PUSH_TOKEN_RATE_LIMIT_MS) {
+      if (lastReg && lastReg.token === newToken && now - lastReg.ts < PUSH_TOKEN_RATE_LIMIT_MS) {
         return res.status(200).json({ rateLimited: true });
       }
       const pushToken = await storage.registerPushToken(
         req.session.userId!,
-        parsed.data.token,
+        newToken,
         parsed.data.platform,
         deviceId,
       );
-      pushTokenLastReg.set(deviceId, now);
+      pushTokenLastReg.set(deviceId, { ts: now, token: newToken });
       res.status(201).json(pushToken);
     } catch (error) {
       console.error("Register push token error:", error);
@@ -1234,6 +1235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { token, deviceId } = req.body;
       if (deviceId) {
         await storage.removePushTokenByDevice(req.session.userId!, deviceId);
+        pushTokenLastReg.delete(deviceId);
       } else if (token) {
         await storage.removePushToken(req.session.userId!, token);
       } else {

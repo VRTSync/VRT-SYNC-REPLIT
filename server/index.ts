@@ -843,12 +843,15 @@ async function seedContacts() {
 
   // Pre-session rate limit for push token storm: check in-memory Map BEFORE session
   // middleware runs its DB lookup — returns immediately with zero DB activity when rate-limited.
+  // Token-aware: only short-circuits when the same deviceId + same token is within the window.
+  // Token rotation bypasses the check so new tokens are always registered.
   app.post("/api/push-tokens", (req: Request, res: Response, next: NextFunction) => {
     const deviceId = req.body?.deviceId;
-    if (!deviceId) return next();
-    const lastReg = pushTokenLastReg.get(deviceId);
+    const incomingToken = req.body?.token;
+    if (!deviceId || !incomingToken) return next();
+    const entry = pushTokenLastReg.get(deviceId);
     const now = Date.now();
-    if (lastReg && now - lastReg < PUSH_TOKEN_RATE_LIMIT_MS) {
+    if (entry && entry.token === incomingToken && now - entry.ts < PUSH_TOKEN_RATE_LIMIT_MS) {
       return res.json({ rateLimited: true });
     }
     next();
