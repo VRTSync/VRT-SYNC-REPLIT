@@ -236,8 +236,11 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
 
   function openReq(id) {
     var msg = JSON.stringify({ type: 'openRequest', data: { id: id } });
-    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(msg);
-    else if (window.parent !== window) window.parent.postMessage(msg, '*');
+    if (typeof window !== 'undefined' && window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+      window.ReactNativeWebView.postMessage(msg);
+    } else {
+      window.parent.postMessage(msg, '*');
+    }
   }
 
   ${markersJs}
@@ -293,6 +296,40 @@ export default function HoaRequestsScreen() {
       });
     }
   }, [dataUpdatedAt]);
+
+  React.useEffect(() => {
+    if (!data) return;
+    data.forEach(req => {
+      const existing = queryClient.getQueryData([`/api/tasks/${req.id}/detail`]);
+      if (!existing) {
+        queryClient.setQueryData([`/api/tasks/${req.id}/detail`], {
+          task: {
+            id: req.id,
+            title: req.title,
+            status: req.status,
+            priority: req.priority,
+            createdAt: req.createdAt,
+            latitude: req.latitude ?? null,
+            longitude: req.longitude ?? null,
+            description: null,
+            communityId: '',
+            address: null,
+            assignedTo: null,
+            createdBy: '',
+            dueDate: null,
+            windowStart: null,
+            windowEnd: null,
+            version: 0,
+            origin: 'HOA',
+            updatedAt: req.createdAt,
+          },
+          completions: [],
+          taskAttachments: [],
+          taskLink: null,
+        });
+      }
+    });
+  }, [data, queryClient]);
 
   const handleSyncNow = useCallback(async () => {
     const result = await refetch();
