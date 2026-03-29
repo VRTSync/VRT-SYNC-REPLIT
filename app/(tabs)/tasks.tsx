@@ -210,6 +210,9 @@ export default function TasksScreen() {
   React.useEffect(() => {
     if (serverTasks && serverTasks.length > 0) {
       cacheTasks(serverTasks);
+      serverTasks.forEach(task => {
+        qc.setQueryData([`/api/tasks/${task.id}`], task);
+      });
     }
   }, [serverTasks]);
 

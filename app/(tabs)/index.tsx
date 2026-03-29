@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl,
   ActivityIndicator, Alert,
 } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '@/lib/query-client';
@@ -188,6 +188,22 @@ export default function DashboardScreen() {
     }
   };
 
+
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!dashboard) return;
+    const allTasks = [
+      ...(dashboard.dueTodayTasks ?? []),
+      ...(dashboard.upcomingTasks ?? []),
+      ...(dashboard.overdueTasks ?? []),
+      ...(dashboard.inWindowTasks ?? []),
+      ...(dashboard.comingUpTasks ?? []),
+    ];
+    allTasks.forEach(task => {
+      queryClient.setQueryData([`/api/tasks/${task.id}`], task);
+    });
+  }, [dashboard, queryClient]);
 
   const failedCount = pendingCompletions.filter(c => c.state === 'failed').length;
 
