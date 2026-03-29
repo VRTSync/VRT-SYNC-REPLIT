@@ -702,6 +702,32 @@ async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS push_tickets_created_at_idx ON push_tickets(created_at);
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS acknowledged_at timestamp;
+
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'planner_record_status') THEN
+          CREATE TYPE planner_record_status AS ENUM ('draft', 'reviewed', 'selected_for_estimate', 'archived');
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS planner_records (
+        id                   varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+        property_id          varchar NOT NULL,
+        record_name          text NOT NULL,
+        status               planner_record_status NOT NULL DEFAULT 'draft',
+        internal_notes       text,
+        assumptions_json     jsonb NOT NULL DEFAULT '{}'::jsonb,
+        groups_json          jsonb NOT NULL DEFAULT '[]'::jsonb,
+        total_sqft           double precision NOT NULL DEFAULT 0,
+        total_estimated_cost double precision NOT NULL DEFAULT 0,
+        total_annual_savings double precision NOT NULL DEFAULT 0,
+        payback_years        double precision,
+        created_by           varchar REFERENCES users(id),
+        created_at           timestamp NOT NULL DEFAULT now(),
+        updated_at           timestamp NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS planner_records_property_idx ON planner_records(property_id);
+      CREATE INDEX IF NOT EXISTS planner_records_status_idx ON planner_records(status);
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

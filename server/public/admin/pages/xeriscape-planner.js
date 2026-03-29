@@ -4,18 +4,26 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   const DEFAULT_COST_PER_SF = 6.00;
   const DEFAULT_SAVINGS_PER_SF = 0.50;
   const PROPERTY_NAME = 'Huntington Trails';
+  const PROPERTY_ID = 'huntington-trails';
 
   const breadcrumb = document.getElementById('breadcrumb-area');
   if (breadcrumb) breadcrumb.innerHTML = '';
 
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:16px">
-      <div>
-        <h1 style="font-size:22px;font-weight:700;color:var(--navy);margin:0">Xeriscape Conversion Planner</h1>
-        <p style="font-size:13px;color:var(--gray-500);margin:4px 0 0">Huntington Trails &mdash; Select bluegrass polygons to estimate conversion cost and water savings</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>
+          <h1 style="font-size:22px;font-weight:700;color:var(--navy);margin:0">Xeriscape Conversion Planner</h1>
+          <p style="font-size:13px;color:var(--gray-500);margin:4px 0 0">Huntington Trails &mdash; Select bluegrass polygons to estimate conversion cost and water savings</p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center" id="xp-toolbar-actions">
+          <span id="xp-loaded-record-badge" style="display:none;font-size:11px;font-weight:700;background:var(--teal);color:#fff;padding:3px 10px;border-radius:20px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <button id="xp-new-session-btn" class="btn btn-secondary btn-sm" style="display:none">New Session</button>
+          <button id="xp-save-record-btn" class="btn btn-sm" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">&#128190; Save Record</button>
+        </div>
       </div>
     </div>
-    <div style="display:flex;gap:20px;height:calc(100vh - 160px);min-height:500px">
+    <div style="display:flex;gap:20px;height:calc(100vh - 180px);min-height:500px">
       <div style="flex:1;min-width:0;position:relative;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-md);border:1px solid var(--gray-200)">
         <div id="xp-map" style="width:100%;height:100%;background:#e8eef4"></div>
         <div id="xp-map-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(240,244,248,0.85);z-index:1000;font-size:14px;color:var(--gray-500)">
@@ -25,7 +33,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           </div>
         </div>
       </div>
-      <div id="xp-right-panel" style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;max-height:calc(100vh - 160px);overflow-y:auto;padding-right:2px">
+      <div id="xp-right-panel" style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;max-height:calc(100vh - 180px);overflow-y:auto;padding-right:2px">
 
         <!-- Selection card -->
         <div class="xp-card">
@@ -111,7 +119,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <!-- How to use -->
         <div class="xp-card" style="background:var(--gray-50)">
           <div style="font-size:12px;color:var(--gray-500);line-height:1.5">
-            <strong>How to use:</strong> Click polygons on the map to select them. Keep clicking to build a multi-polygon selection. Adjust assumptions to update estimates instantly. Save named groups to compare scenarios side by side.
+            <strong>How to use:</strong> Click polygons on the map to select them. Keep clicking to build a multi-polygon selection. Adjust assumptions to update estimates instantly. Save named groups to compare scenarios side by side. Use "Save Record" to persist the entire planning session to the database.
           </div>
         </div>
       </div>
@@ -120,6 +128,66 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     <!-- Summary overlay (hidden by default) -->
     <div id="xp-summary-overlay" style="display:none;position:fixed;inset:0;z-index:9000;background:#f8fafc;overflow-y:auto">
       <div id="xp-summary-content" style="max-width:860px;margin:0 auto;padding:40px 32px 80px"></div>
+    </div>
+
+    <!-- Planning History section (below map) -->
+    <div id="xp-history-section" style="margin-top:24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:16px;font-weight:700;color:var(--navy);margin:0">Planning History</h2>
+        <button id="xp-refresh-history-btn" class="btn btn-secondary btn-sm">&#8635; Refresh</button>
+      </div>
+      <div id="xp-history-content">
+        <div style="font-size:13px;color:var(--gray-400);padding:24px 0;text-align:center">Loading records&hellip;</div>
+      </div>
+    </div>
+
+    <!-- Save Record Modal -->
+    <div id="xp-save-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:var(--radius);padding:28px;width:440px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+        <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:18px" id="xp-save-modal-title">Save Planning Record</div>
+        <div style="margin-bottom:12px">
+          <label class="xp-label" style="display:block;margin-bottom:4px">Record Name <span style="color:#dc2626">*</span></label>
+          <input type="text" id="xp-modal-record-name" class="form-input" placeholder="e.g. North Lawn Full Conversion — Mar 2026">
+        </div>
+        <div style="margin-bottom:18px">
+          <label class="xp-label" style="display:block;margin-bottom:4px">Internal Notes (optional)</label>
+          <textarea id="xp-modal-notes" class="form-input" rows="3" placeholder="Add any notes about this scenario…" style="resize:vertical"></textarea>
+        </div>
+        <div id="xp-save-modal-error" style="display:none;font-size:12px;color:#dc2626;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="xp-save-modal-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+          <button id="xp-save-modal-confirm" class="btn btn-sm" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 16px">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Selected-for-Estimate Warning Modal -->
+    <div id="xp-warn-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:var(--radius);padding:28px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.25)">
+        <div style="font-size:16px;font-weight:700;color:#b45309;margin-bottom:12px">&#9888; Record Selected for Estimate</div>
+        <p style="font-size:13px;color:var(--gray-600);margin:0 0 18px">This record is already marked <strong>Selected for Estimate</strong>. Editing it directly may affect your proposal pipeline. What would you like to do?</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="xp-warn-edit-btn" class="btn btn-sm" style="background:#b45309;color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">Edit Directly</button>
+          <button id="xp-warn-duplicate-btn" class="btn btn-sm" style="background:var(--teal);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">Duplicate First</button>
+          <button id="xp-warn-cancel-btn" class="btn btn-secondary btn-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Proposal Prep Modal -->
+    <div id="xp-proposal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:#fff;border-radius:var(--radius);padding:28px;width:580px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.25);max-height:85vh;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700;color:var(--navy)">Proposal Prep Handoff</div>
+          <button id="xp-proposal-close-btn" class="btn btn-secondary btn-sm">Close</button>
+        </div>
+        <p style="font-size:12px;color:var(--gray-500);margin:0 0 12px">This is the structured handoff payload for the proposal builder. Copy or download it for use in downstream tools.</p>
+        <pre id="xp-proposal-payload" style="flex:1;overflow:auto;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:6px;padding:14px;font-size:11px;line-height:1.6;font-family:monospace;margin-bottom:14px;white-space:pre-wrap;word-break:break-word"></pre>
+        <div style="display:flex;gap:8px">
+          <button id="xp-proposal-copy-btn" class="btn btn-sm" style="background:var(--teal);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">&#128203; Copy to Clipboard</button>
+          <button id="xp-proposal-download-btn" class="btn btn-sm" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">&#8659; Download JSON</button>
+        </div>
+      </div>
     </div>
 
     <style>
@@ -481,6 +549,57 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         .xps-no-print { display: none !important; }
       }
       .xps-map-print-placeholder { display: none; }
+
+      /* ── Record styles ──────────────────────────── */
+      .xp-record-row {
+        background: var(--white);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        transition: border-color 0.15s;
+      }
+      .xp-record-row.xp-record-selected { border-color: #16a34a; border-left: 4px solid #16a34a; }
+      .xp-record-row.xp-record-archived { opacity: 0.55; }
+      .xp-record-name { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+      .xp-record-meta { font-size: 11px; color: var(--gray-500); display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; }
+      .xp-status-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 2px 8px;
+        border-radius: 20px;
+      }
+      .xp-status-draft { background: #f1f5f9; color: #64748b; }
+      .xp-status-reviewed { background: #dbeafe; color: #1d4ed8; }
+      .xp-status-selected_for_estimate { background: #dcfce7; color: #16a34a; }
+      .xp-status-archived { background: #f3f4f6; color: #9ca3af; }
+      .xp-record-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+      .xp-record-btn {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 9px;
+        border-radius: 4px;
+        border: 1px solid var(--gray-200);
+        background: var(--white);
+        color: var(--gray-600);
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .xp-record-btn:hover { background: var(--gray-100); }
+      .xp-record-btn.xp-btn-open { border-color: var(--navy); color: var(--navy); }
+      .xp-record-btn.xp-btn-open:hover { background: var(--navy); color: #fff; }
+      .xp-record-btn.xp-btn-select { border-color: #16a34a; color: #16a34a; }
+      .xp-record-btn.xp-btn-select:hover { background: #dcfce7; }
+      .xp-record-btn.xp-btn-proposal { border-color: #7c3aed; color: #7c3aed; }
+      .xp-record-btn.xp-btn-proposal:hover { background: #ede9fe; }
+      .xp-record-btn.xp-btn-archive { border-color: var(--gray-300); color: var(--gray-500); }
+      .xp-record-btn.xp-btn-delete { border-color: #dc2626; color: #dc2626; }
+      .xp-record-btn.xp-btn-delete:hover { background: #fef2f2; }
     </style>
   `;
 
@@ -489,9 +608,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   let allFeatures = [];
   let leafletLayers = {};
   let map = null;
-  let groups = [];            // PlannerGroup[]
+  let groups = [];
   let highlightedGroupId = null;
   let summaryMiniMaps = [];   // track mini-map instances for cleanup
+  let loadedRecordId = null;
+  let isSaving = false;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function genId() {
@@ -511,6 +632,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   }
 
+  function formatDateShort(isoStr) {
+    if (!isoStr) return '—';
+    const d = new Date(isoStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
   function getAssumptions() {
     const costPerSf = parseFloat(document.getElementById('xp-cost-per-sf').value) || 0;
     const savingsPerSf = parseFloat(document.getElementById('xp-savings-per-sf').value) || 0;
@@ -523,6 +650,22 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function statusLabel(status) {
+    const map = {
+      draft: 'Draft',
+      reviewed: 'Reviewed',
+      selected_for_estimate: 'Selected for Estimate',
+      archived: 'Archived',
+    };
+    return map[status] || status;
+  }
+
+  function paybackStr(years) {
+    if (years === null || years === undefined) return '—';
+    if (years < 1) return '< 1 yr';
+    return years.toFixed(1) + ' yrs';
   }
 
   // ── Group computation (pure functions) ─────────────────────────────────────
@@ -549,15 +692,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   }
 
   // ── buildGroupSummary — pure, reusable ─────────────────────────────────────
-  // Accepts the group, the full polygon feature collection, assumptions, and optional
-  // overrides for propertyName and generatedDate so the function is fully deterministic
-  // and testable without side-effects.
   function buildGroupSummary(group, polygonFeatures, assumptions, opts) {
     opts = opts || {};
     const propertyName = opts.propertyName !== undefined ? opts.propertyName : PROPERTY_NAME;
     const generatedDate = opts.generatedDate !== undefined ? opts.generatedDate : formatDate(new Date());
 
-    const paybackStr = group.estimatedPaybackYears === null
+    const pbStr = group.estimatedPaybackYears === null
       ? '—'
       : group.estimatedPaybackYears < 1
         ? '< 1 yr'
@@ -579,7 +719,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       estimatedConversionCost: group.estimatedConversionCost,
       estimatedAnnualWaterSavings: group.estimatedAnnualWaterSavings,
       estimatedPaybackYears: group.estimatedPaybackYears,
-      paybackStr,
+      paybackStr: pbStr,
       polygonDetails,
       polygonIds: group.polygonIds,
     };
@@ -600,6 +740,15 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         </div>
       </div>
     `;
+  }
+
+  // ── Planner aggregate totals ───────────────────────────────────────────────
+  function computePlannerTotals() {
+    const totalSqft = groups.reduce((s, g) => s + (g.totalSquareFootage || 0), 0);
+    const totalEstimatedCost = groups.reduce((s, g) => s + (g.estimatedConversionCost || 0), 0);
+    const totalAnnualSavings = groups.reduce((s, g) => s + (g.estimatedAnnualWaterSavings || 0), 0);
+    const paybackYears = totalAnnualSavings > 0 ? totalEstimatedCost / totalAnnualSavings : null;
+    return { totalSqft, totalEstimatedCost, totalAnnualSavings, paybackYears };
   }
 
   // ── Map styles ─────────────────────────────────────────────────────────────
@@ -706,6 +855,34 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     renderComparisonPanel();
   }
 
+  // ── Loaded record badge ────────────────────────────────────────────────────
+  function updateLoadedBadge(record) {
+    const badge = document.getElementById('xp-loaded-record-badge');
+    const newBtn = document.getElementById('xp-new-session-btn');
+    if (record) {
+      loadedRecordId = record.id;
+      if (badge) { badge.textContent = '✎ ' + record.recordName; badge.style.display = 'inline-block'; }
+      if (newBtn) newBtn.style.display = 'inline-block';
+    } else {
+      loadedRecordId = null;
+      if (badge) badge.style.display = 'none';
+      if (newBtn) newBtn.style.display = 'none';
+    }
+  }
+
+  function startNewSession() {
+    loadedRecordId = null;
+    groups = [];
+    selectedIds.clear();
+    highlightedGroupId = null;
+    refreshAllLayerStyles();
+    recalculate();
+    renderGroupsPanel();
+    renderComparisonPanel();
+    updateLoadedBadge(null);
+    showToast('New session started', 'success');
+  }
+
   // ── Save-as-Group UI ───────────────────────────────────────────────────────
   function showSaveGroupForm() {
     const form = document.getElementById('xp-save-group-form');
@@ -790,7 +967,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       row.className = 'xp-group-row' + (isHighlighted ? ' xp-group-highlighted' : '');
       row.dataset.groupId = group.id;
 
-      const paybackStr = group.estimatedPaybackYears === null
+      const pb = group.estimatedPaybackYears === null
         ? '—'
         : group.estimatedPaybackYears < 1
           ? '< 1 yr'
@@ -805,7 +982,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           <span><strong>${formatNumber(group.totalSquareFootage)}</strong> SF</span>
           <span>Cost: <strong>${formatCurrency(group.estimatedConversionCost)}</strong></span>
           <span>Savings: <strong>${group.estimatedAnnualWaterSavings > 0 ? formatCurrency(group.estimatedAnnualWaterSavings) + '/yr' : '—'}</strong></span>
-          <span style="grid-column:1/-1">Payback: <strong>${paybackStr}</strong></span>
+          <span style="grid-column:1/-1">Payback: <strong>${pb}</strong></span>
         </div>
         <div class="xp-group-actions">
           <button class="xp-group-btn xp-btn-view" data-action="view" data-id="${group.id}">View on Map</button>
@@ -844,7 +1021,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       else if (action === 'delete') deleteGroup(id);
       return;
     }
-    // clicking anywhere else on the row highlights the group on the map
     const row = e.target.closest('[data-group-id]');
     if (row) viewGroupOnMap(row.dataset.groupId);
   }
@@ -864,7 +1040,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     refreshAllLayerStyles();
     renderGroupsPanel();
 
-    // fit map to group extent
     const bounds = L.latLngBounds([]);
     group.polygonIds.forEach(pid => {
       const layer = leafletLayers[pid];
@@ -941,7 +1116,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     panel.style.display = 'block';
 
     let rows = groups.map(g => {
-      const paybackStr = g.estimatedPaybackYears === null
+      const pb = g.estimatedPaybackYears === null
         ? '—'
         : g.estimatedPaybackYears < 1
           ? '< 1 yr'
@@ -953,7 +1128,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <td style="text-align:right">${formatNumber(g.totalSquareFootage)}</td>
         <td style="text-align:right">${formatCurrency(g.estimatedConversionCost)}</td>
         <td style="text-align:right">${g.estimatedAnnualWaterSavings > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) : '—'}</td>
-        <td style="text-align:right">${paybackStr}</td>
+        <td style="text-align:right">${pb}</td>
       </tr>`;
     }).join('');
 
@@ -998,8 +1173,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   // ── Mini-map rendering ─────────────────────────────────────────────────────
   function renderMiniMap(containerId, polygonIdSets, colorSets) {
-    // polygonIdSets: array of arrays (one per group/color)
-    // colorSets: array of color strings matching each set
     const el = document.getElementById(containerId);
     if (!el) return;
 
@@ -1137,7 +1310,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     document.getElementById('xps-back-btn').addEventListener('click', hideSummaryOverlay);
     document.getElementById('xps-print-btn').addEventListener('click', function() { window.print(); });
 
-    // Render mini-map after DOM is ready
     setTimeout(() => {
       renderMiniMap('xps-mini-map-single', [summary.polygonIds], ['#14b8a6']);
     }, 100);
@@ -1148,7 +1320,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const group = groups.find(g => g.id === id);
     if (!group) return;
     showGroupSummary(id);
-    // slight delay so the overlay renders before print dialog
     setTimeout(() => { window.print(); }, 300);
   }
 
@@ -1165,14 +1336,14 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const GROUP_COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#0ea5e9', '#f97316'];
 
     const comparisonRows = summaries.map(s => {
-      const paybackStr = s.paybackStr;
+      const pb = s.paybackStr;
       return `<tr>
         <td>${escapeHtml(s.groupName)}</td>
         <td>${s.polygonCount}</td>
         <td>${formatNumber(s.totalSquareFootage)}</td>
         <td>${formatCurrency(s.estimatedConversionCost)}</td>
         <td>${s.estimatedAnnualWaterSavings > 0 ? formatCurrency(s.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
-        <td>${paybackStr}</td>
+        <td>${pb}</td>
       </tr>`;
     }).join('');
 
@@ -1264,12 +1435,338 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     document.getElementById('xps-back-btn').addEventListener('click', hideSummaryOverlay);
     document.getElementById('xps-print-btn').addEventListener('click', function() { window.print(); });
 
-    // Render comparison mini-map
     setTimeout(() => {
       const polygonIdSets = summaries.map(s => s.polygonIds);
       const colorSets = summaries.map((_, i) => GROUP_COLORS[i % GROUP_COLORS.length]);
       renderMiniMap('xps-mini-map-compare', polygonIdSets, colorSets);
     }, 100);
+  }
+
+  // ── Save Record Modal ──────────────────────────────────────────────────────
+  function openSaveModal(prefillRecord) {
+    const modal = document.getElementById('xp-save-modal');
+    const nameEl = document.getElementById('xp-modal-record-name');
+    const notesEl = document.getElementById('xp-modal-notes');
+    const titleEl = document.getElementById('xp-save-modal-title');
+    const errEl = document.getElementById('xp-save-modal-error');
+
+    if (prefillRecord) {
+      titleEl.textContent = 'Update Planning Record';
+      nameEl.value = prefillRecord.recordName || '';
+      notesEl.value = prefillRecord.internalNotes || '';
+    } else {
+      titleEl.textContent = 'Save Planning Record';
+      nameEl.value = '';
+      notesEl.value = '';
+    }
+
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    modal.style.display = 'flex';
+    setTimeout(() => { if (nameEl) nameEl.focus(); }, 50);
+  }
+
+  function closeSaveModal() {
+    const modal = document.getElementById('xp-save-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function confirmSaveRecord() {
+    if (isSaving) return;
+    const nameEl = document.getElementById('xp-modal-record-name');
+    const notesEl = document.getElementById('xp-modal-notes');
+    const errEl = document.getElementById('xp-save-modal-error');
+
+    const name = (nameEl ? nameEl.value : '').trim();
+    const notes = (notesEl ? notesEl.value : '').trim();
+
+    if (!name) {
+      if (errEl) { errEl.textContent = 'Record name is required.'; errEl.style.display = 'block'; }
+      nameEl && nameEl.focus();
+      return;
+    }
+
+    const assumptions = getAssumptions();
+    const { totalSqft, totalEstimatedCost, totalAnnualSavings, paybackYears } = computePlannerTotals();
+
+    const payload = {
+      propertyId: PROPERTY_ID,
+      recordName: name,
+      internalNotes: notes || null,
+      assumptionsJson: assumptions,
+      groupsJson: groups.map(g => ({
+        id: g.id,
+        name: g.name,
+        polygonIds: g.polygonIds,
+        polygonCount: g.polygonCount,
+        totalSquareFootage: g.totalSquareFootage,
+        estimatedConversionCost: g.estimatedConversionCost,
+        estimatedAnnualWaterSavings: g.estimatedAnnualWaterSavings,
+        estimatedPaybackYears: g.estimatedPaybackYears,
+      })),
+      totalSqft,
+      totalEstimatedCost,
+      totalAnnualSavings,
+      paybackYears,
+    };
+
+    isSaving = true;
+    const confirmBtn = document.getElementById('xp-save-modal-confirm');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+      let saved;
+      if (loadedRecordId) {
+        saved = await apiFetch('/api/admin/xeriscape/records/' + loadedRecordId, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        saved = await apiFetch('/api/admin/xeriscape/records', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+      closeSaveModal();
+      updateLoadedBadge(saved);
+      showToast('Record "' + saved.recordName + '" saved', 'success');
+      loadHistory();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message || 'Save failed.'; errEl.style.display = 'block'; }
+    } finally {
+      isSaving = false;
+      if (confirmBtn) confirmBtn.disabled = false;
+    }
+  }
+
+  // ── Load record into live planner ──────────────────────────────────────────
+  async function openRecord(record) {
+    if (record.status === 'selected_for_estimate') {
+      showWarnModal(record);
+      return;
+    }
+    loadRecordIntoPlanner(record);
+  }
+
+  function loadRecordIntoPlanner(record) {
+    const assumptions = record.assumptionsJson || {};
+    const costEl = document.getElementById('xp-cost-per-sf');
+    const savingsEl = document.getElementById('xp-savings-per-sf');
+    if (costEl && assumptions.costPerSf !== undefined) costEl.value = assumptions.costPerSf;
+    if (savingsEl && assumptions.savingsPerSf !== undefined) savingsEl.value = assumptions.savingsPerSf;
+
+    const savedGroups = Array.isArray(record.groupsJson) ? record.groupsJson : [];
+    groups = savedGroups.map(g => ({
+      id: g.id || genId(),
+      name: g.name,
+      polygonIds: g.polygonIds || [],
+      polygonCount: g.polygonCount || 0,
+      totalSquareFootage: g.totalSquareFootage || 0,
+      estimatedConversionCost: g.estimatedConversionCost || 0,
+      estimatedAnnualWaterSavings: g.estimatedAnnualWaterSavings || 0,
+      estimatedPaybackYears: g.estimatedPaybackYears,
+      createdAt: g.createdAt || new Date().toISOString(),
+    }));
+
+    selectedIds.clear();
+    highlightedGroupId = null;
+    refreshAllLayerStyles();
+    recalculate();
+    recomputeAllGroups();
+    renderGroupsPanel();
+    renderComparisonPanel();
+    updateLoadedBadge(record);
+    showToast('Loaded "' + record.recordName + '"', 'success');
+  }
+
+  // ── Warning modal (selected_for_estimate) ──────────────────────────────────
+  let warnModalRecord = null;
+
+  function showWarnModal(record) {
+    warnModalRecord = record;
+    const modal = document.getElementById('xp-warn-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  function closeWarnModal() {
+    const modal = document.getElementById('xp-warn-modal');
+    if (modal) modal.style.display = 'none';
+    warnModalRecord = null;
+  }
+
+  // ── Proposal Prep Modal ────────────────────────────────────────────────────
+  function openProposalModal(record) {
+    const groups_data = Array.isArray(record.groupsJson) ? record.groupsJson : [];
+    const payload = {
+      propertyId: record.propertyId,
+      scenarioName: record.recordName,
+      status: record.status,
+      totalSqft: record.totalSqft,
+      estimatedCost: record.totalEstimatedCost,
+      annualSavings: record.totalAnnualSavings,
+      paybackYears: record.paybackYears,
+      assumptions: record.assumptionsJson,
+      groups: groups_data.map(g => ({
+        name: g.name,
+        polygonCount: g.polygonCount,
+        sqft: g.totalSquareFootage,
+        estimatedCost: g.estimatedConversionCost,
+        annualSavings: g.estimatedAnnualWaterSavings,
+      })),
+      internalNotes: record.internalNotes || null,
+      generatedAt: new Date().toISOString(),
+    };
+
+    const el = document.getElementById('xp-proposal-payload');
+    if (el) el.textContent = JSON.stringify(payload, null, 2);
+
+    const modal = document.getElementById('xp-proposal-modal');
+    if (modal) modal.style.display = 'flex';
+
+    const copyBtn = document.getElementById('xp-proposal-copy-btn');
+    if (copyBtn) {
+      copyBtn.onclick = function() {
+        navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+          .then(() => showToast('Copied to clipboard', 'success'))
+          .catch(() => showToast('Copy failed', 'error'));
+      };
+    }
+
+    const dlBtn = document.getElementById('xp-proposal-download-btn');
+    if (dlBtn) {
+      dlBtn.onclick = function() {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'proposal-prep-' + record.propertyId + '-' + Date.now() + '.json';
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+    }
+  }
+
+  function closeProposalModal() {
+    const modal = document.getElementById('xp-proposal-modal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // ── History panel ──────────────────────────────────────────────────────────
+  async function loadHistory() {
+    const content = document.getElementById('xp-history-content');
+    if (!content) return;
+    try {
+      const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + PROPERTY_ID);
+      renderHistory(records);
+    } catch (err) {
+      if (content) content.innerHTML = '<div style="font-size:13px;color:#dc2626;padding:16px 0">Failed to load history: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function renderHistory(records) {
+    const content = document.getElementById('xp-history-content');
+    if (!content) return;
+
+    if (!records || records.length === 0) {
+      content.innerHTML = '<div style="font-size:13px;color:var(--gray-400);padding:24px 0;text-align:center">No saved records yet. Save a planning session to see it here.</div>';
+      return;
+    }
+
+    const rows = records.map(r => {
+      const isSelected = r.status === 'selected_for_estimate';
+      const isArchived = r.status === 'archived';
+      const isDraft = r.status === 'draft';
+
+      const costStr = r.totalEstimatedCost > 0 ? formatCurrency(r.totalEstimatedCost) : '—';
+      const savingsStr = r.totalAnnualSavings > 0 ? formatCurrency(r.totalAnnualSavings) + '/yr' : '—';
+      const pb = paybackStr(r.paybackYears);
+      const sfStr = r.totalSqft > 0 ? formatNumber(r.totalSqft) + ' SF' : '—';
+
+      const openedClass = loadedRecordId === r.id ? ' style="outline:2px solid var(--teal);outline-offset:1px"' : '';
+
+      return `
+        <div class="xp-record-row${isSelected ? ' xp-record-selected' : ''}${isArchived ? ' xp-record-archived' : ''}" data-record-id="${r.id}"${openedClass}>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <div class="xp-record-name">${escapeHtml(r.recordName)}</div>
+              <span class="xp-status-badge xp-status-${r.status}">${escapeHtml(statusLabel(r.status))}</span>
+            </div>
+            <div class="xp-record-meta">
+              <span>${sfStr}</span>
+              <span>Cost: ${costStr}</span>
+              <span>Savings: ${savingsStr}</span>
+              <span>Payback: ${pb}</span>
+              <span>Updated: ${formatDate(r.updatedAt)}</span>
+            </div>
+            ${r.internalNotes ? `<div style="font-size:11px;color:var(--gray-500);margin-bottom:8px;font-style:italic">${escapeHtml(r.internalNotes)}</div>` : ''}
+            <div class="xp-record-actions">
+              ${!isArchived ? `<button class="xp-record-btn xp-btn-open" data-action="open" data-id="${r.id}">Open</button>` : ''}
+              <button class="xp-record-btn" data-action="duplicate" data-id="${r.id}">Duplicate</button>
+              ${!isArchived && !isSelected ? `<button class="xp-record-btn xp-btn-select" data-action="select" data-id="${r.id}">Mark Selected</button>` : ''}
+              ${isSelected ? `<button class="xp-record-btn xp-btn-proposal" data-action="proposal" data-id="${r.id}">&#127775; Proposal Prep</button>` : ''}
+              ${!isArchived ? `<button class="xp-record-btn xp-btn-archive" data-action="archive" data-id="${r.id}">Archive</button>` : ''}
+              ${isDraft ? `<button class="xp-record-btn xp-btn-delete" data-action="delete" data-id="${r.id}">Delete</button>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    content.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px">${rows}</div>`;
+
+    content.onclick = async function(e) {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      const record = records.find(r => r.id === id);
+      if (!record) return;
+
+      if (action === 'open') {
+        openRecord(record);
+      } else if (action === 'duplicate') {
+        try {
+          await apiFetch('/api/admin/xeriscape/records/' + id + '/duplicate', { method: 'POST', body: '{}' });
+          showToast('Record duplicated', 'success');
+          loadHistory();
+        } catch (err) {
+          showToast('Duplicate failed: ' + err.message, 'error');
+        }
+      } else if (action === 'select') {
+        try {
+          await apiFetch('/api/admin/xeriscape/records/' + id, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'selected_for_estimate' }),
+          });
+          showToast('Marked as Selected for Estimate', 'success');
+          loadHistory();
+        } catch (err) {
+          showToast('Update failed: ' + err.message, 'error');
+        }
+      } else if (action === 'archive') {
+        try {
+          await apiFetch('/api/admin/xeriscape/records/' + id, {
+            method: 'PUT',
+            body: JSON.stringify({ status: 'archived' }),
+          });
+          showToast('Record archived', 'success');
+          loadHistory();
+        } catch (err) {
+          showToast('Archive failed: ' + err.message, 'error');
+        }
+      } else if (action === 'delete') {
+        if (!confirm('Permanently delete this draft record?')) return;
+        try {
+          await apiFetch('/api/admin/xeriscape/records/' + id, { method: 'DELETE' });
+          if (loadedRecordId === id) updateLoadedBadge(null);
+          showToast('Record deleted', 'success');
+          loadHistory();
+        } catch (err) {
+          showToast('Delete failed: ' + err.message, 'error');
+        }
+      } else if (action === 'proposal') {
+        openProposalModal(record);
+      }
+    };
   }
 
   // ── Map init ───────────────────────────────────────────────────────────────
@@ -1366,6 +1863,64 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     if (e.key === 'Escape') hideSaveGroupForm();
   });
 
+  document.getElementById('xp-save-record-btn').addEventListener('click', function() {
+    const record = loadedRecordId ? { id: loadedRecordId, recordName: document.getElementById('xp-loaded-record-badge').textContent.replace(/^✎\s*/, '') } : null;
+    openSaveModal(record);
+  });
+
+  document.getElementById('xp-new-session-btn').addEventListener('click', startNewSession);
+
+  document.getElementById('xp-save-modal-cancel').addEventListener('click', closeSaveModal);
+  document.getElementById('xp-save-modal-confirm').addEventListener('click', confirmSaveRecord);
+
+  document.getElementById('xp-save-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeSaveModal();
+  });
+
+  document.getElementById('xp-save-modal').addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeSaveModal();
+  });
+
+  document.getElementById('xp-modal-record-name').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') confirmSaveRecord();
+  });
+
+  document.getElementById('xp-warn-edit-btn').addEventListener('click', function() {
+    if (warnModalRecord) {
+      const r = warnModalRecord;
+      closeWarnModal();
+      loadRecordIntoPlanner(r);
+    }
+  });
+
+  document.getElementById('xp-warn-duplicate-btn').addEventListener('click', async function() {
+    if (!warnModalRecord) return;
+    const r = warnModalRecord;
+    closeWarnModal();
+    try {
+      const copy = await apiFetch('/api/admin/xeriscape/records/' + r.id + '/duplicate', { method: 'POST', body: '{}' });
+      showToast('Duplicated "' + r.recordName + '" — loading copy', 'success');
+      loadHistory();
+      loadRecordIntoPlanner(copy);
+    } catch (err) {
+      showToast('Duplicate failed: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('xp-warn-cancel-btn').addEventListener('click', closeWarnModal);
+
+  document.getElementById('xp-warn-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeWarnModal();
+  });
+
+  document.getElementById('xp-proposal-close-btn').addEventListener('click', closeProposalModal);
+
+  document.getElementById('xp-proposal-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeProposalModal();
+  });
+
+  document.getElementById('xp-refresh-history-btn').addEventListener('click', loadHistory);
+
   // ── Bootstrap leaflet ──────────────────────────────────────────────────────
   if (typeof L === 'undefined') {
     const link = document.createElement('link');
@@ -1388,4 +1943,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     document.head.appendChild(style);
     await initMap();
   }
+
+  // ── Load history on page open ──────────────────────────────────────────────
+  loadHistory();
 });

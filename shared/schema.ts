@@ -921,3 +921,35 @@ export const pushTickets = pgTable("push_tickets", {
 ]);
 
 export type PushTicket = typeof pushTickets.$inferSelect;
+
+export const plannerRecordStatusEnum = pgEnum("planner_record_status", [
+  "draft",
+  "reviewed",
+  "selected_for_estimate",
+  "archived",
+]);
+
+export const plannerRecords = pgTable("planner_records", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  propertyId: varchar("property_id").notNull(),
+  recordName: text("record_name").notNull(),
+  status: plannerRecordStatusEnum("status").notNull().default("draft"),
+  internalNotes: text("internal_notes"),
+  assumptionsJson: jsonb("assumptions_json").notNull(),
+  groupsJson: jsonb("groups_json").notNull(),
+  totalSqft: doublePrecision("total_sqft").notNull().default(0),
+  totalEstimatedCost: doublePrecision("total_estimated_cost").notNull().default(0),
+  totalAnnualSavings: doublePrecision("total_annual_savings").notNull().default(0),
+  paybackYears: doublePrecision("payback_years"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("planner_records_property_idx").on(table.propertyId),
+  index("planner_records_status_idx").on(table.status),
+]);
+
+export type PlannerRecord = typeof plannerRecords.$inferSelect;
+export type InsertPlannerRecord = typeof plannerRecords.$inferInsert;

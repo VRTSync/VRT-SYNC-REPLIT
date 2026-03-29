@@ -28,9 +28,9 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
 import { parseFile, generatePreview, commitImport } from "./contractImporter";
-import { exports as exportsTable } from "@shared/schema";
+import { exports as exportsTable, plannerRecords } from "@shared/schema";
 import { db, pool } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, ne } from "drizzle-orm";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
@@ -833,6 +833,193 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Xeriscape polygons error:", error);
       res.status(500).json({ error: "Failed to load xeriscape polygons" });
+    }
+  });
+
+  // ── Xeriscape Planning Records ─────────────────────────────────────────────
+  app.get("/api/admin/xeriscape/records", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const propertyId = (req.query.propertyId as string) || "huntington-trails";
+      const records = await db
+        .select()
+        .from(plannerRecords)
+        .where(eq(plannerRecords.propertyId, propertyId))
+        .orderBy(desc(plannerRecords.updatedAt));
+      res.json(records);
+    } catch (error) {
+      console.error("List planner records error:", error);
+      res.status(500).json({ error: "Failed to fetch planner records" });
+    }
+  });
+
+  app.post("/api/admin/xeriscape/records", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const {
+        propertyId = "huntington-trails",
+        recordName,
+        internalNotes,
+        assumptionsJson,
+        groupsJson,
+        totalSqft,
+        totalEstimatedCost,
+        totalAnnualSavings,
+        paybackYears,
+      } = req.body;
+
+      if (!recordName || typeof recordName !== "string" || !recordName.trim()) {
+        return res.status(400).json({ error: "recordName is required" });
+      }
+
+      const [record] = await db
+        .insert(plannerRecords)
+        .values({
+          propertyId,
+          recordName: recordName.trim(),
+          status: "draft",
+          internalNotes: internalNotes || null,
+          assumptionsJson: assumptionsJson || {},
+          groupsJson: groupsJson || [],
+          totalSqft: totalSqft || 0,
+          totalEstimatedCost: totalEstimatedCost || 0,
+          totalAnnualSavings: totalAnnualSavings || 0,
+          paybackYears: paybackYears ?? null,
+          createdBy: req.session.userId!,
+        })
+        .returning();
+
+      res.status(201).json(record);
+    } catch (error) {
+      console.error("Create planner record error:", error);
+      res.status(500).json({ error: "Failed to create planner record" });
+    }
+  });
+
+  app.put("/api/admin/xeriscape/records/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string;
+      const {
+        recordName,
+        internalNotes,
+        assumptionsJson,
+        groupsJson,
+        totalSqft,
+        totalEstimatedCost,
+        totalAnnualSavings,
+        paybackYears,
+        status,
+      } = req.body;
+
+      const existing = await db
+        .select()
+        .from(plannerRecords)
+        .where(eq(plannerRecords.id, id))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Record not found" });
+      }
+
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (recordName !== undefined) updateData.recordName = recordName.trim();
+      if (internalNotes !== undefined) updateData.internalNotes = internalNotes || null;
+      if (assumptionsJson !== undefined) updateData.assumptionsJson = assumptionsJson;
+      if (groupsJson !== undefined) updateData.groupsJson = groupsJson;
+      if (totalSqft !== undefined) updateData.totalSqft = totalSqft;
+      if (totalEstimatedCost !== undefined) updateData.totalEstimatedCost = totalEstimatedCost;
+      if (totalAnnualSavings !== undefined) updateData.totalAnnualSavings = totalAnnualSavings;
+      if (paybackYears !== undefined) updateData.paybackYears = paybackYears ?? null;
+      if (status !== undefined) updateData.status = status;
+
+      // If marking as selected_for_estimate, clear any previous selection for same property
+      if (status === "selected_for_estimate") {
+        const rec = existing[0];
+        await db
+          .update(plannerRecords)
+          .set({ status: "reviewed", updatedAt: new Date() })
+          .where(
+            and(
+              eq(plannerRecords.propertyId, rec.propertyId),
+              eq(plannerRecords.status, "selected_for_estimate"),
+              ne(plannerRecords.id, id)
+            )
+          );
+      }
+
+      const [updated] = await db
+        .update(plannerRecords)
+        .set(updateData)
+        .where(eq(plannerRecords.id, id))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update planner record error:", error);
+      res.status(500).json({ error: "Failed to update planner record" });
+    }
+  });
+
+  app.post("/api/admin/xeriscape/records/:id/duplicate", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string;
+
+      const existing = await db
+        .select()
+        .from(plannerRecords)
+        .where(eq(plannerRecords.id, id))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Record not found" });
+      }
+
+      const src = existing[0];
+      const [copy] = await db
+        .insert(plannerRecords)
+        .values({
+          propertyId: src.propertyId,
+          recordName: src.recordName + " (Copy)",
+          status: "draft",
+          internalNotes: src.internalNotes,
+          assumptionsJson: src.assumptionsJson as any,
+          groupsJson: src.groupsJson as any,
+          totalSqft: src.totalSqft,
+          totalEstimatedCost: src.totalEstimatedCost,
+          totalAnnualSavings: src.totalAnnualSavings,
+          paybackYears: src.paybackYears,
+          createdBy: req.session.userId!,
+        })
+        .returning();
+
+      res.status(201).json(copy);
+    } catch (error) {
+      console.error("Duplicate planner record error:", error);
+      res.status(500).json({ error: "Failed to duplicate planner record" });
+    }
+  });
+
+  app.delete("/api/admin/xeriscape/records/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string;
+
+      const existing = await db
+        .select()
+        .from(plannerRecords)
+        .where(eq(plannerRecords.id, id))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Record not found" });
+      }
+
+      if (existing[0].status !== "draft") {
+        return res.status(400).json({ error: "Only draft records can be permanently deleted" });
+      }
+
+      await db.delete(plannerRecords).where(eq(plannerRecords.id, id));
+      res.json({ message: "Record deleted" });
+    } catch (error) {
+      console.error("Delete planner record error:", error);
+      res.status(500).json({ error: "Failed to delete planner record" });
     }
   });
 
