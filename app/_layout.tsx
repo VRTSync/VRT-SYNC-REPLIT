@@ -2,14 +2,13 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
+import { Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import * as Updates from "expo-updates";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
@@ -77,45 +76,12 @@ const loadingStyles = StyleSheet.create({
   },
 });
 
-function useBackgroundOTACheck() {
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    if (__DEV__) return;
-
-    const checkForUpdate = async () => {
-      try {
-        const update = await Updates.checkForUpdateAsync();
-        if (!update.isAvailable) return;
-
-        await Updates.fetchUpdateAsync();
-
-        Alert.alert(
-          "Update Available",
-          "A new version of the app is ready. Restart now to apply it?",
-          [
-            { text: "Later", style: "cancel" },
-            {
-              text: "Restart",
-              onPress: () => Updates.reloadAsync(),
-            },
-          ]
-        );
-      } catch {
-      }
-    };
-
-    checkForUpdate();
-  }, []);
-}
-
 function AuthNavigator() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
   const notificationResponseListener = useRef<Notifications.EventSubscription | null>(null);
   const hasNavigated = useRef(false);
-
-  useBackgroundOTACheck();
 
   useEffect(() => {
     if (isLoading) return;
@@ -190,7 +156,7 @@ function AuthNavigator() {
 }
 
 export default function RootLayout() {
-  const [cacheRestored, setCacheRestored] = useState(true);
+  const [cacheRestored, setCacheRestored] = useState(false);
 
   return (
     <ErrorBoundary>
