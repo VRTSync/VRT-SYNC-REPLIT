@@ -700,6 +700,8 @@ async function runStartupMigrations() {
       );
 
       CREATE INDEX IF NOT EXISTS push_tickets_created_at_idx ON push_tickets(created_at);
+
+      ALTER TABLE tasks ADD COLUMN IF NOT EXISTS acknowledged_at timestamp;
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

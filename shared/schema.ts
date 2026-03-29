@@ -69,6 +69,7 @@ export const tasks = pgTable("tasks", {
   origin: varchar("origin"),
   assetId: varchar("asset_id").references(() => assets.id, { onDelete: 'set null' }),
   category: varchar("category"),
+  acknowledgedAt: timestamp("acknowledged_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [

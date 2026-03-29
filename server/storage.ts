@@ -155,8 +155,12 @@ export async function updateTask(id: string, expectedVersion: number, data: Part
   windowStart: string;
   windowEnd: string;
 }>): Promise<Task | null> {
+  const setData: Record<string, unknown> = { ...data, version: expectedVersion + 1, updatedAt: new Date() };
+  if (data.status === 'acknowledged') {
+    setData.acknowledgedAt = new Date();
+  }
   const [updated] = await db.update(tasks)
-    .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
+    .set(setData)
     .where(and(eq(tasks.id, id), eq(tasks.version, expectedVersion)))
     .returning();
   return updated || null;

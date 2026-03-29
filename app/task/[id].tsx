@@ -28,12 +28,15 @@ type Task = {
   longitude: number | null;
   address: string | null;
   assignedTo: string | null;
+  assignedToName: string | null;
   createdBy: string;
   dueDate: string | null;
   windowStart: string | null;
   windowEnd: string | null;
   version: number;
   origin: string | null;
+  category: string | null;
+  acknowledgedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -467,7 +470,23 @@ export default function TaskDetailScreen() {
               {task.priority === 'urgent' ? 'Urgent' : 'General'}
             </Text>
           </View>
-          {task.status === 'submitted' && (
+          {isHoaUser || (user?.role !== 'contractor' && user?.role !== 'admin') ? (
+            <View style={styles.acknowledgeStatusRow}>
+              {task.acknowledgedAt ? (
+                <>
+                  <Ionicons name="checkmark-done-circle" size={18} color="#25C1AC" />
+                  <Text style={styles.acknowledgeStatusText}>
+                    Acknowledged on {new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(task.acknowledgedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="time-outline" size={18} color="#888" />
+                  <Text style={[styles.acknowledgeStatusText, { color: '#888' }]}>Not acknowledged yet</Text>
+                </>
+              )}
+            </View>
+          ) : task.status === 'submitted' && (
             <TouchableOpacity
               style={[styles.acknowledgeButton, acknowledging && styles.buttonDisabled]}
               onPress={handleAcknowledge}
@@ -541,10 +560,32 @@ export default function TaskDetailScreen() {
             <Text style={styles.detailText}>Due: {new Date(task.dueDate).toLocaleDateString()}</Text>
           </View>
         ) : null}
+        {task.category ? (
+          <View style={styles.detailRow}>
+            <Ionicons name="pricetag-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>Category: {task.category}</Text>
+          </View>
+        ) : null}
+        {(task.assignedToName || task.assignedTo) ? (
+          <View style={styles.detailRow}>
+            <Ionicons name="person-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>Contractor: {task.assignedToName || task.assignedTo}</Text>
+          </View>
+        ) : null}
         <View style={styles.detailRow}>
-          <Ionicons name="git-branch-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>Version: {task.version}</Text>
+          <Ionicons name="time-outline" size={16} color="#666" />
+          <Text style={styles.detailText}>Created: {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
         </View>
+        {isHoaRequest && (
+          <View style={styles.detailRow}>
+            <Ionicons name="checkmark-done-outline" size={16} color="#666" />
+            <Text style={styles.detailText}>
+              {task.acknowledgedAt
+                ? `Acknowledged: ${new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                : 'Not acknowledged yet'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {task.windowStart && task.windowEnd && isInWindow(task) !== 'in' && task.status !== 'completed' && (
@@ -1300,6 +1341,22 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700' as const,
+  },
+  acknowledgeStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: 8,
+  },
+  acknowledgeStatusText: {
+    fontSize: 13,
+    color: '#25C1AC',
+    fontWeight: '600' as const,
+    flex: 1,
   },
   viewOnMapButton: {
     flexDirection: 'row',

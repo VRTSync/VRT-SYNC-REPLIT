@@ -411,8 +411,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })),
       );
 
+      let assignedToName: string | null = null;
+      if (task.assignedTo) {
+        const assignee = await storage.getUserById(task.assignedTo);
+        assignedToName = assignee?.displayName ?? null;
+      }
+
       console.log(`[GET /api/tasks/:id/detail] task=${taskId} served (${Date.now() - t0}ms)`);
-      res.json({ task, completions, taskAttachments, taskLink: taskLink ?? null });
+      res.json({ task: { ...task, assignedToName }, completions, taskAttachments, taskLink: taskLink ?? null });
     } catch (error) {
       console.error("Get task detail bundle error:", error);
       res.status(500).json({ error: "Failed to fetch task detail" });
@@ -483,6 +489,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const updatingUser = await storage.getUserById(req.session.userId!);
         if (updatingUser?.role === "contractor" && data.priority !== undefined) {
           return res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
+        }
+        if (data.status === "acknowledged") {
+          if (updatingUser?.role !== "contractor" && updatingUser?.role !== "admin") {
+            return res.status(403).json({ error: "Only contractors and admins can acknowledge HOA requests" });
+          }
         }
         if (data.status) {
           const currentStatus = task!.status;
