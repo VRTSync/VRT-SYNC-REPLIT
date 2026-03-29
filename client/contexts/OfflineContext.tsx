@@ -194,16 +194,21 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
   }, [pendingAssetNotes]);
 
   useEffect(() => {
+    const failCount = { current: 0 };
     const checkConnection = async () => {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
+        const timeout = setTimeout(() => controller.abort(), 8000);
         const apiUrl = getApiUrl();
-        await fetch(new URL('/api/auth/me', apiUrl).toString(), { signal: controller.signal, credentials: 'include' });
+        await fetch(new URL('/api/ping', apiUrl).toString(), { signal: controller.signal });
         clearTimeout(timeout);
+        failCount.current = 0;
         setIsOnline(true);
       } catch {
-        setIsOnline(false);
+        failCount.current += 1;
+        if (failCount.current >= 2) {
+          setIsOnline(false);
+        }
       }
     };
     checkConnection();
