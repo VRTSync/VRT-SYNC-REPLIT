@@ -1076,13 +1076,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
       allFeatures.forEach(feature => {
         const id = feature.properties.id;
-        const name = feature.properties.name;
 
         const layer = L.geoJSON(feature, {
           style: () => getLayerStyle(id),
           onEachFeature: function(feat, lyr) {
-            lyr.bindTooltip(name, { permanent: true, direction: 'center', className: 'xp-tooltip' });
-
             lyr.on('mouseover', function() {
               if (!selectedIds.has(id)) {
                 lyr.setStyle(getHoverStyle(id));
@@ -1238,6 +1235,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   }
 
   // ── Selection ──────────────────────────────────────────────────────────────
+  function updateSelectionBadges() {
+    const orderedIds = [...selectedIds];
+    allFeatures.forEach(feature => {
+      const id = feature.properties.id;
+      const layer = leafletLayers[id];
+      if (!layer) return;
+      const idx = orderedIds.indexOf(id);
+      layer.eachLayer(function(lyr) {
+        if (idx >= 0) {
+          lyr.bindTooltip(String(idx + 1), { permanent: true, direction: 'center', className: 'xp-tooltip' });
+        } else {
+          lyr.unbindTooltip();
+        }
+      });
+    });
+  }
+
   function toggleSelection(id) {
     if (selectedIds.has(id)) {
       selectedIds.delete(id);
@@ -1245,6 +1259,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       selectedIds.add(id);
     }
     applyLayerStyle(id);
+    updateSelectionBadges();
     recalculate();
   }
 
@@ -1252,6 +1267,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const prev = [...selectedIds];
     selectedIds.clear();
     prev.forEach(id => applyLayerStyle(id));
+    updateSelectionBadges();
     recalculate();
   }
 
@@ -1326,6 +1342,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     selectedIds.clear();
     highlightedGroupId = null;
     refreshAllLayerStyles();
+    updateSelectionBadges();
     recalculate();
     renderGroupsPanel();
     renderComparisonPanel();
@@ -2020,6 +2037,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     selectedIds.clear();
     highlightedGroupId = null;
     refreshAllLayerStyles();
+    updateSelectionBadges();
     recalculate();
     recomputeAllGroups();
     renderGroupsPanel();
@@ -2621,13 +2639,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
       allFeatures.forEach(feature => {
         const id = feature.properties.id;
-        const name = feature.properties.name;
 
         const layer = L.geoJSON(feature, {
           style: () => getLayerStyle(id),
           onEachFeature: function(feat, lyr) {
-            lyr.bindTooltip(name, { permanent: true, direction: 'center', className: 'xp-tooltip' });
-
             lyr.on('mouseover', function() {
               if (!selectedIds.has(id)) {
                 lyr.setStyle(getHoverStyle(id));
