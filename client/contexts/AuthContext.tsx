@@ -112,7 +112,12 @@ async function registerPushTokenWithServer() {
 
     const regRes = await apiRequest('POST', '/api/push-tokens', { token, platform, deviceId });
     const regData = await regRes.json() as { rateLimited?: boolean };
-    if (regData.rateLimited) return; // Server already has this token; skip updating local throttle
+    if (regData.rateLimited) {
+      // Server already has this same token registered. Persist throttle so the client
+      // stops calling for the next 24h without needing another round trip.
+      await AsyncStorage.setItem(PUSH_TOKEN_LAST_REG_KEY, JSON.stringify({ ts: Date.now(), token }));
+      return;
+    }
     await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
     await AsyncStorage.setItem(PUSH_TOKEN_LAST_REG_KEY, JSON.stringify({ ts: Date.now(), token }));
   } catch (e) {
