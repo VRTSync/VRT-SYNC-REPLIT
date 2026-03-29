@@ -47,6 +47,11 @@ PortalRouter.register('requests', async function (container) {
   renderList();
   wireEvents();
   wireForm();
+  if (window._pendingOpenNewRequest) {
+    window._pendingOpenNewRequest = false;
+    var overlay = document.getElementById('req-form-overlay');
+    if (overlay) overlay.style.display = 'flex';
+  }
 
   function renderPage() {
     return M.pageHeader('Requests', community)

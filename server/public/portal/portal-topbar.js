@@ -311,7 +311,7 @@ window.PortalTopbar = (function () {
       ];
     } else if (role === 'hoa_admin') {
       items = [
-        { label: 'New Request', icon: _menuIcon('task'), action: 'requests', enabled: true },
+        { label: 'New Request', icon: _menuIcon('task'), action: 'create_request', enabled: true },
         { label: 'Upload Document', icon: _menuIcon('doc'), action: 'documents', enabled: false },
       ];
     } else if (role === 'admin') {
@@ -346,6 +346,12 @@ window.PortalTopbar = (function () {
           window._pendingOpenCreateTask = true;
           const router = window.PortalRouter || window.AdminRouter;
           if (router) router.navigate('tasks', true, {});
+          return;
+        }
+        if (action === 'create_request') {
+          window._pendingOpenNewRequest = true;
+          const router = window.PortalRouter || window.AdminRouter;
+          if (router) router.navigate('requests', true, {});
           return;
         }
         const router = window.PortalRouter || window.AdminRouter;
