@@ -1,6 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { registerRoutes, pushTokenLastReg, PUSH_TOKEN_RATE_LIMIT_MS } from "./routes";
 import { setupSession } from "./auth";
 import { sendDueReminders } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
@@ -840,6 +840,20 @@ async function seedContacts() {
 (async () => {
   setupCors(app);
   setupBodyParsing(app);
+
+  // Pre-session rate limit for push token storm: check in-memory Map BEFORE session
+  // middleware runs its DB lookup — returns immediately with zero DB activity when rate-limited.
+  app.post("/api/push-tokens", (req: Request, res: Response, next: NextFunction) => {
+    const deviceId = req.body?.deviceId;
+    if (!deviceId) return next();
+    const lastReg = pushTokenLastReg.get(deviceId);
+    const now = Date.now();
+    if (lastReg && now - lastReg < PUSH_TOKEN_RATE_LIMIT_MS) {
+      return res.json({ rateLimited: true });
+    }
+    next();
+  });
+
   setupSession(app);
   setupRequestLogging(app);
 

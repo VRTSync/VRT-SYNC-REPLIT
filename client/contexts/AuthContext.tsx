@@ -9,6 +9,8 @@ import * as Crypto from 'expo-crypto';
 const PUSH_TOKEN_KEY = 'push_token';
 const DEVICE_ID_KEY = 'device_id';
 const NOTIF_PREFS_KEY = 'notification_preferences';
+const PUSH_TOKEN_LAST_REG_KEY = 'push_token_last_reg_ts';
+const PUSH_TOKEN_CLIENT_THROTTLE_MS = 86_400_000; // 24 hours — matches server rate limit
 
 export type NotificationPreferences = {
   taskAssigned: boolean;
@@ -82,6 +84,15 @@ async function registerPushTokenWithServer() {
     const prefs = await getNotificationPreferences();
     if (!prefs.taskAssigned && !prefs.dueReminders) return;
 
+    // Client-side 24-hour throttle — skip the API call entirely if we registered recently.
+    const lastRegStr = await AsyncStorage.getItem(PUSH_TOKEN_LAST_REG_KEY);
+    if (lastRegStr) {
+      const lastReg = parseInt(lastRegStr, 10);
+      if (!isNaN(lastReg) && Date.now() - lastReg < PUSH_TOKEN_CLIENT_THROTTLE_MS) {
+        return;
+      }
+    }
+
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
     if (existingStatus !== 'granted') {
@@ -97,6 +108,7 @@ async function registerPushTokenWithServer() {
 
     await apiRequest('POST', '/api/push-tokens', { token, platform, deviceId });
     await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
+    await AsyncStorage.setItem(PUSH_TOKEN_LAST_REG_KEY, Date.now().toString());
   } catch (e) {
     console.warn('Push token registration failed:', e);
   }
@@ -173,6 +185,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.clear();
       try {
         await AsyncStorage.removeItem('vrt-sync-rq-cache');
+      } catch {}
+      try {
+        await AsyncStorage.removeItem(PUSH_TOKEN_LAST_REG_KEY);
       } catch {}
       try {
         await unregisterPushToken();

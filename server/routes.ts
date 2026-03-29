@@ -32,6 +32,9 @@ import { exports as exportsTable } from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
+export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
+export const pushTokenLastReg = new Map<string, number>();
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 async function checkHoaLimits(communityId: string, role: string, excludeUserId?: string): Promise<string | null> {
@@ -384,6 +387,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get task error:", error);
       res.status(500).json({ error: "Failed to fetch task" });
+    }
+  });
+
+  app.get("/api/tasks/:id/detail", requireAuth, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const taskId = req.params.id as string;
+      const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, taskId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (!allowed) return res.status(403).json({ error: "You do not have access to this task" });
+
+      const [rawCompletions, taskAttachments] = await Promise.all([
+        storage.getTaskCompletions(taskId),
+        storage.getAttachmentsByTaskId(taskId),
+      ]);
+
+      const completions = await Promise.all(
+        rawCompletions.map(async (c) => ({
+          ...c,
+          attachments: await storage.getAttachmentsByCompletion(c.id),
+        })),
+      );
+
+      console.log(`[GET /api/tasks/:id/detail] task=${taskId} served (${Date.now() - t0}ms)`);
+      res.json({ task, completions, taskAttachments });
+    } catch (error) {
+      console.error("Get task detail bundle error:", error);
+      res.status(500).json({ error: "Failed to fetch task detail" });
     }
   });
 
@@ -1171,8 +1202,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, ts: Date.now() });
   });
 
-  const pushTokenLastReg = new Map<string, number>();
-
   app.post("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
     try {
       const parsed = registerPushTokenSchema.safeParse(req.body);
@@ -1182,7 +1211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const deviceId = parsed.data.deviceId;
       const now = Date.now();
       const lastReg = pushTokenLastReg.get(deviceId);
-      if (lastReg && now - lastReg < 300000) {
+      if (lastReg && now - lastReg < PUSH_TOKEN_RATE_LIMIT_MS) {
         return res.status(200).json({ rateLimited: true });
       }
       const pushToken = await storage.registerPushToken(

@@ -201,7 +201,7 @@ export default function DashboardScreen() {
       ...(dashboard.comingUpTasks ?? []),
     ];
     allTasks.forEach(task => {
-      queryClient.setQueryData([`/api/tasks/${task.id}`], task);
+      queryClient.setQueryData([`/api/tasks/${task.id}/detail`], { task, completions: [], taskAttachments: [] });
     });
   }, [dashboard, queryClient]);
 

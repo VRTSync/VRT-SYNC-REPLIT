@@ -211,7 +211,7 @@ export default function TasksScreen() {
     if (serverTasks && serverTasks.length > 0) {
       cacheTasks(serverTasks);
       serverTasks.forEach(task => {
-        qc.setQueryData([`/api/tasks/${task.id}`], task);
+        qc.setQueryData([`/api/tasks/${task.id}/detail`], { task, completions: [], taskAttachments: [] });
       });
     }
   }, [serverTasks]);

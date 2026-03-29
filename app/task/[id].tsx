@@ -132,18 +132,18 @@ export default function TaskDetailScreen() {
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
 
-  const { data: task, isLoading, isError: isTaskError, error: taskError, refetch } = useQuery<Task>({
-    queryKey: [`/api/tasks/${id}`],
+  type TaskDetailBundle = { task: Task; completions: Completion[]; taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[] };
+
+  const { data: bundle, isLoading, isError: isBundleError, error: bundleError, refetch: refetchBundle } = useQuery<TaskDetailBundle>({
+    queryKey: [`/api/tasks/${id}/detail`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
     staleTime: 0,
   });
 
-  const { data: completions = [], isError: isCompletionsError, error: completionsError, refetch: refetchCompletions } = useQuery<Completion[]>({
-    queryKey: [`/api/tasks/${id}/completions`],
-    queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id && !!task,
-  });
+  const task = bundle?.task ?? null;
+  const completions: Completion[] = bundle?.completions ?? [];
+  const taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[] = bundle?.taskAttachments ?? [];
 
   const { data: taskLink, isError: isLinkError, error: linkError, refetch: refetchLink } = useQuery<TaskLinkData | null>({
     queryKey: [`/api/tasks/${id}/link`],
@@ -151,23 +151,13 @@ export default function TaskDetailScreen() {
     enabled: !!id && !!task,
   });
 
-  const { data: taskAttachments = [], isError: isAttachmentsError, error: attachmentsError, refetch: refetchAttachments } = useQuery<{ id: string; url: string; fileRef: string; createdAt: string }[]>({
-    queryKey: [`/api/tasks/${id}/task-attachments`],
-    queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id && !!task,
-  });
-
-  const isError = isTaskError || isCompletionsError || isLinkError || isAttachmentsError;
-  const anyError: Error | null = (taskError instanceof Error ? taskError : null)
-    ?? (completionsError instanceof Error ? completionsError : null)
-    ?? (linkError instanceof Error ? linkError : null)
-    ?? (attachmentsError instanceof Error ? attachmentsError : null);
+  const isError = isBundleError || isLinkError;
+  const anyError: Error | null = (bundleError instanceof Error ? bundleError : null)
+    ?? (linkError instanceof Error ? linkError : null);
 
   const handleRetryAll = () => {
-    if (isTaskError) refetch();
-    if (isCompletionsError) refetchCompletions();
+    if (isBundleError) refetchBundle();
     if (isLinkError) refetchLink();
-    if (isAttachmentsError) refetchAttachments();
   };
 
   const pickPhoto = async () => {
@@ -275,14 +265,14 @@ export default function TaskDetailScreen() {
       }
 
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
 
       Alert.alert('Task Completed', 'The task has been marked as complete.', [
         { text: 'OK', onPress: () => router.replace('/(tabs)/tasks') },
       ]);
     } catch (e: any) {
       if (e.message?.includes('409')) {
-        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
         Alert.alert(
           'Update Conflict',
           'This task was modified by someone else. The latest version has been loaded — please review and try again.',
@@ -307,11 +297,11 @@ export default function TaskDetailScreen() {
         version: task.version,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
       Alert.alert('Acknowledged', 'This HOA request has been acknowledged.');
     } catch (e: any) {
       if (e.message?.includes('409')) {
-        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}`] });
+        queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
         Alert.alert('Update Conflict', 'This task was modified. Please try again.');
       } else {
         Alert.alert('Error', e.message || 'Failed to acknowledge request');
