@@ -160,6 +160,9 @@ export default function TasksScreen() {
     } finally {
       setSyncing(false);
     }
+    try {
+      await qc.invalidateQueries({ queryKey: ['/api/map-layers'] });
+    } catch {}
   };
 
   const communityId = activeCommunity?.id;

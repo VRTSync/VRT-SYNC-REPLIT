@@ -171,7 +171,10 @@ export default function HoaDashboardScreen() {
     const result = await refetch();
     if (result.error) throw result.error;
     setLastSyncedAt(new Date());
-  }, [refetch]);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+    } catch {}
+  }, [refetch, queryClient]);
 
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom + 90;
 

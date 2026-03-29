@@ -335,7 +335,10 @@ export default function HoaRequestsScreen() {
     const result = await refetch();
     if (result.error) throw result.error;
     setLastSyncedAt(new Date());
-  }, [refetch]);
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+    } catch {}
+  }, [refetch, queryClient]);
 
   const filteredData = useMemo(() => {
     if (!data) return [];

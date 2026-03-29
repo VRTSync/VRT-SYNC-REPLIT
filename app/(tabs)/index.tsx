@@ -149,6 +149,8 @@ export default function DashboardScreen() {
   const displaySchedules = schedules || cachedServiceSchedules;
   const displayVisits = recentVisits || cachedServiceVisits;
 
+  const queryClient = useQueryClient();
+
   const handleLogVisit = async (data: any) => {
     if (isOnline) {
       try {
@@ -186,10 +188,10 @@ export default function DashboardScreen() {
     } finally {
       setSyncing(false);
     }
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['/api/map-layers'] });
+    } catch {}
   };
-
-
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!dashboard) return;
