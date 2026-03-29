@@ -132,29 +132,42 @@ export default function TaskDetailScreen() {
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
 
-  const { data: task, isLoading } = useQuery<Task>({
+  const { data: task, isLoading, isError: isTaskError, error: taskError, refetch } = useQuery<Task>({
     queryKey: [`/api/tasks/${id}`],
     queryFn: getQueryFn({ on401: 'throw' }),
     enabled: !!id,
   });
 
-  const { data: completions = [] } = useQuery<Completion[]>({
+  const { data: completions = [], isError: isCompletionsError, error: completionsError, refetch: refetchCompletions } = useQuery<Completion[]>({
     queryKey: [`/api/tasks/${id}/completions`],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id,
+    enabled: !!id && !!task,
   });
 
-  const { data: taskLink } = useQuery<TaskLinkData | null>({
+  const { data: taskLink, isError: isLinkError, error: linkError, refetch: refetchLink } = useQuery<TaskLinkData | null>({
     queryKey: [`/api/tasks/${id}/link`],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id,
+    enabled: !!id && !!task,
   });
 
-  const { data: taskAttachments = [] } = useQuery<{ id: string; url: string; fileRef: string; createdAt: string }[]>({
+  const { data: taskAttachments = [], isError: isAttachmentsError, error: attachmentsError, refetch: refetchAttachments } = useQuery<{ id: string; url: string; fileRef: string; createdAt: string }[]>({
     queryKey: [`/api/tasks/${id}/task-attachments`],
     queryFn: getQueryFn({ on401: 'throw' }),
-    enabled: !!id,
+    enabled: !!id && !!task,
   });
+
+  const isError = isTaskError || isCompletionsError || isLinkError || isAttachmentsError;
+  const anyError: Error | null = (taskError instanceof Error ? taskError : null)
+    ?? (completionsError instanceof Error ? completionsError : null)
+    ?? (linkError instanceof Error ? linkError : null)
+    ?? (attachmentsError instanceof Error ? attachmentsError : null);
+
+  const handleRetryAll = () => {
+    if (isTaskError) refetch();
+    if (isCompletionsError) refetchCompletions();
+    if (isLinkError) refetchLink();
+    if (isAttachmentsError) refetchAttachments();
+  };
 
   const pickPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -307,7 +320,7 @@ export default function TaskDetailScreen() {
     }
   };
 
-  if (isLoading || !task) {
+  if (isLoading) {
     return (
       <View style={styles.container}>
         <StatusBarFill />
@@ -320,6 +333,41 @@ export default function TaskDetailScreen() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#25C1AC" />
+        </View>
+      </View>
+    );
+  }
+
+  if (isError || !task) {
+    const msg = anyError?.message ?? '';
+    const errorMessage = !task && !isError
+      ? 'Task not found.'
+      : msg.includes('403')
+        ? 'You do not have access to this task.'
+        : msg.includes('404')
+          ? 'Task not found.'
+          : 'Failed to load task. Please try again.';
+    return (
+      <View style={styles.container}>
+        <StatusBarFill />
+        <View style={styles.headerBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBackBtn}>
+            <Ionicons name="arrow-back" size={22} color="#0C1D31" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>Error</Text>
+          <View style={styles.headerActionBtn} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{errorMessage}</Text>
+          {isError && (
+            <TouchableOpacity style={styles.retryBtn} onPress={handleRetryAll}>
+              <Text style={styles.retryBtnText}>Try Again</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Text style={styles.backBtnText}>Go Back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -874,6 +922,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   content: { padding: 16, paddingBottom: 100 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 16 },
+  errorText: { fontSize: 16, color: '#555', textAlign: 'center', lineHeight: 24 },
+  retryBtn: { backgroundColor: '#25C1AC', borderRadius: 8, paddingHorizontal: 24, paddingVertical: 12 },
+  retryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' as const },
+  backBtn: { backgroundColor: '#e8eaed', borderRadius: 8, paddingHorizontal: 24, paddingVertical: 12 },
+  backBtnText: { color: '#0C1D31', fontSize: 16, fontWeight: '600' as const },
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',

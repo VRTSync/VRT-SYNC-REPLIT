@@ -316,6 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
+    const t0 = Date.now();
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
@@ -326,6 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         communityId = user.hoaCommunityId;
         const tasks = await storage.getTasksByCommunity(communityId);
+        console.log(`[GET /api/tasks] hoa user=${user.id} community=${communityId} count=${tasks.length} (${Date.now() - t0}ms)`);
         return res.json(tasks);
       }
 
@@ -338,10 +340,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           const allTasks = await storage.getTasksByCommunity(communityId);
+          console.log(`[GET /api/tasks] role=${user.role} community=${communityId} count=${allTasks.length} (${Date.now() - t0}ms)`);
           return res.json(allTasks);
         }
         if (user.role === "admin") {
           const allTasks = await storage.getAllTasks();
+          console.log(`[GET /api/tasks] admin all-tasks count=${allTasks.length} (${Date.now() - t0}ms)`);
           return res.json(allTasks);
         }
         return res.json([]);
@@ -355,6 +359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userTasks = await storage.getTasksForUser(req.session.userId!, communityId);
+      console.log(`[GET /api/tasks] user=${user.id} count=${userTasks.length} (${Date.now() - t0}ms)`);
       res.json(userTasks);
     } catch (error) {
       console.error("Get tasks error:", error);
@@ -363,14 +368,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+    const t0 = Date.now();
     try {
       const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!task) {
+        console.log(`[GET /api/tasks/:id] task=${req.params.id} not found (${Date.now() - t0}ms)`);
         return res.status(404).json({ error: "Task not found" });
       }
       if (!allowed) {
+        console.log(`[GET /api/tasks/:id] task=${req.params.id} access denied for user=${req.session.userId} (${Date.now() - t0}ms)`);
         return res.status(403).json({ error: "You do not have access to this task" });
       }
+      console.log(`[GET /api/tasks/:id] task=${req.params.id} served (${Date.now() - t0}ms)`);
       res.json(task);
     } catch (error) {
       console.error("Get task error:", error);

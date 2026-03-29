@@ -74,6 +74,8 @@ export const tasks = pgTable("tasks", {
 }, (table) => [
   uniqueIndex("tasks_schedule_instance_key_idx").on(table.scheduleInstanceKey),
   index("tasks_import_fingerprint_idx").on(table.importFingerprint),
+  index("tasks_community_id_idx").on(table.communityId),
+  index("tasks_assigned_to_idx").on(table.assignedTo),
 ]);
 
 export const taskCompletions = pgTable("task_completions", {

@@ -288,16 +288,25 @@ export async function isUserMemberOfCommunity(userId: string, communityId: strin
 }
 
 export async function canUserAccessTask(userId: string, taskId: string): Promise<{ allowed: boolean; task: Task | undefined }> {
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task) return { allowed: false, task: undefined };
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
-  if (!user) return { allowed: false, task };
-  if (user.role === 'admin') return { allowed: true, task };
+  const t0 = Date.now();
+  const [[task], [user]] = await Promise.all([
+    db.select().from(tasks).where(eq(tasks.id, taskId)),
+    db.select().from(users).where(eq(users.id, userId)),
+  ]);
+  if (!task) { console.log(`[canUserAccessTask] task=${taskId} not found (${Date.now() - t0}ms)`); return { allowed: false, task: undefined }; }
+  if (!user) { console.log(`[canUserAccessTask] user=${userId} not found (${Date.now() - t0}ms)`); return { allowed: false, task }; }
+  if (user.role === 'admin') { console.log(`[canUserAccessTask] admin access granted (${Date.now() - t0}ms)`); return { allowed: true, task }; }
   if (user.role === 'hoa_admin' || user.role === 'hoa_member') {
-    return { allowed: user.hoaCommunityId === task.communityId, task };
+    const allowed = user.hoaCommunityId === task.communityId;
+    console.log(`[canUserAccessTask] hoa role check allowed=${allowed} (${Date.now() - t0}ms)`);
+    return { allowed, task };
   }
-  if (task.assignedTo === userId) return { allowed: true, task };
-  const isMember = await isUserMemberOfCommunity(userId, task.communityId);
+  if (task.assignedTo === userId) { console.log(`[canUserAccessTask] assignee access granted (${Date.now() - t0}ms)`); return { allowed: true, task }; }
+  const [membership] = await db.select({ id: communityMembers.id })
+    .from(communityMembers)
+    .where(and(eq(communityMembers.userId, userId), eq(communityMembers.communityId, task.communityId)));
+  const isMember = !!membership;
+  console.log(`[canUserAccessTask] membership join isMember=${isMember} (${Date.now() - t0}ms)`);
   return { allowed: isMember, task };
 }
 
