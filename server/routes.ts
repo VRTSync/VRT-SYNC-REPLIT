@@ -28,7 +28,7 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "./scheduler";
 import { runExportGeneration } from "./exportGenerator";
 import { parseFile, generatePreview, commitImport } from "./contractImporter";
-import { exports as exportsTable, plannerRecords } from "@shared/schema";
+import { exports as exportsTable, plannerRecords, xeriscapePackets } from "@shared/schema";
 import { db, pool } from "./db";
 import { eq, and, desc, ne } from "drizzle-orm";
 
@@ -1119,6 +1119,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Xeriscape community polygons error:", error);
       res.status(500).json({ error: "Failed to load community xeriscape polygons" });
+    }
+  });
+
+  // ── Xeriscape Packet CRUD ───────────────────────────────────────────────────
+  app.get("/api/admin/xeriscape/records/:recordId/packets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { recordId } = req.params;
+      const packets = await db
+        .select()
+        .from(xeriscapePackets)
+        .where(eq(xeriscapePackets.plannerRecordId, recordId))
+        .orderBy(desc(xeriscapePackets.generatedAt));
+      res.json(packets);
+    } catch (error) {
+      console.error("List packets error:", error);
+      res.status(500).json({ error: "Failed to fetch packets" });
+    }
+  });
+
+  app.post("/api/admin/xeriscape/records/:recordId/packets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { recordId } = req.params;
+      const { packetTitle, packetSummaryText, narrativeIntro, narrativeRecommendation, narrativeNextSteps } = req.body;
+
+      if (!packetTitle || typeof packetTitle !== "string" || !packetTitle.trim()) {
+        return res.status(400).json({ error: "packetTitle is required" });
+      }
+
+      // Verify the planning record exists and is in a reviewable state
+      const existing = await db
+        .select()
+        .from(plannerRecords)
+        .where(eq(plannerRecords.id, recordId))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Planning record not found" });
+      }
+
+      const record = existing[0];
+      if (record.status !== "reviewed" && record.status !== "selected_for_estimate") {
+        return res.status(400).json({ error: "Packet can only be created for reviewed or selected_for_estimate records" });
+      }
+
+      // Supersede any existing active packets for this record
+      await db
+        .update(xeriscapePackets)
+        .set({ packetStatus: "superseded", updatedAt: new Date() })
+        .where(
+          and(
+            eq(xeriscapePackets.plannerRecordId, recordId),
+            eq(xeriscapePackets.packetStatus, "active_proposal_support")
+          )
+        );
+
+      const [packet] = await db
+        .insert(xeriscapePackets)
+        .values({
+          plannerRecordId: recordId,
+          packetTitle: packetTitle.trim(),
+          packetSummaryText: packetSummaryText || null,
+          narrativeIntro: narrativeIntro || null,
+          narrativeRecommendation: narrativeRecommendation || null,
+          narrativeNextSteps: narrativeNextSteps || null,
+          packetStatus: "active_proposal_support",
+          generatedBy: req.session.userId!,
+        })
+        .returning();
+
+      res.status(201).json(packet);
+    } catch (error) {
+      console.error("Create packet error:", error);
+      res.status(500).json({ error: "Failed to create packet" });
+    }
+  });
+
+  app.put("/api/admin/xeriscape/records/:recordId/packets/:packetId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { recordId, packetId } = req.params;
+      const { packetTitle, packetSummaryText, narrativeIntro, narrativeRecommendation, narrativeNextSteps, packetStatus } = req.body;
+
+      const existing = await db
+        .select()
+        .from(xeriscapePackets)
+        .where(and(eq(xeriscapePackets.id, packetId), eq(xeriscapePackets.plannerRecordId, recordId)))
+        .limit(1);
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: "Packet not found" });
+      }
+
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (packetTitle !== undefined) updateData.packetTitle = packetTitle.trim();
+      if (packetSummaryText !== undefined) updateData.packetSummaryText = packetSummaryText || null;
+      if (narrativeIntro !== undefined) updateData.narrativeIntro = narrativeIntro || null;
+      if (narrativeRecommendation !== undefined) updateData.narrativeRecommendation = narrativeRecommendation || null;
+      if (narrativeNextSteps !== undefined) updateData.narrativeNextSteps = narrativeNextSteps || null;
+      if (packetStatus !== undefined) updateData.packetStatus = packetStatus;
+
+      const [updated] = await db
+        .update(xeriscapePackets)
+        .set(updateData)
+        .where(eq(xeriscapePackets.id, packetId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Update packet error:", error);
+      res.status(500).json({ error: "Failed to update packet" });
     }
   });
 

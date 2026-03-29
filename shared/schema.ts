@@ -953,3 +953,42 @@ export const plannerRecords = pgTable("planner_records", {
 
 export type PlannerRecord = typeof plannerRecords.$inferSelect;
 export type InsertPlannerRecord = typeof plannerRecords.$inferInsert;
+
+export const xeriscapePacketStatusEnum = pgEnum("xeriscape_packet_status", [
+  "draft",
+  "active_proposal_support",
+  "superseded",
+]);
+
+export const xeriscapePackets = pgTable("xeriscape_packets", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  plannerRecordId: varchar("planner_record_id")
+    .notNull()
+    .references(() => plannerRecords.id, { onDelete: "cascade" }),
+  packetTitle: text("packet_title").notNull(),
+  packetSummaryText: text("packet_summary_text"),
+  narrativeIntro: text("narrative_intro"),
+  narrativeRecommendation: text("narrative_recommendation"),
+  narrativeNextSteps: text("narrative_next_steps"),
+  packetStatus: xeriscapePacketStatusEnum("packet_status").notNull().default("draft"),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+  generatedBy: varchar("generated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("xeriscape_packets_record_idx").on(table.plannerRecordId),
+  index("xeriscape_packets_status_idx").on(table.packetStatus),
+]);
+
+export type XeriscapePacket = typeof xeriscapePackets.$inferSelect;
+export type InsertXeriscapePacket = typeof xeriscapePackets.$inferInsert;
+
+export const xeriscapePacketsRelations = relations(xeriscapePackets, ({ one }) => ({
+  plannerRecord: one(plannerRecords, { fields: [xeriscapePackets.plannerRecordId], references: [plannerRecords.id] }),
+  generatedByUser: one(users, { fields: [xeriscapePackets.generatedBy], references: [users.id] }),
+}));
+
+export const plannerRecordsRelations = relations(plannerRecords, ({ many }) => ({
+  packets: many(xeriscapePackets),
+}));

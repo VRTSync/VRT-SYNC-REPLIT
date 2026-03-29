@@ -207,20 +207,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       </div>
     </div>
 
-    <!-- Proposal Prep Modal -->
-    <div id="xp-proposal-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:#fff;border-radius:var(--radius);padding:28px;width:580px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,0.25);max-height:85vh;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div style="font-size:16px;font-weight:700;color:var(--navy)">Proposal Prep Handoff</div>
-          <button id="xp-proposal-close-btn" class="btn btn-secondary btn-sm">Close</button>
-        </div>
-        <p style="font-size:12px;color:var(--gray-500);margin:0 0 12px">This is the structured handoff payload for the proposal builder. Copy or download it for use in downstream tools.</p>
-        <pre id="xp-proposal-payload" style="flex:1;overflow:auto;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:6px;padding:14px;font-size:11px;line-height:1.6;font-family:monospace;margin-bottom:14px;white-space:pre-wrap;word-break:break-word"></pre>
-        <div style="display:flex;gap:8px">
-          <button id="xp-proposal-copy-btn" class="btn btn-sm" style="background:var(--teal);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">&#128203; Copy to Clipboard</button>
-          <button id="xp-proposal-download-btn" class="btn btn-sm" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px">&#8659; Download JSON</button>
-        </div>
-      </div>
+    <!-- Planning Packet Overlay (full screen) -->
+    <div id="xp-packet-overlay" style="display:none;position:fixed;inset:0;z-index:9100;background:#f0f4f8;overflow-y:auto">
+      <div id="xp-packet-content" style="max-width:900px;margin:0 auto;padding:32px 24px 100px"></div>
     </div>
 
     <style>
@@ -548,7 +537,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         #xp-map,
         #xp-right-panel,
         .page-header,
-        #xp-community-selector-wrap {
+        #xp-community-selector-wrap,
+        .xpk-toolbar {
           display: none !important;
         }
         #xp-summary-overlay {
@@ -560,13 +550,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           max-width: 100% !important;
           padding: 20px !important;
         }
+        #xp-packet-overlay {
+          position: static !important;
+          background: #fff !important;
+          overflow: visible !important;
+        }
+        #xp-packet-content {
+          max-width: 100% !important;
+          padding: 20px !important;
+        }
         body, #app, #main-content, #page-content {
           overflow: visible !important;
         }
         .xps-kpi-card,
         .xps-block,
         .xps-group-detail-section,
-        .xps-map-container {
+        .xps-map-container,
+        .xpk-section {
           page-break-inside: avoid;
         }
         .xps-map-print-placeholder {
@@ -582,8 +582,226 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           margin-bottom: 20px;
         }
         .xps-no-print { display: none !important; }
+        .xpk-narrative-display { display: block !important; }
+        .xpk-narrative-edit { display: none !important; }
       }
       .xps-map-print-placeholder { display: none; }
+
+      /* ── Planning Packet styles ─────────────────── */
+      .xpk-header {
+        background: var(--navy);
+        color: #fff;
+        border-radius: var(--radius);
+        padding: 28px 32px;
+        margin-bottom: 24px;
+      }
+      .xpk-header-community {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: rgba(255,255,255,0.6);
+        margin-bottom: 6px;
+      }
+      .xpk-header-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #fff;
+        margin: 0 0 8px;
+        line-height: 1.2;
+      }
+      .xpk-header-meta {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        font-size: 12px;
+        color: rgba(255,255,255,0.75);
+        margin-top: 10px;
+      }
+      .xpk-status-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        background: rgba(255,255,255,0.18);
+        color: #fff;
+        border: 1px solid rgba(255,255,255,0.3);
+        border-radius: 20px;
+        padding: 3px 10px;
+        margin-left: 10px;
+        vertical-align: middle;
+      }
+      .xpk-admin-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        background: #fef9c3;
+        color: #854d0e;
+        border: 1px solid #fde68a;
+        border-radius: 4px;
+        padding: 2px 8px;
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+      .xpk-section {
+        background: var(--white);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        page-break-inside: avoid;
+      }
+      .xpk-section-title {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--gray-400);
+        margin: 0 0 16px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--gray-100);
+      }
+      .xpk-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 14px;
+        margin-bottom: 4px;
+      }
+      .xpk-kpi-card {
+        background: var(--gray-50);
+        border: 1px solid var(--gray-100);
+        border-radius: 8px;
+        padding: 14px 16px;
+      }
+      .xpk-kpi-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--gray-400);
+        margin-bottom: 6px;
+      }
+      .xpk-kpi-value {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--navy);
+        line-height: 1;
+      }
+      .xpk-kpi-value.accent { color: var(--teal); }
+      .xpk-narrative-area {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--gray-200);
+        border-radius: 6px;
+        padding: 10px 12px;
+        font-size: 13px;
+        color: var(--gray-700);
+        line-height: 1.6;
+        resize: vertical;
+        min-height: 70px;
+        background: #fafafa;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .xpk-narrative-area:focus { border-color: var(--teal); background: #fff; }
+      .xpk-narrative-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--gray-500);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin: 0 0 5px;
+        display: block;
+      }
+      .xpk-narrative-display {
+        font-size: 13px;
+        color: var(--gray-700);
+        line-height: 1.7;
+        white-space: pre-wrap;
+        font-style: italic;
+        display: none;
+      }
+      .xpk-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .xpk-table th {
+        text-align: left;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--gray-400);
+        padding: 6px 10px;
+        border-bottom: 2px solid var(--gray-200);
+        white-space: nowrap;
+      }
+      .xpk-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--gray-100);
+        color: var(--navy);
+        vertical-align: top;
+      }
+      .xpk-table tr:last-child td { border-bottom: none; }
+      .xpk-table td.right, .xpk-table th.right { text-align: right; }
+      .xpk-disclaimer {
+        background: var(--gray-50);
+        border: 1px solid var(--gray-200);
+        border-radius: var(--radius);
+        padding: 16px 20px;
+        margin-bottom: 20px;
+      }
+      .xpk-disclaimer-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--gray-400);
+        margin-bottom: 8px;
+      }
+      .xpk-disclaimer-text {
+        font-size: 12px;
+        color: var(--gray-500);
+        line-height: 1.6;
+        font-style: italic;
+      }
+      .xpk-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+      .xpk-save-status {
+        font-size: 12px;
+        color: var(--gray-400);
+        margin-left: auto;
+      }
+      .xpk-group-color-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      .xpk-packet-badge {
+        display: inline-block;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: #7c3aed;
+        color: #fff;
+        padding: 2px 8px;
+        border-radius: 20px;
+        margin-left: 6px;
+      }
 
       /* ── Record styles ──────────────────────────── */
       .xp-record-row {
@@ -1825,61 +2043,417 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     warnModalRecord = null;
   }
 
-  // ── Proposal Prep Modal ────────────────────────────────────────────────────
-  function openProposalModal(record) {
+  // ── Planning Packet Overlay ────────────────────────────────────────────────
+  let currentPacketRecord = null;
+  let currentPacketData = null;  // saved packet from DB (if any)
+  let packetIsSaving = false;
+
+  const GROUP_COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#0ea5e9', '#f97316'];
+
+  function buildProposalPayload(record) {
     const groups_data = Array.isArray(record.groupsJson) ? record.groupsJson : [];
-    const payload = {
-      propertyId: record.propertyId,
-      scenarioName: record.recordName,
+    const assumptions = record.assumptionsJson || {};
+    return {
+      communityId: record.propertyId,
+      communityName: PROPERTY_NAME,
+      planningRecordId: record.id,
+      planningRecordName: record.recordName,
       status: record.status,
-      totalSqft: record.totalSqft,
-      estimatedCost: record.totalEstimatedCost,
-      annualSavings: record.totalAnnualSavings,
-      paybackYears: record.paybackYears,
-      assumptions: record.assumptionsJson,
+      totals: {
+        polygonCount: groups_data.reduce((s, g) => s + (g.polygonCount || 0), 0),
+        totalSqft: record.totalSqft,
+        estimatedCost: record.totalEstimatedCost,
+        annualSavings: record.totalAnnualSavings,
+        paybackYears: record.paybackYears,
+      },
+      assumptions,
       groups: groups_data.map(g => ({
         name: g.name,
         polygonCount: g.polygonCount,
         sqft: g.totalSquareFootage,
         estimatedCost: g.estimatedConversionCost,
         annualSavings: g.estimatedAnnualWaterSavings,
+        paybackYears: g.estimatedPaybackYears,
+        polygonIds: g.polygonIds || [],
       })),
-      internalNotes: record.internalNotes || null,
+      polygonDetails: groups_data.flatMap(g =>
+        (g.polygonIds || []).map(pid => {
+          const feat = allFeatures.find(f => f.properties.id === pid);
+          return {
+            id: pid,
+            name: feat ? (feat.properties.name || pid) : pid,
+            sqft: feat ? (feat.properties.area_sqft || 0) : 0,
+            group: g.name,
+          };
+        })
+      ),
+      packetNotes: null,
       generatedAt: new Date().toISOString(),
     };
+  }
 
-    const el = document.getElementById('xp-proposal-payload');
-    if (el) el.textContent = JSON.stringify(payload, null, 2);
+  async function openPlanningPacket(record) {
+    currentPacketRecord = record;
+    currentPacketData = null;
 
-    const modal = document.getElementById('xp-proposal-modal');
-    if (modal) modal.style.display = 'flex';
-
-    const copyBtn = document.getElementById('xp-proposal-copy-btn');
-    if (copyBtn) {
-      copyBtn.onclick = function() {
-        navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
-          .then(() => showToast('Copied to clipboard', 'success'))
-          .catch(() => showToast('Copy failed', 'error'));
-      };
+    // Try to load existing packet from DB
+    try {
+      const packets = await apiFetch('/api/admin/xeriscape/records/' + record.id + '/packets');
+      const active = packets.find(p => p.packetStatus === 'active_proposal_support');
+      currentPacketData = active || (packets.length > 0 ? packets[0] : null);
+    } catch (e) {
+      // no packets yet, that's fine
     }
 
-    const dlBtn = document.getElementById('xp-proposal-download-btn');
-    if (dlBtn) {
-      dlBtn.onclick = function() {
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'proposal-prep-' + record.propertyId + '-' + Date.now() + '.json';
-        a.click();
-        URL.revokeObjectURL(url);
+    renderPacketOverlay(record, currentPacketData);
+  }
+
+  function renderPacketOverlay(record, savedPacket) {
+    const overlay = document.getElementById('xp-packet-overlay');
+    const content = document.getElementById('xp-packet-content');
+    if (!overlay || !content) return;
+
+    const groups_data = Array.isArray(record.groupsJson) ? record.groupsJson : [];
+    const assumptions = record.assumptionsJson || {};
+    const genDate = savedPacket ? formatDate(savedPacket.generatedAt) : formatDate(new Date());
+    const packetStatus = savedPacket ? savedPacket.packetStatus : null;
+    const isActive = packetStatus === 'active_proposal_support';
+    const packetTitle = savedPacket ? savedPacket.packetTitle : record.recordName + ' — Planning Packet';
+
+    // Compute totals
+    const totalPolygonCount = groups_data.reduce((s, g) => s + (g.polygonCount || 0), 0);
+    const totalSqft = record.totalSqft || 0;
+    const totalCost = record.totalEstimatedCost || 0;
+    const totalSavings = record.totalAnnualSavings || 0;
+    const payback = record.paybackYears;
+
+    // Build exec summary KPI cards
+    const kpiCards = `
+      <div class="xpk-kpi-row">
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Polygons</div>
+          <div class="xpk-kpi-value">${totalPolygonCount}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Total Area</div>
+          <div class="xpk-kpi-value">${totalSqft > 0 ? formatNumber(totalSqft) : '—'} SF</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Conversion Cost</div>
+          <div class="xpk-kpi-value">${totalCost > 0 ? formatCurrency(totalCost) : '—'}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Annual Savings</div>
+          <div class="xpk-kpi-value accent">${totalSavings > 0 ? formatCurrency(totalSavings) + '/yr' : '—'}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Payback Period</div>
+          <div class="xpk-kpi-value">${paybackStr(payback)}</div>
+        </div>
+      </div>
+    `;
+
+    // Build comparison table if multiple groups
+    let comparisonSection = '';
+    if (groups_data.length >= 2) {
+      const compRows = groups_data.map((g, idx) => {
+        const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+        return `<tr>
+          <td style="font-weight:700"><span class="xpk-group-color-dot" style="background:${color}"></span>${escapeHtml(g.name)}</td>
+          <td class="right">${g.polygonCount || 0}</td>
+          <td class="right">${formatNumber(g.totalSquareFootage || 0)}</td>
+          <td class="right">${formatCurrency(g.estimatedConversionCost || 0)}</td>
+          <td class="right">${(g.estimatedAnnualWaterSavings || 0) > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+          <td class="right">${paybackStr(g.estimatedPaybackYears)}</td>
+        </tr>`;
+      }).join('');
+
+      comparisonSection = `
+        <div class="xpk-section">
+          <div class="xpk-section-title">Phase / Option Comparison</div>
+          <div style="overflow-x:auto">
+            <table class="xpk-table">
+              <thead>
+                <tr>
+                  <th>Option Name</th>
+                  <th class="right">Polygons</th>
+                  <th class="right">Total SF</th>
+                  <th class="right">Est. Cost</th>
+                  <th class="right">Annual Savings</th>
+                  <th class="right">Payback</th>
+                </tr>
+              </thead>
+              <tbody>${compRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // Build group breakdown section
+    const groupBreakdownRows = groups_data.map((g, idx) => {
+      const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+      return `<tr>
+        <td style="font-weight:700"><span class="xpk-group-color-dot" style="background:${color}"></span>${escapeHtml(g.name)}</td>
+        <td class="right">${g.polygonCount || 0}</td>
+        <td class="right">${formatNumber(g.totalSquareFootage || 0)}</td>
+        <td class="right">${formatCurrency(g.estimatedConversionCost || 0)}</td>
+        <td class="right">${(g.estimatedAnnualWaterSavings || 0) > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+        <td class="right">${paybackStr(g.estimatedPaybackYears)}</td>
+      </tr>`;
+    }).join('');
+
+    const groupBreakdownSection = groups_data.length > 0 ? `
+      <div class="xpk-section">
+        <div class="xpk-section-title">Group / Phase Breakdown</div>
+        <div style="overflow-x:auto">
+          <table class="xpk-table">
+            <thead>
+              <tr>
+                <th>Group Name</th>
+                <th class="right">Polygons</th>
+                <th class="right">SF</th>
+                <th class="right">Est. Cost</th>
+                <th class="right">Annual Savings</th>
+                <th class="right">Payback</th>
+              </tr>
+            </thead>
+            <tbody>${groupBreakdownRows}</tbody>
+          </table>
+        </div>
+      </div>
+    ` : '';
+
+    // Build polygon detail table
+    const polygonDetailRows = groups_data.flatMap((g, idx) => {
+      const color = GROUP_COLORS[idx % GROUP_COLORS.length];
+      return (g.polygonIds || []).map(pid => {
+        const feat = allFeatures.find(f => f.properties.id === pid);
+        const name = feat ? (feat.properties.name || pid) : pid;
+        const sqft = feat ? (feat.properties.area_sqft || 0) : 0;
+        return `<tr>
+          <td>${escapeHtml(name)}</td>
+          <td class="right">${formatNumber(sqft)}</td>
+          <td><span class="xpk-group-color-dot" style="background:${color}"></span>${escapeHtml(g.name)}</td>
+        </tr>`;
+      });
+    }).join('');
+
+    const polygonDetailSection = `
+      <div class="xpk-section">
+        <div class="xpk-section-title">Polygon Detail</div>
+        <div style="overflow-x:auto">
+          <table class="xpk-table">
+            <thead>
+              <tr>
+                <th>Polygon Name</th>
+                <th class="right">Square Footage</th>
+                <th>Group</th>
+              </tr>
+            </thead>
+            <tbody>${polygonDetailRows || '<tr><td colspan="3" style="color:var(--gray-400);text-align:center">No polygons in this record</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    // Assumptions block
+    const assumptionsSection = `
+      <div class="xpk-section">
+        <div class="xpk-section-title">Assumptions (Frozen at Record Save)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:13px;color:var(--gray-700)">
+          <div><strong>Conversion cost:</strong> ${formatCurrency(assumptions.costPerSf || 0)} / SF</div>
+          <div><strong>Annual water savings:</strong> ${formatCurrency(assumptions.savingsPerSf || 0)} / SF</div>
+          <div style="grid-column:1/-1;color:var(--gray-500);font-size:12px">Payback basis: Water-only savings. Does not include maintenance savings or utility rate escalation.</div>
+        </div>
+      </div>
+    `;
+
+    // Disclaimer
+    const disclaimerBlock = `
+      <div class="xpk-disclaimer">
+        <div class="xpk-disclaimer-title">Disclaimer</div>
+        <div class="xpk-disclaimer-text">
+          Estimates shown are planning-level figures based on selected assumptions and mapped polygon area. Actual project cost, water savings, and payback may vary based on final design, utility rates, site conditions, and operational factors. This document is intended for internal HOA board planning purposes only and does not constitute a binding proposal, contract, or guarantee of project scope or pricing.
+        </div>
+      </div>
+    `;
+
+    // Status badge for header
+    const statusBadgeHtml = isActive
+      ? `<span class="xpk-status-badge" style="background:rgba(21,128,61,0.3);border-color:rgba(21,128,61,0.5)">Active Proposal Support</span>`
+      : packetStatus === 'superseded'
+        ? `<span class="xpk-status-badge" style="background:rgba(100,116,139,0.3)">Superseded</span>`
+        : `<span class="xpk-status-badge">Draft</span>`;
+
+    const narrativeIntro = savedPacket && savedPacket.narrativeIntro ? savedPacket.narrativeIntro : '';
+    const narrativeRec = savedPacket && savedPacket.narrativeRecommendation ? savedPacket.narrativeRecommendation : '';
+    const narrativeNext = savedPacket && savedPacket.narrativeNextSteps ? savedPacket.narrativeNextSteps : '';
+
+    content.innerHTML = `
+      <div class="xpk-toolbar xps-no-print">
+        <button class="xps-back-btn" id="xpk-back-btn">&#8592; Back to Planner</button>
+        <button class="xps-print-btn" id="xpk-print-btn">&#128438; Print Packet</button>
+        <button class="btn btn-sm" id="xpk-export-btn" style="background:var(--teal);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:7px 16px">&#8659; Export Packet</button>
+        <button class="btn btn-sm" id="xpk-save-btn" style="background:var(--navy);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:12px;font-weight:600;padding:7px 16px">&#128190; Save Packet</button>
+        <span class="xpk-save-status" id="xpk-save-status">${savedPacket ? 'Last saved ' + formatDateShort(savedPacket.updatedAt) : 'Unsaved draft'}</span>
+      </div>
+
+      <div class="xpk-header">
+        <div class="xpk-header-community">${escapeHtml(PROPERTY_NAME)}</div>
+        <h1 class="xpk-header-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>${escapeHtml(record.recordName)}</span>
+          <span class="xpk-admin-badge">Admin Only &mdash; Internal Use</span>
+          ${savedPacket ? statusBadgeHtml : ''}
+        </h1>
+        <div class="xpk-header-meta">
+          <span><strong>Generated:</strong>&nbsp;${genDate}</span>
+          <span><strong>Status:</strong>&nbsp;${statusLabel(record.status)}</span>
+          <span><strong>Groups:</strong>&nbsp;${groups_data.length}</span>
+        </div>
+      </div>
+
+      <!-- Narrative block (editable) -->
+      <div class="xpk-section xpk-narrative-edit" id="xpk-narrative-section">
+        <div class="xpk-section-title">Executive Narrative (Optional — Editable)</div>
+        <div style="display:grid;gap:14px">
+          <div>
+            <label class="xpk-narrative-label">Introduction / Context</label>
+            <textarea class="xpk-narrative-area" id="xpk-intro" placeholder="Brief intro or context for the board…" rows="3">${escapeHtml(narrativeIntro)}</textarea>
+          </div>
+          <div>
+            <label class="xpk-narrative-label">Recommendation</label>
+            <textarea class="xpk-narrative-area" id="xpk-recommendation" placeholder="Staff recommendation or key takeaways…" rows="3">${escapeHtml(narrativeRec)}</textarea>
+          </div>
+          <div>
+            <label class="xpk-narrative-label">Proposed Next Steps</label>
+            <textarea class="xpk-narrative-area" id="xpk-next-steps" placeholder="Proposed actions, timeline, or approvals needed…" rows="3">${escapeHtml(narrativeNext)}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Narrative display (print only) -->
+      <div class="xpk-section xpk-narrative-display" id="xpk-narrative-print">
+        ${narrativeIntro ? `<div class="xpk-section-title">Introduction</div><p style="font-size:13px;line-height:1.7;margin:0 0 16px">${escapeHtml(narrativeIntro)}</p>` : ''}
+        ${narrativeRec ? `<div class="xpk-section-title">Recommendation</div><p style="font-size:13px;line-height:1.7;margin:0 0 16px">${escapeHtml(narrativeRec)}</p>` : ''}
+        ${narrativeNext ? `<div class="xpk-section-title">Next Steps</div><p style="font-size:13px;line-height:1.7;margin:0">${escapeHtml(narrativeNext)}</p>` : ''}
+      </div>
+
+      <!-- Executive Summary -->
+      <div class="xpk-section">
+        <div class="xpk-section-title">Executive Summary</div>
+        ${kpiCards}
+      </div>
+
+      ${comparisonSection}
+      ${groupBreakdownSection}
+      ${polygonDetailSection}
+      ${assumptionsSection}
+      ${disclaimerBlock}
+    `;
+
+    overlay.style.display = 'block';
+    overlay.scrollTop = 0;
+
+    // Wire toolbar buttons
+    document.getElementById('xpk-back-btn').addEventListener('click', closePlanningPacket);
+    document.getElementById('xpk-print-btn').addEventListener('click', function() { window.print(); });
+    document.getElementById('xpk-export-btn').addEventListener('click', function() { exportPacketJSON(record); });
+    document.getElementById('xpk-save-btn').addEventListener('click', function() { savePacketToDB(record); });
+
+    // When narrative edits happen, sync to print display
+    ['xpk-intro', 'xpk-recommendation', 'xpk-next-steps'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', syncNarrativePrint);
+      }
+    });
+  }
+
+  function syncNarrativePrint() {
+    const intro = document.getElementById('xpk-intro') ? document.getElementById('xpk-intro').value.trim() : '';
+    const rec = document.getElementById('xpk-recommendation') ? document.getElementById('xpk-recommendation').value.trim() : '';
+    const next = document.getElementById('xpk-next-steps') ? document.getElementById('xpk-next-steps').value.trim() : '';
+
+    const printEl = document.getElementById('xpk-narrative-print');
+    if (!printEl) return;
+
+    printEl.innerHTML = [
+      intro ? `<div class="xpk-section-title">Introduction</div><p style="font-size:13px;line-height:1.7;margin:0 0 16px">${escapeHtml(intro)}</p>` : '',
+      rec ? `<div class="xpk-section-title">Recommendation</div><p style="font-size:13px;line-height:1.7;margin:0 0 16px">${escapeHtml(rec)}</p>` : '',
+      next ? `<div class="xpk-section-title">Next Steps</div><p style="font-size:13px;line-height:1.7;margin:0">${escapeHtml(next)}</p>` : '',
+    ].join('');
+  }
+
+  async function savePacketToDB(record) {
+    if (packetIsSaving) return;
+    const intro = document.getElementById('xpk-intro') ? document.getElementById('xpk-intro').value.trim() : '';
+    const rec = document.getElementById('xpk-recommendation') ? document.getElementById('xpk-recommendation').value.trim() : '';
+    const next = document.getElementById('xpk-next-steps') ? document.getElementById('xpk-next-steps').value.trim() : '';
+    const title = record.recordName + ' — Planning Packet';
+
+    packetIsSaving = true;
+    const saveBtn = document.getElementById('xpk-save-btn');
+    const statusEl = document.getElementById('xpk-save-status');
+    if (saveBtn) saveBtn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Saving…';
+
+    try {
+      const payload = {
+        packetTitle: title,
+        packetSummaryText: null,
+        narrativeIntro: intro || null,
+        narrativeRecommendation: rec || null,
+        narrativeNextSteps: next || null,
       };
+
+      let saved;
+      if (currentPacketData && currentPacketData.id) {
+        saved = await apiFetch('/api/admin/xeriscape/records/' + record.id + '/packets/' + currentPacketData.id, {
+          method: 'PUT',
+          body: JSON.stringify({ ...payload, packetStatus: 'active_proposal_support' }),
+        });
+      } else {
+        saved = await apiFetch('/api/admin/xeriscape/records/' + record.id + '/packets', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+
+      currentPacketData = saved;
+      if (statusEl) statusEl.textContent = 'Saved ' + formatDateShort(saved.updatedAt);
+      showToast('Planning packet saved', 'success');
+      loadHistory();  // refresh list to show active packet badge
+    } catch (err) {
+      if (statusEl) statusEl.textContent = 'Save failed';
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      packetIsSaving = false;
+      if (saveBtn) saveBtn.disabled = false;
     }
   }
 
-  function closeProposalModal() {
-    const modal = document.getElementById('xp-proposal-modal');
-    if (modal) modal.style.display = 'none';
+  function exportPacketJSON(record) {
+    const payload = buildProposalPayload(record);
+    const intro = document.getElementById('xpk-intro') ? document.getElementById('xpk-intro').value.trim() : '';
+    const rec = document.getElementById('xpk-recommendation') ? document.getElementById('xpk-recommendation').value.trim() : '';
+    const next = document.getElementById('xpk-next-steps') ? document.getElementById('xpk-next-steps').value.trim() : '';
+    payload.packetNotes = { intro: intro || null, recommendation: rec || null, nextSteps: next || null };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'planning-packet-' + record.propertyId + '-' + Date.now() + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Packet exported', 'success');
+  }
+
+  function closePlanningPacket() {
+    const overlay = document.getElementById('xp-packet-overlay');
+    if (overlay) overlay.style.display = 'none';
+    currentPacketRecord = null;
   }
 
   // ── History panel ──────────────────────────────────────────────────────────
@@ -1888,13 +2462,26 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     if (!content) return;
     try {
       const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + (activeCommunityId || 'huntington-trails'));
-      renderHistory(records);
+      // For each reviewable record, try to load packet status (in parallel, ignore failures)
+      const packetStatusMap = {};
+      await Promise.all(records
+        .filter(r => r.status === 'reviewed' || r.status === 'selected_for_estimate')
+        .map(async r => {
+          try {
+            const packets = await apiFetch('/api/admin/xeriscape/records/' + r.id + '/packets');
+            const active = packets.find(p => p.packetStatus === 'active_proposal_support');
+            if (active) packetStatusMap[r.id] = active;
+          } catch (e) {}
+        })
+      );
+      renderHistory(records, packetStatusMap);
     } catch (err) {
       if (content) content.innerHTML = '<div style="font-size:13px;color:#dc2626;padding:16px 0">Failed to load history: ' + escapeHtml(err.message) + '</div>';
     }
   }
 
-  function renderHistory(records) {
+  function renderHistory(records, packetStatusMap) {
+    packetStatusMap = packetStatusMap || {};
     const content = document.getElementById('xp-history-content');
     if (!content) return;
 
@@ -1907,6 +2494,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       const isSelected = r.status === 'selected_for_estimate';
       const isArchived = r.status === 'archived';
       const isDraft = r.status === 'draft';
+      const isReviewed = r.status === 'reviewed';
+      const isReviewable = isSelected || isReviewed;
+      const hasActivePacket = !!packetStatusMap[r.id];
 
       const costStr = r.totalEstimatedCost > 0 ? formatCurrency(r.totalEstimatedCost) : '—';
       const savingsStr = r.totalAnnualSavings > 0 ? formatCurrency(r.totalAnnualSavings) + '/yr' : '—';
@@ -1921,6 +2511,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
               <div class="xp-record-name">${escapeHtml(r.recordName)}</div>
               <span class="xp-status-badge xp-status-${r.status}">${escapeHtml(statusLabel(r.status))}</span>
+              ${hasActivePacket ? `<span class="xpk-packet-badge">&#128196; Active Packet</span>` : ''}
             </div>
             <div class="xp-record-meta">
               <span>${sfStr}</span>
@@ -1934,7 +2525,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
               ${!isArchived ? `<button class="xp-record-btn xp-btn-open" data-action="open" data-id="${r.id}">Open</button>` : ''}
               <button class="xp-record-btn" data-action="duplicate" data-id="${r.id}">Duplicate</button>
               ${!isArchived && !isSelected ? `<button class="xp-record-btn xp-btn-select" data-action="select" data-id="${r.id}">Mark Selected</button>` : ''}
-              ${isSelected ? `<button class="xp-record-btn xp-btn-proposal" data-action="proposal" data-id="${r.id}">&#127775; Proposal Prep</button>` : ''}
+              ${isReviewable ? `<button class="xp-record-btn xp-btn-proposal" data-action="packet" data-id="${r.id}">&#128196; ${hasActivePacket ? 'View Packet' : 'Prepare Proposal Support'}</button>` : ''}
               ${!isArchived ? `<button class="xp-record-btn xp-btn-archive" data-action="archive" data-id="${r.id}">Archive</button>` : ''}
               ${isDraft ? `<button class="xp-record-btn xp-btn-delete" data-action="delete" data-id="${r.id}">Delete</button>` : ''}
             </div>
@@ -1995,8 +2586,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         } catch (err) {
           showToast('Delete failed: ' + err.message, 'error');
         }
-      } else if (action === 'proposal') {
-        openProposalModal(record);
+      } else if (action === 'packet') {
+        openPlanningPacket(record);
       }
     };
   }
@@ -2143,12 +2734,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   document.getElementById('xp-warn-modal').addEventListener('click', function(e) {
     if (e.target === this) closeWarnModal();
-  });
-
-  document.getElementById('xp-proposal-close-btn').addEventListener('click', closeProposalModal);
-
-  document.getElementById('xp-proposal-modal').addEventListener('click', function(e) {
-    if (e.target === this) closeProposalModal();
   });
 
   document.getElementById('xp-refresh-history-btn').addEventListener('click', loadHistory);
