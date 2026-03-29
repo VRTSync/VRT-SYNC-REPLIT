@@ -3,8 +3,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   const DEFAULT_COST_PER_SF = 6.00;
   const DEFAULT_SAVINGS_PER_SF = 0.50;
-  const PROPERTY_NAME = 'Huntington Trails';
-  const PROPERTY_ID = 'huntington-trails';
 
   const breadcrumb = document.getElementById('breadcrumb-area');
   if (breadcrumb) breadcrumb.innerHTML = '';
@@ -12,9 +10,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   container.innerHTML = `
     <div class="page-header" style="margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-        <div>
+        <div style="flex:1;min-width:0">
           <h1 style="font-size:22px;font-weight:700;color:var(--navy);margin:0">Xeriscape Conversion Planner</h1>
-          <p style="font-size:13px;color:var(--gray-500);margin:4px 0 0">Huntington Trails &mdash; Select bluegrass polygons to estimate conversion cost and water savings</p>
+          <p id="xp-header-subtitle" style="font-size:13px;color:var(--gray-500);margin:4px 0 0">Select a community to begin planning</p>
         </div>
         <div style="display:flex;gap:8px;align-items:center" id="xp-toolbar-actions">
           <span id="xp-loaded-record-badge" style="display:none;font-size:11px;font-weight:700;background:var(--teal);color:#fff;padding:3px 10px;border-radius:20px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -23,7 +21,34 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         </div>
       </div>
     </div>
-    <div style="display:flex;gap:20px;height:calc(100vh - 180px);min-height:500px">
+
+    <!-- Community Selector -->
+    <div id="xp-community-selector-wrap" style="margin-bottom:20px">
+      <div class="xp-card" style="padding:14px 16px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <label style="font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap">Community</label>
+          <div style="position:relative;flex:1;min-width:200px;max-width:380px">
+            <select id="xp-community-select" class="form-input" style="width:100%;padding-right:32px;appearance:none;-webkit-appearance:none">
+              <option value="">— Select a community —</option>
+            </select>
+            <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--gray-400)">▾</span>
+          </div>
+          <div id="xp-community-loading" style="display:none;font-size:12px;color:var(--gray-400)">Loading communities…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pre-selection empty state -->
+    <div id="xp-no-community-state" style="display:flex;align-items:center;justify-content:center;min-height:400px">
+      <div style="text-align:center;max-width:400px">
+        <div style="font-size:40px;margin-bottom:16px">🌿</div>
+        <div style="font-size:16px;font-weight:700;color:var(--navy);margin-bottom:8px">Select a community to begin</div>
+        <div style="font-size:13px;color:var(--gray-500);line-height:1.6">Select a community to load mapped bluegrass areas for xeriscape planning.</div>
+      </div>
+    </div>
+
+    <!-- Planner main layout (hidden until community selected) -->
+    <div id="xp-planner-main" style="display:none;gap:20px;height:calc(100vh - 240px);min-height:500px" class="xp-planner-flex">
       <div style="flex:1;min-width:0;position:relative;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-md);border:1px solid var(--gray-200)">
         <div id="xp-map" style="width:100%;height:100%;background:#e8eef4"></div>
         <div id="xp-map-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(240,244,248,0.85);z-index:1000;font-size:14px;color:var(--gray-500)">
@@ -32,8 +57,16 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             Loading polygons&hellip;
           </div>
         </div>
+        <!-- No polygons empty state overlay -->
+        <div id="xp-no-polygons-state" style="display:none;position:absolute;inset:0;z-index:900;background:rgba(240,244,248,0.97);align-items:center;justify-content:center">
+          <div style="text-align:center;max-width:360px;padding:24px">
+            <div style="font-size:36px;margin-bottom:12px">🗺️</div>
+            <div style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:8px">No mapped bluegrass areas found</div>
+            <div style="font-size:13px;color:var(--gray-500);line-height:1.6">No mapped bluegrass areas were found for this community. Add or sync bluegrass polygons in the Community layer to use the Xeriscape Planner.</div>
+          </div>
+        </div>
       </div>
-      <div id="xp-right-panel" style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;max-height:calc(100vh - 180px);overflow-y:auto;padding-right:2px">
+      <div id="xp-right-panel" style="width:320px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;max-height:calc(100vh - 240px);overflow-y:auto;padding-right:2px">
 
         <!-- Selection card -->
         <div class="xp-card">
@@ -191,6 +224,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     </div>
 
     <style>
+      .xp-planner-flex { display: flex; }
       .xp-card {
         background: var(--white);
         border-radius: var(--radius);
@@ -513,7 +547,8 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         .xps-map-container,
         #xp-map,
         #xp-right-panel,
-        .page-header {
+        .page-header,
+        #xp-community-selector-wrap {
           display: none !important;
         }
         #xp-summary-overlay {
@@ -600,10 +635,16 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       .xp-record-btn.xp-btn-archive { border-color: var(--gray-300); color: var(--gray-500); }
       .xp-record-btn.xp-btn-delete { border-color: #dc2626; color: #dc2626; }
       .xp-record-btn.xp-btn-delete:hover { background: #fef2f2; }
+      #xp-no-polygons-state { display: none; }
+      #xp-no-polygons-state.xp-visible { display: flex !important; }
     </style>
   `;
 
-  // ── State ──────────────────────────────────────────────────────────────────
+  // ── Active community state ────────────────────────────────────────────────
+  let activeCommunityId = null;
+  let activeCommunityName = null;
+
+  // ── Per-session state (reset on community switch) ─────────────────────────
   const selectedIds = new Set();
   let allFeatures = [];
   let leafletLayers = {};
@@ -654,18 +695,209 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   function statusLabel(status) {
     const map = {
-      draft: 'Draft',
-      reviewed: 'Reviewed',
-      selected_for_estimate: 'Selected for Estimate',
-      archived: 'Archived',
+      draft: "Draft",
+      reviewed: "Reviewed",
+      selected_for_estimate: "Selected for Estimate",
+      archived: "Archived",
     };
     return map[status] || status;
   }
 
   function paybackStr(years) {
-    if (years === null || years === undefined) return '—';
-    if (years < 1) return '< 1 yr';
-    return years.toFixed(1) + ' yrs';
+    if (years === null || years === undefined) return "u2014";
+    if (years < 1) return "< 1 yr";
+    return years.toFixed(1) + " yrs";
+  }
+
+  // u2500u2500 Community selector u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+  async function loadCommunities() {
+    const loadingEl = document.getElementById('xp-community-loading');
+    const select = document.getElementById('xp-community-select');
+    if (loadingEl) loadingEl.style.display = 'inline';
+
+    try {
+      const data = await apiFetch('/api/communities');
+      const communities = Array.isArray(data) ? data : (data.communities || []);
+      if (select) {
+        communities.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          select.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      showToast('Failed to load communities', 'error');
+    } finally {
+      if (loadingEl) loadingEl.style.display = 'none';
+    }
+  }
+
+  function updateHeaderSubtitle() {
+    const subtitle = document.getElementById('xp-header-subtitle');
+    if (!subtitle) return;
+    if (activeCommunityName) {
+      subtitle.textContent = activeCommunityName + ' \u00b7 Bluegrass Areas';
+    } else {
+      subtitle.textContent = 'Select a community to begin planning';
+    }
+  }
+
+  // ── Reset all transient state on community switch ──────────────────────────
+  function resetPlannerState() {
+    selectedIds.clear();
+    allFeatures = [];
+    leafletLayers = {};
+    groups = [];
+    highlightedGroupId = null;
+    summaryMiniMaps.forEach(m => { try { m.remove(); } catch {} });
+    summaryMiniMaps = [];
+    hideSummaryOverlay();
+
+    // Clear map layers
+    if (map) {
+      map.eachLayer(function(layer) {
+        if (layer._url) return; // skip tile layer
+        try { map.removeLayer(layer); } catch {}
+      });
+    }
+
+    // Reset UI
+    const countEl = document.getElementById('xp-count');
+    if (countEl) countEl.textContent = '0';
+    const areaEl = document.getElementById('xp-area');
+    if (areaEl) areaEl.textContent = '0';
+    const estCostEl = document.getElementById('xp-est-cost');
+    if (estCostEl) estCostEl.textContent = '\u2014';
+    const estSavingsEl = document.getElementById('xp-est-savings');
+    if (estSavingsEl) estSavingsEl.textContent = '\u2014';
+    const estPaybackEl = document.getElementById('xp-est-payback');
+    if (estPaybackEl) estPaybackEl.textContent = '\u2014';
+
+    const clearBtn = document.getElementById('xp-clear-btn');
+    if (clearBtn) clearBtn.disabled = true;
+    const saveGroupBtn = document.getElementById('xp-save-group-btn');
+    if (saveGroupBtn) saveGroupBtn.disabled = true;
+
+    hideSaveGroupForm();
+    renderGroupsPanel();
+    renderComparisonPanel();
+
+    // Hide no-polygons state
+    const noPolygons = document.getElementById('xp-no-polygons-state');
+    if (noPolygons) noPolygons.classList.remove('xp-visible');
+
+    // Show map loading
+    const loadingEl = document.getElementById('xp-map-loading');
+    if (loadingEl) loadingEl.style.display = 'flex';
+
+    updateLoadedBadge(null);
+  }
+
+  async function onCommunityChange(communityId, communityName) {
+    activeCommunityId = communityId;
+    activeCommunityName = communityName;
+    updateHeaderSubtitle();
+
+    if (!communityId) {
+      document.getElementById('xp-planner-main').style.display = 'none';
+      document.getElementById('xp-no-community-state').style.display = 'flex';
+      return;
+    }
+
+    document.getElementById('xp-no-community-state').style.display = 'none';
+    document.getElementById('xp-planner-main').style.display = 'flex';
+
+    resetPlannerState();
+
+    // init map if needed
+    if (!map) {
+      await ensureMapInit();
+    }
+
+    await loadCommunityPolygons(communityId);
+    await loadHistory();
+  }
+
+  // ── Map initialization ─────────────────────────────────────────────────────
+  async function ensureMapInit() {
+    if (map) return;
+
+    if (typeof L === 'undefined') {
+      showToast('Map library not available', 'error');
+      return;
+    }
+
+    const mapEl = document.getElementById('xp-map');
+    if (!mapEl) return;
+
+    map = L.map(mapEl, { zoomControl: true, attributionControl: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+  }
+
+  async function loadCommunityPolygons(communityId) {
+    const loadingEl = document.getElementById('xp-map-loading');
+    const noPolygonsEl = document.getElementById('xp-no-polygons-state');
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (noPolygonsEl) noPolygonsEl.classList.remove('xp-visible');
+
+    try {
+      const geojson = await apiFetch('/api/admin/xeriscape/community/' + communityId + '/polygons');
+      allFeatures = geojson.features || [];
+
+      if (allFeatures.length === 0) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (noPolygonsEl) noPolygonsEl.classList.add('xp-visible');
+        return;
+      }
+
+      const bounds = L.latLngBounds([]);
+
+      allFeatures.forEach(feature => {
+        const id = feature.properties.id;
+        const name = feature.properties.name;
+
+        const layer = L.geoJSON(feature, {
+          style: () => getLayerStyle(id),
+          onEachFeature: function(feat, lyr) {
+            lyr.bindTooltip(name, { permanent: true, direction: 'center', className: 'xp-tooltip' });
+
+            lyr.on('mouseover', function() {
+              if (!selectedIds.has(id)) {
+                lyr.setStyle(getHoverStyle(id));
+              }
+            });
+
+            lyr.on('mouseout', function() {
+              applyLayerStyle(id);
+            });
+
+            lyr.on('click', function() {
+              toggleSelection(id);
+            });
+          },
+        }).addTo(map);
+
+        leafletLayers[id] = layer;
+
+        try {
+          bounds.extend(layer.getBounds());
+        } catch {}
+      });
+
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [24, 24] });
+      }
+
+      if (loadingEl) loadingEl.style.display = 'none';
+
+    } catch (err) {
+      showToast('Failed to load polygons: ' + err.message, 'error');
+      if (loadingEl) loadingEl.style.display = 'none';
+    }
   }
 
   // ── Group computation (pure functions) ─────────────────────────────────────
@@ -694,7 +926,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   // ── buildGroupSummary — pure, reusable ─────────────────────────────────────
   function buildGroupSummary(group, polygonFeatures, assumptions, opts) {
     opts = opts || {};
-    const propertyName = opts.propertyName !== undefined ? opts.propertyName : PROPERTY_NAME;
+    const propertyName = opts.propertyName !== undefined ? opts.propertyName : (activeCommunityName || 'Community');
     const generatedDate = opts.generatedDate !== undefined ? opts.generatedDate : formatDate(new Date());
 
     const pbStr = group.estimatedPaybackYears === null
@@ -824,9 +1056,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     if (saveGroupBtn) saveGroupBtn.disabled = count === 0;
 
     if (count === 0 || totalArea === 0) {
-      document.getElementById('xp-est-cost').textContent = '—';
-      document.getElementById('xp-est-savings').textContent = '—';
-      document.getElementById('xp-est-payback').textContent = '—';
+      document.getElementById('xp-est-cost').textContent = '\u2014';
+      document.getElementById('xp-est-savings').textContent = '\u2014';
+      document.getElementById('xp-est-payback').textContent = '\u2014';
       return;
     }
 
@@ -834,10 +1066,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const estSavings = totalArea * savingsPerSf;
 
     document.getElementById('xp-est-cost').textContent = formatCurrency(estCost);
-    document.getElementById('xp-est-savings').textContent = estSavings > 0 ? formatCurrency(estSavings) + '/yr' : '—';
+    document.getElementById('xp-est-savings').textContent = estSavings > 0 ? formatCurrency(estSavings) + '/yr' : '\u2014';
 
     if (estSavings <= 0) {
-      document.getElementById('xp-est-payback').textContent = '—';
+      document.getElementById('xp-est-payback').textContent = '\u2014';
     } else {
       const years = estCost / estSavings;
       if (years < 1) {
@@ -931,6 +1163,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       id: genId(),
       name,
       polygonIds,
+      communityId: activeCommunityId,
       createdAt: new Date().toISOString(),
       ...outputs,
     };
@@ -1000,7 +1233,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       compareAllWrap.style.display = groups.length >= 2 ? 'block' : 'none';
     }
 
-    // event delegation
     list.onclick = handleGroupListClick;
 
     const compareAllBtn = document.getElementById('xp-compare-all-btn');
@@ -1265,7 +1497,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           </div>
           <div class="xps-kpi-card">
             <div class="xps-kpi-label">Annual Water Savings</div>
-            <div class="xps-kpi-value accent">${summary.estimatedAnnualWaterSavings > 0 ? formatCurrency(summary.estimatedAnnualWaterSavings) + '/yr' : '—'}</div>
+            <div class="xps-kpi-value accent">${summary.estimatedAnnualWaterSavings > 0 ? formatCurrency(summary.estimatedAnnualWaterSavings) + '/yr' : '\u2014'}</div>
           </div>
           <div class="xps-kpi-card">
             <div class="xps-kpi-label">Payback Period</div>
@@ -1315,7 +1547,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     }, 100);
   }
 
-  // ── Print shortcut (generate + print in one step) ──────────────────────────
+  // ── Print shortcut ─────────────────────────────────────────────────────────
   function printGroupSummary(id) {
     const group = groups.find(g => g.id === id);
     if (!group) return;
@@ -1388,7 +1620,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         </div>
 
         <div class="xps-header">
-          <div class="xps-property">${escapeHtml(PROPERTY_NAME)}</div>
+          <div class="xps-property">${escapeHtml(activeCommunityName || 'Community')}</div>
           <h1 class="xps-title">Scenario Comparison &mdash; All Groups <span class="xps-admin-badge">Admin Planning Tool &mdash; Internal Use Only</span></h1>
           <div class="xps-meta">
             <span class="xps-meta-item"><strong>Generated:</strong>&nbsp;${formatDate(new Date())}</span>
@@ -1489,7 +1721,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const { totalSqft, totalEstimatedCost, totalAnnualSavings, paybackYears } = computePlannerTotals();
 
     const payload = {
-      propertyId: PROPERTY_ID,
+      propertyId: activeCommunityId,
       recordName: name,
       internalNotes: notes || null,
       assumptionsJson: assumptions,
@@ -1655,7 +1887,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const content = document.getElementById('xp-history-content');
     if (!content) return;
     try {
-      const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + PROPERTY_ID);
+      const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + (activeCommunityId || 'huntington-trails'));
       renderHistory(records);
     } catch (err) {
       if (content) content.innerHTML = '<div style="font-size:13px;color:#dc2626;padding:16px 0">Failed to load history: ' + escapeHtml(err.message) + '</div>';
@@ -1921,7 +2153,15 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   document.getElementById('xp-refresh-history-btn').addEventListener('click', loadHistory);
 
-  // ── Bootstrap leaflet ──────────────────────────────────────────────────────
+  // Community selector change
+  document.getElementById('xp-community-select').addEventListener('change', async function() {
+    const select = this;
+    const communityId = select.value;
+    const communityName = communityId
+      ? select.options[select.selectedIndex].textContent
+      : null;
+    await onCommunityChange(communityId || null, communityName);
+  });
   if (typeof L === 'undefined') {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -1934,16 +2174,13 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = initMap;
     script.onerror = () => showToast('Failed to load map library', 'error');
     document.head.appendChild(script);
   } else {
     const style = document.createElement('style');
     style.textContent = '.xp-tooltip { font-size: 12px; font-weight: 600; background: rgba(12,29,49,0.85); color: #fff; border: none; padding: 3px 8px; border-radius: 4px; }';
     document.head.appendChild(style);
-    await initMap();
   }
 
-  // ── Load history on page open ──────────────────────────────────────────────
-  loadHistory();
+  await loadCommunities();
 });

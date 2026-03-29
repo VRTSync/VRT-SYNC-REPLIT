@@ -1023,6 +1023,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Xeriscape Community Polygons ────────────────────────────────────────────
+  app.get("/api/admin/xeriscape/community/:communityId/polygons", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { communityId } = req.params;
+      const { eq, and } = await import("drizzle-orm");
+      const { assets: assetsTable, assetProperties: assetPropertiesTable } = await import("@shared/schema");
+      const { db } = await import("./db");
+
+      const bluegrassAssets = await db
+        .select()
+        .from(assetsTable)
+        .where(
+          and(
+            eq(assetsTable.communityId, communityId),
+            eq(assetsTable.assetType, "bluegrass_area"),
+            eq(assetsTable.isArchived, false),
+          )
+        );
+
+      if (bluegrassAssets.length === 0) {
+        return res.json({ type: "FeatureCollection", features: [] });
+      }
+
+      const assetIds = bluegrassAssets.map((a: any) => a.id);
+      const { inArray } = await import("drizzle-orm");
+      const allProps = await db
+        .select()
+        .from(assetPropertiesTable)
+        .where(inArray(assetPropertiesTable.assetId, assetIds));
+
+      const propsByAssetId: Record<string, Record<string, string>> = {};
+      for (const prop of allProps) {
+        if (!propsByAssetId[prop.assetId]) propsByAssetId[prop.assetId] = {};
+        propsByAssetId[prop.assetId][prop.key] = prop.value;
+      }
+
+      const { db: dbForLayers } = await import("./db");
+      const { mapLayers: mapLayersTable } = await import("@shared/schema");
+
+      const layerGeojsonMap: Record<string, any> = {};
+      const layerIds = [...new Set(bluegrassAssets.map((a: any) => a.mapLayerId).filter(Boolean))];
+      if (layerIds.length > 0) {
+        const layers = await dbForLayers
+          .select()
+          .from(mapLayersTable)
+          .where(inArray(mapLayersTable.id, layerIds as string[]));
+        for (const layer of layers) {
+          if (layer.geojsonData) {
+            try {
+              const parsed = JSON.parse(layer.geojsonData);
+              const featureMap: Record<string, any> = {};
+              const feats = parsed.features || (parsed.type === "Feature" ? [parsed] : []);
+              for (const f of feats) {
+                const fid = f.id != null && f.id !== "" ? String(f.id) : (f.properties?.featureId || f.properties?.id || null);
+                if (fid) featureMap[fid] = f;
+              }
+              layerGeojsonMap[layer.id] = featureMap;
+            } catch {}
+          }
+        }
+      }
+
+      const features: any[] = [];
+      for (const asset of bluegrassAssets) {
+        const props = propsByAssetId[asset.id] || {};
+        const sqFt = props.sqFt ? parseFloat(props.sqFt) : 0;
+
+        let geometry: any = null;
+        if (asset.mapLayerId && asset.featureRef && layerGeojsonMap[asset.mapLayerId]) {
+          const feat = layerGeojsonMap[asset.mapLayerId][asset.featureRef];
+          if (feat?.geometry) geometry = feat.geometry;
+        }
+
+        if (!geometry && asset.latitude != null && asset.longitude != null) {
+          geometry = { type: "Point", coordinates: [asset.longitude, asset.latitude] };
+        }
+
+        if (!geometry) continue;
+
+        features.push({
+          type: "Feature",
+          id: asset.id,
+          geometry,
+          properties: {
+            id: asset.id,
+            name: asset.label,
+            area_sqft: sqFt,
+            featureRef: asset.featureRef,
+          },
+        });
+      }
+
+      res.json({ type: "FeatureCollection", features });
+    } catch (error) {
+      console.error("Xeriscape community polygons error:", error);
+      res.status(500).json({ error: "Failed to load community xeriscape polygons" });
+    }
+  });
+
   app.get("/api/contractors", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
