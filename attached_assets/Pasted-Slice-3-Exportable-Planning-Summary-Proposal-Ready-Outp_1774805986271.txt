@@ -1,0 +1,325 @@
+Slice 3 — Exportable Planning Summary + Proposal-Ready Output
+What & Why
+
+Build the third phase of the admin-only Xeriscape Conversion Planner inside the VRTSync Admin Web Portal by turning saved groups and scenario comparisons into a clean, exportable planning summary that can be used in real internal sales conversations, proposal development, and board-prep workflows. Slice 1 proved polygon selection and calculation logic. Slice 2 turned those selections into named groups and scenarios. Slice 3 should now make those scenarios presentable by generating a polished summary view that clearly communicates selected areas, total square footage, estimated conversion cost, estimated annual water savings, and estimated payback period in a format that is easy to review internally and easy to move into proposal materials.
+
+Done Looks Like
+
+Admin users can now:
+
+open any saved group or multi-group scenario set
+
+generate a clean planning summary view for that scenario
+
+see a board-friendly output layout with:
+
+scenario name
+
+selected polygon names
+
+polygon count
+
+total square footage
+
+conversion assumptions
+
+estimated conversion cost
+
+estimated annual water savings
+
+estimated payback period
+
+print the summary cleanly from the browser
+
+export a simple PDF-like print layout or browser print view
+
+use the output as a proposal support sheet or planning attachment
+
+optionally include a map snapshot area or map preview section if practical
+
+include estimate disclaimer language so the tool does not imply guaranteed ROI
+
+This slice is still admin-only, still internal-use only, and still not customer-facing.
+
+Functional Requirements
+1. Scenario Summary View
+
+Add a dedicated summary output view for a saved group or selected scenario set.
+
+This should support:
+
+single-group summary
+
+multi-group comparison summary
+
+Each summary should feel polished enough that an admin could show it during a planning meeting without embarrassment.
+
+Minimum content:
+
+Property / dataset name
+
+Scenario or group name
+
+Polygon count
+
+Total area in SF
+
+Conversion cost per SF assumption
+
+Annual water savings per SF assumption
+
+Estimated total conversion cost
+
+Estimated annual water savings
+
+Estimated water-only payback period
+
+2. Polygon Detail Section
+
+For each scenario/group summary, include a supporting detail section showing included polygons.
+
+Minimum fields:
+
+Polygon name
+
+Square footage
+
+Optional if easy:
+
+Per-polygon estimated cost
+
+Per-polygon estimated savings
+
+Per-polygon payback
+
+This helps admins defend the totals if asked where the number came from.
+
+3. Comparison Summary Output
+
+If multiple groups exist, allow the admin to generate a clean scenario comparison summary.
+
+Minimum comparison fields:
+
+Group Name
+
+Polygon Count
+
+Total SF
+
+Cost
+
+Annual Savings
+
+Payback
+
+This should be suitable for:
+
+internal decision support
+
+proposal prep
+
+HOA board budget discussion prep
+
+4. Print / Export-Friendly Layout
+
+Create a print-friendly version of the summary page.
+
+Requirements:
+
+clean margins
+
+no admin clutter
+
+no unnecessary portal navigation in print mode
+
+headings and totals should print clearly
+
+cards/tables should not break awkwardly across pages if avoidable
+
+A browser print workflow is acceptable for this slice if full PDF generation would slow the build. The important thing is that the output is polished and shareable.
+
+5. Assumptions + Disclaimer Block
+
+Every summary output must include a clearly visible assumptions and disclaimer section.
+
+Include:
+
+Conversion cost per SF used
+
+Annual water savings per SF used
+
+Payback basis = water-only unless expanded later
+
+Disclaimer language should say something like:
+
+Estimates shown are planning-level figures based on selected assumptions and mapped polygon area. Actual project cost, water savings, and payback may vary based on final design, utility rates, site conditions, and operational factors.
+
+This is important and should not be skipped.
+
+6. Map Preview / Snapshot Placeholder
+
+If practical in this slice, include a scenario map preview section.
+
+Options:
+
+live simplified map preview in summary view
+
+static map snapshot placeholder
+
+“map image coming in later slice” placeholder if snapshotting is too heavy right now
+
+If implemented:
+
+highlight only the selected group polygons
+
+fit map to scenario extent
+
+keep styling clean and readable
+
+This is optional, but highly valuable because the map is part of the sales power of the tool.
+
+7. Naming + Metadata
+
+Each exported/planning summary should clearly identify:
+
+source property/project name
+
+scenario/group name
+
+generation date
+
+planner version or “Admin Test Tool” indicator
+
+This keeps internal documents traceable and makes it clear this is not yet a live customer-facing module.
+
+8. Launch Actions From Group Panel
+
+From each saved group, provide actions like:
+
+View Summary
+
+Print Summary
+
+Compare in Summary
+
+This should make the workflow feel connected rather than separate.
+
+UX / Design Constraints
+
+This must still match the VRTSync Admin Portal styling system, but the summary view should feel cleaner and more presentation-ready than the working planner screen.
+
+The output should feel like:
+
+an internal planning sheet
+
+a proposal support document
+
+a board-prep worksheet
+
+Not like:
+
+raw GIS output
+
+developer debug screen
+
+admin config panel
+
+Design direction:
+
+clean hierarchy
+
+large top-line totals
+
+readable supporting detail
+
+simple tables
+
+branded admin styling
+
+easy browser printing
+
+Recommended layout:
+
+header with property/scenario name
+
+summary KPI cards
+
+assumptions/disclaimer card
+
+polygon detail section
+
+comparison table if applicable
+
+optional map preview block
+
+Technical Notes
+
+Reuse saved groups from Slice 2
+
+All summary outputs should derive live from current global assumptions unless frozen-summary behavior is intentionally added later
+
+Browser print CSS is acceptable for this slice
+
+Do not let export formatting drive major architectural complexity yet
+
+Structure the summary code so future PDF generation can reuse the same data assembly layer
+
+If map snapshotting is too heavy, prioritize a strong print layout first
+
+Acceptance Tests
+
+Admin can open a saved group and generate a summary view
+
+Summary view shows correct group name and source project/property name
+
+Summary view shows correct polygon count
+
+Summary view shows correct total square footage
+
+Summary view shows correct conversion assumptions
+
+Summary view shows correct estimated total conversion cost
+
+Summary view shows correct estimated annual water savings
+
+Summary view shows correct payback period
+
+Summary includes a polygon detail section with included polygon names
+
+Multiple saved groups can be shown in a comparison summary
+
+Comparison summary shows correct totals for each group
+
+Summary includes disclaimer language
+
+Print layout removes unnecessary admin UI clutter
+
+Printed output remains readable and well-structured
+
+Non-admin users still have no access to this feature
+
+Out of Scope for Slice 4+
+
+Do not build yet:
+
+customer-facing access
+
+paid add-on packaging
+
+live proposal system integration
+
+one-click merge into proposal PDFs
+
+per-group custom notes for board packets
+
+maintenance savings modeling
+
+utility/AMI integrations
+
+saved historical export archive
+
+shareable public links
+
+Short Replit Direction Note
+
+The goal of Slice 3 is to turn the Xeriscape Planner from an internal modeling tool into an internal communication tool. Focus on making saved scenarios easy to summarize, print, and discuss. The output should feel polished enough to support a proposal conversation, even if it is still admin-only and test-phase.

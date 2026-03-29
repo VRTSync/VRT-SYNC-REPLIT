@@ -1,0 +1,374 @@
+Slice 4 — Saved Planning Records + Proposal Workflow Integration
+What & Why
+
+Build the fourth phase of the admin-only Xeriscape Conversion Planner inside the VRTSync Admin Web Portal by allowing admins to save planning scenarios as reusable internal records and connect them to real proposal workflow activity. Slice 1 established polygon selection and calculations. Slice 2 added saved groups and scenario planning. Slice 3 made those scenarios printable and presentation-ready. Slice 4 should now make the planner operationally useful by letting admins save scenario records tied to a property, revisit them later, track which option was used for estimating, and prepare that scenario data for handoff into proposal creation. This slice should make the planner feel like part of VRT’s internal sales engine rather than a standalone tool.
+
+Done Looks Like
+
+Admin users can now:
+
+save a full planning scenario as an internal record
+
+assign a scenario title and optional internal notes
+
+tie the saved scenario to a specific property/project
+
+reopen previously saved scenarios later
+
+distinguish between draft scenarios and preferred/final internal scenarios
+
+mark one scenario as the “selected estimating scenario”
+
+duplicate an existing scenario to test variations
+
+archive outdated scenarios without deleting their history
+
+launch a proposal-prep handoff using saved scenario totals
+
+see a simple internal planning history for the property
+
+This is still admin-only and still not customer-facing.
+
+Functional Requirements
+1. Save Full Planning Scenario Record
+
+A saved planning record should represent more than just one group. It should capture the working planning state for a property at a moment in time.
+
+Each planning record should include at minimum:
+
+id
+
+propertyId or project reference
+
+plannerRecordName
+
+status
+
+draft
+
+reviewed
+
+selected_for_estimate
+
+archived
+
+global assumptions used:
+
+conversion cost per SF
+
+annual water savings per SF
+
+included saved groups / scenarios
+
+totals across included groups
+
+created date
+
+updated date
+
+created by user
+
+optional internal notes
+
+This should let admins come back later and understand exactly what was being considered.
+
+2. Scenario Status Workflow
+
+Add lightweight internal statuses so planning records are organized.
+
+Recommended statuses:
+
+Draft — working estimate in progress
+
+Reviewed — internally considered and ready for discussion
+
+Selected for Estimate — chosen as the version that should drive proposal building
+
+Archived — no longer active, but retained for history
+
+Only one scenario per property should be marked Selected for Estimate at a time unless you intentionally allow multiple.
+
+3. Duplicate Scenario
+
+Admins should be able to duplicate a saved planning record.
+
+Use case examples:
+
+duplicate “Phase 1” and test a higher cost assumption
+
+duplicate “Full Conversion” and remove a few areas
+
+create board Option A / Option B versions without rebuilding from scratch
+
+Duplicating should carry over:
+
+selected groups
+
+assumptions
+
+scenario metadata
+
+But create a new record ID and default to Draft status.
+
+4. Internal Notes Field
+
+Each planning record should support internal notes.
+
+Examples:
+
+“Used for first board conversation”
+
+“Hold south entrance until next budget cycle”
+
+“Board may want this phased over 2 years”
+
+“Use this version in proposal draft”
+
+This is internal/admin only and should not appear in any customer-facing format later unless intentionally mapped.
+
+5. Property-Level Planning History
+
+Inside the planner, show a simple record list for the property/project.
+
+Each row/card should show:
+
+scenario name
+
+status
+
+last updated date
+
+total SF
+
+total estimated cost
+
+total annual savings
+
+payback
+
+actions:
+
+Open
+
+Duplicate
+
+Archive
+
+Mark Selected for Estimate
+
+View Summary
+
+This makes the feature feel persistent and usable over time.
+
+6. Proposal Prep Handoff
+
+Add a controlled handoff action from a selected planning record into proposal workflow prep.
+
+This does not need to fully generate the proposal in this slice.
+
+Instead, it should prepare a structured payload or prefilled handoff object containing:
+
+property/project name
+
+selected scenario name
+
+total SF
+
+total estimated cost
+
+annual savings assumption
+
+payback
+
+included group names
+
+optional notes
+
+This handoff can feed:
+
+a proposal builder later
+
+a scope-writing workflow
+
+a PDF proposal module later
+
+For now, the goal is to ensure the planning record can cleanly hand off its data to the next step.
+
+7. Freeze vs Live Calculation Decision
+
+For Slice 4, Replit should make a clean architectural decision:
+
+Recommended:
+
+Store the assumptions used at the time the planning record is saved, and calculate that record from those saved assumptions.
+
+That means:
+
+historical records remain stable
+
+changing current planner defaults does not silently rewrite past records
+
+proposal-linked scenarios remain auditable
+
+This is an important shift from earlier slices, where assumptions were globally live.
+
+For this slice:
+
+the active working planner can still use live assumptions
+
+but once a record is saved, save the assumptions with it
+
+8. Record Reopen / Edit
+
+Admins should be able to reopen a saved planning record and continue editing it.
+
+Editing may include:
+
+renaming
+
+changing notes
+
+updating included groups
+
+changing assumptions
+
+recalculating totals
+
+resaving as updated draft or reviewed version
+
+If the scenario is already marked Selected for Estimate, edits should either:
+
+update it directly with a warning
+
+or encourage duplication first
+
+Replit can choose the cleaner UX, but it should prevent accidental confusion.
+
+UX / Design Constraints
+
+Keep this aligned with the VRTSync Admin Portal styling and existing planner patterns.
+
+Recommended layout additions:
+
+Planner Main View
+
+working planner area remains the same
+
+Saved Records Section
+
+property-level planning history panel or tab
+
+clear status badges
+
+action buttons per record
+
+Record Detail View
+
+summary header
+
+groups included
+
+assumptions used
+
+internal notes
+
+totals
+
+actions:
+
+Edit
+
+Duplicate
+
+View Summary
+
+Mark Selected for Estimate
+
+Send to Proposal Prep
+
+Archive
+
+This should feel like:
+
+internal sales planning infrastructure
+not
+
+a loose scratchpad
+
+Technical Notes
+
+Introduce a persistent record model now if possible
+
+Saved planner records should be structured cleanly enough for later proposal and reporting integrations
+
+Freeze saved assumptions on record save
+
+Do not overcomplicate versioning yet, but preserve timestamps and update history fields
+
+If proposal builder does not exist yet, create a stubbed handoff interface or data payload that future proposal tools can consume
+
+Keep separation clear between:
+
+temporary current planner state
+
+saved scenario groups
+
+saved planning records
+
+That distinction matters now.
+
+Acceptance Tests
+
+Admin can save a full planning scenario as a persistent record
+
+Saved record is tied to the correct property/project
+
+Saved record stores assumptions used at time of save
+
+Saved record displays correct total SF, cost, savings, and payback
+
+Admin can reopen and review an existing saved record
+
+Admin can edit record name and internal notes
+
+Admin can duplicate a saved record
+
+Duplicated record gets a new ID and draft status
+
+Admin can mark one record as Selected for Estimate
+
+Archived records remain visible in history but clearly inactive
+
+Property-level planner history shows all saved records cleanly
+
+Proposal-prep handoff produces a structured scenario payload
+
+Changing live planner assumptions does not silently change previously saved records
+
+Non-admin users still cannot access any part of this workflow
+
+Out of Scope for Slice 5+
+
+Do not build yet:
+
+direct customer-facing scenario viewing
+
+customer self-service add-on packaging
+
+final proposal PDF generation from this tool
+
+direct QuickBooks integration
+
+automated budget forecasting
+
+maintenance savings / labor savings modeling
+
+utility bill ingestion
+
+public sharing links
+
+approval workflow for boards
+
+Short Replit Direction Note
+
+The goal of Slice 4 is to make the Xeriscape Planner a real internal business tool. It should no longer behave like a temporary estimator. It should support saved planning records, internal history, selected estimating scenarios, and a clean handoff into proposal workflow.
