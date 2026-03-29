@@ -788,6 +788,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/xeriscape/polygons", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const fs = await import("fs/promises");
+      const path = await import("path");
+      const kmlPath = path.join(process.cwd(), "server/public/admin/data/huntington-trails-xeriscape.kml");
+      const kmlText = await fs.readFile(kmlPath, "utf-8");
+      const { convertKmlToGeojson } = await import("./kmlConverter");
+      const { computeAreaSqFt } = await import("./assetSync");
+      const { geojson } = convertKmlToGeojson(kmlText);
+      const polygonFeatures = geojson.features.filter((f: any) =>
+        f.geometry && (f.geometry.type === "Polygon" || f.geometry.type === "MultiPolygon")
+      );
+      const features = polygonFeatures.map((f: any, idx: number) => {
+        const name = f.properties?.name || f.properties?.Name || `Polygon ${idx + 1}`;
+        const areaSqft = computeAreaSqFt(f) || 0;
+        return {
+          type: "Feature",
+          id: f.id || String(idx),
+          geometry: f.geometry,
+          properties: {
+            id: f.id || String(idx),
+            name,
+            area_sqft: areaSqft,
+          },
+        };
+      });
+      res.json({ type: "FeatureCollection", features });
+    } catch (error) {
+      console.error("Xeriscape polygons error:", error);
+      res.status(500).json({ error: "Failed to load xeriscape polygons" });
+    }
+  });
+
   app.get("/api/contractors", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
