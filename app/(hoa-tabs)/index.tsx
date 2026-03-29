@@ -250,6 +250,35 @@ export default function HoaDashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Requests</Text>
+          <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/requests')}>
+            <Text style={styles.viewAllText}>View All</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.requestsCard}>
+          <View style={styles.requestCountRow}>
+            <View style={styles.requestCountBox}>
+              <Text style={styles.requestCountNum}>{requestsSummary.submittedCount}</Text>
+              <Text style={styles.requestCountLabel}>Submitted</Text>
+            </View>
+            <View style={styles.requestCountDivider} />
+            <View style={styles.requestCountBox}>
+              <Text style={styles.requestCountNum}>{requestsSummary.acknowledgedCount}</Text>
+              <Text style={styles.requestCountLabel}>Acknowledged</Text>
+            </View>
+          </View>
+          {isHoaAdmin && (
+            <TouchableOpacity
+              style={styles.createRequestBtn}
+              onPress={() => setShowCreateRequest(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={18} color="#fff" />
+              <Text style={styles.createRequestBtnText}>Create Request</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Upcoming Tasks</Text>
           <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/calendar')}>
             <View style={styles.sectionAction}>
@@ -423,65 +452,6 @@ export default function HoaDashboardScreen() {
             })}
           </ScrollView>
         )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Requests</Text>
-          <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/requests')}>
-            <Text style={styles.viewAllText}>View All</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.requestsCard}>
-          <View style={styles.requestCountRow}>
-            <View style={styles.requestCountBox}>
-              <Text style={styles.requestCountNum}>{requestsSummary.submittedCount}</Text>
-              <Text style={styles.requestCountLabel}>Submitted</Text>
-            </View>
-            <View style={styles.requestCountDivider} />
-            <View style={styles.requestCountBox}>
-              <Text style={styles.requestCountNum}>{requestsSummary.acknowledgedCount}</Text>
-              <Text style={styles.requestCountLabel}>Acknowledged</Text>
-            </View>
-          </View>
-          {requestsSummary.topRequests.length > 0 && (
-            <View style={styles.topRequestsList}>
-              {requestsSummary.topRequests.map((req) => {
-                const statusColor = STATUS_COLORS[req.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
-                const isUrgent = req.priority === 'urgent';
-                return (
-                  <TouchableOpacity
-                    key={req.id}
-                    style={styles.topRequestRow}
-                    onPress={() => router.push(`/task/${req.id}`)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.topRequestTitle} numberOfLines={1}>{req.title}</Text>
-                      <Text style={styles.topRequestDate}>{formatDateTime(req.createdAt)}</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 }}>
-                      {isUrgent && <Ionicons name="alert-circle" size={14} color="#D32F2F" />}
-                      <View style={[styles.statusChipSmall, { backgroundColor: statusColor.bg }]}>
-                        <Text style={[styles.statusChipSmallText, { color: statusColor.text }]}>
-                          {req.status.replace('_', ' ')}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-          {isHoaAdmin && (
-            <TouchableOpacity
-              style={styles.createRequestBtn}
-              onPress={() => setShowCreateRequest(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.createRequestBtnText}>Create Request</Text>
-            </TouchableOpacity>
-          )}
-        </View>
       </ScrollView>
 
       <CreateRequestSheet
