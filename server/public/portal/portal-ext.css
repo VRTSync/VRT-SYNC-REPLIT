@@ -1880,6 +1880,295 @@
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * Command Center Sections (Service Day / Water Usage / Attention Required)
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Three columns side-by-side inside the command panel body */
+.cc-sections {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* Each section wrapper — invisible on its own, just layout */
+.cc-section {
+  min-width: 0;
+}
+
+/* ── Shared widget card ── */
+.cc-widget {
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 14px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.cc-widget--service {
+  cursor: pointer;
+}
+
+.cc-widget--service:hover {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(37,193,172,0.1);
+}
+
+.cc-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cc-widget-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.cc-widget-title {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cc-widget-link {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--teal);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+  font-family: inherit;
+}
+
+.cc-widget-link:hover {
+  color: var(--teal-dark);
+  text-decoration: underline;
+}
+
+.cc-widget-empty {
+  font-size: 12px;
+  color: var(--gray-400);
+  text-align: center;
+  padding: 10px 0;
+}
+
+.cc-widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Service Day widget ── */
+.cc-svc-day {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1;
+}
+
+.cc-svc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cc-svc-next {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.cc-svc-visit {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cc-svc-visit--logged {
+  color: #059669;
+}
+
+.cc-svc-visit--pending {
+  color: var(--gray-400);
+}
+
+/* ── Shared badges ── */
+.cc-badge {
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 2px 8px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.cc-badge--green {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.cc-badge--gray {
+  background: var(--gray-100);
+  color: var(--gray-500);
+}
+
+.cc-badge--red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ── Water Usage widget ── */
+.cc-water-latest {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.cc-water-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1;
+}
+
+.cc-water-period {
+  font-size: 12px;
+  color: var(--gray-400);
+}
+
+/* Sparkline */
+.cc-sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 52px;
+}
+
+.cc-spark-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cc-spark-bar {
+  width: 100%;
+  background: var(--blue);
+  opacity: 0.35;
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+}
+
+.cc-spark-bar--hi {
+  opacity: 1;
+}
+
+.cc-spark-label {
+  font-size: 9px;
+  color: var(--gray-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  max-width: 100%;
+  text-align: center;
+}
+
+/* ── Attention Required widget ── */
+.cc-attention-clear {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--teal-dark);
+  padding: 4px 0;
+}
+
+.cc-attn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cc-attn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--gray-100);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-radius: 4px;
+}
+
+.cc-attn-row:last-child {
+  border-bottom: none;
+}
+
+.cc-attn-row:hover {
+  background: var(--white);
+}
+
+.cc-attn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cc-attn-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-800);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.cc-attn-reason {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Responsive: stack on narrow screens ── */
+@media (max-width: 900px) {
+  .cc-sections {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .cc-sections {
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .cc-widget {
+    padding: 10px;
+  }
+}
+
 @media (max-width: 800px) {
   .dash-panel--command .dash-panel-body {
     padding: 12px;

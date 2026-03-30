@@ -1,4 +1,4 @@
-PortalRouter.register('reports', async function(container) {
+PortalRouter.register('reports', async function(container, params) {
   var ctx = PortalState.getCommunityContext();
   var role = ctx.role;
   var community = ctx.activeCommunity;
@@ -18,7 +18,8 @@ PortalRouter.register('reports', async function(container) {
   }
 
   var communityId = community.id;
-  var activeReport = null;
+  /* Support deep-linking to a specific report via params.report */
+  var activeReport = (params && params.report) || null;
 
   function esc(s) {
     if (s == null) return '';

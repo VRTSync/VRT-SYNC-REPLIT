@@ -223,6 +223,244 @@ async function renderContractor(container, ctx) {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
+ * Command Center fetch helpers
+ * ────────────────────────────────────────────────────────────────────────── */
+async function _fetchServiceSchedules(communityId) {
+  try {
+    const s = await PortalAPI.apiFetch(`/api/communities/${encodeURIComponent(communityId)}/service-schedules`);
+    return Array.isArray(s) ? s : [];
+  } catch { return []; }
+}
+
+async function _fetchServiceVisitsThisWeek(communityId) {
+  try {
+    /* Fetch visits for this week using the community visits endpoint */
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - today.getDay()); /* start of week (Sun) */
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    const from = mon.toISOString().slice(0, 10);
+    const to   = sun.toISOString().slice(0, 10);
+    const visits = await PortalAPI.apiFetch(
+      `/api/communities/${encodeURIComponent(communityId)}/service-visits?from=${from}&to=${to}`
+    );
+    return Array.isArray(visits) ? visits : [];
+  } catch { return []; }
+}
+
+async function _fetchWaterUsage(communityId) {
+  try {
+    const rows = await PortalAPI.apiFetch(`/api/reports/water-usage?communityId=${encodeURIComponent(communityId)}`);
+    return Array.isArray(rows) ? rows : [];
+  } catch { return []; }
+}
+
+/* ── Service Day widget renderer ── */
+function _renderServiceDayWidget(schedules, thisWeekVisits) {
+  const M = PortalModules;
+  const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const calIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+
+  const active = schedules.filter(s => s.isActive);
+  const svcKeydown = `if(event.key==='Enter'||event.key===' '){event.preventDefault();PortalRouter.navigate('service-schedule');}`;
+  if (active.length === 0) {
+    return `
+      <div class="cc-widget cc-widget--service" onclick="PortalRouter.navigate('service-schedule')" onkeydown="${svcKeydown}" role="button" tabindex="0">
+        <div class="cc-widget-header">
+          <span class="cc-widget-icon" style="color:var(--teal)">${calIcon}</span>
+          <span class="cc-widget-title">Service Day</span>
+          <span class="cc-widget-link">Manage →</span>
+        </div>
+        <div class="cc-widget-empty">No service schedule configured</div>
+      </div>`;
+  }
+
+  const sched = active[0];
+  const dowName = DOW[sched.dayOfWeek] || 'Unknown';
+
+  /* Season status */
+  let seasonLabel = 'In Season';
+  let seasonClass = 'cc-badge--green';
+  if (sched.seasonStart && sched.seasonEnd) {
+    const start = new Date(sched.seasonStart + 'T00:00:00');
+    const end   = new Date(sched.seasonEnd + 'T00:00:00');
+    if (today < start || today > end) {
+      seasonLabel = 'Off Season';
+      seasonClass = 'cc-badge--gray';
+    }
+  }
+
+  /* Next service date: next occurrence of dayOfWeek on or after today */
+  const nextDate = (function() {
+    const d = new Date(today);
+    const delta = (sched.dayOfWeek - d.getDay() + 7) % 7;
+    /* delta === 0 means today is the service day — show today, not next week */
+    d.setDate(d.getDate() + delta);
+    return d;
+  })();
+  const nextStr = nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  /* This-week service date: the service day within the CURRENT week (may be in the past) */
+  const thisWeekServiceDate = (function() {
+    const d = new Date(today);
+    /* Offset from Sunday (start of week) to the service dayOfWeek */
+    const sundayOffset = today.getDay(); /* days since Sunday */
+    const serviceDayOffset = sched.dayOfWeek;
+    d.setDate(today.getDate() - sundayOffset + serviceDayOffset);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const visits = Array.isArray(thisWeekVisits) ? thisWeekVisits : [];
+  const visitLoggedThisWeek = visits.some(function(v) {
+    return v.serviceDate === thisWeekServiceDate;
+  });
+  const visitLabel = visitLoggedThisWeek ? 'This week: Logged' : 'This week: Not yet';
+  const visitClass = visitLoggedThisWeek ? 'cc-svc-visit--logged' : 'cc-svc-visit--pending';
+
+  return `
+    <div class="cc-widget cc-widget--service" onclick="PortalRouter.navigate('service-schedule')" onkeydown="${svcKeydown}" role="button" tabindex="0">
+      <div class="cc-widget-header">
+        <span class="cc-widget-icon" style="color:var(--teal)">${calIcon}</span>
+        <span class="cc-widget-title">Service Day</span>
+        <span class="cc-widget-link">Manage →</span>
+      </div>
+      <div class="cc-widget-body">
+        <div class="cc-svc-day">${M.esc(dowName)}</div>
+        <div class="cc-svc-meta">
+          <span class="cc-badge ${seasonClass}">${seasonLabel}</span>
+          <span class="cc-svc-next">Next: ${M.esc(nextStr)}</span>
+        </div>
+        <div class="cc-svc-visit ${visitClass}">${M.esc(visitLabel)}</div>
+      </div>
+    </div>`;
+}
+
+/* ── Water Usage widget renderer ── */
+function _renderWaterUsageWidget(rows) {
+  const M = PortalModules;
+  const sorted = rows.slice().sort(function(a, b) {
+    if (a.year !== b.year) return a.year - b.year;
+    return a.month - b.month;
+  });
+
+  const MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  if (sorted.length === 0) {
+    return `
+      <div class="cc-widget cc-widget--water">
+        <div class="cc-widget-header">
+          <span class="cc-widget-icon" style="color:var(--blue)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6 8 4 12 4 15a8 8 0 0016 0c0-3-2-7-8-13z"/></svg>
+          </span>
+          <span class="cc-widget-title">Water Usage</span>
+          <button class="cc-widget-link" onclick="event.stopPropagation();PortalRouter.navigate('reports',true,{report:'water-usage'})">View Report →</button>
+        </div>
+        <div class="cc-widget-empty">No water usage data recorded yet</div>
+      </div>`;
+  }
+
+  const last6   = sorted.slice(-6);
+  const latest  = sorted[sorted.length - 1];
+  const maxAmt  = Math.max.apply(null, last6.map(r => r.usage_amount));
+  const latestStr = latest.usage_amount.toLocaleString() + ' ' + M.esc(latest.unit || '');
+  const latestLabel = MONTH_ABBR[latest.month] + ' ' + latest.year;
+
+  /* Inline sparkline bars */
+  const sparkBars = last6.map(function(r) {
+    const pct = maxAmt > 0 ? (r.usage_amount / maxAmt) : 0;
+    const h   = Math.max(4, Math.round(pct * 40));
+    const isLatest = (r.year === latest.year && r.month === latest.month);
+    return `<div class="cc-spark-col" title="${MONTH_ABBR[r.month]} ${r.year}: ${r.usage_amount.toLocaleString()} ${M.esc(r.unit || '')}">
+      <div class="cc-spark-bar${isLatest ? ' cc-spark-bar--hi' : ''}" style="height:${h}px"></div>
+      <div class="cc-spark-label">${MONTH_ABBR[r.month]}</div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="cc-widget cc-widget--water">
+      <div class="cc-widget-header">
+        <span class="cc-widget-icon" style="color:var(--blue)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6 8 4 12 4 15a8 8 0 0016 0c0-3-2-7-8-13z"/></svg>
+        </span>
+        <span class="cc-widget-title">Water Usage</span>
+        <button class="cc-widget-link" onclick="event.stopPropagation();PortalRouter.navigate('reports',true,{report:'water-usage'})">View Report →</button>
+      </div>
+      <div class="cc-widget-body">
+        <div class="cc-water-latest">
+          <span class="cc-water-value">${M.esc(latestStr)}</span>
+          <span class="cc-water-period">${M.esc(latestLabel)}</span>
+        </div>
+        <div class="cc-sparkline">${sparkBars}</div>
+      </div>
+    </div>`;
+}
+
+/* ── Attention Required: build item list ── */
+function _buildAttentionItems(overdue, pendingReqs) {
+  const items = [];
+  const now = Date.now();
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+
+  overdue.forEach(function(t) {
+    items.push({ type: 'task', id: t.id, label: t.title || 'Untitled task', reason: 'Overdue', color: 'var(--red)' });
+  });
+
+  pendingReqs.forEach(function(r) {
+    if (r.priority === 'urgent') {
+      items.push({ type: 'request', id: r.id, label: r.title || 'Untitled request', reason: 'Urgent priority', color: '#9c27b0' });
+      return;
+    }
+    const created = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+    const unassigned = !r.assignedTo;
+    if (unassigned && created && (now - created) > THREE_DAYS_MS) {
+      items.push({ type: 'request', id: r.id, label: r.title || 'Untitled request', reason: 'Unassigned 3+ days', color: 'var(--amber)' });
+    }
+  });
+
+  return items;
+}
+
+/* ── Attention Required widget renderer ── */
+function _renderAttentionRequired(items) {
+  const M = PortalModules;
+  const alertIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+  let body;
+  if (items.length === 0) {
+    body = `<div class="cc-attention-clear">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      All clear
+    </div>`;
+  } else {
+    const rows = items.slice(0, 8).map(function(item) {
+      /* Both tasks and requests use openTaskDetail — they share the same side panel */
+      const onclick = `typeof window.openTaskDetail==='function'&&window.openTaskDetail('${M.esc(item.id)}')`;
+      const onkeydown = `if(event.key==='Enter'||event.key===' '){event.preventDefault();${onclick};}`;
+      return `<div class="cc-attn-row" onclick="${onclick}" onkeydown="${onkeydown}" role="button" tabindex="0" title="${M.esc(item.reason)}">
+        <span class="cc-attn-dot" style="background:${item.color}"></span>
+        <span class="cc-attn-label">${M.esc(item.label)}</span>
+        <span class="cc-attn-reason">${M.esc(item.reason)}</span>
+      </div>`;
+    }).join('');
+    body = `<div class="cc-attn-list">${rows}</div>`;
+  }
+
+  return `
+    <div class="cc-widget cc-widget--attention">
+      <div class="cc-widget-header">
+        <span class="cc-widget-icon" style="color:var(--red)">${alertIcon}</span>
+        <span class="cc-widget-title">Attention Required</span>
+        ${items.length > 0 ? `<span class="cc-badge cc-badge--red">${items.length}</span>` : ''}
+      </div>
+      ${body}
+    </div>`;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
  * HOA Admin + HOA Member Dashboard  (readOnly = member)
  * ────────────────────────────────────────────────────────────────────────── */
 async function renderHoa(container, ctx, readOnly) {
@@ -230,9 +468,12 @@ async function renderHoa(container, ctx, readOnly) {
   const { activeCommunity } = ctx;
   const I   = M.ICONS;
 
-  const [dashData, requests] = await Promise.all([
+  const [dashData, requests, schedules, waterUsage, thisWeekVisits] = await Promise.all([
     _fetchHoaDashboard(),
     _fetchHoaRequests(),
+    _fetchServiceSchedules(activeCommunity.id),
+    _fetchWaterUsage(activeCommunity.id),
+    _fetchServiceVisitsThisWeek(activeCommunity.id),
   ]);
 
   /* Normalize what the HOA dashboard returns
@@ -246,6 +487,9 @@ async function renderHoa(container, ctx, readOnly) {
   const overdue      = nonCompleted.filter(t => M.classifyTask(t) === 'overdue');
   const pendingReqs  = requests.filter(r => r.status !== 'completed');
 
+  /* Attention Required items */
+  const attentionItems = _buildAttentionItems(overdue, pendingReqs);
+
   container.innerHTML = `
     ${M.pageHeader('Dashboard', activeCommunity)}
 
@@ -258,6 +502,17 @@ async function renderHoa(container, ctx, readOnly) {
           { icon: I.inbox(), label: 'Open Requests',  value: pendingReqs.length, color: 'var(--amber)' },
           { icon: I.done(),  label: 'Upcoming',       value: upcoming.length,   color: 'var(--blue)' },
         ])}
+        <div class="cc-sections">
+          <div class="cc-section cc-section--service">
+            ${_renderServiceDayWidget(schedules, thisWeekVisits)}
+          </div>
+          <div class="cc-section cc-section--water">
+            ${_renderWaterUsageWidget(waterUsage)}
+          </div>
+          <div class="cc-section cc-section--attention">
+            ${_renderAttentionRequired(attentionItems)}
+          </div>
+        </div>
       </div>
     </div>
 
