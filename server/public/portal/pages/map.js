@@ -67,7 +67,7 @@ PortalRouter.register('map', async function (container) {
   Object.keys(LAYER_HIERARCHY).forEach(cat => {
     sublayerState[cat] = {};
     LAYER_HIERARCHY[cat].forEach(sub => {
-      sublayerState[cat][sub.key] = cat === 'community';
+      sublayerState[cat][sub.key] = (cat === 'community' || cat === 'irrigation');
     });
   });
 
@@ -390,6 +390,7 @@ PortalRouter.register('map', async function (container) {
           }
         });
         loadCommunity(community.id);
+        pushIrrigationToIframe();
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
       }
@@ -422,7 +423,7 @@ PortalRouter.register('map', async function (container) {
     Object.keys(LAYER_HIERARCHY).forEach(cat => {
       sublayerState[cat] = {};
       LAYER_HIERARCHY[cat].forEach(sub => {
-        sublayerState[cat][sub.key] = cat === 'community';
+        sublayerState[cat][sub.key] = (cat === 'community' || cat === 'irrigation');
       });
     });
     renderCategories();
