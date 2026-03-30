@@ -1803,3 +1803,91 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Dashboard Panels — Command Center / Tasks / Map
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.dash-panel {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.dash-panel:last-child {
+  margin-bottom: 0;
+}
+
+/* Command Center panel: no header label — the stats row speaks for itself */
+.dash-panel--command .dash-panel-body {
+  padding: 16px;
+}
+
+/* Remove the stats row's bottom margin when it sits inside a panel */
+.dash-panel--command .portal-stats-row {
+  margin-bottom: 0;
+}
+
+/* Tasks panel and Map panel share a labeled header row */
+.dash-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--gray-100);
+  background: var(--gray-50);
+}
+
+.dash-panel-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Tasks panel body: three columns side-by-side */
+.dash-panel-body {
+  padding: 16px;
+}
+
+.dash-panel--tasks .dash-panel-body {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+/* Map panel: no internal padding — the map fills edge-to-edge */
+.dash-panel--map .dash-panel-body {
+  padding: 0;
+}
+
+/* Map height inside the map panel */
+.dash-panel--map .map-preview-body {
+  height: 340px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+/* Responsive: stack task columns on narrow screens */
+@media (max-width: 900px) {
+  .dash-panel--tasks .dash-panel-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .dash-panel--command .dash-panel-body {
+    padding: 12px;
+  }
+  .dash-panel-body {
+    padding: 12px;
+  }
+  .dash-panel--map .map-preview-body {
+    height: 240px;
+  }
+}

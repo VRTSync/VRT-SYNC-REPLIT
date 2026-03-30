@@ -249,73 +249,62 @@ async function renderHoa(container, ctx, readOnly) {
   container.innerHTML = `
     ${M.pageHeader('Dashboard', activeCommunity)}
 
-    ${M.statsRow([
-      { icon: I.task(),  label: 'Active Tasks',  value: active.length,      color: 'var(--teal)' },
-      { icon: I.alert(), label: 'Overdue',        value: overdue.length,    color: 'var(--red)' },
-      { icon: I.inbox(), label: 'Open Requests',  value: pendingReqs.length, color: 'var(--amber)' },
-      { icon: I.done(),  label: 'Upcoming',       value: upcoming.length,   color: 'var(--blue)' },
-    ])}
-
-    <div class="dash-grid">
-      <div class="dash-col-8">
-        ${M.mapPreviewModule({ community: activeCommunity, tall: true })}
-      </div>
-      <div class="dash-col-4">
-        ${M.listModule({
-          title: 'Recent Requests',
-          rows: requests.slice(0, 5),
-          emptyMsg: 'No recent requests.',
-          viewAllRoute: 'requests',
-        })}
+    <!-- Panel 1: Command Center -->
+    <div class="dash-panel dash-panel--command">
+      <div class="dash-panel-body">
+        ${M.statsRow([
+          { icon: I.task(),  label: 'Active Tasks',  value: active.length,      color: 'var(--teal)' },
+          { icon: I.alert(), label: 'Overdue',        value: overdue.length,    color: 'var(--red)' },
+          { icon: I.inbox(), label: 'Open Requests',  value: pendingReqs.length, color: 'var(--amber)' },
+          { icon: I.done(),  label: 'Upcoming',       value: upcoming.length,   color: 'var(--blue)' },
+        ])}
       </div>
     </div>
 
-    <div class="dash-tasks-header" style="margin-top:20px">
-      <span class="dash-tasks-title">Tasks</span>
-      ${_syncBadgeHtml('dash-sync-bar')}
+    <!-- Panel 2: Tasks -->
+    <div class="dash-panel dash-panel--tasks">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Tasks</span>
+        ${_syncBadgeHtml('dash-sync-bar')}
+      </div>
+      <div class="dash-panel-body">
+        <div id="dash-open-reqs-col">
+          ${M.listModule({
+            title: 'Requests',
+            rows: pendingReqs.slice(0, 5),
+            emptyMsg: 'No open requests.',
+            viewAllRoute: 'requests',
+          })}
+        </div>
+        <div id="dash-upcoming-work-col">
+          ${M.listModule({
+            title: 'Upcoming',
+            rows: upcoming.slice(0, 5),
+            emptyMsg: 'No upcoming work scheduled.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
+        <div id="dash-recent-work-col">
+          ${M.listModule({
+            title: 'Recently Completed',
+            rows: recentDone.slice(0, 5),
+            emptyMsg: 'No recent completions.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
+      </div>
     </div>
 
-    <div class="dash-grid" style="margin-top:0">
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recent-work-col">
-        ${M.listModule({
-          title: 'Recent Work',
-          rows: recentDone.slice(0, 5),
-          emptyMsg: 'No recent completions.',
-          viewAllRoute: 'tasks',
-        })}
+    <!-- Panel 3: Map -->
+    <div class="dash-panel dash-panel--map">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Community Map</span>
+        <button class="module-view-all" onclick="PortalRouter.navigate('map')">Open full map</button>
       </div>
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-upcoming-work-col">
-        ${M.listModule({
-          title: 'Upcoming Work',
-          rows: upcoming.slice(0, 5),
-          emptyMsg: 'No upcoming work scheduled.',
-          viewAllRoute: 'tasks',
-        })}
-      </div>
-      ${_wide() ? `<div class="dash-col-4w" id="dash-open-reqs-col">
-        ${M.listModule({
-          title: 'Open Requests',
-          rows: pendingReqs.slice(0, 5),
-          emptyMsg: 'No open requests.',
-          viewAllRoute: 'requests',
-        })}
-      </div>` : ''}
-    </div>
-
-    <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-4">
-        ${M.quickLinksModule({
-          title: 'Quick Links',
-          links: [
-            { icon: I.map(),  label: 'Community Map',  route: 'map' },
-            { icon: I.file(), label: 'Documents',       route: 'documents' },
-            { icon: I.bar(),  label: 'Reports',         route: 'reports' },
-            { icon: I.users(), label: 'Contacts',       route: 'contacts' },
-          ],
-        })}
-      </div>
-      <div class="dash-col-8">
-        ${M.graphModule({ title: 'Water Usage', hint: 'Water usage reporting coming in a future update.' })}
+      <div class="dash-panel-body">
+        <div class="map-preview-body">
+          <iframe id="dash-map-iframe" src="/leaflet-map.html" class="map-preview-iframe" tabindex="-1" aria-hidden="true"></iframe>
+        </div>
       </div>
     </div>
   `;
@@ -351,11 +340,9 @@ async function renderHoa(container, ctx, readOnly) {
         const pReqs = reqs.filter(r => r.status !== 'completed');
 
         _updateStatsRow(container, [ac.length, od.length, pReqs.length, up.length]);
-        _patchListModule(container, '#dash-recent-work-col', rd.slice(0, 5), 'No recent completions.');
+        _patchListModule(container, '#dash-open-reqs-col', pReqs.slice(0, 5), 'No open requests.');
         _patchListModule(container, '#dash-upcoming-work-col', up.slice(0, 5), 'No upcoming work scheduled.');
-        if (_wide()) {
-          _patchListModule(container, '#dash-open-reqs-col', pReqs.slice(0, 5), 'No open requests.');
-        }
+        _patchListModule(container, '#dash-recent-work-col', rd.slice(0, 5), 'No recent completions.');
 
         _updateDashSyncLabel(container);
         if (changed) PortalAPI.showToast('Tasks updated', 'info');
