@@ -57,6 +57,34 @@ type MowingSchedule = {
   seasonEnd: string | null;
 };
 
+type WaterUsageRow = {
+  year: number;
+  month: number;
+  usage_amount: number;
+  unit: string | null;
+};
+
+type HoaRequestItem = {
+  id: string;
+  title: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  assignedTo: string | null;
+};
+
+type AttentionItem = {
+  id: string;
+  label: string;
+  reason: string;
+  color: string;
+};
+
+type ServiceVisit = {
+  id: string;
+  serviceDate: string;
+};
+
 type DashboardData = {
   community: { id: string; name: string };
   upcomingTasks: UpcomingTask[];
@@ -153,6 +181,68 @@ export default function HoaDashboardScreen() {
     queryKey: ['/api/hoa/dashboard'],
   });
 
+  const weekRange = React.useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sun = new Date(today);
+    sun.setDate(today.getDate() - today.getDay());
+    const sat = new Date(sun);
+    sat.setDate(sun.getDate() + 6);
+    return { from: sun.toISOString().slice(0, 10), to: sat.toISOString().slice(0, 10) };
+  }, []);
+
+  const communityId = activeCommunity?.id;
+
+  const { data: serviceVisits = [] } = useQuery<ServiceVisit[]>({
+    queryKey: [`/api/communities/${communityId}/service-visits?from=${weekRange.from}&to=${weekRange.to}`],
+    enabled: !!communityId,
+  });
+
+  const { data: waterUsage = [] } = useQuery<WaterUsageRow[]>({
+    queryKey: [`/api/reports/water-usage?communityId=${communityId}`],
+    enabled: !!communityId,
+  });
+
+  const { data: hoaRequests = [] } = useQuery<HoaRequestItem[]>({
+    queryKey: ['/api/hoa/requests'],
+  });
+
+  const attentionItems: AttentionItem[] = React.useMemo(() => {
+    const items: AttentionItem[] = [];
+    const now = Date.now();
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const todayTs = new Date().setHours(0, 0, 0, 0);
+
+    (data?.upcomingTasks ?? []).forEach(t => {
+      if (t.status === 'completed') return;
+      const end = t.windowEnd ? new Date(t.windowEnd).getTime() : null;
+      if (end && end < todayTs) {
+        items.push({ id: t.id, label: t.title || 'Untitled task', reason: 'Overdue', color: '#e74c3c' });
+      }
+    });
+
+    hoaRequests.forEach(r => {
+      if (r.status === 'completed') return;
+      if (r.priority === 'urgent') {
+        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Urgent priority', color: '#9c27b0' });
+        return;
+      }
+      const created = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+      if (!r.assignedTo && created && (now - created) > THREE_DAYS_MS) {
+        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Unassigned 3+ days', color: '#f39c12' });
+      }
+    });
+
+    return items;
+  }, [data?.upcomingTasks, hoaRequests]);
+
+  const sortedWater = React.useMemo(() => {
+    return waterUsage.slice().sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      return a.month - b.month;
+    });
+  }, [waterUsage]);
+
   React.useEffect(() => {
     if (dataUpdatedAt > 0) {
       setLastSyncedAt(prev => {
@@ -219,6 +309,19 @@ export default function HoaDashboardScreen() {
   const { upcomingTasks, recentCompletions, requestsSummary, mowingSchedules } = data;
   const today = new Date();
 
+  const activeMowingSchedule = mowingSchedules.length > 0 ? mowingSchedules[0] : null;
+  const svcInSeason = activeMowingSchedule ? isInSeason(activeMowingSchedule, today) : false;
+  const svcNextDate = activeMowingSchedule ? getNextServiceDate(activeMowingSchedule) : null;
+  const thisWeekServiceDate = activeMowingSchedule ? (() => {
+    const d = new Date(today);
+    const sundayOffset = today.getDay();
+    d.setDate(today.getDate() - sundayOffset + activeMowingSchedule.dayOfWeek);
+    return d.toISOString().slice(0, 10);
+  })() : null;
+  const visitLoggedThisWeek = thisWeekServiceDate
+    ? serviceVisits.some(v => v.serviceDate === thisWeekServiceDate)
+    : false;
+
   return (
     <View style={styles.container}>
       <StatusBarFill />
@@ -276,6 +379,115 @@ export default function HoaDashboardScreen() {
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
               <Text style={styles.createRequestBtnText}>Create Request</Text>
             </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Command Center</Text>
+          {attentionItems.length > 0 && (
+            <View style={styles.attentionBadge}>
+              <Text style={styles.attentionBadgeText}>{attentionItems.length}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Service Day Widget */}
+        <View style={styles.ccCard}>
+          <View style={styles.ccCardHeader}>
+            <Ionicons name="calendar-outline" size={16} color="#25C1AC" />
+            <Text style={styles.ccCardTitle}>Service Day</Text>
+          </View>
+          {!activeMowingSchedule ? (
+            <Text style={styles.ccEmpty}>No service schedule configured</Text>
+          ) : (
+            <View>
+              <Text style={styles.ccServiceDay}>{DAY_NAMES[activeMowingSchedule.dayOfWeek]}s</Text>
+              <View style={styles.ccServiceMeta}>
+                <View style={[styles.ccBadge, svcInSeason ? styles.ccBadgeGreen : styles.ccBadgeGray]}>
+                  <Text style={[styles.ccBadgeText, svcInSeason ? styles.ccBadgeTextGreen : styles.ccBadgeTextGray]}>
+                    {svcInSeason ? 'In Season' : 'Off Season'}
+                  </Text>
+                </View>
+                {svcNextDate && (
+                  <Text style={styles.ccServiceNext}>
+                    Next: {svcNextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                )}
+              </View>
+              <Text style={[styles.ccVisitLabel, visitLoggedThisWeek ? styles.ccVisitLogged : styles.ccVisitPending]}>
+                {visitLoggedThisWeek ? 'This week: Logged ✓' : 'This week: Not yet'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Water Usage Widget */}
+        <View style={styles.ccCard}>
+          <View style={styles.ccCardHeader}>
+            <Ionicons name="water-outline" size={16} color="#2196F3" />
+            <Text style={styles.ccCardTitle}>Water Usage</Text>
+          </View>
+          {sortedWater.length === 0 ? (
+            <Text style={styles.ccEmpty}>No water usage data recorded yet</Text>
+          ) : (() => {
+            const last6 = sortedWater.slice(-6);
+            const latest = sortedWater[sortedWater.length - 1];
+            const maxAmt = Math.max(...last6.map(r => r.usage_amount));
+            const MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return (
+              <View>
+                <View style={styles.ccWaterLatest}>
+                  <Text style={styles.ccWaterValue}>
+                    {latest.usage_amount.toLocaleString()} {latest.unit ?? ''}
+                  </Text>
+                  <Text style={styles.ccWaterPeriod}>{MONTH_ABBR[latest.month]} {latest.year}</Text>
+                </View>
+                <View style={styles.ccSparkline}>
+                  {last6.map((r, i) => {
+                    const pct = maxAmt > 0 ? r.usage_amount / maxAmt : 0;
+                    const h = Math.max(4, Math.round(pct * 36));
+                    const isLatest = r.year === latest.year && r.month === latest.month;
+                    return (
+                      <View key={i} style={styles.ccSparkCol}>
+                        <View style={[styles.ccSparkBar, { height: h }, isLatest && styles.ccSparkBarHi]} />
+                        <Text style={styles.ccSparkLabel}>{MONTH_ABBR[r.month]}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+
+        {/* Attention Required Widget */}
+        <View style={styles.ccCard}>
+          <View style={styles.ccCardHeader}>
+            <Ionicons name="alert-circle-outline" size={16} color="#e74c3c" />
+            <Text style={styles.ccCardTitle}>Attention Required</Text>
+            {attentionItems.length > 0 && (
+              <View style={styles.ccAttnBadge}>
+                <Text style={styles.ccAttnBadgeText}>{attentionItems.length}</Text>
+              </View>
+            )}
+          </View>
+          {attentionItems.length === 0 ? (
+            <View style={styles.ccAllClear}>
+              <Ionicons name="checkmark-circle" size={16} color="#25C1AC" />
+              <Text style={styles.ccAllClearText}>All clear</Text>
+            </View>
+          ) : (
+            <View>
+              {attentionItems.slice(0, 8).map((item, i) => (
+                <View key={item.id + i} style={styles.ccAttnRow}>
+                  <View style={[styles.ccAttnDot, { backgroundColor: item.color }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.ccAttnLabel} numberOfLines={1}>{item.label}</Text>
+                    <Text style={styles.ccAttnReason}>{item.reason}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           )}
         </View>
 
@@ -840,5 +1052,174 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600' as const,
+  },
+
+  attentionBadge: {
+    backgroundColor: '#e74c3c',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 5,
+  },
+  attentionBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+
+  ccCard: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  ccCardHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  ccCardTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#0C1D31',
+    flex: 1,
+  },
+  ccEmpty: {
+    fontSize: 13,
+    color: '#aaa',
+    fontStyle: 'italic' as const,
+  },
+
+  ccServiceDay: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: '#0C1D31',
+    marginBottom: 8,
+  },
+  ccServiceMeta: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    marginBottom: 8,
+  },
+  ccBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  ccBadgeGreen: { backgroundColor: '#E8F5E9' },
+  ccBadgeGray: { backgroundColor: '#ECEFF1' },
+  ccBadgeText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+  },
+  ccBadgeTextGreen: { color: '#2E7D32' },
+  ccBadgeTextGray: { color: '#78909C' },
+  ccServiceNext: {
+    fontSize: 13,
+    color: '#666',
+  },
+  ccVisitLabel: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+  },
+  ccVisitLogged: { color: '#27ae60' },
+  ccVisitPending: { color: '#f39c12' },
+
+  ccWaterLatest: {
+    flexDirection: 'row' as const,
+    alignItems: 'baseline' as const,
+    gap: 8,
+    marginBottom: 10,
+  },
+  ccWaterValue: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: '#0C1D31',
+  },
+  ccWaterPeriod: {
+    fontSize: 12,
+    color: '#999',
+  },
+  ccSparkline: {
+    flexDirection: 'row' as const,
+    alignItems: 'flex-end' as const,
+    gap: 4,
+    height: 56,
+  },
+  ccSparkCol: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'flex-end' as const,
+  },
+  ccSparkBar: {
+    width: '100%' as any,
+    backgroundColor: '#B0BEC5',
+    borderRadius: 2,
+  },
+  ccSparkBarHi: {
+    backgroundColor: '#2196F3',
+  },
+  ccSparkLabel: {
+    fontSize: 9,
+    color: '#aaa',
+    marginTop: 3,
+  },
+
+  ccAttnBadge: {
+    backgroundColor: '#FFEBEE',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 5,
+  },
+  ccAttnBadgeText: {
+    color: '#e74c3c',
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  ccAllClear: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  ccAllClearText: {
+    fontSize: 14,
+    color: '#25C1AC',
+    fontWeight: '600' as const,
+  },
+  ccAttnRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  ccAttnDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  ccAttnLabel: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#333',
+  },
+  ccAttnReason: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 1,
   },
 });
