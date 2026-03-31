@@ -1,0 +1,79 @@
+Role-Aware Dashboard Overhaul
+
+Product goal
+
+Refactor the mobile dashboard so it becomes a true role-specific command center instead of one mostly shared page with slightly different modules. Each role should see different priorities, different default modules, different CTA hierarchy, and different summary data based on what they actually need to do in the system.
+
+Target roles for this slice set:
+	•	Contractor
+	•	HOA Admin
+	•	HOA Member
+	•	Property Manager
+	•	Super Admin can stay out of scope for mobile unless already supported there
+
+⸻
+
+Global rule for all slices
+
+Before the slices, this should be the guiding constraint for Replit:
+
+Do not build one dashboard and conditionally hide sections. Build a shared dashboard shell with role-specific module configurations and role-specific query composition so each role gets a genuinely different landing experience, CTA order, and data emphasis. Preserve existing VRTSync mobile styling, spacing, typography, navy header, teal action language, rounded cards, and bottom nav treatment.
+
+⸻
+
+Slice 1 — Dashboard role configuration architecture
+
+What & why
+
+Create the dashboard architecture layer that allows each role to have its own module stack, card priority, empty states, and CTA hierarchy without duplicating the whole screen. This slice is the foundation for all future dashboard improvements.
+
+Right now the mobile dashboard appears to use a mostly shared layout. We need a configuration-driven model so the app can render a role-specific dashboard cleanly and predictably.
+
+Build
+
+Create a dashboard configuration system with:
+	•	a shared dashboard screen shell
+	•	per-role dashboard definitions
+	•	per-role module ordering
+	•	per-role visibility rules
+	•	per-role headline summary logic
+	•	per-role empty-state copy
+	•	per-role CTA labels and destinations
+
+Suggested structure:
+	•	dashboardRoleConfig.ts
+	•	getDashboardModulesForRole(role, communityContext, counts)
+	•	module registry for reusable dashboard cards
+
+Roles to support now:
+	•	contractor
+	•	hoa_admin
+	•	hoa_member
+	•	property_manager
+
+Each role config should define:
+	•	top summary module
+	•	primary CTA
+	•	secondary CTA
+	•	allowed modules
+	•	module order
+	•	empty state text
+	•	quick links
+	•	whether requests are shown
+	•	whether task counts are shown
+	•	whether map layers are shown
+	•	whether recent completions are shown
+	•	whether service schedule is shown
+
+Done looks like
+	•	Dashboard rendering is driven by a role config object instead of hardcoded conditional JSX scattered across the page
+	•	Each role can have a clearly different module order
+	•	Dashboard can render safely even when some datasets are empty
+	•	Existing styling remains intact
+	•	No visual regressions for bottom nav, top header, sync row, or card styling
+
+Acceptance checks
+	•	Logging in as HOA Admin shows a different module order than Contractor
+	•	Logging in as HOA Member removes creation actions
+	•	Logging in as Property Manager supports a broader summary view
+	•	The dashboard still renders cleanly if one or more module datasets return empty
