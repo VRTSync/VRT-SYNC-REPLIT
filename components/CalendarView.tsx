@@ -41,6 +41,7 @@ type Props = {
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
   isOffline: boolean;
   role?: UserRole;
+  scope?: 'week' | 'month';
 };
 
 const priorityColors: Record<string, string> = {
@@ -206,7 +207,7 @@ function getMowingDaysForWeek(
 
 export default function CalendarView({
   tasks, schedules, visits, pendingVisits,
-  onTaskPress, onLogVisit, isOffline, role,
+  onTaskPress, onLogVisit, isOffline, role, scope = 'week',
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
@@ -239,6 +240,32 @@ export default function CalendarView({
   const weeks = useMemo(() => getMonthGrid(currentYear, currentMonth), [currentYear, currentMonth]);
 
   const windowedTasks = useMemo(() => tasks.filter(t => t.windowStart && t.windowEnd), [tasks]);
+
+  const hasAnyContentForMonth = useMemo(() => {
+    const monthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const monthEnd = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+    const hasTaskBars = windowedTasks.some(
+      t => t.windowStart! <= monthEnd && t.windowEnd! >= monthStart
+    );
+    if (hasTaskBars) return true;
+
+    const activeSchedules = schedules.filter(s => s.isActive);
+    if (activeSchedules.length === 0) return false;
+
+    for (const week of weeks) {
+      for (const date of week) {
+        if (date.getMonth() !== currentMonth) continue;
+        const dayOfWeek = date.getDay();
+        const hasSchedule = activeSchedules.some(
+          s => s.dayOfWeek === dayOfWeek && isInSeason(s, date)
+        );
+        if (hasSchedule) return true;
+      }
+    }
+    return false;
+  }, [windowedTasks, schedules, weeks, currentYear, currentMonth]);
 
   const overdueDueDateTasks = useMemo(() => {
     return tasks.filter(t =>
@@ -438,10 +465,23 @@ export default function CalendarView({
         ))}
       </View>
 
-      <ScrollView style={styles.weeksScroll} showsVerticalScrollIndicator={false}>
-        {weeks.map((weekDates, i) => renderWeek(weekDates, i))}
-        <View style={{ height: 24 }} />
-      </ScrollView>
+      <View style={styles.weeksWrapper}>
+        <ScrollView style={styles.weeksScroll} showsVerticalScrollIndicator={false}>
+          {weeks.map((weekDates, i) => renderWeek(weekDates, i))}
+          <View style={{ height: 24 }} />
+        </ScrollView>
+        {!hasAnyContentForMonth && (
+          <View style={styles.emptyStateOverlay} pointerEvents="none">
+            <View style={styles.emptyStateIconWrap}>
+              <Ionicons name="checkmark-circle" size={40} color="#25C1AC" />
+            </View>
+            <Text style={styles.emptyStateTitle}>
+              No scheduled work {scope === 'month' ? 'this month' : 'this week'}
+            </Text>
+            <Text style={styles.emptyStateSubtitle}>Everything is up to date 👍</Text>
+          </View>
+        )}
+      </View>
 
       <WeekItemsModal
         data={weekModalData}
@@ -639,6 +679,10 @@ const styles = StyleSheet.create({
     color: '#999',
     textTransform: 'uppercase',
   },
+  weeksWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
   weeksScroll: {
     flex: 1,
     paddingHorizontal: 16,
@@ -735,6 +779,38 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#25C1AC',
+  },
+  emptyStateOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245,247,250,0.92)',
+    paddingHorizontal: 24,
+  },
+  emptyStateIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#E8FAF7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0C1D31',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptyStateSubtitle: {
+    fontSize: 13,
+    color: '#888',
+    textAlign: 'center',
   },
 });
 

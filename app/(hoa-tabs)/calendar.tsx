@@ -348,6 +348,7 @@ export default function HoaTasksScreen() {
           onLogVisit={() => {}}
           isOffline={false}
           role={user?.role}
+          scope="month"
         />
       ) : isLoading ? (
         <View style={styles.centered}>
