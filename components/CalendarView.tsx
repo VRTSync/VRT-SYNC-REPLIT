@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, FlatList, ScrollView,
   Dimensions, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ServiceSchedule, ServiceVisit, PendingServiceVisit } from '@/client/contexts/OfflineContext';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -222,6 +223,15 @@ export default function CalendarView({
   const isContractor = !role || role === 'contractor';
   const isHoaMember = role === 'hoa_member';
 
+  const [legendExpanded, setLegendExpanded] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem('calendar_legend_seen').then(val => {
+      if (val === 'true') setLegendExpanded(false);
+      else AsyncStorage.setItem('calendar_legend_seen', 'true');
+    });
+  }, []);
+
   const goToPrevMonth = () => {
     if (currentMonth === 0) { setCurrentYear(y => y - 1); setCurrentMonth(11); }
     else setCurrentMonth(m => m - 1);
@@ -424,25 +434,6 @@ export default function CalendarView({
 
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.legendScroll} contentContainerStyle={styles.legend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendBar, { backgroundColor: '#ff9800CC' }]} />
-          <Text style={styles.legendText}>Task Window</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendBar, { backgroundColor: '#ff9800CC', borderLeftWidth: 2, borderLeftColor: '#e65100' }]} />
-          <Text style={styles.legendText}>HOA Request</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
-          <Text style={styles.legendText}>Overdue</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
-          <Text style={styles.legendText}>Service Visit</Text>
-        </View>
-      </ScrollView>
-
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={goToPrevMonth} style={styles.navBtn} testID="cal-prev-month">
           <Ionicons name="chevron-back" size={22} color="#0C1D31" />
@@ -463,6 +454,41 @@ export default function CalendarView({
             <Text style={styles.dayHeaderText}>{d}</Text>
           </View>
         ))}
+      </View>
+
+      <View style={styles.legendToggleRow}>
+        {legendExpanded ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendBar, { backgroundColor: '#ff9800CC' }]} />
+              <Text style={styles.legendText}>Task Window</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendBar, { backgroundColor: '#ff9800CC', borderLeftWidth: 2, borderLeftColor: '#e65100' }]} />
+              <Text style={styles.legendText}>HOA Request</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
+              <Text style={styles.legendText}>Overdue</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
+              <Text style={styles.legendText}>Service Visit</Text>
+            </View>
+          </ScrollView>
+        ) : null}
+        <TouchableOpacity
+          onPress={() => setLegendExpanded(v => !v)}
+          activeOpacity={0.7}
+          style={styles.legendChevron}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name={legendExpanded ? 'chevron-up' : 'chevron-down'}
+            size={12}
+            color="#aaa"
+          />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.weeksWrapper}>
@@ -612,37 +638,41 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  legendScroll: {
-    backgroundColor: '#f8f9fb',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
+  legendToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 3,
   },
   legend: {
     flexDirection: 'row',
-    gap: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    gap: 6,
     alignItems: 'center',
+    flex: 1,
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3,
+    marginRight: 4,
   },
   legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   legendBar: {
-    width: 14,
-    height: 8,
-    borderRadius: 2,
+    width: 10,
+    height: 6,
+    borderRadius: 1.5,
   },
   legendText: {
-    fontSize: 10,
-    color: '#888',
+    fontSize: 9,
+    color: '#aaa',
     fontWeight: '500',
+  },
+  legendChevron: {
+    paddingLeft: 4,
   },
   monthNav: {
     flexDirection: 'row',
