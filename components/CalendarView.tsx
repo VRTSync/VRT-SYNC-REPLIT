@@ -277,14 +277,6 @@ export default function CalendarView({
     return false;
   }, [windowedTasks, schedules, weeks, currentYear, currentMonth]);
 
-  const overdueDueDateTasks = useMemo(() => {
-    return tasks.filter(t =>
-      t.dueDate &&
-      t.status !== 'completed' &&
-      t.dueDate < todayStr
-    );
-  }, [tasks, todayStr]);
-
   const cellWidth = (SCREEN_WIDTH - 32) / 7;
   const BAR_HEIGHT = 16;
   const BAR_GAP = 2;
@@ -312,13 +304,55 @@ export default function CalendarView({
             const isCurrentMonth = date.getMonth() === currentMonth;
             const isToday = dateStr === todayStr;
             const mowingDays = mowingMap.get(dateStr) || [];
-            const hasOverdueOnDay = overdueDueDateTasks.some(t => {
-              const dd = t.dueDate!.includes('T') ? t.dueDate!.split('T')[0] : t.dueDate!;
-              return dd === dateStr;
-            });
+
+            const overdueCount = tasks.filter(t => {
+              if (!t.dueDate || t.status === 'completed') return false;
+              const dd = t.dueDate.includes('T') ? t.dueDate.split('T')[0] : t.dueDate;
+              return dd === dateStr && dd < todayStr;
+            }).length;
+
+            const windowCount = tasks.filter(t => {
+              if (!t.windowStart || !t.windowEnd) return false;
+              return t.windowStart <= dateStr && t.windowEnd >= dateStr &&
+                t.status !== 'completed';
+            }).length;
+
+            const hoaCount = tasks.filter(t => {
+              if (!t.windowStart || !t.windowEnd) return false;
+              return t.origin === 'HOA' && t.status !== 'completed' &&
+                t.windowStart <= dateStr && t.windowEnd >= dateStr;
+            }).length;
+
+            const visitCount = (visits.filter(v => v.serviceDate === dateStr).length) +
+              (pendingVisits.filter(v => v.serviceDate === dateStr && v.state !== 'synced').length);
+
+            const dots: { color: string }[] = [];
+            for (let i = 0; i < overdueCount; i++) dots.push({ color: '#f44336' });
+            for (let i = 0; i < windowCount; i++) dots.push({ color: '#ff9800' });
+            for (let i = 0; i < hoaCount; i++) dots.push({ color: '#1565C0' });
+            for (let i = 0; i < visitCount; i++) dots.push({ color: '#27ae60' });
+
+            const MAX_DOTS = 4;
+            const extraDots = dots.length > MAX_DOTS ? dots.length - (MAX_DOTS - 1) : 0;
+            const visibleDots = extraDots > 0 ? dots.slice(0, MAX_DOTS - 1) : dots.slice(0, MAX_DOTS);
+
+            const tintOpacity = isCurrentMonth ? 1 : 0.5;
+            let cellTint: string | null = null;
+            if (overdueCount > 0) {
+              cellTint = `rgba(244,67,54,${0.08 * tintOpacity})`;
+            } else if (windowCount >= 3) {
+              cellTint = `rgba(255,152,0,${0.07 * tintOpacity})`;
+            }
 
             return (
-              <View key={colIndex} style={[styles.dayCell, { width: cellWidth }]}>
+              <View
+                key={colIndex}
+                style={[
+                  styles.dayCell,
+                  { width: cellWidth },
+                  cellTint ? { backgroundColor: cellTint } : undefined,
+                ]}
+              >
                 <View style={[
                   styles.dayNumber,
                   isToday && styles.dayNumberToday,
@@ -331,8 +365,26 @@ export default function CalendarView({
                     {date.getDate()}
                   </Text>
                 </View>
-                {hasOverdueOnDay && (
-                  <View style={styles.overdueDot} />
+                {dots.length > 0 && (
+                  <View style={styles.dotRow}>
+                    {visibleDots.map((dot, di) => (
+                      <View
+                        key={di}
+                        style={[
+                          styles.heatDot,
+                          {
+                            backgroundColor: dot.color,
+                            opacity: isCurrentMonth ? 1 : 0.4,
+                          },
+                        ]}
+                      />
+                    ))}
+                    {extraDots > 0 && (
+                      <Text style={[styles.dotOverflow, { opacity: isCurrentMonth ? 1 : 0.5 }]}>
+                        +{extraDots}
+                      </Text>
+                    )}
+                  </View>
                 )}
                 {mowingDays.map((md, i) => (
                   <TouchableOpacity
@@ -430,7 +482,7 @@ export default function CalendarView({
         )}
       </View>
     );
-  }, [windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, overdueDueDateTasks, isContractor, isHoaMember]);
+  }, [tasks, windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, isContractor, isHoaMember]);
 
   return (
     <View style={styles.container}>
@@ -470,6 +522,10 @@ export default function CalendarView({
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
               <Text style={styles.legendText}>Overdue</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#1565C0' }]} />
+              <Text style={styles.legendText}>HOA</Text>
             </View>
             <View style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
@@ -754,12 +810,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
-  overdueDot: {
-    width: 6,
-    height: 6,
+  dotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 2,
+    flexWrap: 'nowrap',
+  },
+  heatDot: {
+    width: 5,
+    height: 5,
     borderRadius: 3,
-    backgroundColor: '#f44336',
-    marginTop: 1,
+  },
+  dotOverflow: {
+    fontSize: 7,
+    fontWeight: '700',
+    color: '#888',
+    lineHeight: 8,
   },
   mowDot: {
     width: 14,
