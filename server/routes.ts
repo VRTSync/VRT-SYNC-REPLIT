@@ -353,6 +353,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/tasks/page-data", requireAuth, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      let communityId: string | null = (req.query.communityId as string | undefined) ?? null;
+
+      if (isHoaRole(user.role) && user.hoaCommunityId) {
+        communityId = user.hoaCommunityId;
+      } else if (!communityId && user.role === "contractor") {
+        const memberships = await storage.getUserCommunities(user.id);
+        communityId = memberships.length > 0 ? memberships[0].community.id : null;
+      }
+
+      if (communityId && user.role !== "admin" && !isHoaRole(user.role)) {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) {
+          return res.status(403).json({ error: "You are not a member of this community" });
+        }
+      }
+
+      const filters: storage.TaskPageFilters = {
+        status: req.query.status as string | undefined,
+        priority: req.query.priority as string | undefined,
+        assignedTo: req.query.assignedTo as string | undefined,
+      };
+      const mode = req.query.mode as string | undefined;
+
+      const viewModel = await storage.getTaskPageDataForRole(user.role, user.id, communityId, filters, mode);
+
+      const CONTRACTOR_ONLY_KEYS = new Set(["activeTasks", "overdueTasks", "pendingAcknowledgment", "upcomingScheduled"]);
+      const HOA_ADMIN_ONLY_KEYS = new Set(["requestsByStatus", "contractorAssignments", "completedCommunityWork", "upcomingCommunityWork"]);
+      const HOA_MEMBER_ONLY_KEYS = new Set(["communityUpcoming", "myRequests"]);
+      const vmRole = viewModel.role;
+      const vmKeys = new Set(Object.keys(viewModel));
+      if (vmRole === "contractor") {
+        const leaked = [...HOA_ADMIN_ONLY_KEYS, ...HOA_MEMBER_ONLY_KEYS].filter(k => vmKeys.has(k));
+        if (leaked.length > 0) console.error(`[page-data ISOLATION VIOLATION] contractor response leaked keys: ${leaked.join(", ")}`);
+      } else if (vmRole === "hoa_member") {
+        const leaked = [...CONTRACTOR_ONLY_KEYS, ...HOA_ADMIN_ONLY_KEYS].filter(k => vmKeys.has(k));
+        if (leaked.length > 0) console.error(`[page-data ISOLATION VIOLATION] hoa_member response leaked keys: ${leaked.join(", ")}`);
+      }
+
+      const collectionSizes: Record<string, number> = {};
+      const vm = viewModel as Record<string, unknown>;
+      for (const [key, val] of Object.entries(vm)) {
+        if (Array.isArray(val)) collectionSizes[key] = val.length;
+        else if (val !== null && typeof val === "object") {
+          for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
+            if (Array.isArray(subVal)) collectionSizes[`${key}.${subKey}`] = subVal.length;
+          }
+        }
+      }
+      console.log(`[GET /api/tasks/page-data] role=${user.role} user=${user.id} community=${communityId} collections=${JSON.stringify(collectionSizes)} (${Date.now() - t0}ms)`);
+
+      res.json(viewModel);
+    } catch (error) {
+      console.error("Get task page data error:", error);
+      res.status(500).json({ error: "Failed to fetch task page data" });
+    }
+  });
+
   app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {

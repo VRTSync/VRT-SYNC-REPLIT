@@ -992,3 +992,93 @@ export const xeriscapePacketsRelations = relations(xeriscapePackets, ({ one }) =
 export const plannerRecordsRelations = relations(plannerRecords, ({ many }) => ({
   packets: many(xeriscapePackets),
 }));
+
+export type TaskPageMeta = {
+  generatedAt: string;
+  role: string;
+  communityId: string | null;
+  filters: Record<string, string | undefined>;
+};
+
+export type TaskPageTaskItem = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: Date | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  origin: string | null;
+  assignedTo: string | null;
+  communityId: string;
+  acknowledgedAt?: Date | null;
+  proofOfWork?: never;
+  billingLineItems?: never;
+};
+
+export type TaskPageCompletionItem = {
+  id: string;
+  title: string;
+  completedAt: Date;
+  origin: string | null;
+  priority: string;
+  hasPhotos: boolean;
+};
+
+export type ContractorTaskPageViewModel = {
+  role: "contractor";
+  meta: TaskPageMeta;
+  activeTasks: TaskPageTaskItem[];
+  overdueTasks: TaskPageTaskItem[];
+  pendingAcknowledgment: TaskPageTaskItem[];
+  upcomingScheduled: TaskPageTaskItem[];
+  recentCompletions: TaskPageCompletionItem[];
+};
+
+export type HoaAdminTaskPageViewModel = {
+  role: "hoa_admin";
+  meta: TaskPageMeta;
+  requestsByStatus: {
+    submittedCount: number;
+    acknowledgedCount: number;
+    inProgressCount: number;
+    completedRecentCount: number;
+    topRequests: Array<{ id: string; title: string; priority: string; status: string; createdAt: Date }>;
+  };
+  upcomingCommunityWork: TaskPageTaskItem[];
+  completedCommunityWork: TaskPageCompletionItem[];
+  contractorAssignments: TaskPageTaskItem[];
+};
+
+export type HoaMemberTaskPageViewModel = {
+  role: "hoa_member";
+  meta: TaskPageMeta;
+  communityUpcoming: TaskPageTaskItem[];
+  recentCompletions: TaskPageCompletionItem[];
+  myRequests: Array<{ id: string; title: string; priority: string; status: string; createdAt: Date }>;
+};
+
+export type PropertyManagerTaskPageViewModel = {
+  role: "property_manager";
+  meta: TaskPageMeta;
+  openRequests: TaskPageTaskItem[];
+  overdueWork: TaskPageTaskItem[];
+  activeTasks: TaskPageTaskItem[];
+  completedSummary: TaskPageCompletionItem[];
+};
+
+export type AdminTaskPageViewModel = {
+  role: "admin";
+  meta: TaskPageMeta;
+  openRequests: TaskPageTaskItem[];
+  overdueWork: TaskPageTaskItem[];
+  activeTasks: TaskPageTaskItem[];
+  completedSummary: TaskPageCompletionItem[];
+};
+
+export type TaskPageViewModel =
+  | ContractorTaskPageViewModel
+  | HoaAdminTaskPageViewModel
+  | HoaMemberTaskPageViewModel
+  | PropertyManagerTaskPageViewModel
+  | AdminTaskPageViewModel;

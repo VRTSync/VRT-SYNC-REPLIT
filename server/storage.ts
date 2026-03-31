@@ -13,6 +13,7 @@ import {
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
   type DriveFolder, type DriveFile, type Invoice, type Contract,
   type Contact, type InsertContact, type PushTicket,
+  type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
 } from "@shared/schema";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1664,6 +1665,311 @@ export async function getDashboardDataForRole(
   }
 
   return viewModel;
+}
+
+export type TaskPageFilters = {
+  status?: string;
+  priority?: string;
+  assignedTo?: string;
+};
+
+function toTaskPageItem(t: typeof tasks.$inferSelect): TaskPageTaskItem {
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueDate: t.dueDate,
+    windowStart: t.windowStart,
+    windowEnd: t.windowEnd,
+    origin: t.origin,
+    assignedTo: t.assignedTo,
+    communityId: t.communityId,
+    acknowledgedAt: t.acknowledgedAt,
+  };
+}
+
+async function buildTaskPageCompletions(communityId: string, limit = 8, assignedTo?: string): Promise<TaskPageCompletionItem[]> {
+  return buildRecentCompletions(communityId, limit, assignedTo);
+}
+
+export async function getTaskPageDataForRole(
+  role: string,
+  userId: string,
+  communityId: string | null,
+  filters: TaskPageFilters = {},
+  _mode?: string,
+): Promise<TaskPageViewModel> {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const meta = {
+    generatedAt: now.toISOString(),
+    role,
+    communityId,
+    filters: {
+      status: filters.status,
+      priority: filters.priority,
+      assignedTo: filters.assignedTo,
+    },
+  };
+
+  const VALID_ROLES = new Set(["contractor", "hoa_admin", "hoa_member", "property_manager", "admin"]);
+  if (!VALID_ROLES.has(role)) {
+    throw new Error(`getTaskPageDataForRole: unrecognised role "${role}"`);
+  }
+
+  if (role === "contractor") {
+    if (!communityId) {
+      return {
+        role: "contractor",
+        meta,
+        activeTasks: [],
+        overdueTasks: [],
+        pendingAcknowledgment: [],
+        upcomingScheduled: [],
+        recentCompletions: [],
+      };
+    }
+
+    const [activeTasks, overdueTasks, pendingAcknowledgment, upcomingScheduled] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+        ))
+        .orderBy(asc(tasks.dueDate), asc(tasks.priority))
+        .limit(50),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          lt(tasks.dueDate, todayStart),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          eq(tasks.origin, "HOA"),
+          eq(tasks.status, "submitted"),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+          gt(tasks.windowStart, now),
+        ))
+        .orderBy(asc(tasks.windowStart))
+        .limit(10),
+    ]);
+
+    const recentCompletions = await buildTaskPageCompletions(communityId, 10, userId);
+
+    return {
+      role: "contractor",
+      meta,
+      activeTasks: activeTasks.map(toTaskPageItem),
+      overdueTasks: overdueTasks.map(toTaskPageItem),
+      pendingAcknowledgment: pendingAcknowledgment.map(toTaskPageItem),
+      upcomingScheduled: upcomingScheduled.map(toTaskPageItem),
+      recentCompletions,
+    };
+  }
+
+  if (role === "hoa_admin") {
+    if (!communityId) {
+      return {
+        role: "hoa_admin",
+        meta,
+        requestsByStatus: { submittedCount: 0, acknowledgedCount: 0, inProgressCount: 0, completedRecentCount: 0, topRequests: [] },
+        upcomingCommunityWork: [],
+        completedCommunityWork: [],
+        contractorAssignments: [],
+      };
+    }
+
+    const [statusCounts, topRequests, upcomingCommunityWork, contractorAssignments, completedRecentCountRows] = await Promise.all([
+      db.select({
+        status: tasks.status,
+        cnt: sql<number>`count(*)::int`,
+      }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged", "in_progress"]),
+        ))
+        .groupBy(tasks.status),
+      db.select({
+        id: tasks.id,
+        title: tasks.title,
+        priority: tasks.priority,
+        status: tasks.status,
+        createdAt: tasks.createdAt,
+      }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged", "in_progress"]),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(10),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+        ))
+        .orderBy(asc(tasks.windowStart), asc(tasks.dueDate))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.assignedTo),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(20),
+      db.select({ cnt: sql<number>`count(*)::int` }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.status, "completed"),
+        )),
+    ]);
+
+    let submittedCount = 0;
+    let acknowledgedCount = 0;
+    let inProgressCount = 0;
+    for (const row of statusCounts) {
+      if (row.status === "submitted") submittedCount = row.cnt;
+      else if (row.status === "acknowledged") acknowledgedCount = row.cnt;
+      else if (row.status === "in_progress") inProgressCount = row.cnt;
+    }
+    const completedRecentCount = completedRecentCountRows[0]?.cnt ?? 0;
+    const completedCommunityWork = await buildTaskPageCompletions(communityId, 10);
+
+    return {
+      role: "hoa_admin",
+      meta,
+      requestsByStatus: { submittedCount, acknowledgedCount, inProgressCount, completedRecentCount, topRequests },
+      upcomingCommunityWork: upcomingCommunityWork.map(toTaskPageItem),
+      completedCommunityWork,
+      contractorAssignments: contractorAssignments.map(toTaskPageItem),
+    };
+  }
+
+  if (role === "hoa_member") {
+    if (!communityId) {
+      return {
+        role: "hoa_member",
+        meta,
+        communityUpcoming: [],
+        recentCompletions: [],
+        myRequests: [],
+      };
+    }
+
+    const [communityUpcoming, myRequests] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          inArray(tasks.status, ["pending", "in_progress", "acknowledged"]),
+        ))
+        .orderBy(asc(tasks.windowStart), asc(tasks.dueDate))
+        .limit(20),
+      db.select({
+        id: tasks.id,
+        title: tasks.title,
+        priority: tasks.priority,
+        status: tasks.status,
+        createdAt: tasks.createdAt,
+      }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.createdBy, userId),
+          eq(tasks.origin, "HOA"),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(20),
+    ]);
+
+    const recentCompletions = await buildTaskPageCompletions(communityId, 8);
+
+    return {
+      role: "hoa_member",
+      meta,
+      communityUpcoming: communityUpcoming.map(toTaskPageItem),
+      recentCompletions,
+      myRequests,
+    };
+  }
+
+  if (role === "property_manager" || role === "admin") {
+    if (!communityId) {
+      return {
+        role: role as "property_manager" | "admin",
+        meta,
+        openRequests: [],
+        overdueWork: [],
+        activeTasks: [],
+        completedSummary: [],
+      };
+    }
+
+    const [openRequests, overdueWork, activeTasks] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged"]),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(30),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          lt(tasks.dueDate, todayStart),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.status, "in_progress"),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(30),
+    ]);
+
+    const completedSummary = await buildTaskPageCompletions(communityId, 10);
+
+    return {
+      role: role as "property_manager" | "admin",
+      meta,
+      openRequests: openRequests.map(toTaskPageItem),
+      overdueWork: overdueWork.map(toTaskPageItem),
+      activeTasks: activeTasks.map(toTaskPageItem),
+      completedSummary,
+    };
+  }
+
+  return {
+    role: role as "contractor",
+    meta,
+    activeTasks: [],
+    overdueTasks: [],
+    pendingAcknowledgment: [],
+    upcomingScheduled: [],
+    recentCompletions: [],
+  };
 }
 
 export type SearchResult = {
