@@ -68,6 +68,7 @@ function diffDays(a: Date, b: Date): number {
 
 type SectionGroup = 'overdue' | 'active_window' | 'needs_acknowledgment' | 'upcoming' | 'completed';
 type ViewMode = 'list' | 'calendar';
+type ContractorViewMode = 'today' | 'calendar';
 
 function classifyTask(task: Task, today: Date): SectionGroup {
   if (task.status === 'completed') return 'completed';
@@ -105,6 +106,13 @@ function formatWindowRange(task: Task): string | null {
   return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`;
 }
 
+function isTaskToday(task: Task, today: Date): boolean {
+  if (!task.windowStart || !task.windowEnd) return false;
+  const start = toDateOnly(task.windowStart);
+  const end = toDateOnly(task.windowEnd);
+  return today >= start && today <= end;
+}
+
 const SECTION_ORDER: SectionGroup[] = ['overdue', 'active_window', 'needs_acknowledgment', 'upcoming', 'completed'];
 const SECTION_LABELS: Record<SectionGroup, string> = {
   overdue: 'Overdue',
@@ -116,12 +124,29 @@ const SECTION_LABELS: Record<SectionGroup, string> = {
 
 type ListItem = Task | { type: 'header'; title: string; count: number; group: SectionGroup } | { type: 'collapsed_completed'; count: number };
 
+type TodayStatusGroup = 'pending' | 'in_progress' | 'done';
+type TodayListItem = Task | { type: 'today_header'; title: string; count: number; group: TodayStatusGroup };
+
+const TODAY_STATUS_ORDER: TodayStatusGroup[] = ['pending', 'in_progress', 'done'];
+const TODAY_STATUS_LABELS: Record<TodayStatusGroup, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  done: 'Done',
+};
+
+function classifyTodayTask(task: Task): TodayStatusGroup {
+  if (task.status === 'completed' || task.status === 'submitted' || task.status === 'acknowledged') return 'done';
+  if (task.status === 'in_progress') return 'in_progress';
+  return 'pending';
+}
+
 export default function TasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
   const navyHeaderProps = useNavyHeaderProps();
   const config = getTaskPageConfigForRole(user?.role);
+  const isContractor = user?.role === 'contractor';
   const {
     isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions,
     cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
@@ -132,11 +157,14 @@ export default function TasksScreen() {
   const [lastSyncedAt, setLastSyncedAt] = React.useState<Date | null>(null);
   const [searchVisible, setSearchVisible] = React.useState(false);
   const [viewMode, setViewMode] = React.useState<ViewMode>('list');
+  const [contractorViewMode, setContractorViewMode] = React.useState<ContractorViewMode>('today');
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
   const [acknowledgingId, setAcknowledgingId] = React.useState<string | null>(null);
   const [markingInProgressId, setMarkingInProgressId] = React.useState<string | null>(null);
   const [completedExpanded, setCompletedExpanded] = React.useState(false);
+  const [startingWork, setStartingWork] = React.useState(false);
+  const todayFlatListRef = React.useRef<FlatList<any>>(null);
   const qc = useQueryClient();
 
   const handleSyncNow = async () => {
@@ -337,6 +365,66 @@ export default function TasksScreen() {
     return items;
   };
 
+  const buildTodayList = (): TodayListItem[] => {
+    const todayTasks = tasks.filter(t => isTaskToday(t, today));
+    const groups: Record<TodayStatusGroup, Task[]> = {
+      pending: [],
+      in_progress: [],
+      done: [],
+    };
+    for (const t of todayTasks) {
+      groups[classifyTodayTask(t)].push(t);
+    }
+    const items: TodayListItem[] = [];
+    for (const group of TODAY_STATUS_ORDER) {
+      if (groups[group].length === 0) continue;
+      items.push({ type: 'today_header', title: TODAY_STATUS_LABELS[group], count: groups[group].length, group });
+      items.push(...groups[group]);
+    }
+    return items;
+  };
+
+  const todayItems = buildTodayList();
+  const todayTasks = tasks.filter(t => isTaskToday(t, today));
+  const firstPendingTodayTask = todayTasks.find(t => t.status === 'pending');
+  const hasPendingToday = !!firstPendingTodayTask;
+
+  const handleStartWork = async () => {
+    if (!firstPendingTodayTask) {
+      Alert.alert('No Pending Tasks', 'All of today\'s tasks are already in progress or done.');
+      return;
+    }
+    setStartingWork(true);
+    try {
+      await apiRequest('PUT', `/api/tasks/${firstPendingTodayTask.id}`, {
+        status: 'in_progress',
+        version: firstPendingTodayTask.version,
+      });
+      qc.invalidateQueries({ queryKey: ['/api/tasks', { communityId }] });
+      const fetchResult = await refetch();
+      const freshTasks: Task[] = fetchResult.data || tasks;
+      const freshTodayTasks = freshTasks.filter(t => isTaskToday(t, today));
+      const freshGroups: Record<TodayStatusGroup, Task[]> = { pending: [], in_progress: [], done: [] };
+      for (const t of freshTodayTasks) {
+        freshGroups[classifyTodayTask(t)].push(t);
+      }
+      const freshItems: TodayListItem[] = [];
+      for (const group of TODAY_STATUS_ORDER) {
+        if (freshGroups[group].length === 0) continue;
+        freshItems.push({ type: 'today_header', title: TODAY_STATUS_LABELS[group], count: freshGroups[group].length, group });
+        freshItems.push(...freshGroups[group]);
+      }
+      const idx = freshItems.findIndex((item: any) => item.id === firstPendingTodayTask.id);
+      if (idx !== -1 && todayFlatListRef.current) {
+        todayFlatListRef.current.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to start work');
+    } finally {
+      setStartingWork(false);
+    }
+  };
+
   const allItems = buildGroupedList();
 
   const renderTask = ({ item }: { item: Task }) => {
@@ -483,6 +571,25 @@ export default function TasksScreen() {
     );
   };
 
+  const renderTodayItem = ({ item }: { item: TodayListItem }) => {
+    if ((item as any).type === 'today_header') {
+      const h = item as { type: 'today_header'; title: string; count: number; group: TodayStatusGroup };
+      const groupColor: Record<TodayStatusGroup, string> = {
+        pending: '#ff9800',
+        in_progress: '#25C1AC',
+        done: '#4caf50',
+      };
+      return (
+        <View style={styles.todaySectionHeader}>
+          <View style={[styles.todaySectionDot, { backgroundColor: groupColor[h.group] }]} />
+          <Text style={styles.todaySectionTitle}>{h.title}</Text>
+          <Text style={styles.todaySectionCount}>{h.count}</Text>
+        </View>
+      );
+    }
+    return renderTask({ item: item as Task });
+  };
+
   return (
     <View style={styles.container}>
       <StatusBarFill />
@@ -490,17 +597,36 @@ export default function TasksScreen() {
         <View style={ss.subtitleRow}>
           <Text style={ss.subtitleText}>TASKS</Text>
           <View style={ss.subtitleActions}>
-            <TouchableOpacity
-              onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-              style={[ss.headerIconBtn, viewMode === 'calendar' && ss.headerIconBtnActive]}
-              testID="view-toggle"
-            >
-              <Ionicons
-                name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-                size={20}
-                color={viewMode === 'calendar' ? '#fff' : '#555'}
-              />
-            </TouchableOpacity>
+            {isContractor ? (
+              <View style={styles.contractorSegment} testID="contractor-view-toggle">
+                <TouchableOpacity
+                  style={[styles.segmentBtn, contractorViewMode === 'today' && styles.segmentBtnActive]}
+                  onPress={() => setContractorViewMode('today')}
+                  testID="segment-today"
+                >
+                  <Text style={[styles.segmentBtnText, contractorViewMode === 'today' && styles.segmentBtnTextActive]}>Today</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, contractorViewMode === 'calendar' && styles.segmentBtnActive]}
+                  onPress={() => setContractorViewMode('calendar')}
+                  testID="segment-calendar"
+                >
+                  <Text style={[styles.segmentBtnText, contractorViewMode === 'calendar' && styles.segmentBtnTextActive]}>Calendar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
+                style={[ss.headerIconBtn, viewMode === 'calendar' && ss.headerIconBtnActive]}
+                testID="view-toggle"
+              >
+                <Ionicons
+                  name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
+                  size={20}
+                  color={viewMode === 'calendar' ? '#fff' : '#555'}
+                />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               onPress={() => setSearchVisible(true)}
               style={ss.headerIconBtn}
@@ -512,7 +638,14 @@ export default function TasksScreen() {
         </View>
       </NavyHeader>
 
-      {viewMode === 'list' && (
+      {!isContractor && viewMode === 'list' && (
+        <SyncBar
+          onSync={handleSyncNow}
+          isSyncing={syncing}
+          lastSyncedAt={lastSyncedAt}
+        />
+      )}
+      {isContractor && contractorViewMode === 'today' && (
         <SyncBar
           onSync={handleSyncNow}
           isSyncing={syncing}
@@ -534,7 +667,44 @@ export default function TasksScreen() {
         }}
       />
 
-      {viewMode === 'calendar' ? (
+      {isContractor ? (
+        contractorViewMode === 'calendar' ? (
+          <CalendarView
+            tasks={tasks}
+            schedules={displaySchedules || []}
+            visits={displayVisits || []}
+            pendingVisits={pendingServiceVisits}
+            onTaskPress={(taskId) => router.push(`/task/${taskId}`)}
+            onLogVisit={(schedule, dateStr) => {
+              setLogVisitSchedule(schedule);
+              setLogVisitDate(dateStr);
+            }}
+            isOffline={!isOnline}
+          />
+        ) : todayItems.length === 0 && !isLoading ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="sunny-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyTitle}>No Tasks Today</Text>
+            <Text style={styles.emptySubtitle}>You have no tasks scheduled for today</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={todayFlatListRef}
+            data={todayItems}
+            keyExtractor={(item: any) => {
+              if (item.type === 'today_header') return `today-header-${item.group}`;
+              return item.id;
+            }}
+            renderItem={renderTodayItem}
+            contentContainerStyle={styles.todayListContent}
+            refreshControl={
+              <RefreshControl refreshing={isLoading} onRefresh={refetch} />
+            }
+            scrollEnabled={!!todayItems.length}
+            onScrollToIndexFailed={() => {}}
+          />
+        )
+      ) : viewMode === 'calendar' ? (
         <CalendarView
           tasks={tasks}
           schedules={displaySchedules || []}
@@ -615,6 +785,27 @@ export default function TasksScreen() {
         />
       )}
 
+      {isContractor && contractorViewMode === 'today' && (
+        <View style={styles.startWorkContainer}>
+          <TouchableOpacity
+            style={[styles.startWorkBtn, !hasPendingToday && styles.startWorkBtnDisabled]}
+            onPress={handleStartWork}
+            disabled={!hasPendingToday || startingWork}
+            activeOpacity={0.85}
+            testID="start-work-btn"
+          >
+            <Ionicons
+              name="play-circle"
+              size={22}
+              color={hasPendingToday ? '#fff' : '#bbb'}
+            />
+            <Text style={[styles.startWorkText, !hasPendingToday && styles.startWorkTextDisabled]}>
+              {startingWork ? 'Starting...' : hasPendingToday ? 'Start Work' : 'No Pending Tasks'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <LogVisitModal
         visible={!!logVisitSchedule}
         schedule={logVisitSchedule}
@@ -630,6 +821,7 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   listContent: { paddingHorizontal: 16, paddingBottom: 100 },
+  todayListContent: { paddingHorizontal: 16, paddingBottom: 160 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '600', color: '#999' },
   emptySubtitle: { fontSize: 14, color: '#bbb', textAlign: 'center', paddingHorizontal: 40 },
@@ -760,5 +952,88 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  contractorSegment: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
+  },
+  segmentBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#fff',
+  },
+  segmentBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.75)',
+  },
+  segmentBtnTextActive: {
+    color: '#0C1D31',
+  },
+  todaySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginTop: 4,
+  },
+  todaySectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  todaySectionTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#555',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  todaySectionCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#aaa',
+  },
+  startWorkContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'web' ? 34 : 90,
+    left: 16,
+    right: 16,
+  },
+  startWorkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#25C1AC',
+    borderRadius: 14,
+    paddingVertical: 16,
+    shadowColor: '#25C1AC',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  startWorkBtnDisabled: {
+    backgroundColor: '#e8e8e8',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  startWorkText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
+  },
+  startWorkTextDisabled: {
+    color: '#aaa',
   },
 });
