@@ -18,7 +18,7 @@ type Task = {
   id: string;
   title: string;
   description: string | null;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'submitted' | 'acknowledged';
   priority: 'low' | 'medium' | 'high' | 'urgent';
   windowStart: string | null;
   windowEnd: string | null;
@@ -30,6 +30,8 @@ type Task = {
   origin?: string | null;
 };
 
+type UserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin';
+
 type Props = {
   tasks: Task[];
   schedules: ServiceSchedule[];
@@ -38,6 +40,7 @@ type Props = {
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
   isOffline: boolean;
+  role?: UserRole;
 };
 
 const priorityColors: Record<string, string> = {
@@ -203,7 +206,7 @@ function getMowingDaysForWeek(
 
 export default function CalendarView({
   tasks, schedules, visits, pendingVisits,
-  onTaskPress, onLogVisit, isOffline,
+  onTaskPress, onLogVisit, isOffline, role,
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
@@ -214,6 +217,9 @@ export default function CalendarView({
     mowing: MowingDay[];
     weekLabel: string;
   } | null>(null);
+
+  const isContractor = !role || role === 'contractor';
+  const isHoaMember = role === 'hoa_member';
 
   const goToPrevMonth = () => {
     if (currentMonth === 0) { setCurrentYear(y => y - 1); setCurrentMonth(11); }
@@ -234,21 +240,23 @@ export default function CalendarView({
 
   const windowedTasks = useMemo(() => tasks.filter(t => t.windowStart && t.windowEnd), [tasks]);
 
+  const overdueDueDateTasks = useMemo(() => {
+    return tasks.filter(t =>
+      t.dueDate &&
+      t.status !== 'completed' &&
+      t.dueDate < todayStr
+    );
+  }, [tasks, todayStr]);
+
   const cellWidth = (SCREEN_WIDTH - 32) / 7;
   const BAR_HEIGHT = 16;
   const BAR_GAP = 2;
-  const OVERFLOW_HEIGHT = 14;
 
   const renderWeek = useCallback((weekDates: Date[], weekIndex: number) => {
     const allSegments = computeBarSegments(windowedTasks, weekDates);
     const visibleSegments = allSegments.filter(s => s.lane < MAX_LANES);
     const overflowSegments = allSegments.filter(s => s.lane >= MAX_LANES);
     const mowingMap = getMowingDaysForWeek(weekDates, schedules, visits, pendingVisits);
-
-    const overflowCols = new Set<number>();
-    for (const seg of overflowSegments) {
-      for (let c = seg.startCol; c <= seg.endCol; c++) overflowCols.add(c);
-    }
 
     const barsAreaHeight = Math.min(allSegments.length > 0 ? (Math.min(
       Math.max(...allSegments.map(s => s.lane)) + 1, MAX_LANES
@@ -267,6 +275,10 @@ export default function CalendarView({
             const isCurrentMonth = date.getMonth() === currentMonth;
             const isToday = dateStr === todayStr;
             const mowingDays = mowingMap.get(dateStr) || [];
+            const hasOverdueOnDay = overdueDueDateTasks.some(t => {
+              const dd = t.dueDate!.includes('T') ? t.dueDate!.split('T')[0] : t.dueDate!;
+              return dd === dateStr;
+            });
 
             return (
               <View key={colIndex} style={[styles.dayCell, { width: cellWidth }]}>
@@ -282,12 +294,16 @@ export default function CalendarView({
                     {date.getDate()}
                   </Text>
                 </View>
+                {hasOverdueOnDay && (
+                  <View style={styles.overdueDot} />
+                )}
                 {mowingDays.map((md, i) => (
                   <TouchableOpacity
                     key={`mow-${md.schedule.id}-${i}`}
-                    onPress={() => onLogVisit(md.schedule, md.dateStr)}
+                    onPress={() => isContractor ? onLogVisit(md.schedule, md.dateStr) : undefined}
                     style={[styles.mowDot, md.logged && styles.mowDotLogged]}
-                    activeOpacity={0.6}
+                    activeOpacity={isContractor ? 0.6 : 1}
+                    disabled={!isContractor}
                   >
                     {md.logged ? (
                       <Ionicons name="checkmark" size={8} color="#fff" />
@@ -309,9 +325,16 @@ export default function CalendarView({
               const top = seg.lane * (BAR_HEIGHT + BAR_GAP);
               const isCompleted = seg.task.status === 'completed';
               const isOverdue = !isCompleted && seg.task.windowEnd! < todayStr;
-              const barColor = isCompleted ? '#a5d6a7'
+              const isHoaOrigin = seg.task.origin === 'HOA';
+
+              const baseColor = isCompleted ? '#a5d6a7'
                 : isOverdue ? '#ef9a9a'
                 : priorityColors[seg.task.priority] || '#ff9800';
+
+              const hoaActive = isHoaOrigin && !isCompleted && !isOverdue;
+              const backgroundColor = hoaActive
+                ? baseColor + 'AA'
+                : isCompleted ? baseColor + '60' : baseColor + 'CC';
 
               return (
                 <TouchableOpacity
@@ -323,9 +346,11 @@ export default function CalendarView({
                       width,
                       top,
                       height: BAR_HEIGHT,
-                      backgroundColor: isCompleted ? barColor + '60' : barColor + 'CC',
+                      backgroundColor,
                       borderLeftWidth: seg.isStart ? 3 : 0,
-                      borderLeftColor: barColor,
+                      borderLeftColor: hoaActive ? '#e65100' : baseColor,
+                      borderRightWidth: hoaActive ? 2 : 0,
+                      borderRightColor: '#e65100',
                       borderTopLeftRadius: seg.isStart ? 4 : 0,
                       borderBottomLeftRadius: seg.isStart ? 4 : 0,
                       borderTopRightRadius: seg.isEnd ? 4 : 0,
@@ -342,7 +367,7 @@ export default function CalendarView({
                     ]}
                     numberOfLines={1}
                   >
-                    {isCompleted && '\u2713 '}{seg.task.origin === 'HOA' && '\u25CF '}{seg.task.title}
+                    {isCompleted && '\u2713 '}{seg.task.title}
                   </Text>
                 </TouchableOpacity>
               );
@@ -350,7 +375,7 @@ export default function CalendarView({
           </View>
         )}
 
-        {overflowCount > 0 && (
+        {overflowCount > 0 && !isHoaMember && (
           <TouchableOpacity
             style={styles.overflowRow}
             onPress={() => {
@@ -368,10 +393,29 @@ export default function CalendarView({
         )}
       </View>
     );
-  }, [windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit]);
+  }, [windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, overdueDueDateTasks, isContractor, isHoaMember]);
 
   return (
     <View style={styles.container}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.legendScroll} contentContainerStyle={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendBar, { backgroundColor: '#ff9800CC' }]} />
+          <Text style={styles.legendText}>Task Window</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendBar, { backgroundColor: '#ff9800CC', borderLeftWidth: 2, borderLeftColor: '#e65100' }]} />
+          <Text style={styles.legendText}>HOA Request</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
+          <Text style={styles.legendText}>Overdue</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
+          <Text style={styles.legendText}>Service Visit</Text>
+        </View>
+      </ScrollView>
+
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={goToPrevMonth} style={styles.navBtn} testID="cal-prev-month">
           <Ionicons name="chevron-back" size={22} color="#0C1D31" />
@@ -396,25 +440,7 @@ export default function CalendarView({
 
       <ScrollView style={styles.weeksScroll} showsVerticalScrollIndicator={false}>
         {weeks.map((weekDates, i) => renderWeek(weekDates, i))}
-
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
-            <Text style={styles.legendText}>Mow (logged)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#e8f5e9', borderWidth: 1, borderColor: '#27ae60' }]} />
-            <Text style={styles.legendText}>Mow (not logged)</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBar, { backgroundColor: '#ff9800CC' }]} />
-            <Text style={styles.legendText}>Task window</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBar, { backgroundColor: '#ef9a9aCC' }]} />
-            <Text style={styles.legendText}>Overdue</Text>
-          </View>
-        </View>
+        <View style={{ height: 24 }} />
       </ScrollView>
 
       <WeekItemsModal
@@ -422,6 +448,7 @@ export default function CalendarView({
         onClose={() => setWeekModalData(null)}
         onTaskPress={onTaskPress}
         onLogVisit={onLogVisit}
+        isContractor={isContractor}
       />
     </View>
   );
@@ -436,9 +463,10 @@ type WeekItemsModalProps = {
   onClose: () => void;
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
+  isContractor: boolean;
 };
 
-function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsModalProps) {
+function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }: WeekItemsModalProps) {
   if (!data) return null;
 
   const todayStr = getTodayStr();
@@ -463,8 +491,10 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsMod
                 {uniqueTasks.map(task => {
                   const isCompleted = task.status === 'completed';
                   const isOverdue = !isCompleted && task.windowEnd! < todayStr;
+                  const isHoaOrigin = task.origin === 'HOA';
                   const barColor = isCompleted ? '#a5d6a7'
                     : isOverdue ? '#ef9a9a'
+                    : isHoaOrigin ? '#ff9800'
                     : priorityColors[task.priority] || '#ff9800';
 
                   return (
@@ -485,9 +515,9 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsMod
                           {parseDate(task.windowEnd!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </Text>
                       </View>
-                      {task.origin === 'HOA' && (
+                      {isHoaOrigin && (
                         <View style={modalStyles.hoaBadge}>
-                          <Text style={modalStyles.hoaBadgeText}>REQ</Text>
+                          <Text style={modalStyles.hoaBadgeText}>HOA</Text>
                         </View>
                       )}
                       {isCompleted && <Ionicons name="checkmark-circle" size={18} color="#4caf50" />}
@@ -499,7 +529,7 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsMod
               </>
             )}
 
-            {data.mowing.length > 0 && (
+            {isContractor && data.mowing.length > 0 && (
               <>
                 <Text style={[modalStyles.sectionTitle, { marginTop: 16 }]}>Service Schedule</Text>
                 {data.mowing.map((md, i) => (
@@ -542,6 +572,38 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit }: WeekItemsMod
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  legendScroll: {
+    backgroundColor: '#f8f9fb',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  legend: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendBar: {
+    width: 14,
+    height: 8,
+    borderRadius: 2,
+  },
+  legendText: {
+    fontSize: 10,
+    color: '#888',
+    fontWeight: '500',
+  },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -618,6 +680,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
+  overdueDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#f44336',
+    marginTop: 1,
+  },
   mowDot: {
     width: 14,
     height: 14,
@@ -666,33 +735,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#25C1AC',
-  },
-  legend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    marginTop: 4,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendBar: {
-    width: 16,
-    height: 8,
-    borderRadius: 2,
-  },
-  legendText: {
-    fontSize: 10,
-    color: '#888',
   },
 });
 
@@ -810,7 +852,7 @@ const modalStyles = StyleSheet.create({
     color: '#fff',
   },
   hoaBadge: {
-    backgroundColor: '#e0f7f4',
+    backgroundColor: '#fff3e0',
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 2,
@@ -819,6 +861,6 @@ const modalStyles = StyleSheet.create({
   hoaBadgeText: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: '#25C1AC',
+    color: '#e65100',
   },
 });

@@ -141,7 +141,9 @@ export default function TasksScreen() {
       setFilterMode(filterParam);
     }
   }, [filterParam]);
-  const [viewMode, setViewMode] = React.useState<ViewMode>('list');
+  const [viewMode, setViewMode] = React.useState<ViewMode>(
+    user?.role === 'hoa_member' ? 'calendar' : 'list'
+  );
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
   const [acknowledgingId, setAcknowledgingId] = React.useState<string | null>(null);
@@ -452,17 +454,22 @@ export default function TasksScreen() {
         <View style={ss.subtitleRow}>
           <Text style={ss.subtitleText}>TASKS</Text>
           <View style={ss.subtitleActions}>
-            <TouchableOpacity
-              onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-              style={[ss.headerIconBtn, viewMode === 'calendar' && ss.headerIconBtnActive]}
-              testID="view-toggle"
-            >
-              <Ionicons
-                name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-                size={20}
-                color={viewMode === 'calendar' ? '#fff' : '#555'}
-              />
-            </TouchableOpacity>
+            <View style={styles.viewTogglePill}>
+              <TouchableOpacity
+                style={[styles.viewToggleSegment, viewMode === 'list' && styles.viewToggleSegmentActive]}
+                onPress={() => setViewMode('list')}
+                testID="view-toggle-list"
+              >
+                <Text style={[styles.viewToggleText, viewMode === 'list' && styles.viewToggleTextActive]}>List</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.viewToggleSegment, viewMode === 'calendar' && styles.viewToggleSegmentActive]}
+                onPress={() => setViewMode('calendar')}
+                testID="view-toggle-calendar"
+              >
+                <Text style={[styles.viewToggleText, viewMode === 'calendar' && styles.viewToggleTextActive]}>Calendar</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               onPress={() => setSearchVisible(true)}
               style={ss.headerIconBtn}
@@ -540,6 +547,7 @@ export default function TasksScreen() {
             setLogVisitDate(dateStr);
           }}
           isOffline={!isOnline}
+          role={user?.role}
         />
       ) : allItems.length === 0 && !isLoading ? (
         <View style={styles.emptyState}>
@@ -752,5 +760,29 @@ const styles = StyleSheet.create({
   },
   completedTitle: {
     color: '#2E7D32',
+  },
+  viewTogglePill: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    padding: 2,
+  },
+  viewToggleSegment: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleSegmentActive: {
+    backgroundColor: '#fff',
+  },
+  viewToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  viewToggleTextActive: {
+    color: '#0C1D31',
   },
 });

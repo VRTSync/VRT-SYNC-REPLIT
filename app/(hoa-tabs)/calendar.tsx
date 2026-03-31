@@ -13,6 +13,7 @@ import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CalendarView from '@/components/CalendarView';
 import SearchModal from '@/components/SearchModal';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { useAuth } from '@/client/contexts/AuthContext';
 
 type Task = {
   id: string;
@@ -72,9 +73,12 @@ function formatWindowRange(task: Task): string | null {
 export default function HoaTasksScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
+  const { user } = useAuth();
   const navyHeaderProps = useNavyHeaderProps();
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    user?.role === 'hoa_member' ? 'calendar' : 'list'
+  );
   const [searchVisible, setSearchVisible] = useState(false);
 
   const communityId = activeCommunity?.id;
@@ -204,16 +208,20 @@ export default function HoaTasksScreen() {
         <View style={ss.subtitleRow}>
           <Text style={ss.subtitleText}>TASKS</Text>
           <View style={ss.subtitleActions}>
-            <TouchableOpacity
-              onPress={() => setViewMode(viewMode === 'list' ? 'calendar' : 'list')}
-              style={[ss.headerIconBtn, viewMode === 'calendar' && ss.headerIconBtnActive]}
-            >
-              <Ionicons
-                name={viewMode === 'list' ? 'calendar-outline' : 'list-outline'}
-                size={20}
-                color={viewMode === 'calendar' ? '#fff' : '#555'}
-              />
-            </TouchableOpacity>
+            <View style={styles.viewTogglePill}>
+              <TouchableOpacity
+                style={[styles.viewToggleSegment, viewMode === 'list' && styles.viewToggleSegmentActive]}
+                onPress={() => setViewMode('list')}
+              >
+                <Text style={[styles.viewToggleText, viewMode === 'list' && styles.viewToggleTextActive]}>List</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.viewToggleSegment, viewMode === 'calendar' && styles.viewToggleSegmentActive]}
+                onPress={() => setViewMode('calendar')}
+              >
+                <Text style={[styles.viewToggleText, viewMode === 'calendar' && styles.viewToggleTextActive]}>Calendar</Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               onPress={() => setSearchVisible(true)}
               style={ss.headerIconBtn}
@@ -257,6 +265,7 @@ export default function HoaTasksScreen() {
           onTaskPress={handleTaskPress}
           onLogVisit={() => {}}
           isOffline={false}
+          role={user?.role}
         />
       ) : isLoading ? (
         <View style={styles.emptyState}>
@@ -389,5 +398,29 @@ const styles = StyleSheet.create({
   },
   completedTitle: {
     color: '#2E7D32',
+  },
+  viewTogglePill: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    padding: 2,
+  },
+  viewToggleSegment: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewToggleSegmentActive: {
+    backgroundColor: '#fff',
+  },
+  viewToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  viewToggleTextActive: {
+    color: '#0C1D31',
   },
 });
