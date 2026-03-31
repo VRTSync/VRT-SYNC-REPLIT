@@ -14,6 +14,8 @@ import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import SyncBar from '@/components/SyncBar';
+import { getTaskPageConfigForRole } from '@/constants/taskPageRoleConfig';
+import type { FilterKey as ConfigFilterKey } from '@/constants/taskPageRoleConfig';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -38,15 +40,7 @@ type HoaRequest = {
   category: string | null;
 };
 
-type FilterKey = 'all' | 'submitted' | 'acknowledged' | 'completed' | 'archived';
-
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'submitted', label: 'Submitted' },
-  { key: 'acknowledged', label: 'Acknowledged' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'archived', label: 'Archived' },
-];
+type FilterKey = ConfigFilterKey;
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   submitted: { bg: '#E3F2FD', text: '#1565C0' },
@@ -68,10 +62,21 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void }) {
+function RequestCard({
+  item,
+  onPress,
+  showAcknowledgeAction = false,
+  showMapJumpAction = false,
+}: {
+  item: HoaRequest;
+  onPress: () => void;
+  showAcknowledgeAction?: boolean;
+  showMapJumpAction?: boolean;
+}) {
   const statusColor = STATUS_COLORS[item.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
   const isUrgent = item.priority === 'urgent' || item.priority === 'Urgent';
   const isCompleted = item.status === 'completed';
+  const canAcknowledge = showAcknowledgeAction && item.status === 'submitted';
 
   return (
     <TouchableOpacity style={[styles.card, isCompleted && styles.completedCard]} onPress={onPress} activeOpacity={0.7}>
@@ -119,6 +124,18 @@ function RequestCard({ item, onPress }: { item: HoaRequest; onPress: () => void 
         <View style={styles.metaRow}>
           <Ionicons name="pricetag-outline" size={13} color="#999" />
           <Text style={styles.metaText}>{item.category}</Text>
+        </View>
+      )}
+      {canAcknowledge && (
+        <View style={styles.cardActionRow}>
+          <TouchableOpacity
+            style={styles.acknowledgeBtn}
+            onPress={(e) => { e.stopPropagation(); onPress(); }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
+            <Text style={styles.acknowledgeBtnText}>Acknowledge</Text>
+          </TouchableOpacity>
         </View>
       )}
     </TouchableOpacity>
@@ -277,8 +294,10 @@ export default function HoaRequestsScreen() {
   const { activeCommunity } = useCommunity();
   const navyHeaderProps = useNavyHeaderProps();
   const queryClient = useQueryClient();
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('submitted');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const config = getTaskPageConfigForRole(user?.role);
+  const defaultFilterKey: FilterKey = (config.availableFilters[0]?.key ?? 'all') as FilterKey;
+  const [activeFilter, setActiveFilter] = useState<FilterKey>(defaultFilterKey);
+  const [viewMode, setViewMode] = useState<ViewMode>(config.defaultView as ViewMode);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const isHoaAdmin = user?.role === 'hoa_admin';
@@ -351,6 +370,10 @@ export default function HoaRequestsScreen() {
         return data.filter(r => r.status === 'completed' && !r.isArchived);
       case 'archived':
         return data.filter(r => r.isArchived);
+      case 'active':
+        return data.filter(r => r.status !== 'completed' && !r.isArchived);
+      case 'your_requests':
+        return data.filter(r => !r.isArchived);
       case 'all':
       default:
         return data;
@@ -465,11 +488,11 @@ export default function HoaRequestsScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterScroll}
             >
-              {FILTERS.map((f) => (
+              {config.availableFilters.map((f) => (
                 <TouchableOpacity
                   key={f.key}
                   style={[styles.filterChip, activeFilter === f.key && styles.filterChipActive]}
-                  onPress={() => setActiveFilter(f.key)}
+                  onPress={() => setActiveFilter(f.key as FilterKey)}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.filterText, activeFilter === f.key && styles.filterTextActive]}>
@@ -506,16 +529,18 @@ export default function HoaRequestsScreen() {
                 <RequestCard
                   item={item}
                   onPress={() => router.push(`/task/${item.id}`)}
+                  showAcknowledgeAction={config.showAcknowledgmentControls && config.cardActions.includes('acknowledge')}
+                  showMapJumpAction={config.showMapJump && config.cardActions.includes('mapJump')}
                 />
               )}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
                   <Ionicons name="document-text-outline" size={48} color="#ccc" />
-                  <Text style={styles.emptyTitle}>No requests found</Text>
+                  <Text style={styles.emptyTitle}>
+                    {(config.emptyStateMessages[activeFilter] ?? config.emptyStateMessages[defaultFilterKey])?.title ?? 'No requests found'}
+                  </Text>
                   <Text style={styles.emptySubtitle}>
-                    {activeFilter === 'all'
-                      ? 'No HOA requests have been created yet'
-                      : `No ${activeFilter} requests`}
+                    {(config.emptyStateMessages[activeFilter] ?? config.emptyStateMessages[defaultFilterKey])?.subtitle ?? `No ${activeFilter} requests`}
                   </Text>
                 </View>
               }
@@ -719,5 +744,24 @@ const styles = StyleSheet.create({
   },
   completedTitle: {
     color: '#2E7D32',
+  },
+  cardActionRow: {
+    marginTop: 10,
+    flexDirection: 'row' as const,
+    justifyContent: 'flex-end' as const,
+  },
+  acknowledgeBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: '#1565c0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  acknowledgeBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
 });
