@@ -307,6 +307,7 @@ export default function HoaDashboardScreen() {
   }
 
   const { upcomingTasks, recentCompletions, requestsSummary, mowingSchedules } = data;
+  const inProgressCount = hoaRequests.filter(r => r.status === 'in_progress').length;
   const today = new Date();
 
   const activeMowingSchedule = mowingSchedules.length > 0 ? mowingSchedules[0] : null;
@@ -352,6 +353,7 @@ export default function HoaDashboardScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        {/* ── 1. Requests Summary ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Requests</Text>
           <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/requests')}>
@@ -369,19 +371,230 @@ export default function HoaDashboardScreen() {
               <Text style={styles.requestCountNum}>{requestsSummary.acknowledgedCount}</Text>
               <Text style={styles.requestCountLabel}>Acknowledged</Text>
             </View>
+            {hoaRequests.length > 0 && (
+              <>
+                <View style={styles.requestCountDivider} />
+                <View style={styles.requestCountBox}>
+                  <Text style={[styles.requestCountNum, inProgressCount > 0 ? { color: '#00838F' } : {}]}>{inProgressCount}</Text>
+                  <Text style={styles.requestCountLabel}>In Progress</Text>
+                </View>
+              </>
+            )}
           </View>
-          {isHoaAdmin && (
-            <TouchableOpacity
-              style={styles.createRequestBtn}
-              onPress={() => setShowCreateRequest(true)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.createRequestBtnText}>Create Request</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
+        {/* ── 2. Create Request CTA ── */}
+        {isHoaAdmin && (
+          <View style={styles.createRequestCTAWrapper}>
+            <TouchableOpacity
+              style={styles.createRequestCTA}
+              onPress={() => setShowCreateRequest(true)}
+              activeOpacity={0.85}
+              testID="create-request-cta"
+            >
+              <View style={styles.createRequestCTAIcon}>
+                <Ionicons name="add" size={22} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.createRequestCTATitle}>Create a Request</Text>
+                <Text style={styles.createRequestCTASub}>Report an issue or service need for your community</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── 3. Recent Completions ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Completions</Text>
+        </View>
+        {recentCompletions.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyText}>No recent work has been logged for your community yet.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {recentCompletions.map((comp) => {
+              const isRequest = comp.origin === 'HOA';
+              return (
+                <View key={comp.id} style={styles.completionCard}>
+                  <View style={styles.completionCardTop}>
+                    {isRequest && (
+                      <View style={styles.originBadge}>
+                        <Text style={styles.originBadgeText}>REQUEST</Text>
+                      </View>
+                    )}
+                    {comp.hasPhotos && (
+                      <View style={styles.photoBadge}>
+                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
+                  <View style={styles.completionStatusRow}>
+                    <View style={[styles.statusChipSmall, { backgroundColor: '#E8F5E9' }]}>
+                      <Text style={[styles.statusChipSmallText, { color: '#2E7D32' }]}>Completed</Text>
+                    </View>
+                  </View>
+                  <View style={styles.completionDateRow}>
+                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
+                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.viewOnMapBtn} disabled>
+                    <Ionicons name="map-outline" size={12} color="#aaa" />
+                    <Text style={styles.viewOnMapText}>View on map</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* ── 4. Upcoming Tasks ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { flex: 1, marginRight: 8 }]} numberOfLines={1}>
+            What's coming up in your community
+          </Text>
+          <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/calendar')}>
+            <View style={styles.sectionAction}>
+              <Ionicons name="calendar-outline" size={16} color="#25C1AC" />
+              <Text style={styles.sectionActionText}>Calendar</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+        {upcomingTasks.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="sunny-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyText}>Nothing scheduled yet — check back soon.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {upcomingTasks.map((task) => {
+              const statusColor = STATUS_COLORS[task.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
+              const isRequest = task.origin === 'HOA';
+              const isUrgent = task.priority === 'urgent';
+              return (
+                <View key={task.id} style={styles.taskCard}>
+                  <View style={styles.taskCardTop}>
+                    {isRequest && (
+                      <View style={styles.originBadge}>
+                        <Text style={styles.originBadgeText}>REQUEST</Text>
+                      </View>
+                    )}
+                    {isUrgent && (
+                      <View style={styles.urgentBadge}>
+                        <Ionicons name="alert-circle" size={10} color="#D32F2F" />
+                        <Text style={styles.urgentBadgeText}>Urgent</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.taskCardTitle} numberOfLines={2}>{task.title}</Text>
+                  <View style={[styles.statusChip, { backgroundColor: statusColor.bg }]}>
+                    <Text style={[styles.statusChipText, { color: statusColor.text }]}>
+                      {task.status.replace('_', ' ')}
+                    </Text>
+                  </View>
+                  {(task.windowStart || task.dueDate) && (
+                    <View style={styles.taskDateRow}>
+                      <Ionicons name="time-outline" size={12} color="#999" />
+                      <Text style={styles.taskDateText}>
+                        {task.windowStart
+                          ? `${formatDate(task.windowStart)}${task.windowEnd ? ` - ${formatDate(task.windowEnd)}` : ''}`
+                          : formatDate(task.dueDate)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* ── 5. Quick Map Layers ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Quick Map Layers</Text>
+        </View>
+        <View style={styles.mapGrid}>
+          {QUICK_MAP_BUTTONS.map((btn) => (
+            <TouchableOpacity
+              key={btn.key}
+              style={styles.mapGridBtn}
+              onPress={() => router.push(`/(hoa-tabs)/map?category=${btn.key}`)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.mapGridIcon, { backgroundColor: btn.color + '18' }]}>
+                <Ionicons name={btn.icon} size={24} color={btn.color} />
+              </View>
+              <Text style={styles.mapGridLabel}>{btn.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── 6. Service Schedule ── */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Service Schedule</Text>
+        </View>
+        {mowingSchedules.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="leaf-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyText}>No service schedules configured</Text>
+          </View>
+        ) : (
+          <View style={styles.mowingCard}>
+            <View style={styles.mowingHeaderRow}>
+              <View style={styles.mowingIconCircle}>
+                <Ionicons name="leaf" size={18} color="#27ae60" />
+              </View>
+              <Text style={styles.mowingCardTitle}>Service Schedule</Text>
+            </View>
+            {mowingSchedules.map((schedule) => {
+              const inSeason = isInSeason(schedule, today);
+              const nextDate = getNextServiceDate(schedule);
+              const isToday = nextDate && nextDate.toDateString() === today.toDateString();
+              const seasonRange = formatSeasonRange(schedule.seasonStart, schedule.seasonEnd);
+
+              return (
+                <View key={schedule.id} style={styles.mowingRow}>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.mowingDayRow}>
+                      <Text style={styles.mowingServiceType}>
+                        {formatServiceType(schedule.serviceType)}
+                      </Text>
+                      <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
+                        <Text style={[styles.dayBadgeText, isToday && styles.dayBadgeTodayText]}>
+                          {DAY_NAMES[schedule.dayOfWeek]}s
+                        </Text>
+                      </View>
+                    </View>
+                    {!inSeason ? (
+                      <Text style={styles.offSeason}>
+                        Off season{seasonRange ? ` · Season: ${seasonRange}` : ''}
+                      </Text>
+                    ) : nextDate ? (
+                      <View>
+                        <Text style={styles.nextDate}>
+                          {isToday ? 'Today' : `Next: ${nextDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`}
+                        </Text>
+                        {seasonRange && <Text style={styles.seasonRange}>Season: {seasonRange}</Text>}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* ── Command Center (below primary modules) ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Command Center</Text>
           {attentionItems.length > 0 && (
@@ -490,181 +703,6 @@ export default function HoaDashboardScreen() {
             </View>
           )}
         </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Completions</Text>
-        </View>
-        {recentCompletions.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyText}>No recent completions</Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {recentCompletions.map((comp) => {
-              const isRequest = comp.origin === 'HOA';
-              return (
-                <View key={comp.id} style={styles.completionCard}>
-                  <View style={styles.completionCardTop}>
-                    {isRequest && (
-                      <View style={styles.originBadge}>
-                        <Text style={styles.originBadgeText}>REQUEST</Text>
-                      </View>
-                    )}
-                    {comp.hasPhotos && (
-                      <View style={styles.photoBadge}>
-                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
-                  <View style={styles.completionDateRow}>
-                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
-                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
-                  </View>
-                </View>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Upcoming Tasks</Text>
-          <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/calendar')}>
-            <View style={styles.sectionAction}>
-              <Ionicons name="calendar-outline" size={16} color="#25C1AC" />
-              <Text style={styles.sectionActionText}>Calendar</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-        {upcomingTasks.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-done-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyText}>No upcoming tasks</Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {upcomingTasks.map((task) => {
-              const statusColor = STATUS_COLORS[task.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
-              const isRequest = task.origin === 'HOA';
-              const isUrgent = task.priority === 'urgent';
-              return (
-                <View key={task.id} style={styles.taskCard}>
-                  <View style={styles.taskCardTop}>
-                    {isRequest && (
-                      <View style={styles.originBadge}>
-                        <Text style={styles.originBadgeText}>REQUEST</Text>
-                      </View>
-                    )}
-                    {isUrgent && (
-                      <View style={styles.urgentBadge}>
-                        <Ionicons name="alert-circle" size={10} color="#D32F2F" />
-                        <Text style={styles.urgentBadgeText}>Urgent</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.taskCardTitle} numberOfLines={2}>{task.title}</Text>
-                  <View style={[styles.statusChip, { backgroundColor: statusColor.bg }]}>
-                    <Text style={[styles.statusChipText, { color: statusColor.text }]}>
-                      {task.status.replace('_', ' ')}
-                    </Text>
-                  </View>
-                  {(task.windowStart || task.dueDate) && (
-                    <View style={styles.taskDateRow}>
-                      <Ionicons name="time-outline" size={12} color="#999" />
-                      <Text style={styles.taskDateText}>
-                        {task.windowStart
-                          ? `${formatDate(task.windowStart)}${task.windowEnd ? ` - ${formatDate(task.windowEnd)}` : ''}`
-                          : formatDate(task.dueDate)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Quick Map Layers</Text>
-        </View>
-        <View style={styles.mapGrid}>
-          {QUICK_MAP_BUTTONS.map((btn) => (
-            <TouchableOpacity
-              key={btn.key}
-              style={styles.mapGridBtn}
-              onPress={() => router.push(`/(hoa-tabs)/map?category=${btn.key}`)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.mapGridIcon, { backgroundColor: btn.color + '18' }]}>
-                <Ionicons name={btn.icon} size={24} color={btn.color} />
-              </View>
-              <Text style={styles.mapGridLabel}>{btn.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Service Schedule</Text>
-        </View>
-        {mowingSchedules.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="leaf-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyText}>No service schedules configured</Text>
-          </View>
-        ) : (
-          <View style={styles.mowingCard}>
-            <View style={styles.mowingHeaderRow}>
-              <View style={styles.mowingIconCircle}>
-                <Ionicons name="leaf" size={18} color="#27ae60" />
-              </View>
-              <Text style={styles.mowingCardTitle}>Service Schedule</Text>
-            </View>
-            {mowingSchedules.map((schedule) => {
-              const inSeason = isInSeason(schedule, today);
-              const nextDate = getNextServiceDate(schedule);
-              const isToday = nextDate && nextDate.toDateString() === today.toDateString();
-              const seasonRange = formatSeasonRange(schedule.seasonStart, schedule.seasonEnd);
-
-              return (
-                <View key={schedule.id} style={styles.mowingRow}>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.mowingDayRow}>
-                      <Text style={styles.mowingServiceType}>
-                        {formatServiceType(schedule.serviceType)}
-                      </Text>
-                      <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
-                        <Text style={[styles.dayBadgeText, isToday && styles.dayBadgeTodayText]}>
-                          {DAY_NAMES[schedule.dayOfWeek]}s
-                        </Text>
-                      </View>
-                    </View>
-                    {!inSeason ? (
-                      <Text style={styles.offSeason}>
-                        Off season{seasonRange ? ` · Season: ${seasonRange}` : ''}
-                      </Text>
-                    ) : nextDate ? (
-                      <View>
-                        <Text style={styles.nextDate}>
-                          {isToday ? 'Today' : `Next: ${nextDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`}
-                        </Text>
-                        {seasonRange && <Text style={styles.seasonRange}>Season: {seasonRange}</Text>}
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
 
       </ScrollView>
 
@@ -1052,6 +1090,57 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '600' as const,
+  },
+  createRequestCTAWrapper: {
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  createRequestCTA: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: '#0C1D31',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    gap: 12,
+    shadowColor: '#0C1D31',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  createRequestCTAIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#25C1AC',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  createRequestCTATitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#fff',
+  },
+  createRequestCTASub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 2,
+  },
+  completionStatusRow: {
+    marginBottom: 6,
+  },
+  viewOnMapBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    marginTop: 8,
+    opacity: 0.5,
+  },
+  viewOnMapText: {
+    fontSize: 11,
+    color: '#666',
+    fontWeight: '500' as const,
   },
 
   attentionBadge: {
