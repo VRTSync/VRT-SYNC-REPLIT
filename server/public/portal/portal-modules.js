@@ -19,6 +19,22 @@ window.PortalModules = (function () {
     submitted: 'Submitted', acknowledged: 'Acknowledged',
   };
 
+  /* ─── Ticket type bucketing ──────────────────────────────────────────── */
+  function getTicketTypeBucket(ticketType) {
+    if (!ticketType) return { label: 'Other', bg: '#f3f4f6', color: '#6b7280' };
+    var t = ticketType.toLowerCase();
+    if (t.includes('request') || t.includes('hoa') || t.includes('complaint')) {
+      return { label: 'Request', bg: '#ede7f6', color: '#6a1b9a' };
+    }
+    if (t.includes('schedule') || t.includes('recurring') || t.includes('mow') || t.includes('irrigation')) {
+      return { label: 'Scheduled', bg: '#e3f2fd', color: '#1565c0' };
+    }
+    if (t.includes('manual') || t.includes('ad-hoc') || t.includes('adhoc')) {
+      return { label: 'Manual', bg: '#fff3e0', color: '#e65100' };
+    }
+    return { label: 'Other', bg: '#f3f4f6', color: '#6b7280' };
+  }
+
   /* ─── Date helpers ───────────────────────────────────────────────────── */
   function localToday() {
     const d = new Date();
@@ -149,39 +165,74 @@ window.PortalModules = (function () {
     `;
   }
 
-  function taskRow(task) {
-    const priority = task.priority || 'low';
-    const isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
+  function taskRow(task, opts) {
+    var priority = task.priority || 'low';
+    var isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
+    var cls = classifyTask(task);
+    var isOverdue = cls === 'overdue';
+    var role = (opts && opts.role) || '';
 
-    let badge = '';
+    var typeBucket = isHoa ? { label: 'Request', bg: '#ede7f6', color: '#6a1b9a' } : getTicketTypeBucket(task.ticketType);
+    var typeBadge = `<span class="tr-type-badge" style="background:${typeBucket.bg};color:${typeBucket.color}">${esc(typeBucket.label)}</span>`;
+
+    var statusBadge = '';
     if (isHoa) {
-      if (task.status === 'submitted') badge = `<span class="tr-badge tr-new">Submitted</span>`;
-      else if (task.status === 'acknowledged') badge = `<span class="tr-badge tr-acked">Acknowledged</span>`;
-      else if (task.status === 'in_progress') badge = `<span class="tr-badge tr-active">In Progress</span>`;
-      else if (task.status === 'completed') badge = `<span class="tr-badge tr-done">Completed</span>`;
-      else badge = `<span class="tr-badge tr-new">${esc(task.status || 'Submitted')}</span>`;
+      if (task.status === 'submitted') statusBadge = `<span class="tr-badge tr-new">Submitted</span>`;
+      else if (task.status === 'acknowledged') statusBadge = `<span class="tr-badge tr-acked">Acknowledged</span>`;
+      else if (task.status === 'in_progress') statusBadge = `<span class="tr-badge tr-active">In Progress</span>`;
+      else if (task.status === 'completed') statusBadge = `<span class="tr-badge tr-done">Completed</span>`;
+      else statusBadge = `<span class="tr-badge tr-new">${esc(task.status || 'Submitted')}</span>`;
     } else {
-      const cls = classifyTask(task);
-      if (cls === 'overdue')  badge = `<span class="tr-badge tr-overdue">Overdue</span>`;
-      else if (cls === 'active') badge = `<span class="tr-badge tr-active">Active</span>`;
-      else if (task.status === 'submitted') badge = `<span class="tr-badge tr-new">New</span>`;
-      else if (task.status === 'acknowledged') badge = `<span class="tr-badge tr-acked">Acked</span>`;
-      else if (task.status === 'completed') badge = `<span class="tr-badge tr-done">Done</span>`;
+      if (isOverdue) statusBadge = `<span class="tr-badge tr-overdue">Overdue</span>`;
+      else if (cls === 'active') statusBadge = `<span class="tr-badge tr-active">Active</span>`;
+      else if (task.status === 'submitted') statusBadge = `<span class="tr-badge tr-new">New</span>`;
+      else if (task.status === 'acknowledged') statusBadge = `<span class="tr-badge tr-acked">Acked</span>`;
+      else if (task.status === 'completed') statusBadge = `<span class="tr-badge tr-done">Done</span>`;
     }
 
-    const window = fmtDateRange(task.windowStart, task.windowEnd);
+    var window = fmtDateRange(task.windowStart, task.windowEnd);
+
+    var snippet = '';
+    if (task.description) {
+      var desc = String(task.description);
+      if (desc.length > 90) desc = desc.substring(0, 90) + '\u2026';
+      snippet = `<div class="tr-snippet">${esc(desc)}</div>`;
+    }
+
+    var chips = '';
+    if (window) chips += `<span class="tr-window">${esc(window)}</span>`;
+    if (task.address) chips += `<span class="tr-chip tr-chip--loc"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg> ${esc(task.address)}</span>`;
+    if (task.assignedToName) chips += `<span class="tr-chip tr-chip--person"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ${esc(task.assignedToName)}</span>`;
+    if (isHoa && !task.assignedToName) chips += `<span class="tr-hoa-tag">HOA</span>`;
+
+    var actionBtn = '';
+    if (task.status !== 'completed') {
+      if (isHoa && task.status === 'submitted') {
+        actionBtn = `<button class="tr-action-btn tr-action-btn--ack" data-action="acknowledge" data-task-id="${esc(task.id)}">Acknowledge</button>`;
+      } else {
+        actionBtn = `<button class="tr-action-btn" data-action="view" data-task-id="${esc(task.id)}">View Detail</button>`;
+      }
+    }
+
+    var accentStyle = isOverdue && !isHoa ? 'border-left:3px solid #dc2626;' : (isHoa ? 'border-left:3px solid #7c3aed;' : '');
 
     return `
-      <div class="task-row" data-task-id="${esc(task.id)}" style="cursor:pointer">
+      <div class="task-row" data-task-id="${esc(task.id)}" style="cursor:pointer;${accentStyle}">
         <span class="tr-dot" style="background:${PRIORITY_COLOR[priority] || '#6b7280'}"></span>
         <div class="tr-main">
-          <span class="tr-title">${esc(task.title || 'Untitled')}</span>
+          <div class="tr-title-row">
+            <span class="tr-title">${esc(task.title || 'Untitled')}</span>
+            ${typeBadge}
+          </div>
+          ${snippet}
           <div class="tr-meta">
-            ${window ? `<span class="tr-window">${window}</span>` : ''}
-            ${isHoa ? `<span class="tr-hoa-tag">HOA</span>` : ''}
+            ${chips}
           </div>
         </div>
-        <div class="tr-right">${badge}</div>
+        <div class="tr-right">
+          ${statusBadge}
+          ${actionBtn}
+        </div>
       </div>
     `;
   }

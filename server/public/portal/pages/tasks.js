@@ -342,39 +342,6 @@ PortalRouter.register('tasks', async function (container) {
     return result;
   }
 
-  function hoaStatusLabel(status) {
-    if (status === 'pending' || status === 'submitted' || status === 'acknowledged') return 'Scheduled';
-    if (status === 'in_progress') return 'In Progress';
-    if (status === 'completed') return 'Completed';
-    return 'Scheduled';
-  }
-
-  function hoaStatusBadgeClass(status) {
-    if (status === 'in_progress') return 'tr-badge tr-active';
-    if (status === 'completed') return 'tr-badge tr-done';
-    return 'tr-badge tr-acked';
-  }
-
-  function hoaTaskRow(task) {
-    var label = hoaStatusLabel(task.status);
-    var badgeCls = hoaStatusBadgeClass(task.status);
-    var dateStr = M.fmtDateRange(task.windowStart, task.windowEnd)
-      || (task.dueDate ? M.fmtDate(task.dueDate) : '');
-    var address = task.address ? M.esc(task.address) : '';
-    var category = task.category ? M.esc(task.category) : '';
-    return '<div class="task-row" data-task-id="' + M.esc(task.id) + '" style="cursor:pointer">'
-      + '<div class="tr-main">'
-      + '<span class="tr-title">' + M.esc(task.title || 'Untitled') + '</span>'
-      + '<div class="tr-meta">'
-      + (dateStr ? '<span class="tr-window">' + dateStr + '</span>' : '')
-      + (address ? '<span class="tr-window">' + address + '</span>' : '')
-      + (category ? '<span class="tr-window">' + category + '</span>' : '')
-      + '</div>'
-      + '</div>'
-      + '<span class="' + badgeCls + '">' + M.esc(label) + '</span>'
-      + '</div>';
-  }
-
   /* Group tasks for PM urgency-first view */
   function groupTasksForPM(taskList) {
     var groups = {
@@ -466,14 +433,45 @@ PortalRouter.register('tasks', async function (container) {
       var emptyMsg = emptyStates[tab] || emptyStates['default'] || 'No tasks to show.';
       listEl.innerHTML = '<div class="module-empty">' + M.esc(emptyMsg) + '</div>';
     } else {
-      listEl.innerHTML = nonPMFiltered.map(function (t) {
-        return isHoa ? hoaTaskRow(t) : M.taskRow(t);
-      }).join('');
+      listEl.innerHTML = nonPMFiltered.map(function (t) { return M.taskRow(t); }).join('');
     }
     listEl.querySelectorAll('[data-task-id]').forEach(function (row) {
-      row.addEventListener('click', function () {
+      row.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && e.target.closest('[data-action]')) return;
         if (typeof window.openTaskDetail === 'function') {
           window.openTaskDetail(row.dataset.taskId);
+        }
+      });
+    });
+    listEl.querySelectorAll('[data-action="view"]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (typeof window.openTaskDetail === 'function') {
+          window.openTaskDetail(btn.dataset.taskId);
+        }
+      });
+    });
+    listEl.querySelectorAll('[data-action="acknowledge"]').forEach(function (btn) {
+      btn.addEventListener('click', async function (e) {
+        e.stopPropagation();
+        var taskId = btn.dataset.taskId;
+        var task = tasks.find(function (t) { return t.id === taskId; });
+        if (!task) return;
+        btn.disabled = true;
+        btn.textContent = 'Acknowledging\u2026';
+        try {
+          await PortalAPI.apiFetch('/api/tasks/' + taskId, {
+            method: 'PUT',
+            body: { status: 'acknowledged', version: task.version }
+          });
+          PortalAPI.showToast('Request acknowledged', 'success');
+          var fresh = await PortalAPI.apiFetch('/api/tasks?communityId=' + community.id);
+          if (Array.isArray(fresh)) { tasks = fresh; }
+          renderList(container, tasks, activeTab, isContractor);
+        } catch (err) {
+          PortalAPI.showToast('Failed to acknowledge: ' + (err.message || 'Unknown error'), 'error');
+          btn.disabled = false;
+          btn.textContent = 'Acknowledge';
         }
       });
     });

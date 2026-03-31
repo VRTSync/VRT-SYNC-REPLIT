@@ -429,7 +429,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         communityId = user.hoaCommunityId;
-        const tasks = await storage.getTasksByCommunity(communityId);
+        const rawTasks = await storage.getTasksByCommunity(communityId);
+        const tasks = await storage.enrichTasksWithAssigneeName(rawTasks);
         console.log(`[GET /api/tasks] hoa user=${user.id} community=${communityId} count=${tasks.length} (${Date.now() - t0}ms)`);
         return res.json(tasks);
       }
@@ -442,12 +443,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return res.status(403).json({ error: "You are not a member of this community" });
             }
           }
-          const allTasks = await storage.getTasksByCommunity(communityId);
+          const rawTasks = await storage.getTasksByCommunity(communityId);
+          const allTasks = await storage.enrichTasksWithAssigneeName(rawTasks);
           console.log(`[GET /api/tasks] role=${user.role} community=${communityId} count=${allTasks.length} (${Date.now() - t0}ms)`);
           return res.json(allTasks);
         }
         if (user.role === "admin") {
-          const allTasks = await storage.getAllTasks();
+          const rawTasks = await storage.getAllTasks();
+          const allTasks = await storage.enrichTasksWithAssigneeName(rawTasks);
           console.log(`[GET /api/tasks] admin all-tasks count=${allTasks.length} (${Date.now() - t0}ms)`);
           return res.json(allTasks);
         }
@@ -461,7 +464,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const userTasks = await storage.getTasksForUser(req.session.userId!, communityId);
+      const rawUserTasks = await storage.getTasksForUser(req.session.userId!, communityId);
+      const userTasks = await storage.enrichTasksWithAssigneeName(rawUserTasks);
       console.log(`[GET /api/tasks] user=${user.id} count=${userTasks.length} (${Date.now() - t0}ms)`);
       res.json(userTasks);
     } catch (error) {

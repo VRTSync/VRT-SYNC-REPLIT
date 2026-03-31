@@ -117,6 +117,21 @@ export async function getTasksByCommunity(communityId: string): Promise<Task[]> 
     .orderBy(desc(tasks.createdAt));
 }
 
+export async function enrichTasksWithAssigneeName(taskList: Task[]): Promise<(Task & { assignedToName: string | null })[]> {
+  const assigneeIds = [...new Set(taskList.map(t => t.assignedTo).filter((id): id is string => !!id))];
+  const assigneeMap = new Map<string, string>();
+  if (assigneeIds.length > 0) {
+    const assignees = await db.select({ id: users.id, displayName: users.displayName })
+      .from(users)
+      .where(inArray(users.id, assigneeIds));
+    assignees.forEach(a => assigneeMap.set(a.id, a.displayName));
+  }
+  return taskList.map(t => ({
+    ...t,
+    assignedToName: t.assignedTo ? (assigneeMap.get(t.assignedTo) ?? null) : null,
+  }));
+}
+
 export async function getTasksDueInRange(from: Date, to: Date): Promise<Task[]> {
   return db.select().from(tasks)
     .where(and(
