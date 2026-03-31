@@ -209,6 +209,9 @@ export default function HoaDashboardScreen() {
       const res = await apiRequest('GET', '/api/dashboard/role');
       return res.json();
     },
+    enabled: !!user,
+    retry: 1,
+    staleTime: 0,
   });
 
   const data: DashboardData | undefined = React.useMemo(() => {
@@ -327,7 +330,7 @@ export default function HoaDashboardScreen() {
 
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom + 90;
 
-  if (isLoading) {
+  if (!user || isLoading) {
     return (
       <View style={styles.container}>
         <StatusBarFill />
