@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import { apiRequest } from '@/lib/query-client';
 import StatusBarFill from '@/components/StatusBarFill';
 import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
@@ -87,11 +88,34 @@ type ServiceVisit = {
 };
 
 type DashboardData = {
-  community: { id: string; name: string };
+  community: { id: string; name: string } | null;
   upcomingTasks: UpcomingTask[];
   recentCompletions: RecentCompletion[];
   requestsSummary: RequestsSummary;
   mowingSchedules: MowingSchedule[];
+};
+
+type RoleDashboardViewModel = {
+  role: string;
+  communityId: string;
+  hoaRequests?: {
+    byLifecycleStatus: {
+      submittedCount: number;
+      acknowledgedCount: number;
+      inProgressCount: number;
+      completedRecentCount: number;
+    };
+    recentCommunityCompletions: RecentCompletion[];
+    upcomingWorkWindows: UpcomingTask[];
+    mapLayerAvailability: { layerKey: string; subLayerKey: string; displayName: string }[];
+    mowingSchedules: MowingSchedule[];
+  };
+  communityActivity?: {
+    recentCompletions: RecentCompletion[];
+    upcomingCommunityWork: UpcomingTask[];
+    serviceSchedules: MowingSchedule[];
+    requestsSummary: RequestsSummary;
+  };
 };
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -179,9 +203,42 @@ export default function HoaDashboardScreen() {
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
-  const { data, isLoading, isRefetching, refetch, isError, dataUpdatedAt } = useQuery<DashboardData>({
-    queryKey: ['/api/hoa/dashboard'],
+  const { data: roleData, isLoading, isRefetching, refetch, isError, dataUpdatedAt } = useQuery<RoleDashboardViewModel>({
+    queryKey: ['/api/dashboard/role'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/dashboard/role');
+      return res.json();
+    },
   });
+
+  const data: DashboardData | undefined = React.useMemo(() => {
+    if (!roleData) return undefined;
+    if (roleData.hoaRequests) {
+      const hr = roleData.hoaRequests;
+      return {
+        community: { id: roleData.communityId, name: activeCommunity?.name ?? '' },
+        upcomingTasks: hr.upcomingWorkWindows,
+        recentCompletions: hr.recentCommunityCompletions,
+        requestsSummary: {
+          submittedCount: hr.byLifecycleStatus.submittedCount,
+          acknowledgedCount: hr.byLifecycleStatus.acknowledgedCount,
+          topRequests: [],
+        },
+        mowingSchedules: hr.mowingSchedules,
+      };
+    }
+    if (roleData.communityActivity) {
+      const ca = roleData.communityActivity;
+      return {
+        community: { id: roleData.communityId, name: activeCommunity?.name ?? '' },
+        upcomingTasks: ca.upcomingCommunityWork,
+        recentCompletions: ca.recentCompletions,
+        requestsSummary: ca.requestsSummary,
+        mowingSchedules: ca.serviceSchedules,
+      };
+    }
+    return undefined;
+  }, [roleData, activeCommunity?.name]);
 
   const weekRange = React.useMemo(() => {
     const today = new Date();
@@ -712,7 +769,7 @@ export default function HoaDashboardScreen() {
         visible={showCreateRequest}
         onClose={() => {
           setShowCreateRequest(false);
-          queryClient.invalidateQueries({ queryKey: ['/api/hoa/dashboard'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/dashboard/role'] });
           queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
         }}
       />

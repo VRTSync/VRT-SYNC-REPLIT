@@ -318,6 +318,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/dashboard/role", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = await storage.getUserById(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      let communityId: string | undefined;
+
+      if (isHoaRole(user.role)) {
+        if (!user.hoaCommunityId) {
+          return res.status(403).json({ error: "HOA user is not assigned to a community" });
+        }
+        communityId = user.hoaCommunityId;
+      } else {
+        communityId = req.query.communityId as string | undefined;
+      }
+
+      if (!communityId) {
+        return res.status(400).json({ error: "communityId is required" });
+      }
+
+      if (user.role !== "admin" && !isHoaRole(user.role)) {
+        const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
+        if (!isMember) {
+          return res.status(403).json({ error: "You are not a member of this community" });
+        }
+      }
+
+      const viewModel = await storage.getDashboardDataForRole(user.role, user.id, communityId);
+      res.json(viewModel);
+    } catch (error) {
+      console.error("Dashboard role error:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
   app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {

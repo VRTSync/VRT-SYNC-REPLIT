@@ -43,6 +43,35 @@ type FollowUpTask = {
   completedAt: string;
 };
 
+type RecentCompletionItem = {
+  id: string;
+  title: string;
+  completedAt: string;
+  origin: string | null;
+  priority: string;
+  hasPhotos: boolean;
+};
+
+type DashboardRoleViewModel = {
+  role: string;
+  communityId: string;
+  contractorWork?: {
+    assignedActiveTasks: Task[];
+    overdueTasks: Task[];
+    requestsNeedingAcknowledgment: Task[];
+    recentCompletions: RecentCompletionItem[];
+    followUpTasks: FollowUpTask[];
+    inWindowTasks: Task[];
+    comingUpTasks: Task[];
+  };
+  pmOverview?: {
+    openRequests: Task[];
+    overdueItems: Task[];
+    recentCompletions: RecentCompletionItem[];
+    nextScheduledServiceWindows: Task[];
+  };
+};
+
 type DashboardData = {
   dueTodayTasks: Task[];
   upcomingTasks: Task[];
@@ -105,14 +134,50 @@ export default function DashboardScreen() {
 
   const communityId = activeCommunity?.id;
 
-  const { data: dashboard, isLoading, refetch, dataUpdatedAt } = useQuery<DashboardData>({
-    queryKey: ['/api/dashboard', { communityId }],
+  const { data: roleViewModel, isLoading, refetch, dataUpdatedAt } = useQuery<DashboardRoleViewModel>({
+    queryKey: ['/api/dashboard/role', { communityId }],
     queryFn: async () => {
-      const res = await apiRequest('GET', `/api/dashboard?communityId=${communityId}`);
+      const res = await apiRequest('GET', `/api/dashboard/role?communityId=${communityId}`);
       return res.json();
     },
     enabled: !!communityId && isOnline,
   });
+
+  const dashboard: DashboardData | undefined = roleViewModel ? (() => {
+    const cw = roleViewModel.contractorWork;
+    const pm = roleViewModel.pmOverview;
+    if (cw) {
+      const requestsNeedingAck = cw.requestsNeedingAcknowledgment ?? [];
+      return {
+        dueTodayTasks: [],
+        upcomingTasks: cw.assignedActiveTasks ?? [],
+        overdueTasks: cw.overdueTasks ?? [],
+        inWindowTasks: cw.inWindowTasks ?? [],
+        comingUpTasks: cw.comingUpTasks ?? [],
+        followUpTasks: cw.followUpTasks ?? [],
+        urgentRequestCount: requestsNeedingAck.filter(t => t.priority === 'urgent').length,
+        normalRequestCount: requestsNeedingAck.filter(t => t.priority !== 'urgent').length,
+        newRequestCount: requestsNeedingAck.length,
+        acknowledgedRequestCount: 0,
+      };
+    }
+    if (pm) {
+      const openReqs = pm.openRequests ?? [];
+      return {
+        dueTodayTasks: [],
+        upcomingTasks: [],
+        overdueTasks: pm.overdueItems ?? [],
+        inWindowTasks: pm.nextScheduledServiceWindows ?? [],
+        comingUpTasks: pm.nextScheduledServiceWindows ?? [],
+        followUpTasks: [],
+        urgentRequestCount: openReqs.filter(t => t.priority === 'urgent').length,
+        normalRequestCount: openReqs.filter(t => t.priority !== 'urgent').length,
+        newRequestCount: openReqs.filter(t => t.status === 'submitted').length,
+        acknowledgedRequestCount: openReqs.filter(t => t.status === 'acknowledged').length,
+      };
+    }
+    return undefined;
+  })() : undefined;
 
   useEffect(() => {
     if (dataUpdatedAt > 0) {

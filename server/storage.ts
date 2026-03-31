@@ -1207,6 +1207,465 @@ export async function getDashboardData(userId: string, communityId: string, isAd
   };
 }
 
+export type TaskSummary = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: Date | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  origin: string | null;
+  assignedTo: string | null;
+  communityId: string;
+};
+
+export type RecentCompletionSummary = {
+  id: string;
+  title: string;
+  completedAt: Date;
+  origin: string | null;
+  priority: string;
+  hasPhotos: boolean;
+};
+
+export type FollowUpSummary = {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskPriority: string;
+  followUpNeeded: string | null;
+  completedAt: Date;
+};
+
+export type HoaRequestSummary = {
+  submittedCount: number;
+  acknowledgedCount: number;
+  topRequests: {
+    id: string;
+    title: string;
+    priority: string;
+    status: string;
+    createdAt: Date;
+  }[];
+};
+
+export type ServiceScheduleSummary = {
+  id: string;
+  serviceType: string;
+  dayOfWeek: number;
+  seasonStart: string | null;
+  seasonEnd: string | null;
+};
+
+export type MapLayerAvailability = {
+  layerKey: string;
+  subLayerKey: string;
+  displayName: string;
+};
+
+export type DashboardViewModel = {
+  role: string;
+  communityId: string;
+  contractorWork?: {
+    assignedActiveTasks: TaskSummary[];
+    overdueTasks: TaskSummary[];
+    requestsNeedingAcknowledgment: TaskSummary[];
+    recentCompletions: RecentCompletionSummary[];
+    followUpTasks: FollowUpSummary[];
+    inWindowTasks: TaskSummary[];
+    comingUpTasks: TaskSummary[];
+  };
+  hoaRequests?: {
+    byLifecycleStatus: {
+      submittedCount: number;
+      acknowledgedCount: number;
+      inProgressCount: number;
+      completedRecentCount: number;
+    };
+    recentCommunityCompletions: RecentCompletionSummary[];
+    upcomingWorkWindows: TaskSummary[];
+    mapLayerAvailability: MapLayerAvailability[];
+    mowingSchedules: ServiceScheduleSummary[];
+  };
+  communityActivity?: {
+    recentCompletions: RecentCompletionSummary[];
+    upcomingCommunityWork: TaskSummary[];
+    serviceSchedules: ServiceScheduleSummary[];
+    requestsSummary: HoaRequestSummary;
+  };
+  pmOverview?: {
+    openRequests: TaskSummary[];
+    overdueItems: TaskSummary[];
+    recentCompletions: RecentCompletionSummary[];
+    nextScheduledServiceWindows: TaskSummary[];
+  };
+};
+
+async function buildRecentCompletions(communityId: string, limit = 8, assignedTo?: string): Promise<RecentCompletionSummary[]> {
+  const conditions = [
+    eq(tasks.communityId, communityId),
+    eq(tasks.status, "completed" as const),
+    ...(assignedTo ? [eq(tasks.assignedTo, assignedTo)] : []),
+  ] as const;
+
+  const completedTaskRows = await db.select().from(tasks)
+    .where(and(...conditions))
+    .orderBy(desc(tasks.updatedAt))
+    .limit(limit);
+
+  const completedTaskIds = completedTaskRows.map(t => t.id);
+  if (completedTaskIds.length === 0) return [];
+
+  const completionRows = await db.select({
+    taskId: taskCompletions.taskId,
+    completedAt: taskCompletions.completedAt,
+    id: taskCompletions.id,
+  }).from(taskCompletions)
+    .where(inArray(taskCompletions.taskId, completedTaskIds))
+    .orderBy(desc(taskCompletions.completedAt));
+
+  const completionMap = new Map<string, Date>();
+  for (const c of completionRows) {
+    if (!completionMap.has(c.taskId)) completionMap.set(c.taskId, c.completedAt);
+  }
+
+  const completionIds = completionRows.map(c => c.id);
+  const attachmentCountMap = new Map<string, number>();
+  if (completionIds.length > 0) {
+    const attRows = await db.select({
+      taskCompletionId: attachments.taskCompletionId,
+      cnt: sql<number>`count(*)`,
+    }).from(attachments)
+      .where(inArray(attachments.taskCompletionId, completionIds))
+      .groupBy(attachments.taskCompletionId);
+    const completionToTask = new Map<string, string>();
+    for (const c of completionRows) completionToTask.set(c.id, c.taskId);
+    for (const row of attRows) {
+      const tId = completionToTask.get(row.taskCompletionId);
+      if (tId) attachmentCountMap.set(tId, (attachmentCountMap.get(tId) || 0) + Number(row.cnt));
+    }
+  }
+
+  return completedTaskRows.map(t => ({
+    id: t.id,
+    title: t.title,
+    completedAt: completionMap.get(t.id) ?? t.updatedAt,
+    origin: t.origin,
+    priority: t.priority,
+    hasPhotos: (attachmentCountMap.get(t.id) || 0) > 0,
+  }));
+}
+
+export async function getDashboardDataForRole(
+  role: string,
+  userId: string,
+  communityId: string,
+  _selectedCommunityId?: string,
+): Promise<DashboardViewModel> {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const todayDateStr = todayStart.toISOString().split("T")[0];
+
+  const viewModel: DashboardViewModel = { role, communityId };
+
+  if (role === "contractor") {
+    const [assignedActiveTasks, overdueTasks, requestsNeedingAcknowledgment, followUpResults, inWindowTasks, comingUpTasks] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+        ))
+        .orderBy(asc(tasks.dueDate), asc(tasks.priority))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          lt(tasks.dueDate, todayStart),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(10),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          eq(tasks.origin, "HOA"),
+          eq(tasks.status, "submitted"),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(10),
+      db.select({
+        id: taskCompletions.id,
+        taskId: taskCompletions.taskId,
+        followUpNeeded: taskCompletions.followUpNeeded,
+        completedAt: taskCompletions.completedAt,
+        taskTitle: tasks.title,
+        taskPriority: tasks.priority,
+      }).from(taskCompletions)
+        .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          isNotNull(taskCompletions.followUpNeeded),
+          ne(taskCompletions.followUpNeeded, ''),
+        ))
+        .orderBy(desc(taskCompletions.completedAt))
+        .limit(5),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+          isNotNull(tasks.windowEnd),
+          lte(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+          gte(tasks.windowEnd, new Date(todayDateStr + "T00:00:00.000Z")),
+        ))
+        .orderBy(asc(tasks.windowEnd), asc(tasks.priority))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.assignedTo, userId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+          gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+        ))
+        .orderBy(asc(tasks.windowStart))
+        .limit(5),
+    ]);
+
+    const recentCompletions = await buildRecentCompletions(communityId, 8, userId);
+
+    const toSummary = (t: typeof tasks.$inferSelect): TaskSummary => ({
+      id: t.id, title: t.title, status: t.status, priority: t.priority,
+      dueDate: t.dueDate, windowStart: t.windowStart, windowEnd: t.windowEnd,
+      origin: t.origin, assignedTo: t.assignedTo, communityId: t.communityId,
+    });
+
+    viewModel.contractorWork = {
+      assignedActiveTasks: assignedActiveTasks.map(toSummary),
+      overdueTasks: overdueTasks.map(toSummary),
+      requestsNeedingAcknowledgment: requestsNeedingAcknowledgment.map(toSummary),
+      recentCompletions,
+      followUpTasks: followUpResults.map(r => ({
+        id: r.id,
+        taskId: r.taskId,
+        taskTitle: r.taskTitle,
+        taskPriority: r.taskPriority,
+        followUpNeeded: r.followUpNeeded,
+        completedAt: r.completedAt,
+      })),
+      inWindowTasks: inWindowTasks.map(toSummary),
+      comingUpTasks: comingUpTasks.map(toSummary),
+    };
+
+  } else if (role === "hoa_admin") {
+    const [upcomingWorkWindows, hoaStatusCounts, mapLayerRows, mowingScheduleRows, recentCompletedCount] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+        ))
+        .orderBy(asc(tasks.windowStart), asc(tasks.dueDate))
+        .limit(10),
+      db.select({
+        status: tasks.status,
+        cnt: sql<number>`count(*)::int`,
+      }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged", "in_progress"]),
+        ))
+        .groupBy(tasks.status),
+      db.select({
+        layerKey: mapLayers.layerKey,
+        subLayerKey: mapLayers.subLayerKey,
+        displayName: mapLayers.displayName,
+      }).from(mapLayers)
+        .where(and(
+          eq(mapLayers.communityId, communityId),
+          eq(mapLayers.isEnabled, true),
+        )),
+      db.select().from(serviceSchedules)
+        .where(and(
+          eq(serviceSchedules.communityId, communityId),
+          eq(serviceSchedules.isActive, true),
+        )),
+      db.select({ cnt: sql<number>`count(*)::int` }).from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.status, "completed"),
+        )),
+    ]);
+
+    let submittedCount = 0;
+    let acknowledgedCount = 0;
+    let inProgressCount = 0;
+    for (const row of hoaStatusCounts) {
+      if (row.status === "submitted") submittedCount = row.cnt;
+      else if (row.status === "acknowledged") acknowledgedCount = row.cnt;
+      else if (row.status === "in_progress") inProgressCount = row.cnt;
+    }
+    const completedRecentCount = recentCompletedCount[0]?.cnt ?? 0;
+
+    const recentCompletions = await buildRecentCompletions(communityId, 8);
+
+    const toSummary = (t: typeof tasks.$inferSelect): TaskSummary => ({
+      id: t.id, title: t.title, status: t.status, priority: t.priority,
+      dueDate: t.dueDate, windowStart: t.windowStart, windowEnd: t.windowEnd,
+      origin: t.origin, assignedTo: t.assignedTo, communityId: t.communityId,
+    });
+
+    viewModel.hoaRequests = {
+      byLifecycleStatus: {
+        submittedCount,
+        acknowledgedCount,
+        inProgressCount,
+        completedRecentCount,
+      },
+      recentCommunityCompletions: recentCompletions,
+      upcomingWorkWindows: upcomingWorkWindows.map(toSummary),
+      mapLayerAvailability: mapLayerRows,
+      mowingSchedules: mowingScheduleRows.map(s => ({
+        id: s.id,
+        serviceType: s.serviceType,
+        dayOfWeek: s.dayOfWeek,
+        seasonStart: s.seasonStart,
+        seasonEnd: s.seasonEnd,
+      })),
+    };
+
+  } else if (role === "hoa_member") {
+    const [upcomingCommunityWork, mowingScheduleRows] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+        ))
+        .orderBy(asc(tasks.windowStart), asc(tasks.dueDate))
+        .limit(10),
+      db.select().from(serviceSchedules)
+        .where(and(
+          eq(serviceSchedules.communityId, communityId),
+          eq(serviceSchedules.isActive, true),
+        )),
+    ]);
+
+    const recentCompletions = await buildRecentCompletions(communityId, 8);
+
+    const [memberCountRows, topRequests] = await Promise.all([
+      db.select({
+        status: tasks.status,
+        cnt: sql<number>`count(*)::int`,
+      })
+        .from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged"]),
+        ))
+        .groupBy(tasks.status),
+      db.select({
+        id: tasks.id,
+        title: tasks.title,
+        priority: tasks.priority,
+        status: tasks.status,
+        createdAt: tasks.createdAt,
+      })
+        .from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged"]),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(5),
+    ]);
+
+    const submittedCount = memberCountRows.find(r => r.status === "submitted")?.cnt ?? 0;
+    const acknowledgedCount = memberCountRows.find(r => r.status === "acknowledged")?.cnt ?? 0;
+
+    const toSummary = (t: typeof tasks.$inferSelect): TaskSummary => ({
+      id: t.id, title: t.title, status: t.status, priority: t.priority,
+      dueDate: t.dueDate, windowStart: t.windowStart, windowEnd: t.windowEnd,
+      origin: t.origin, assignedTo: t.assignedTo, communityId: t.communityId,
+    });
+
+    viewModel.communityActivity = {
+      recentCompletions,
+      upcomingCommunityWork: upcomingCommunityWork.map(toSummary),
+      serviceSchedules: mowingScheduleRows.map(s => ({
+        id: s.id,
+        serviceType: s.serviceType,
+        dayOfWeek: s.dayOfWeek,
+        seasonStart: s.seasonStart,
+        seasonEnd: s.seasonEnd,
+      })),
+      requestsSummary: {
+        submittedCount,
+        acknowledgedCount,
+        topRequests,
+      },
+    };
+
+  } else if (role === "property_manager" || role === "admin") {
+    const [openRequests, overdueItems, nextServiceWindows] = await Promise.all([
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          eq(tasks.origin, "HOA"),
+          inArray(tasks.status, ["submitted", "acknowledged"]),
+        ))
+        .orderBy(desc(tasks.createdAt))
+        .limit(20),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          lt(tasks.dueDate, todayStart),
+        ))
+        .orderBy(asc(tasks.dueDate))
+        .limit(10),
+      db.select().from(tasks)
+        .where(and(
+          eq(tasks.communityId, communityId),
+          ne(tasks.status, "completed"),
+          isNotNull(tasks.windowStart),
+          gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+        ))
+        .orderBy(asc(tasks.windowStart))
+        .limit(5),
+    ]);
+
+    const recentCompletions = await buildRecentCompletions(communityId, 10);
+
+    const toSummary = (t: typeof tasks.$inferSelect): TaskSummary => ({
+      id: t.id, title: t.title, status: t.status, priority: t.priority,
+      dueDate: t.dueDate, windowStart: t.windowStart, windowEnd: t.windowEnd,
+      origin: t.origin, assignedTo: t.assignedTo, communityId: t.communityId,
+    });
+
+    viewModel.pmOverview = {
+      openRequests: openRequests.map(toSummary),
+      overdueItems: overdueItems.map(toSummary),
+      recentCompletions,
+      nextScheduledServiceWindows: nextServiceWindows.map(toSummary),
+    };
+  }
+
+  return viewModel;
+}
+
 export type SearchResult = {
   id: string;
   type: "asset" | "task";
