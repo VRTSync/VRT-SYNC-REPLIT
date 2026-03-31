@@ -17,6 +17,7 @@ import { apiRequest } from '@/lib/query-client';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useOffline, ServiceSchedule } from '@/client/contexts/OfflineContext';
+import { useMapFilter } from '@/client/contexts/MapFilterContext';
 import { getTaskPageConfigForRole } from '@/constants/taskPageRoleConfig';
 import type { TaskCardItem } from '@/components/TaskCard';
 
@@ -147,6 +148,7 @@ export default function TasksScreen() {
   const navyHeaderProps = useNavyHeaderProps();
   const config = getTaskPageConfigForRole(user?.role);
   const isContractor = user?.role === 'contractor';
+  const { setMapFilter } = useMapFilter();
   const {
     isOnline, cachedTasks, cacheTasks, pendingCompletions, syncPendingCompletions,
     cachedServiceSchedules, cachedServiceVisits, pendingServiceVisits,
@@ -311,6 +313,16 @@ export default function TasksScreen() {
     }
   };
 
+  const handleViewTaskOnMap = (task: Task) => {
+    setMapFilter({ type: 'task', taskId: task.id, label: task.title });
+    router.push('/(tabs)/map' as any);
+  };
+
+  const handleViewDayOnMap = (taskIds: string[], label: string) => {
+    setMapFilter({ type: 'task', taskId: taskIds.join(','), label });
+    router.push('/(tabs)/map' as any);
+  };
+
   const buildGroupedList = (): (Task | { type: 'header'; title: string; count: number; group: SectionGroup } | { type: 'collapsed_completed'; count: number })[] => {
     const groups: Record<SectionGroup, Task[]> = {
       overdue: [],
@@ -433,6 +445,7 @@ export default function TasksScreen() {
     const windowRange = formatWindowRange(item);
     const isHoa = item.origin === 'HOA';
     const isCompleted = item.status === 'completed';
+    const hasMapPin = item.latitude != null && item.longitude != null;
 
     const showAcknowledge = item.status === 'submitted' && config.showAcknowledgmentControls;
     const showMarkInProgress = item.status === 'pending';
@@ -477,6 +490,16 @@ export default function TasksScreen() {
               </Text>
             </View>
           ) : null}
+          {hasMapPin && (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); handleViewTaskOnMap(item); }}
+              style={styles.taskMapIconBtn}
+              activeOpacity={0.7}
+              testID={`map-pin-${item.id}`}
+            >
+              <Ionicons name="map" size={14} color="#25C1AC" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {isHoa ? (
@@ -679,6 +702,7 @@ export default function TasksScreen() {
               setLogVisitSchedule(schedule);
               setLogVisitDate(dateStr);
             }}
+            onViewDayOnMap={handleViewDayOnMap}
             isOffline={!isOnline}
           />
         ) : todayItems.length === 0 && !isLoading ? (
@@ -715,6 +739,7 @@ export default function TasksScreen() {
             setLogVisitSchedule(schedule);
             setLogVisitDate(dateStr);
           }}
+          onViewDayOnMap={handleViewDayOnMap}
           isOffline={!isOnline}
           role={user?.role as any}
         />
@@ -952,6 +977,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  taskMapIconBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: '#E8FAF7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   contractorSegment: {
     flexDirection: 'row',

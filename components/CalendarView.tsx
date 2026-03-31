@@ -43,6 +43,7 @@ type Props = {
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
   onDayPress?: (dateStr: string) => void;
+  onViewDayOnMap?: (taskIds: string[], label: string) => void;
   isOffline: boolean;
   role?: UserRole;
   scope?: 'week' | 'month';
@@ -256,7 +257,7 @@ function getBarColors(task: Task, todayStr: string): { backgroundColor: string; 
 
 export default function CalendarView({
   tasks, schedules, visits, pendingVisits,
-  onTaskPress, onLogVisit, onDayPress, isOffline, role, scope = 'week',
+  onTaskPress, onLogVisit, onDayPress, onViewDayOnMap, isOffline, role, scope = 'week',
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
@@ -741,6 +742,7 @@ export default function CalendarView({
         onClose={() => setWeekModalData(null)}
         onTaskPress={onTaskPress}
         onLogVisit={onLogVisit}
+        onViewDayOnMap={onViewDayOnMap}
         isContractor={isContractor}
         showMowingDots={roleConfig.showMowingDots}
         todayStr={todayStr}
@@ -758,12 +760,13 @@ type WeekItemsModalProps = {
   onClose: () => void;
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
+  onViewDayOnMap?: (taskIds: string[], label: string) => void;
   isContractor: boolean;
   showMowingDots: boolean;
   todayStr: string;
 };
 
-function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor, showMowingDots, todayStr }: WeekItemsModalProps) {
+function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, onViewDayOnMap, isContractor, showMowingDots, todayStr }: WeekItemsModalProps) {
   if (!data) return null;
 
   const uniqueTasks = Array.from(new Map(data.bars.map(b => [b.task.id, b.task])).values());
@@ -774,7 +777,22 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor, 
         <View style={modalStyles.sheet}>
           <View style={modalStyles.handle} />
           <View style={modalStyles.header}>
-            <Text style={modalStyles.title}>Week of {data.weekLabel}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={modalStyles.title}>Week of {data.weekLabel}</Text>
+            </View>
+            {onViewDayOnMap && uniqueTasks.length > 0 && (
+              <TouchableOpacity
+                style={modalStyles.viewOnMapBtn}
+                onPress={() => {
+                  onClose();
+                  onViewDayOnMap(uniqueTasks.map(t => t.id), `Week of ${data.weekLabel}`);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="map-outline" size={14} color="#25C1AC" />
+                <Text style={modalStyles.viewOnMapText}>View on Map</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity onPress={onClose} style={modalStyles.closeBtn}>
               <Ionicons name="close" size={22} color="#666" />
             </TouchableOpacity>
@@ -1155,7 +1173,22 @@ const modalStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#0C1D31',
   },
-  closeBtn: { padding: 4 },
+  closeBtn: { padding: 4, marginLeft: 8 },
+  viewOnMapBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    backgroundColor: '#E8FAF7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginLeft: 8,
+  },
+  viewOnMapText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#25C1AC',
+  },
   content: { maxHeight: 400 },
   sectionTitle: {
     fontSize: 13,

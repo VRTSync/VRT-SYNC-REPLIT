@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Switch, ActivityIndicator, Alert } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { apiRequest } from '@/lib/query-client';
@@ -9,6 +9,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOffline } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
+import { useMapFilter } from '@/client/contexts/MapFilterContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
 import { getDefaultLayerColor } from '@/shared/layerColors';
@@ -61,6 +62,7 @@ export default function MapScreen() {
   const { activeCommunity } = useCommunity();
   const { isOnline } = useOffline();
   const { localPack, getOfflineGeoJSON, resolveFeatureToAsset, getOfflineManifest } = useOfflinePack();
+  const { mapFilter, clearMapFilter } = useMapFilter();
   const insets = useSafeAreaInsets();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -106,6 +108,35 @@ export default function MapScreen() {
       setDismissedOfflineBanner(false);
     }
   }, [isOnline]);
+
+  const { data: allTasks = [] } = useQuery<{ id: string; latitude: number | null; longitude: number | null; title: string; priority: string; address: string | null; windowStart: string | null; windowEnd: string | null }[]>({
+    queryKey: ['/api/tasks', { communityId }],
+    queryFn: async () => {
+      const route = communityId ? `/api/tasks?communityId=${communityId}` : '/api/tasks';
+      const res = await apiRequest('GET', route);
+      return res.json();
+    },
+    enabled: !!communityId && isOnline,
+  });
+
+  const filteredTaskIds = useMemo<string[] | null>(() => {
+    if (!mapFilter) return null;
+    if (mapFilter.type === 'task') {
+      return mapFilter.taskId.split(',').filter(Boolean);
+    }
+    return null;
+  }, [mapFilter]);
+
+  const mapTasks = useMemo(() => {
+    return allTasks.filter(t => t.latitude != null && t.longitude != null).map(t => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      latitude: t.latitude!,
+      longitude: t.longitude!,
+      address: t.address,
+    }));
+  }, [allTasks]);
 
   const { data: onlineLayers = [] } = useQuery<MapLayerMeta[]>({
     queryKey: ['/api/map-layers', { communityId }],
@@ -398,6 +429,14 @@ export default function MapScreen() {
     setTargetRegion(null);
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        clearMapFilter();
+      };
+    }, [clearMapFilter])
+  );
+
   const isWeb = Platform.OS === 'web';
   const topOffset = isWeb ? 67 : insets.top;
 
@@ -476,7 +515,7 @@ export default function MapScreen() {
       )}
 
       <LeafletMap
-        tasks={[]}
+        tasks={mapTasks}
         userLocation={userLocation}
         onTaskPress={() => {}}
         layers={activeLayers}
@@ -492,7 +531,29 @@ export default function MapScreen() {
         initialBounds={boundsData?.bounds ?? null}
         communityOutlineGeojson={showCommunityOutline ? communityOutlineGeojson : null}
         communityOutlineStyle={communityOutlineStyle}
+        filteredTaskIds={filteredTaskIds}
       />
+
+      {mapFilter && (() => {
+        const matchCount = filteredTaskIds
+          ? mapTasks.filter(t => filteredTaskIds.includes(t.id)).length
+          : 0;
+        return (
+          <View style={[styles.filterBanner, { bottom: Platform.OS === 'web' ? 34 + 16 : insets.bottom + 16 + 60 }]}>
+            <Ionicons name="funnel" size={14} color="#fff" />
+            <Text style={styles.filterBannerText} numberOfLines={1}>
+              {mapFilter.label} · {matchCount} task{matchCount !== 1 ? 's' : ''}
+            </Text>
+            <TouchableOpacity
+              onPress={clearMapFilter}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              testID="clear-map-filter"
+            >
+              <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {showLayerPanel && (
         <View style={[styles.layerPanel, { top: layerPanelTop }]}>
@@ -828,5 +889,29 @@ const styles = StyleSheet.create({
   controllerCheckActive: {
     backgroundColor: '#25C1AC',
     borderColor: '#25C1AC',
+  },
+  filterBanner: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#25C1AC',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: '#25C1AC',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  filterBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
 });

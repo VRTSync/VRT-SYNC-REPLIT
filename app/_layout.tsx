@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "@/client/contexts/AuthContext";
 import { CommunityProvider } from "@/client/contexts/CommunityContext";
 import { OfflineProvider } from "@/client/contexts/OfflineContext";
 import { OfflinePackProvider } from "@/client/contexts/OfflinePackContext";
+import { MapFilterProvider } from "@/client/contexts/MapFilterContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -181,7 +182,9 @@ export default function RootLayout() {
                 <CommunityProvider>
                   <OfflineProvider>
                     <OfflinePackProvider>
-                      {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
+                      <MapFilterProvider>
+                        {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
+                      </MapFilterProvider>
                     </OfflinePackProvider>
                   </OfflineProvider>
                 </CommunityProvider>

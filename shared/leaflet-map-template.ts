@@ -180,6 +180,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           }),
           zIndex: 100
         });
+        m._taskId = t.id;
         var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+color+';"></div><div class="popup-body">';
         popupHtml += '<span class="popup-type" style="background:'+color+';">Task</span>';
         popupHtml += '<div class="popup-title">'+escHtml(t.title)+'</div>';
@@ -466,6 +467,44 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         if (l.setIcon && l._iconOpts) {
           l._iconOpts.color = newColor;
           l.setIcon(L.divIcon(l._iconOpts));
+        }
+      });
+    },
+
+    filterTasks: function(taskIds) {
+      taskLayer.eachLayer(function(m) {
+        var marker = m;
+        if (!marker._taskId) return;
+        var isMatch = !taskIds || taskIds.length === 0 || taskIds.indexOf(marker._taskId) !== -1;
+        var el = marker.getElement ? marker.getElement() : null;
+        if (el) {
+          el.style.opacity = isMatch ? '1' : '0.15';
+        }
+      });
+      if (taskIds && taskIds.length > 0) {
+        var bounds = null;
+        taskLayer.eachLayer(function(m) {
+          var marker = m;
+          if (!marker._taskId) return;
+          if (taskIds.indexOf(marker._taskId) !== -1) {
+            var ll = marker.getLatLng ? marker.getLatLng() : null;
+            if (ll) {
+              bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+            }
+          }
+        });
+        if (bounds && bounds.isValid()) {
+          map.fitBounds(bounds, { padding: [80, 60], maxZoom: 17 });
+        }
+      }
+    },
+
+    clearTaskFilter: function() {
+      taskLayer.eachLayer(function(m) {
+        var marker = m;
+        var el = marker.getElement ? marker.getElement() : null;
+        if (el) {
+          el.style.opacity = '1';
         }
       });
     },
