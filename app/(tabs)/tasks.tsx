@@ -546,6 +546,7 @@ export default function TasksScreen() {
             setLogVisitDate(dateStr);
           }}
           isOffline={!isOnline}
+          role={user?.role as any}
         />
       ) : allItems.length === 0 && !isLoading ? (
         <View style={styles.emptyState}>

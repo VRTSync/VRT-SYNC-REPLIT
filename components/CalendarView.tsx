@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ServiceSchedule, ServiceVisit, PendingServiceVisit } from '@/client/contexts/OfflineContext';
+import { getCalendarRoleConfig } from '@/constants/calendarRoleConfig';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -14,6 +15,7 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const MAX_LANES = 3;
+const MAX_DOTS = 4;
 
 type Task = {
   id: string;
@@ -50,6 +52,13 @@ const priorityColors: Record<string, string> = {
   medium: '#ff9800',
   high: '#f44336',
   urgent: '#9c27b0',
+};
+
+const CATEGORY_COLORS = {
+  requests: { bar: '#5C6BC0', border: '#3949AB' },
+  scheduled: { bar: '#ff9800', border: '#e65100' },
+  completed: { bar: '#a5d6a7', border: '#4caf50' },
+  overdue: { bar: '#ef9a9a', border: '#f44336' },
 };
 
 function toDateStr(d: Date): string {
@@ -206,12 +215,52 @@ function getMowingDaysForWeek(
   return map;
 }
 
+function getTaskCategory(task: Task, todayStr: string): 'requests' | 'scheduled' | 'completed' | 'overdue' {
+  if (task.status === 'completed') return 'completed';
+  const isRequest = task.origin === 'HOA';
+  const isOverdue = task.windowEnd && task.windowEnd < todayStr;
+  if (isOverdue) return 'overdue';
+  if (isRequest) return 'requests';
+  return 'scheduled';
+}
+
+function getBarColors(task: Task, todayStr: string): { backgroundColor: string; borderColor: string } {
+  const isCompleted = task.status === 'completed';
+  const isOverdue = !isCompleted && task.windowEnd! < todayStr;
+  const isRequest = task.origin === 'HOA';
+
+  if (isCompleted) {
+    return {
+      backgroundColor: CATEGORY_COLORS.completed.bar + '60',
+      borderColor: CATEGORY_COLORS.completed.border,
+    };
+  }
+  if (isOverdue) {
+    return {
+      backgroundColor: CATEGORY_COLORS.overdue.bar + 'CC',
+      borderColor: CATEGORY_COLORS.overdue.border,
+    };
+  }
+  if (isRequest) {
+    return {
+      backgroundColor: CATEGORY_COLORS.requests.bar + 'AA',
+      borderColor: CATEGORY_COLORS.requests.border,
+    };
+  }
+  return {
+    backgroundColor: (priorityColors[task.priority] || CATEGORY_COLORS.scheduled.bar) + 'CC',
+    borderColor: priorityColors[task.priority] || CATEGORY_COLORS.scheduled.bar,
+  };
+}
+
 export default function CalendarView({
   tasks, schedules, visits, pendingVisits,
   onTaskPress, onLogVisit, isOffline, role, scope = 'week',
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
+  const roleConfig = getCalendarRoleConfig(role);
+
   const [currentYear, setCurrentYear] = useState(todayDate.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(todayDate.getMonth());
   const [weekModalData, setWeekModalData] = useState<{
@@ -221,7 +270,6 @@ export default function CalendarView({
   } | null>(null);
 
   const isContractor = !role || role === 'contractor';
-  const isHoaMember = role === 'hoa_member';
 
   const [legendExpanded, setLegendExpanded] = useState(true);
 
@@ -249,17 +297,28 @@ export default function CalendarView({
 
   const weeks = useMemo(() => getMonthGrid(currentYear, currentMonth), [currentYear, currentMonth]);
 
-  const windowedTasks = useMemo(() => tasks.filter(t => t.windowStart && t.windowEnd), [tasks]);
+  const filteredTasks = useMemo(() => {
+    const showCategories = roleConfig.showCategories;
+    return tasks.filter(t => {
+      if (!t.windowStart || !t.windowEnd) return false;
+      const category = getTaskCategory(t, todayStr);
+      return showCategories.includes(category);
+    });
+  }, [tasks, roleConfig.showCategories, todayStr]);
+
+  const windowedTasks = filteredTasks;
 
   const hasAnyContentForMonth = useMemo(() => {
     const monthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const monthEnd = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const monthEnd = `${currentYear}-${String(currentMonth + 1).padStart(2, '00')}-${String(lastDay).padStart(2, '0')}`;
 
     const hasTaskBars = windowedTasks.some(
       t => t.windowStart! <= monthEnd && t.windowEnd! >= monthStart
     );
     if (hasTaskBars) return true;
+
+    if (!roleConfig.showMowingDots) return false;
 
     const activeSchedules = schedules.filter(s => s.isActive);
     if (activeSchedules.length === 0) return false;
@@ -275,7 +334,46 @@ export default function CalendarView({
       }
     }
     return false;
-  }, [windowedTasks, schedules, weeks, currentYear, currentMonth]);
+  }, [windowedTasks, schedules, weeks, currentYear, currentMonth, roleConfig.showMowingDots]);
+
+  const overdueDueDateTasks = useMemo(() => {
+    return tasks.filter(t =>
+      t.dueDate &&
+      t.status !== 'completed' &&
+      t.dueDate < todayStr
+    );
+  }, [tasks, todayStr]);
+
+  const openRequestsByDate = useMemo(() => {
+    if (!roleConfig.showRequestDensityBadge) return new Map<string, number>();
+    const map = new Map<string, number>();
+    tasks.forEach(t => {
+      if (t.origin !== 'HOA' || t.status === 'completed') return;
+      if (!t.windowStart || !t.windowEnd) return;
+      const start = parseDate(t.windowStart);
+      const end = parseDate(t.windowEnd);
+      let cur = new Date(start);
+      while (cur <= end) {
+        const ds = toDateStr(cur);
+        map.set(ds, (map.get(ds) || 0) + 1);
+        cur.setDate(cur.getDate() + 1);
+      }
+    });
+    return map;
+  }, [tasks, roleConfig.showRequestDensityBadge]);
+
+  const overdueCountByDate = useMemo(() => {
+    if (!roleConfig.showOverdueClusterBadge) return new Map<string, number>();
+    const map = new Map<string, number>();
+    tasks.forEach(t => {
+      if (t.status === 'completed') return;
+      if (!t.windowEnd || t.windowEnd >= todayStr) return;
+      const end = parseDate(t.windowEnd);
+      const ds = toDateStr(end);
+      map.set(ds, (map.get(ds) || 0) + 1);
+    });
+    return map;
+  }, [tasks, todayStr, roleConfig.showOverdueClusterBadge]);
 
   const cellWidth = (SCREEN_WIDTH - 32) / 7;
   const BAR_HEIGHT = 16;
@@ -285,7 +383,9 @@ export default function CalendarView({
     const allSegments = computeBarSegments(windowedTasks, weekDates);
     const visibleSegments = allSegments.filter(s => s.lane < MAX_LANES);
     const overflowSegments = allSegments.filter(s => s.lane >= MAX_LANES);
-    const mowingMap = getMowingDaysForWeek(weekDates, schedules, visits, pendingVisits);
+    const mowingMap = roleConfig.showMowingDots
+      ? getMowingDaysForWeek(weekDates, schedules, visits, pendingVisits)
+      : new Map<string, MowingDay[]>();
 
     const barsAreaHeight = Math.min(allSegments.length > 0 ? (Math.min(
       Math.max(...allSegments.map(s => s.lane)) + 1, MAX_LANES
@@ -305,7 +405,7 @@ export default function CalendarView({
             const isToday = dateStr === todayStr;
             const mowingDays = mowingMap.get(dateStr) || [];
 
-            const overdueCount = tasks.filter(t => {
+            const overdueCountForDots = tasks.filter(t => {
               if (!t.dueDate || t.status === 'completed') return false;
               const dd = t.dueDate.includes('T') ? t.dueDate.split('T')[0] : t.dueDate;
               return dd === dateStr && dd < todayStr;
@@ -327,22 +427,31 @@ export default function CalendarView({
               (pendingVisits.filter(v => v.serviceDate === dateStr && v.state !== 'synced').length);
 
             const dots: { color: string }[] = [];
-            for (let i = 0; i < overdueCount; i++) dots.push({ color: '#f44336' });
+            for (let i = 0; i < overdueCountForDots; i++) dots.push({ color: '#f44336' });
             for (let i = 0; i < windowCount; i++) dots.push({ color: '#ff9800' });
             for (let i = 0; i < hoaCount; i++) dots.push({ color: '#1565C0' });
             for (let i = 0; i < visitCount; i++) dots.push({ color: '#27ae60' });
 
-            const MAX_DOTS = 4;
             const extraDots = dots.length > MAX_DOTS ? dots.length - (MAX_DOTS - 1) : 0;
             const visibleDots = extraDots > 0 ? dots.slice(0, MAX_DOTS - 1) : dots.slice(0, MAX_DOTS);
 
             const tintOpacity = isCurrentMonth ? 1 : 0.5;
             let cellTint: string | null = null;
-            if (overdueCount > 0) {
+            if (overdueCountForDots > 0) {
               cellTint = `rgba(244,67,54,${0.08 * tintOpacity})`;
             } else if (windowCount >= 3) {
               cellTint = `rgba(255,152,0,${0.07 * tintOpacity})`;
             }
+
+            const hasOverdueOnDay = roleConfig.showOverdueDotPerDay && overdueDueDateTasks.some(t => {
+              const dd = t.dueDate!.includes('T') ? t.dueDate!.split('T')[0] : t.dueDate!;
+              return dd === dateStr;
+            });
+
+            const requestCount = openRequestsByDate.get(dateStr) || 0;
+            const overdueClusterCount = overdueCountByDate.get(dateStr) || 0;
+
+            const showHeatmap = !roleConfig.showOverdueClusterBadge && !roleConfig.showRequestDensityBadge;
 
             return (
               <View
@@ -365,7 +474,8 @@ export default function CalendarView({
                     {date.getDate()}
                   </Text>
                 </View>
-                {dots.length > 0 && (
+
+                {showHeatmap && dots.length > 0 && (
                   <View style={styles.dotRow}>
                     {visibleDots.map((dot, di) => (
                       <View
@@ -386,7 +496,24 @@ export default function CalendarView({
                     )}
                   </View>
                 )}
-                {mowingDays.map((md, i) => (
+
+                {hasOverdueOnDay && (
+                  <View style={styles.overdueDot} />
+                )}
+
+                {overdueClusterCount > 0 && (
+                  <View style={styles.overdueClusterBadge}>
+                    <Text style={styles.overdueClusterBadgeText}>{overdueClusterCount}</Text>
+                  </View>
+                )}
+
+                {requestCount > 0 && (
+                  <View style={styles.requestDensityBadge}>
+                    <Text style={styles.requestDensityBadgeText}>{requestCount}</Text>
+                  </View>
+                )}
+
+                {roleConfig.showMowingDots && mowingDays.map((md, i) => (
                   <TouchableOpacity
                     key={`mow-${md.schedule.id}-${i}`}
                     onPress={() => isContractor ? onLogVisit(md.schedule, md.dateStr) : undefined}
@@ -412,18 +539,7 @@ export default function CalendarView({
               const left = seg.startCol * cellWidth;
               const width = (seg.endCol - seg.startCol + 1) * cellWidth - 4;
               const top = seg.lane * (BAR_HEIGHT + BAR_GAP);
-              const isCompleted = seg.task.status === 'completed';
-              const isOverdue = !isCompleted && seg.task.windowEnd! < todayStr;
-              const isHoaOrigin = seg.task.origin === 'HOA';
-
-              const baseColor = isCompleted ? '#a5d6a7'
-                : isOverdue ? '#ef9a9a'
-                : priorityColors[seg.task.priority] || '#ff9800';
-
-              const hoaActive = isHoaOrigin && !isCompleted && !isOverdue;
-              const backgroundColor = hoaActive
-                ? baseColor + 'AA'
-                : isCompleted ? baseColor + '60' : baseColor + 'CC';
+              const colors = getBarColors(seg.task, todayStr);
 
               return (
                 <TouchableOpacity
@@ -435,11 +551,9 @@ export default function CalendarView({
                       width,
                       top,
                       height: BAR_HEIGHT,
-                      backgroundColor,
+                      backgroundColor: colors.backgroundColor,
                       borderLeftWidth: seg.isStart ? 3 : 0,
-                      borderLeftColor: hoaActive ? '#e65100' : baseColor,
-                      borderRightWidth: hoaActive ? 2 : 0,
-                      borderRightColor: '#e65100',
+                      borderLeftColor: colors.borderColor,
                       borderTopLeftRadius: seg.isStart ? 4 : 0,
                       borderBottomLeftRadius: seg.isStart ? 4 : 0,
                       borderTopRightRadius: seg.isEnd ? 4 : 0,
@@ -452,11 +566,11 @@ export default function CalendarView({
                   <Text
                     style={[
                       styles.taskBarText,
-                      isCompleted && styles.taskBarTextCompleted,
+                      seg.task.status === 'completed' && styles.taskBarTextCompleted,
                     ]}
                     numberOfLines={1}
                   >
-                    {isCompleted && '\u2713 '}{seg.task.title}
+                    {seg.task.status === 'completed' && '\u2713 '}{seg.task.title}
                   </Text>
                 </TouchableOpacity>
               );
@@ -464,7 +578,7 @@ export default function CalendarView({
           </View>
         )}
 
-        {overflowCount > 0 && !isHoaMember && (
+        {overflowCount > 0 && roleConfig.showOverflowButton && (
           <TouchableOpacity
             style={styles.overflowRow}
             onPress={() => {
@@ -482,7 +596,13 @@ export default function CalendarView({
         )}
       </View>
     );
-  }, [tasks, windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, isContractor, isHoaMember]);
+  }, [tasks, windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, overdueDueDateTasks, isContractor, roleConfig, openRequestsByDate, overdueCountByDate]);
+
+  const showRequestsCategory = roleConfig.showCategories.includes('requests');
+  const showScheduledCategory = roleConfig.showCategories.includes('scheduled');
+  const showCompletedCategory = roleConfig.showCategories.includes('completed');
+  const showOverdueCategory = roleConfig.showCategories.includes('overdue');
+  const showHeatmapLegend = !roleConfig.showOverdueClusterBadge && !roleConfig.showRequestDensityBadge;
 
   return (
     <View style={styles.container}>
@@ -511,26 +631,70 @@ export default function CalendarView({
       <View style={styles.legendToggleRow}>
         {legendExpanded ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.legend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendBar, { backgroundColor: '#ff9800CC' }]} />
-              <Text style={styles.legendText}>Task Window</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendBar, { backgroundColor: '#ff9800CC', borderLeftWidth: 2, borderLeftColor: '#e65100' }]} />
-              <Text style={styles.legendText}>HOA Request</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
-              <Text style={styles.legendText}>Overdue</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#1565C0' }]} />
-              <Text style={styles.legendText}>HOA</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
-              <Text style={styles.legendText}>Service Visit</Text>
-            </View>
+            {showScheduledCategory && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBar, { backgroundColor: '#ff9800CC', borderLeftWidth: 2, borderLeftColor: '#e65100' }]} />
+                <Text style={styles.legendText}>Scheduled</Text>
+              </View>
+            )}
+            {showRequestsCategory && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBar, { backgroundColor: CATEGORY_COLORS.requests.bar + 'AA', borderLeftWidth: 2, borderLeftColor: CATEGORY_COLORS.requests.border }]} />
+                <Text style={styles.legendText}>Request</Text>
+              </View>
+            )}
+            {showOverdueCategory && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBar, { backgroundColor: CATEGORY_COLORS.overdue.bar + 'CC', borderLeftWidth: 2, borderLeftColor: CATEGORY_COLORS.overdue.border }]} />
+                <Text style={styles.legendText}>Overdue</Text>
+              </View>
+            )}
+            {showCompletedCategory && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendBar, { backgroundColor: CATEGORY_COLORS.completed.bar + '60', borderLeftWidth: 2, borderLeftColor: CATEGORY_COLORS.completed.border }]} />
+                <Text style={styles.legendText}>Completed</Text>
+              </View>
+            )}
+            {showHeatmapLegend && (
+              <>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
+                  <Text style={styles.legendText}>Overdue</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: '#1565C0' }]} />
+                  <Text style={styles.legendText}>HOA</Text>
+                </View>
+              </>
+            )}
+            {roleConfig.showMowingDots && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#27ae60' }]} />
+                <Text style={styles.legendText}>Service Visit</Text>
+              </View>
+            )}
+            {roleConfig.showOverdueDotPerDay && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: '#f44336' }]} />
+                <Text style={styles.legendText}>Due Today</Text>
+              </View>
+            )}
+            {roleConfig.showOverdueClusterBadge && (
+              <View style={styles.legendItem}>
+                <View style={[styles.overdueClusterBadge, { position: 'relative', marginTop: 0 }]}>
+                  <Text style={styles.overdueClusterBadgeText}>N</Text>
+                </View>
+                <Text style={styles.legendText}>Overdue</Text>
+              </View>
+            )}
+            {roleConfig.showRequestDensityBadge && (
+              <View style={styles.legendItem}>
+                <View style={[styles.requestDensityBadge, { position: 'relative', marginTop: 0 }]}>
+                  <Text style={styles.requestDensityBadgeText}>N</Text>
+                </View>
+                <Text style={styles.legendText}>Open Requests</Text>
+              </View>
+            )}
           </ScrollView>
         ) : null}
         <TouchableOpacity
@@ -571,6 +735,8 @@ export default function CalendarView({
         onTaskPress={onTaskPress}
         onLogVisit={onLogVisit}
         isContractor={isContractor}
+        showMowingDots={roleConfig.showMowingDots}
+        todayStr={todayStr}
       />
     </View>
   );
@@ -586,12 +752,13 @@ type WeekItemsModalProps = {
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
   isContractor: boolean;
+  showMowingDots: boolean;
+  todayStr: string;
 };
 
-function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }: WeekItemsModalProps) {
+function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor, showMowingDots, todayStr }: WeekItemsModalProps) {
   if (!data) return null;
 
-  const todayStr = getTodayStr();
   const uniqueTasks = Array.from(new Map(data.bars.map(b => [b.task.id, b.task])).values());
 
   return (
@@ -614,10 +781,7 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }
                   const isCompleted = task.status === 'completed';
                   const isOverdue = !isCompleted && task.windowEnd! < todayStr;
                   const isHoaOrigin = task.origin === 'HOA';
-                  const barColor = isCompleted ? '#a5d6a7'
-                    : isOverdue ? '#ef9a9a'
-                    : isHoaOrigin ? '#ff9800'
-                    : priorityColors[task.priority] || '#ff9800';
+                  const colors = getBarColors(task, todayStr);
 
                   return (
                     <TouchableOpacity
@@ -626,7 +790,7 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }
                       onPress={() => { onClose(); onTaskPress(task.id); }}
                       activeOpacity={0.7}
                     >
-                      <View style={[modalStyles.taskDot, { backgroundColor: barColor }]} />
+                      <View style={[modalStyles.taskDot, { backgroundColor: colors.borderColor }]} />
                       <View style={modalStyles.taskInfo}>
                         <Text style={[modalStyles.taskTitle, isCompleted && modalStyles.taskTitleCompleted]} numberOfLines={1}>
                           {task.title}
@@ -651,7 +815,7 @@ function WeekItemsModal({ data, onClose, onTaskPress, onLogVisit, isContractor }
               </>
             )}
 
-            {isContractor && data.mowing.length > 0 && (
+            {isContractor && showMowingDots && data.mowing.length > 0 && (
               <>
                 <Text style={[modalStyles.sectionTitle, { marginTop: 16 }]}>Service Schedule</Text>
                 {data.mowing.map((md, i) => (
@@ -827,6 +991,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#888',
     lineHeight: 8,
+  },
+  overdueDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#f44336',
+    marginTop: 1,
+  },
+  overdueClusterBadge: {
+    position: 'relative',
+    backgroundColor: '#f44336',
+    borderRadius: 7,
+    minWidth: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
+  overdueClusterBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  requestDensityBadge: {
+    position: 'relative',
+    backgroundColor: '#5C6BC0',
+    borderRadius: 7,
+    minWidth: 14,
+    height: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    paddingHorizontal: 2,
+  },
+  requestDensityBadgeText: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#fff',
   },
   mowDot: {
     width: 14,
@@ -1025,7 +1228,7 @@ const modalStyles = StyleSheet.create({
     color: '#fff',
   },
   hoaBadge: {
-    backgroundColor: '#fff3e0',
+    backgroundColor: '#EDE7F6',
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 2,
@@ -1034,6 +1237,6 @@ const modalStyles = StyleSheet.create({
   hoaBadgeText: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: '#e65100',
+    color: '#512DA8',
   },
 });
