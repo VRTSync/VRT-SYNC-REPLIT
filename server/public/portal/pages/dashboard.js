@@ -37,8 +37,8 @@ PortalRouter.register('dashboard', async function (container) {
 
   try {
     if (role === 'contractor')       await renderContractor(container, ctx);
-    else if (role === 'hoa_admin')   await renderHoa(container, ctx, false);
-    else if (role === 'hoa_member')  await renderHoa(container, ctx, true);
+    else if (role === 'hoa_admin')   await renderHoa(container, ctx);
+    else if (role === 'hoa_member')  await renderHoaMember(container, ctx);
     else if (role === 'property_manager') await renderPM(container, ctx);
     else container.innerHTML = `<div class="empty-state"><p>No dashboard for role: ${role}</p></div>`;
   } catch (err) {
@@ -62,11 +62,24 @@ async function _fetchHoaDashboard() {
   catch { return null; }
 }
 
+/* Returns { allowed: bool, requests: [] }.
+ * allowed=false when the API returns 403/401 (member role lacks permission).
+ * Uses silent:true so that a 403 does not trigger a "Not authorized" toast —
+ * the member simply sees no request module rather than an error alert.
+ * PortalAPI.apiFetch throws Error('Not authorized') on 403 and
+ * Error('Session expired') on 401 — matched by err.message. */
 async function _fetchHoaRequests() {
   try {
-    const r = await PortalAPI.apiFetch('/api/hoa/requests');
-    return Array.isArray(r) ? r : [];
-  } catch { return []; }
+    const r = await PortalAPI.apiFetch('/api/hoa/requests', { silent: true });
+    return { allowed: true, requests: Array.isArray(r) ? r : [] };
+  } catch (err) {
+    const msg = err && err.message;
+    if (msg === 'Not authorized' || msg === 'Session expired') {
+      return { allowed: false, requests: [] };
+    }
+    /* Network / server error — treat as permitted but empty to avoid hiding the module */
+    return { allowed: true, requests: [] };
+  }
 }
 
 function _partition(tasks) {
@@ -258,25 +271,34 @@ async function _fetchWaterUsage(communityId) {
   } catch { return []; }
 }
 
-/* ── Service Day widget renderer ── */
-function _renderServiceDayWidget(schedules, thisWeekVisits) {
+/* ── Service Day widget renderer ──
+ * opts.memberMode = true  → community-facing copy, non-interactive (no Manage link)
+ * opts.memberMode = false → admin copy with "Manage →" link (default) */
+function _renderServiceDayWidget(schedules, thisWeekVisits, opts) {
+  const memberMode = opts && opts.memberMode;
   const M = PortalModules;
   const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const calIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
 
+  const title     = memberMode ? "Your community's service day" : 'Service Day';
+  const emptyMsg  = memberMode ? 'Service schedule not yet configured' : 'No service schedule configured';
+  const nextLabel = memberMode ? 'Next visit:' : 'Next:';
+  const wrapAttrs = memberMode
+    ? ''
+    : `onclick="PortalRouter.navigate('service-schedule')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();PortalRouter.navigate('service-schedule');}" role="button" tabindex="0"`;
+
   const active = schedules.filter(s => s.isActive);
-  const svcKeydown = `if(event.key==='Enter'||event.key===' '){event.preventDefault();PortalRouter.navigate('service-schedule');}`;
   if (active.length === 0) {
     return `
-      <div class="cc-widget cc-widget--service" onclick="PortalRouter.navigate('service-schedule')" onkeydown="${svcKeydown}" role="button" tabindex="0">
+      <div class="cc-widget cc-widget--service" ${wrapAttrs}>
         <div class="cc-widget-header">
           <span class="cc-widget-icon" style="color:var(--teal)">${calIcon}</span>
-          <span class="cc-widget-title">Service Day</span>
-          <span class="cc-widget-link">Manage →</span>
+          <span class="cc-widget-title">${M.esc(title)}</span>
+          ${!memberMode ? '<span class="cc-widget-link">Manage \u2192</span>' : ''}
         </div>
-        <div class="cc-widget-empty">No service schedule configured</div>
+        <div class="cc-widget-empty">${M.esc(emptyMsg)}</div>
       </div>`;
   }
 
@@ -319,21 +341,23 @@ function _renderServiceDayWidget(schedules, thisWeekVisits) {
   const visitLoggedThisWeek = visits.some(function(v) {
     return v.serviceDate === thisWeekServiceDate;
   });
-  const visitLabel = visitLoggedThisWeek ? 'This week: Logged' : 'This week: Not yet';
+  const visitLabel = visitLoggedThisWeek
+    ? (memberMode ? 'This week: Crew visited' : 'This week: Logged')
+    : (memberMode ? 'This week: Visit pending' : 'This week: Not yet');
   const visitClass = visitLoggedThisWeek ? 'cc-svc-visit--logged' : 'cc-svc-visit--pending';
 
   return `
-    <div class="cc-widget cc-widget--service" onclick="PortalRouter.navigate('service-schedule')" onkeydown="${svcKeydown}" role="button" tabindex="0">
+    <div class="cc-widget cc-widget--service" ${wrapAttrs}>
       <div class="cc-widget-header">
         <span class="cc-widget-icon" style="color:var(--teal)">${calIcon}</span>
-        <span class="cc-widget-title">Service Day</span>
-        <span class="cc-widget-link">Manage →</span>
+        <span class="cc-widget-title">${M.esc(title)}</span>
+        ${!memberMode ? '<span class="cc-widget-link">Manage \u2192</span>' : ''}
       </div>
       <div class="cc-widget-body">
         <div class="cc-svc-day">${M.esc(dowName)}</div>
         <div class="cc-svc-meta">
           <span class="cc-badge ${seasonClass}">${seasonLabel}</span>
-          <span class="cc-svc-next">Next: ${M.esc(nextStr)}</span>
+          <span class="cc-svc-next">${M.esc(nextLabel)} ${M.esc(nextStr)}</span>
         </div>
         <div class="cc-svc-visit ${visitClass}">${M.esc(visitLabel)}</div>
       </div>
@@ -463,22 +487,23 @@ function _renderAttentionRequired(items, copyObj) {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * HOA Admin + HOA Member Dashboard  (readOnly = member)
+ * HOA Admin Dashboard
  * ────────────────────────────────────────────────────────────────────────── */
-async function renderHoa(container, ctx, readOnly) {
+async function renderHoa(container, ctx) {
   const M   = PortalModules;
-  const hoaRole = readOnly ? 'hoa_member' : 'hoa_admin';
-  const C   = PortalRoleCopy.get(hoaRole);
+  const C   = PortalRoleCopy.get('hoa_admin');
   const { activeCommunity } = ctx;
   const I   = M.ICONS;
 
-  const [dashData, requests, schedules, waterUsage, thisWeekVisits] = await Promise.all([
+  const [dashData, reqResult, schedules, waterUsage, thisWeekVisits] = await Promise.all([
     _fetchHoaDashboard(),
     _fetchHoaRequests(),
     _fetchServiceSchedules(activeCommunity.id),
     _fetchWaterUsage(activeCommunity.id),
     _fetchServiceVisitsThisWeek(activeCommunity.id),
   ]);
+  /* Admin always has access; extract raw array from result object */
+  const requests = reqResult.requests;
 
   /* Normalize what the HOA dashboard returns
    * upcomingTasks = all non-completed tasks (limit 10)
@@ -581,7 +606,8 @@ async function renderHoa(container, ctx, readOnly) {
 
     sm.start(
       async function () {
-        const [dd, reqs] = await Promise.all([_fetchHoaDashboard(), _fetchHoaRequests()]);
+        const [dd, reqRes] = await Promise.all([_fetchHoaDashboard(), _fetchHoaRequests()]);
+        const reqs = reqRes.requests;
         _hoaLatest = { dashData: dd, requests: reqs };
         /* Build a normalized array for snapshot comparison */
         const tasks = ((dd && dd.upcomingTasks) || []).concat((dd && dd.recentCompletions) || []);
@@ -605,6 +631,201 @@ async function renderHoa(container, ctx, readOnly) {
 
         _updateDashSyncLabel(container);
         if (changed) PortalAPI.showToast('Tasks updated', 'info');
+      },
+      30000
+    );
+    _wireDashSyncBtn(container, sm);
+    window._dashSyncTicker = setInterval(() => _updateDashSyncLabel(container), 5000);
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+ * HOA Member Community Visibility Dashboard
+ * Purpose-built for transparency and community confidence — no admin framing.
+ * Module order: Activity summary → Recent completions → Upcoming work →
+ *               Map quick-view → Service schedule → Request status summary
+ * ────────────────────────────────────────────────────────────────────────── */
+async function renderHoaMember(container, ctx) {
+  const M   = PortalModules;
+  const { activeCommunity } = ctx;
+  const I   = M.ICONS;
+
+  const [dashData, reqResult, schedules, thisWeekVisits] = await Promise.all([
+    _fetchHoaDashboard(),
+    _fetchHoaRequests(),
+    _fetchServiceSchedules(activeCommunity.id),
+    _fetchServiceVisitsThisWeek(activeCommunity.id),
+  ]);
+  /* Distinguish permission-denied (allowed=false) from empty-but-allowed */
+  const requestsAllowed = reqResult.allowed;
+  const requests        = reqResult.requests;
+
+  const nonCompleted  = (dashData && dashData.upcomingTasks) || [];
+  const recentDone    = (dashData && dashData.recentCompletions) || [];
+  const upcoming      = nonCompleted.filter(t => M.classifyTask(t) === 'upcoming');
+  const completed     = recentDone;
+  /* allRequests = all submitted requests for the member panel (show full history + status).
+   * activeRequests = open/non-completed subset used for the stats card count. */
+  const allRequests    = requestsAllowed ? requests : [];
+  const activeRequests = allRequests.filter(r => r.status !== 'completed');
+
+  /* Community narrative block: what's happening, what was done, what's next */
+  const narrativeParts = [];
+  if (upcoming.length > 0) {
+    narrativeParts.push(`${upcoming.length} item${upcoming.length !== 1 ? 's' : ''} scheduled for your community.`);
+  }
+  if (completed.length > 0) {
+    narrativeParts.push(`${completed.length} task${completed.length !== 1 ? 's' : ''} recently completed.`);
+  }
+  if (activeRequests.length > 0) {
+    narrativeParts.push(`${activeRequests.length} open service request${activeRequests.length !== 1 ? 's' : ''} on file.`);
+  }
+  const narrative = narrativeParts.length > 0
+    ? narrativeParts.join(' ')
+    : 'Your community is up to date. Check back soon for activity updates.';
+
+  /* Member-friendly service widget — community-facing copy, no Manage link */
+  const serviceDayHtml = _renderServiceDayWidget(schedules, thisWeekVisits, { memberMode: true });
+
+  container.innerHTML = `
+    ${M.pageHeader('Community Dashboard', activeCommunity)}
+
+    <!-- Panel 1: Community Activity Summary -->
+    <div class="dash-panel dash-panel--command">
+      <div class="dash-panel-body">
+        ${M.statsRow([
+          { icon: I.done(),     label: 'Completed this month', value: completed.length,      color: 'var(--teal)' },
+          { icon: I.task(),     label: 'Scheduled upcoming',   value: upcoming.length,        color: 'var(--blue)' },
+          ...(requestsAllowed ? [{ icon: I.inbox(), label: 'Active requests', value: activeRequests.length, color: 'var(--amber)' }] : []),
+          { icon: I.calendar(), label: 'Service visits',        value: thisWeekVisits.length, color: 'var(--green)' },
+        ])}
+        <div class="cc-member-narrative">
+          <p class="cc-member-narrative-text">${M.esc(narrative)}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2: Recent work + Upcoming work -->
+    <div class="dash-panel dash-panel--tasks dash-panel--member">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Community Activity</span>
+        ${_syncBadgeHtml('dash-sync-bar')}
+      </div>
+      <div class="dash-panel-body">
+        <div id="dash-member-completed-col">
+          ${M.listModule({
+            title: 'Recent work in your community',
+            rows: completed.slice(0, 5),
+            emptyMsg: 'No recent completions to show.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
+        <div id="dash-member-upcoming-col">
+          ${M.listModule({
+            title: 'Scheduled next',
+            rows: upcoming.slice(0, 5),
+            emptyMsg: 'No upcoming work scheduled.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Map quick-view -->
+    <div class="dash-panel dash-panel--map">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Community Map</span>
+        <button class="module-view-all" onclick="PortalRouter.navigate('map')">View community map</button>
+      </div>
+      <div class="dash-panel-body">
+        <div class="map-preview-body">
+          <iframe id="dash-map-iframe" src="/leaflet-map.html" class="map-preview-iframe" tabindex="-1" aria-hidden="true"></iframe>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 4: Service schedule widget -->
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Service Schedule</span>
+      </div>
+      <div class="dash-panel-body dash-panel-body--widgets">
+        ${serviceDayHtml}
+      </div>
+    </div>
+
+    ${requestsAllowed ? `
+    <!-- Panel 5: Request status summary — gated by API permission (allowed=true).
+         Shows all submitted requests and their status so members can track history.
+         Sync patches this list in place every 30s. -->
+    <div class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Your Requests</span>
+      </div>
+      <div class="dash-panel-body">
+        <div id="dash-member-requests-col">
+          ${M.listModule({
+            title: '',
+            rows: allRequests.slice(0, 5),
+            emptyMsg: 'No requests on file.',
+            viewAllRoute: 'requests',
+          })}
+        </div>
+      </div>
+    </div>` : ''}
+  `;
+
+  requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
+
+  /* 30-second sync wiring — updates completions, upcoming, and request status.
+   * Stats row preserves service visits count from initial load (not re-fetched
+   * on sync since service visits are fetched weekly and don't change on 30s interval). */
+  if (window.SyncManager) {
+    const sm = SyncManager.create();
+    window._dashSyncManager = sm;
+    /* Capture initial service visits count so sync doesn't zero it out */
+    const initialVisitCount = thisWeekVisits.length;
+    let _memberLatest = { dashData: null, requests: [] };
+
+    sm.start(
+      async function () {
+        /* Skip request fetch for members without permission to avoid repeated
+         * "Not authorized" toasts during the 30s sync interval */
+        const [dd, reqRes] = await Promise.all([
+          _fetchHoaDashboard(),
+          requestsAllowed ? _fetchHoaRequests() : Promise.resolve({ allowed: false, requests: [] }),
+        ]);
+        const reqs = reqRes.requests;
+        _memberLatest = { dashData: dd, requests: reqs };
+        const tasks = ((dd && dd.upcomingTasks) || []).concat((dd && dd.recentCompletions) || []);
+        return tasks.map(t => ({ id: t.id, status: t.status }))
+          .concat(reqs.map(r => ({ id: r.id, status: r.status })));
+      },
+      function (_normalizedArr, changed) {
+        const dd      = _memberLatest.dashData;
+        const reqs    = _memberLatest.requests;
+        const nc      = (dd && dd.upcomingTasks) || [];
+        const rd      = (dd && dd.recentCompletions) || [];
+        const up      = nc.filter(t => M.classifyTask(t) === 'upcoming');
+        const comp    = rd;
+        /* allReqs = full request list for panel display; actReqs = open only for stat count */
+        const allReqs  = requestsAllowed ? reqs : [];
+        const actReqs  = allReqs.filter(r => r.status !== 'completed');
+
+        /* Stats row: service visits card uses the initial count (unchanged on 30s sync).
+         * Request stat card only included when member has permission (same as initial render). */
+        const statValues = requestsAllowed
+          ? [comp.length, up.length, actReqs.length, initialVisitCount]
+          : [comp.length, up.length, initialVisitCount];
+        _updateStatsRow(container, statValues);
+        _patchListModule(container, '#dash-member-completed-col', comp.slice(0, 5), 'No recent completions to show.');
+        _patchListModule(container, '#dash-member-upcoming-col', up.slice(0, 5), 'No upcoming work scheduled.');
+        if (requestsAllowed) {
+          _patchListModule(container, '#dash-member-requests-col', allReqs.slice(0, 5), 'No requests on file.');
+        }
+
+        _updateDashSyncLabel(container);
+        if (changed) PortalAPI.showToast('Community activity updated', 'info');
       },
       30000
     );

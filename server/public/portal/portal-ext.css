@@ -2152,9 +2152,47 @@
   flex-shrink: 0;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * HOA Member Dashboard — community narrative + 2-column activity layout
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Community narrative text block below the stats row */
+.cc-member-narrative {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--gray-50);
+  border-left: 3px solid var(--teal);
+  border-radius: 6px;
+}
+
+.cc-member-narrative-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gray-600);
+  line-height: 1.5;
+}
+
+/* 2-column grid for the member activity panel (recent + upcoming) */
+.dash-panel--tasks.dash-panel--member .dash-panel-body {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* Service widget panel body — single widget full-width */
+.dash-panel-body--widgets {
+  padding: 16px;
+}
+
+.dash-panel-body--widgets .cc-widget {
+  cursor: default;
+  pointer-events: none;
+}
+
 /* ── Responsive: stack on narrow screens ── */
 @media (max-width: 900px) {
   .cc-sections {
+    grid-template-columns: 1fr;
+  }
+  .dash-panel--tasks.dash-panel--member .dash-panel-body {
     grid-template-columns: 1fr;
   }
 }

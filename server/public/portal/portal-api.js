@@ -29,7 +29,7 @@ window.PortalAPI = (function() {
         throw new Error('Session expired');
       }
       if (res.status === 403) {
-        showToast('Not authorized', 'error');
+        if (!options.silent) showToast('Not authorized', 'error');
         throw new Error('Not authorized');
       }
       if (!res.ok) {
