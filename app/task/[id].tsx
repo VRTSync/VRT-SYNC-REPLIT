@@ -113,12 +113,95 @@ function isInWindow(task: Task): 'before' | 'in' | 'after' | null {
   return 'in';
 }
 
+function LifecycleTimeline({ task, completions }: { task: Task; completions: Completion[] }) {
+  const isHoa = task.origin === 'HOA' || task.origin === 'hoa_request';
+  const completion = completions && completions.length > 0 ? completions[0] : null;
+
+  type Step = { label: string; ts: string | null; done: boolean };
+  const steps: Step[] = [];
+
+  function fmtTs(iso: string | null | undefined): string | null {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  if (isHoa) {
+    steps.push({ label: 'Submitted', ts: fmtTs(task.createdAt), done: true });
+    steps.push({ label: 'Acknowledged', ts: fmtTs(task.acknowledgedAt), done: !!task.acknowledgedAt });
+    steps.push({ label: 'In Progress', ts: null, done: task.status === 'in_progress' || task.status === 'completed' });
+    steps.push({ label: 'Completed', ts: fmtTs(completion?.completedAt), done: task.status === 'completed' });
+  } else {
+    steps.push({ label: 'Submitted', ts: fmtTs(task.createdAt), done: true });
+    steps.push({ label: 'Acknowledged', ts: fmtTs(task.acknowledgedAt), done: !!task.acknowledgedAt || task.status === 'in_progress' || task.status === 'completed' });
+    steps.push({ label: 'In Progress', ts: null, done: task.status === 'in_progress' || task.status === 'completed' });
+    steps.push({ label: 'Completed', ts: fmtTs(completion?.completedAt), done: task.status === 'completed' });
+  }
+
+  return (
+    <View style={tlStyles.container}>
+      <Text style={tlStyles.heading}>Lifecycle</Text>
+      <View style={tlStyles.timeline}>
+        {steps.map((step, idx) => (
+          <View key={idx} style={tlStyles.step}>
+            <View style={tlStyles.dotCol}>
+              <View style={[tlStyles.dot, step.done ? tlStyles.dotDone : tlStyles.dotPending]} />
+              {idx < steps.length - 1 && <View style={tlStyles.line} />}
+            </View>
+            <View style={tlStyles.stepContent}>
+              <Text style={[tlStyles.stepLabel, !step.done && tlStyles.stepLabelPending]}>
+                {step.label}
+              </Text>
+              {step.ts ? (
+                <Text style={tlStyles.stepTs}>{step.ts}</Text>
+              ) : step.done ? null : (
+                <Text style={tlStyles.stepTsPending}>Pending</Text>
+              )}
+            </View>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const tlStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  heading: { fontSize: 16, fontWeight: '700', color: '#0C1D31', marginBottom: 14 },
+  timeline: { paddingLeft: 0 },
+  step: { flexDirection: 'row', gap: 12 },
+  dotCol: { alignItems: 'center', width: 16 },
+  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, flexShrink: 0 },
+  dotDone: { backgroundColor: '#25C1AC', borderColor: '#25C1AC' },
+  dotPending: { backgroundColor: '#fff', borderColor: '#d1d5db' },
+  line: { flex: 1, width: 2, backgroundColor: '#e5e7eb', marginTop: 2, marginBottom: 2, minHeight: 16 },
+  stepContent: { flex: 1, paddingBottom: 14 },
+  stepLabel: { fontSize: 13, fontWeight: '600', color: '#0C1D31' },
+  stepLabelPending: { color: '#9ca3af' },
+  stepTs: { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  stepTsPending: { fontSize: 11, color: '#d1d5db', marginTop: 2, fontStyle: 'italic' },
+});
+
 export default function TaskDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const isHoaUser = user?.role === 'hoa_admin' || user?.role === 'hoa_member';
+  const isHoaAdmin = user?.role === 'hoa_admin';
+  const isHoaMember = user?.role === 'hoa_member';
+  const isHoaUser = isHoaAdmin || isHoaMember;
+  const isContractor = user?.role === 'contractor';
   const { activeCommunity } = useCommunity();
   const { isOnline, addPendingCompletion, getCompletionForTask, retryCompletion, dismissCompletion, syncPendingCompletions, pendingCompletions } = useOffline();
 
@@ -371,7 +454,7 @@ export default function TaskDetailScreen() {
           <Ionicons name="arrow-back" size={22} color="#0C1D31" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{task.title}</Text>
-        {!isHoaUser && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') ? (
+        {isContractor && task.status === 'in_progress' && !pendingForTask ? (
           <TouchableOpacity onPress={() => setShowCompleteForm(true)} style={styles.headerActionBtn}>
             <Ionicons name="checkmark-circle-outline" size={24} color="#25C1AC" />
           </TouchableOpacity>
@@ -445,170 +528,221 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {isHoaRequest && (
-        <View style={styles.hoaBanner}>
-          <View style={styles.hoaBannerTop}>
-            <View style={styles.hoaBadge}>
-              <Ionicons name="home-outline" size={14} color="#fff" />
-              <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
+      {isHoaMember ? (
+        /* ── HOA Member: simplified read-only view ── */
+        <>
+          <View style={styles.card}>
+            <View style={styles.titleRow}>
+              <View style={[styles.priorityBadge, { backgroundColor: priorityColors[task.priority] }]}>
+                <Text style={styles.priorityText}>{task.priority.toUpperCase()}</Text>
+              </View>
+              <Text style={styles.statusLabel}>{statusLabels[task.status]}</Text>
             </View>
-            <View style={[
-              styles.hoaStatusChip,
-              { backgroundColor: task.status === 'submitted' ? '#fff3e0' : task.status === 'acknowledged' ? '#e3f2fd' : '#E6F9F6' },
-            ]}>
-              <Text style={[
-                styles.hoaStatusChipText,
-                { color: task.status === 'submitted' ? '#e65100' : task.status === 'acknowledged' ? '#1565c0' : '#25C1AC' },
-              ]}>
-                {statusLabels[task.status]}
-              </Text>
+            <Text style={styles.title}>{task.title}</Text>
+            {task.description ? (
+              <Text style={styles.description}>{task.description}</Text>
+            ) : null}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Details</Text>
+            {task.windowStart && task.windowEnd ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="time-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>
+                  Window: {toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </Text>
+              </View>
+            ) : null}
+            {task.address ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>{task.address}</Text>
+              </View>
+            ) : null}
+            <View style={styles.detailRow}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>Created: {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
             </View>
           </View>
-          <View style={styles.hoaPriorityRow}>
-            <Text style={styles.hoaPriorityLabel}>Priority:</Text>
-            <Text style={[styles.hoaPriorityValue, { color: task.priority === 'urgent' ? '#c62828' : '#555' }]}>
-              {task.priority === 'urgent' ? 'Urgent' : 'General'}
-            </Text>
-          </View>
-          {isHoaUser || (user?.role !== 'contractor' && user?.role !== 'admin') ? (
-            <View style={styles.acknowledgeStatusRow}>
-              {task.acknowledgedAt ? (
-                <>
-                  <Ionicons name="checkmark-done-circle" size={18} color="#25C1AC" />
-                  <Text style={styles.acknowledgeStatusText}>
-                    Acknowledged on {new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(task.acknowledgedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+
+          <LifecycleTimeline task={task!} completions={completions} />
+        </>
+      ) : (
+        /* ── All other roles: full view ── */
+        <>
+          {isHoaRequest && (
+            <View style={styles.hoaBanner}>
+              <View style={styles.hoaBannerTop}>
+                <View style={styles.hoaBadge}>
+                  <Ionicons name="home-outline" size={14} color="#fff" />
+                  <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
+                </View>
+                <View style={[
+                  styles.hoaStatusChip,
+                  { backgroundColor: task.status === 'submitted' ? '#fff3e0' : task.status === 'acknowledged' ? '#e3f2fd' : '#E6F9F6' },
+                ]}>
+                  <Text style={[
+                    styles.hoaStatusChipText,
+                    { color: task.status === 'submitted' ? '#e65100' : task.status === 'acknowledged' ? '#1565c0' : '#25C1AC' },
+                  ]}>
+                    {statusLabels[task.status]}
                   </Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="time-outline" size={18} color="#888" />
-                  <Text style={[styles.acknowledgeStatusText, { color: '#888' }]}>Not acknowledged yet</Text>
-                </>
+                </View>
+              </View>
+              <View style={styles.hoaPriorityRow}>
+                <Text style={styles.hoaPriorityLabel}>Priority:</Text>
+                <Text style={[styles.hoaPriorityValue, { color: task.priority === 'urgent' ? '#c62828' : '#555' }]}>
+                  {task.priority === 'urgent' ? 'Urgent' : 'General'}
+                </Text>
+              </View>
+              {isHoaAdmin || (user?.role !== 'contractor' && user?.role !== 'admin') ? (
+                <View style={styles.acknowledgeStatusRow}>
+                  {task.acknowledgedAt ? (
+                    <>
+                      <Ionicons name="checkmark-done-circle" size={18} color="#25C1AC" />
+                      <Text style={styles.acknowledgeStatusText}>
+                        Acknowledged on {new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(task.acknowledgedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="time-outline" size={18} color="#888" />
+                      <Text style={[styles.acknowledgeStatusText, { color: '#888' }]}>Not acknowledged yet</Text>
+                    </>
+                  )}
+                </View>
+              ) : task.status === 'submitted' && (
+                <TouchableOpacity
+                  style={[styles.acknowledgeButton, acknowledging && styles.buttonDisabled]}
+                  onPress={handleAcknowledge}
+                  disabled={acknowledging}
+                >
+                  {acknowledging ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+                      <Text style={styles.acknowledgeButtonText}>Acknowledge Request</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               )}
             </View>
-          ) : task.status === 'submitted' && (
+          )}
+
+          {isHoaRequest && (task.latitude != null && task.longitude != null) && (
             <TouchableOpacity
-              style={[styles.acknowledgeButton, acknowledging && styles.buttonDisabled]}
-              onPress={handleAcknowledge}
-              disabled={acknowledging}
+              style={styles.viewOnMapButton}
+              onPress={() => router.push(`/request-map/${task.id}` as any)}
             >
-              {acknowledging ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
-                  <Text style={styles.acknowledgeButtonText}>Acknowledge Request</Text>
-                </>
-              )}
+              <Ionicons name="map-outline" size={18} color="#fff" />
+              <Text style={styles.viewOnMapButtonText}>View on Map</Text>
             </TouchableOpacity>
           )}
-        </View>
-      )}
 
-      {isHoaRequest && (task.latitude != null && task.longitude != null) && (
-        <TouchableOpacity
-          style={styles.viewOnMapButton}
-          onPress={() => router.push(`/request-map/${task.id}` as any)}
-        >
-          <Ionicons name="map-outline" size={18} color="#fff" />
-          <Text style={styles.viewOnMapButtonText}>View on Map</Text>
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.card}>
-        <View style={styles.titleRow}>
-          <View style={[styles.priorityBadge, { backgroundColor: priorityColors[task.priority] }]}>
-            <Text style={styles.priorityText}>{task.priority.toUpperCase()}</Text>
-          </View>
-          <Text style={styles.statusLabel}>{statusLabels[task.status]}</Text>
-        </View>
-        <Text style={styles.title}>{task.title}</Text>
-        {task.description ? (
-          <Text style={styles.description}>{task.description}</Text>
-        ) : null}
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Details</Text>
-        {task.windowStart && task.windowEnd ? (
-          <View style={styles.windowRow}>
-            <Ionicons name="time-outline" size={16} color={
-              isInWindow(task) === 'after' ? '#c62828' :
-              isInWindow(task) === 'in' ? '#25C1AC' : '#1565c0'
-            } />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.detailText}>
-                Window: {toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </Text>
-              {isInWindow(task) === 'after' && task.status !== 'completed' ? (
-                <Text style={styles.windowWarning}>Window has passed</Text>
-              ) : isInWindow(task) === 'before' && task.status !== 'completed' ? (
-                <Text style={styles.windowUpcoming}>Not yet in window</Text>
-              ) : null}
+          <View style={styles.card}>
+            <View style={styles.titleRow}>
+              <View style={[styles.priorityBadge, { backgroundColor: priorityColors[task.priority] }]}>
+                <Text style={styles.priorityText}>{task.priority.toUpperCase()}</Text>
+              </View>
+              <Text style={styles.statusLabel}>{statusLabels[task.status]}</Text>
             </View>
+            <Text style={styles.title}>{task.title}</Text>
+            {task.description ? (
+              <Text style={styles.description}>{task.description}</Text>
+            ) : null}
           </View>
-        ) : null}
-        {task.address ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>{task.address}</Text>
-          </View>
-        ) : null}
-        {task.dueDate ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>Due: {new Date(task.dueDate).toLocaleDateString()}</Text>
-          </View>
-        ) : null}
-        {task.category ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="pricetag-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>Category: {task.category}</Text>
-          </View>
-        ) : null}
-        {(task.assignedToName || task.assignedTo) ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="person-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>Contractor: {task.assignedToName || task.assignedTo}</Text>
-          </View>
-        ) : null}
-        <View style={styles.detailRow}>
-          <Ionicons name="time-outline" size={16} color="#666" />
-          <Text style={styles.detailText}>Created: {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
-        </View>
-        {isHoaRequest && (
-          <View style={styles.detailRow}>
-            <Ionicons name="checkmark-done-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>
-              {task.acknowledgedAt
-                ? `Acknowledged: ${new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                : 'Not acknowledged yet'}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {task.windowStart && task.windowEnd && isInWindow(task) !== 'in' && task.status !== 'completed' && (
-        user?.role === 'admin' ? (
-          <View style={styles.adminOverrideBanner}>
-            <Ionicons name="shield-checkmark-outline" size={16} color="#e65100" />
-            <Text style={styles.adminOverrideText}>
-              Admin override: You can complete this task outside its execution window.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.windowBlockBanner}>
-            <Ionicons name="lock-closed-outline" size={16} color="#c62828" />
-            <Text style={styles.windowBlockText}>
-              {isInWindow(task) === 'before'
-                ? `This task cannot be completed until ${toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
-                : `This task's execution window ended on ${toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`}
-            </Text>
-          </View>
-        )
+        </>
       )}
 
-      {taskLink && (
+      {!isHoaMember && (
+        <>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Details</Text>
+            {task.windowStart && task.windowEnd ? (
+              <View style={styles.windowRow}>
+                <Ionicons name="time-outline" size={16} color={
+                  isInWindow(task) === 'after' ? '#c62828' :
+                  isInWindow(task) === 'in' ? '#25C1AC' : '#1565c0'
+                } />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.detailText}>
+                    Window: {toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  {isInWindow(task) === 'after' && task.status !== 'completed' ? (
+                    <Text style={styles.windowWarning}>Window has passed</Text>
+                  ) : isInWindow(task) === 'before' && task.status !== 'completed' ? (
+                    <Text style={styles.windowUpcoming}>Not yet in window</Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+            {task.address ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>{task.address}</Text>
+              </View>
+            ) : null}
+            {task.dueDate ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="calendar-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>Due: {new Date(task.dueDate).toLocaleDateString()}</Text>
+              </View>
+            ) : null}
+            {task.category ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="pricetag-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>Category: {task.category}</Text>
+              </View>
+            ) : null}
+            {(task.assignedToName || task.assignedTo) ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="person-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>Contractor: {task.assignedToName || task.assignedTo}</Text>
+              </View>
+            ) : null}
+            <View style={styles.detailRow}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>Created: {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+            </View>
+            {isHoaRequest && (
+              <View style={styles.detailRow}>
+                <Ionicons name="checkmark-done-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>
+                  {task.acknowledgedAt
+                    ? `Acknowledged: ${new Date(task.acknowledgedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                    : 'Not acknowledged yet'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {task.windowStart && task.windowEnd && isInWindow(task) !== 'in' && task.status !== 'completed' && (
+            user?.role === 'admin' ? (
+              <View style={styles.adminOverrideBanner}>
+                <Ionicons name="shield-checkmark-outline" size={16} color="#e65100" />
+                <Text style={styles.adminOverrideText}>
+                  Admin override: You can complete this task outside its execution window.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.windowBlockBanner}>
+                <Ionicons name="lock-closed-outline" size={16} color="#c62828" />
+                <Text style={styles.windowBlockText}>
+                  {isInWindow(task) === 'before'
+                    ? `This task cannot be completed until ${toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
+                    : `This task's execution window ended on ${toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`}
+                </Text>
+              </View>
+            )
+          )}
+        </>
+      )}
+
+      {(isHoaAdmin || user?.role === 'property_manager') && <LifecycleTimeline task={task!} completions={completions} />}
+
+      {!isHoaMember && taskLink && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>
             {taskLink.linkType === 'asset' ? 'Linked Asset' : 'Linked Location'}
@@ -665,7 +799,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {taskAttachments.length > 0 && (
+      {!isHoaMember && taskAttachments.length > 0 && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Request Photos</Text>
           <View style={styles.completionPhotosSection}>
@@ -694,7 +828,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {completions.length > 0 && (
+      {!isHoaMember && completions.length > 0 && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Completion Details</Text>
           {completions.map((c, cIdx) => (
@@ -839,7 +973,26 @@ export default function TaskDetailScreen() {
         </View>
       </Modal>
 
-      {showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (
+      {isContractor && !pendingForTask && task.status !== 'completed'
+        && (task.status === 'pending' || task.status === 'acknowledged') && !showCompleteForm && (
+        <TouchableOpacity
+          style={styles.markInProgressButton}
+          onPress={async () => {
+            try {
+              await apiRequest('PUT', `/api/tasks/${task!.id}`, { status: 'in_progress', version: task!.version });
+              queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+              queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to update task');
+            }
+          }}
+        >
+          <Ionicons name="play-circle-outline" size={20} color="#fff" />
+          <Text style={styles.markInProgressButtonText}>Mark In Progress</Text>
+        </TouchableOpacity>
+      )}
+
+      {isContractor && showCompleteForm && task.status === 'in_progress' && !pendingForTask && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Complete Task</Text>
 
@@ -936,7 +1089,7 @@ export default function TaskDetailScreen() {
         </View>
       )}
 
-      {!isHoaUser && !showCompleteForm && task.status !== 'completed' && !pendingForTask && !(isHoaRequest && task.status === 'submitted') && (() => {
+      {isContractor && !showCompleteForm && task.status === 'in_progress' && !pendingForTask && (() => {
         const windowStatus = isInWindow(task);
         const blocked = windowStatus !== null && windowStatus !== 'in' && user?.role !== 'admin';
         if (blocked) return null;
@@ -1369,6 +1522,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   viewOnMapButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  markInProgressButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563eb',
+    borderRadius: 999,
+    padding: 16,
+    marginBottom: 12,
+  },
+  markInProgressButtonText: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '700' as const,

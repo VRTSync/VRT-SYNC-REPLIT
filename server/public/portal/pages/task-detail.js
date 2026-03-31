@@ -27,7 +27,6 @@
 
     var ctx = PortalState.getCommunityContext();
     var role = ctx.role;
-    var isContractor = role === 'contractor';
 
     var task = null;
     var completions = [];
@@ -43,15 +42,123 @@
       if (Array.isArray(c)) completions = c;
     } catch (e) { /* ignore */ }
 
-    renderDetail(panel, task, completions, isContractor);
+    renderDetail(panel, task, completions, role);
   };
 
-  function renderDetail(panel, task, completions, isContractor) {
+  function fmtDateTime(isoStr) {
+    if (!isoStr) return null;
+    var d = new Date(isoStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' at ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function buildLifecycleHtml(task, completions) {
+    var isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
+    var completion = completions && completions.length > 0 ? completions[0] : null;
+
+    var steps = [];
+
+    if (isHoa) {
+      steps.push({
+        label: 'Submitted',
+        ts: fmtDateTime(task.createdAt),
+        done: true,
+      });
+      steps.push({
+        label: 'Acknowledged',
+        ts: task.acknowledgedAt ? fmtDateTime(task.acknowledgedAt) : null,
+        done: !!task.acknowledgedAt,
+      });
+      steps.push({
+        label: 'In Progress',
+        ts: null,
+        done: task.status === 'in_progress' || task.status === 'completed',
+      });
+      steps.push({
+        label: 'Completed',
+        ts: completion ? fmtDateTime(completion.completedAt) : null,
+        done: task.status === 'completed',
+      });
+    } else {
+      steps.push({
+        label: 'Submitted',
+        ts: fmtDateTime(task.createdAt),
+        done: true,
+      });
+      steps.push({
+        label: 'Acknowledged',
+        ts: task.acknowledgedAt ? fmtDateTime(task.acknowledgedAt) : null,
+        done: !!task.acknowledgedAt || task.status === 'in_progress' || task.status === 'completed',
+      });
+      steps.push({
+        label: 'In Progress',
+        ts: null,
+        done: task.status === 'in_progress' || task.status === 'completed',
+      });
+      steps.push({
+        label: 'Completed',
+        ts: completion ? fmtDateTime(completion.completedAt) : null,
+        done: task.status === 'completed',
+      });
+    }
+
+    var html = '<div class="td-section"><h4 class="td-section-title">Lifecycle</h4><div class="td-timeline">';
+    steps.forEach(function (step) {
+      var cls = step.done ? 'td-timeline-step--done' : 'td-timeline-step--pending';
+      html += '<div class="td-timeline-step ' + cls + '">'
+        + '<div class="td-timeline-dot"></div>'
+        + '<div class="td-timeline-content">'
+        + '<span class="td-timeline-label">' + M.esc(step.label) + '</span>'
+        + (step.ts
+          ? '<span class="td-timeline-ts">' + M.esc(step.ts) + '</span>'
+          : step.done ? '' : '<span class="td-timeline-ts td-timeline-ts--pending">Pending</span>')
+        + '</div>'
+        + '</div>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  function buildPhotosHtml(completions) {
+    if (!completions || completions.length === 0) return '';
+    var completion = completions[0];
+    var attachments = completion.attachments;
+    if (!attachments || attachments.length === 0) return '';
+
+    var html = '<div class="td-section"><h4 class="td-section-title">Proof Photos</h4>'
+      + '<div class="td-photo-grid">';
+    attachments.forEach(function (att) {
+      var url = att.url;
+      html += '<a href="' + M.esc(url) + '" target="_blank" rel="noopener" class="td-photo-thumb">'
+        + '<img src="' + M.esc(url) + '" alt="Proof photo" />'
+        + '</a>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  function buildMapLinkField(address) {
+    if (!address) return '';
+    var encoded = encodeURIComponent(address);
+    var mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + encoded;
+    return '<div class="td-field"><span class="td-label">Address</span>'
+      + '<a href="' + mapUrl + '" target="_blank" rel="noopener" class="td-map-link td-value">'
+      + M.esc(address)
+      + '</a></div>';
+  }
+
+  function renderDetail(panel, task, completions, role) {
     var priorityColor = (M.PRIORITY_COLOR[task.priority] || '#6b7280');
     var statusLabel = M.STATUS_LABEL[task.status] || task.status;
     var statusColor = M.STATUS_COLOR[task.status] || '#6b7280';
     var isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
     var windowRange = (!isHoa) ? M.fmtDateRange(task.windowStart, task.windowEnd) : '';
+
+    var isContractor = role === 'contractor';
+    var isHoaAdmin = role === 'hoa_admin';
+    var isHoaMember = role === 'hoa_member';
+    var isPm = role === 'property_manager';
+    var isAdminOrPm = isHoaAdmin || isPm;
 
     var actionsHtml = '';
     if (isContractor && task.status !== 'completed') {
@@ -63,7 +170,7 @@
         if (task.status === 'acknowledged') {
           btns += '<button class="td-action-btn td-btn-progress" data-action="in_progress">Mark In Progress</button>';
         }
-        if (task.status === 'acknowledged' || task.status === 'in_progress') {
+        if (task.status === 'in_progress') {
           btns += '<button class="td-action-btn td-btn-complete" data-action="complete">Complete Task</button>';
         }
       } else {
@@ -78,7 +185,7 @@
     }
 
     var completionHtml = '';
-    if (completions.length > 0) {
+    if (completions.length > 0 && !isHoaMember) {
       var latest = completions[0];
       completionHtml = '<div class="td-section"><h4 class="td-section-title">Completion Details</h4>'
         + '<div class="td-field"><span class="td-label">Signed off by</span><span class="td-value">' + M.esc(latest.employeeSignOffName || '—') + '</span></div>'
@@ -87,6 +194,43 @@
         + (latest.materialsUsed ? '<div class="td-field"><span class="td-label">Materials</span><span class="td-value">' + M.esc(latest.materialsUsed) + '</span></div>' : '')
         + (latest.followUpNeeded ? '<div class="td-field"><span class="td-label">Follow-up</span><span class="td-value">' + M.esc(latest.followUpNeeded) + '</span></div>' : '')
         + '</div>';
+    }
+
+    var lifecycleHtml = (!isContractor) ? buildLifecycleHtml(task, completions) : '';
+    var photosHtml = (!isHoaMember) ? buildPhotosHtml(completions) : '';
+
+    var assignedHtml = '';
+    if (isAdminOrPm && (task.assignedToName || task.assignedTo)) {
+      assignedHtml = '<div class="td-section"><h4 class="td-section-title">Assignment</h4>'
+        + '<div class="td-field"><span class="td-label">Contractor</span><span class="td-value">' + M.esc(task.assignedToName || task.assignedTo) + '</span></div>'
+        + '</div>';
+    }
+
+    var sharedInfoHtml = '<div class="td-section"><h4 class="td-section-title">Details</h4>'
+      + (windowRange ? '<div class="td-field"><span class="td-label">Window</span><span class="td-value">' + windowRange + '</span></div>' : '')
+      + (task.category ? '<div class="td-field"><span class="td-label">Category</span><span class="td-value">' + M.esc(task.category) + '</span></div>' : '');
+
+    if (!isAdminOrPm && !isHoaMember && (task.assignedToName || task.assignedTo)) {
+      sharedInfoHtml += '<div class="td-field"><span class="td-label">Assigned to</span><span class="td-value">' + M.esc(task.assignedToName || task.assignedTo) + '</span></div>';
+    }
+
+    sharedInfoHtml += buildMapLinkField(task.address)
+      + '<div class="td-field"><span class="td-label">Created</span><span class="td-value">' + new Date(task.createdAt).toLocaleDateString() + '</span></div>'
+      + '</div>';
+
+    var memberViewBody = '';
+    if (isHoaMember) {
+      memberViewBody = (task.description ? '<div class="td-section"><h4 class="td-section-title">Description</h4><p class="td-desc">' + M.esc(task.description) + '</p></div>' : '')
+        + sharedInfoHtml
+        + lifecycleHtml;
+    } else {
+      memberViewBody = (task.description ? '<div class="td-section"><h4 class="td-section-title">Description</h4><p class="td-desc">' + M.esc(task.description) + '</p></div>' : '')
+        + sharedInfoHtml
+        + assignedHtml
+        + completionHtml
+        + photosHtml
+        + lifecycleHtml
+        + actionsHtml;
     }
 
     panel.innerHTML = ''
@@ -100,32 +244,23 @@
       + '  <h2 class="td-title">' + M.esc(task.title || 'Untitled') + '</h2>'
       + '</div>'
       + '<div class="td-body">'
-      + (task.description ? '<div class="td-section"><h4 class="td-section-title">Description</h4><p class="td-desc">' + M.esc(task.description) + '</p></div>' : '')
-      + '<div class="td-section"><h4 class="td-section-title">Details</h4>'
-      + (windowRange ? '<div class="td-field"><span class="td-label">Window</span><span class="td-value">' + windowRange + '</span></div>' : '')
-      + (task.category ? '<div class="td-field"><span class="td-label">Category</span><span class="td-value">' + M.esc(task.category) + '</span></div>' : '')
-      + (task.assignedToName || task.assignedTo ? '<div class="td-field"><span class="td-label">Assigned to</span><span class="td-value">' + M.esc(task.assignedToName || task.assignedTo) + '</span></div>' : '')
-      + (task.address ? '<div class="td-field"><span class="td-label">Address</span><span class="td-value">' + M.esc(task.address) + '</span></div>' : '')
-      + '<div class="td-field"><span class="td-label">Created</span><span class="td-value">' + new Date(task.createdAt).toLocaleDateString() + '</span></div>'
-      + '</div>'
-      + completionHtml
-      + actionsHtml
-      + '<div class="td-completion-form" id="td-completion-form" style="display:none">'
-      + '  <h4 class="td-section-title">Complete Task</h4>'
-      + '  <div class="cf-group"><label class="cf-label">Sign-off Name *</label><input type="text" class="cf-input" id="cf-signoff" placeholder="Your name" required></div>'
-      + '  <div class="cf-group"><label class="cf-label">Time Spent (minutes)</label><input type="number" class="cf-input" id="cf-time" min="1" placeholder="e.g. 45"></div>'
-      + '  <div class="cf-group"><label class="cf-label">Materials Used</label><textarea class="cf-input cf-textarea" id="cf-materials" placeholder="List materials used"></textarea></div>'
-      + '  <div class="cf-group"><label class="cf-label">Follow-up Needed</label><textarea class="cf-input cf-textarea" id="cf-followup" placeholder="Describe any follow-up work"></textarea></div>'
-      + '  <div class="cf-group"><label class="cf-label">Notes</label><textarea class="cf-input cf-textarea" id="cf-notes" placeholder="Additional notes"></textarea></div>'
-      + '  <div class="cf-actions">'
-      + '    <button class="btn btn-ghost btn-sm" id="cf-cancel">Cancel</button>'
-      + '    <button class="btn btn-primary btn-sm" id="cf-submit">Submit Completion</button>'
-      + '  </div>'
-      + '</div>'
+      + memberViewBody
+      + (isContractor ? '<div class="td-completion-form" id="td-completion-form" style="display:none">'
+        + '  <h4 class="td-section-title">Complete Task</h4>'
+        + '  <div class="cf-group"><label class="cf-label">Sign-off Name *</label><input type="text" class="cf-input" id="cf-signoff" placeholder="Your name" required></div>'
+        + '  <div class="cf-group"><label class="cf-label">Time Spent (minutes)</label><input type="number" class="cf-input" id="cf-time" min="1" placeholder="e.g. 45"></div>'
+        + '  <div class="cf-group"><label class="cf-label">Materials Used</label><textarea class="cf-input cf-textarea" id="cf-materials" placeholder="List materials used"></textarea></div>'
+        + '  <div class="cf-group"><label class="cf-label">Follow-up Needed</label><textarea class="cf-input cf-textarea" id="cf-followup" placeholder="Describe any follow-up work"></textarea></div>'
+        + '  <div class="cf-group"><label class="cf-label">Notes</label><textarea class="cf-input cf-textarea" id="cf-notes" placeholder="Additional notes"></textarea></div>'
+        + '  <div class="cf-actions">'
+        + '    <button class="btn btn-ghost btn-sm" id="cf-cancel">Cancel</button>'
+        + '    <button class="btn btn-primary btn-sm" id="cf-submit">Submit Completion</button>'
+        + '  </div>'
+        + '</div>' : '')
       + '</div>';
 
     document.getElementById('td-close').addEventListener('click', closePanel);
-    wireActions(panel, task);
+    if (isContractor) wireActions(panel, task);
   }
 
   function wireActions(panel, task) {
