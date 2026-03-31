@@ -6,6 +6,28 @@ window.PortalRoleCopy = (function () {
 
   const COPY = {
     contractor: {
+      tasksPage: {
+        pageSubtitle: 'Your current and upcoming field work',
+        tabLabels: {
+          active:     'Active Work',
+          overdue:    'Overdue',
+          upcoming:   'Upcoming',
+          completed:  'Completed',
+          open:       'Open',
+          in_progress:'In Progress',
+          all:        'All',
+        },
+        emptyStates: {
+          active:     'No active work right now — all caught up.',
+          overdue:    'Nothing overdue — great job staying on track.',
+          upcoming:   'No upcoming work scheduled.',
+          completed:  'No completed work to show yet.',
+          open:       'No requests awaiting acknowledgment.',
+          in_progress:'No work currently in progress.',
+          all:        'No tasks found.',
+          default:    'No work to show.',
+        },
+      },
       sectionHeaders: {
         today: "Today's Work",
         comingUp: 'Upcoming Work',
@@ -47,6 +69,28 @@ window.PortalRoleCopy = (function () {
     },
 
     hoa_admin: {
+      tasksPage: {
+        pageSubtitle: 'Community requests and work tracking',
+        tabLabels: {
+          active:     'Active',
+          overdue:    'Overdue',
+          upcoming:   'Upcoming',
+          completed:  'Completed',
+          open:       'Open Requests',
+          in_progress:'In Progress',
+          all:        'All',
+        },
+        emptyStates: {
+          active:     'No active tasks in your community.',
+          overdue:    'No overdue items — community is on track.',
+          upcoming:   'No upcoming work scheduled.',
+          completed:  'No recent completions logged.',
+          open:       'No open community requests.',
+          in_progress:'No work currently in progress.',
+          all:        'No tasks found.',
+          default:    'No community tasks to show.',
+        },
+      },
       sectionHeaders: {
         today: 'Requests needing visibility',
         comingUp: 'Upcoming Work',
@@ -88,6 +132,28 @@ window.PortalRoleCopy = (function () {
     },
 
     hoa_member: {
+      tasksPage: {
+        pageSubtitle: 'Work happening in your community',
+        tabLabels: {
+          active:     'Active',
+          overdue:    'Overdue',
+          upcoming:   'Upcoming',
+          completed:  'Completed',
+          open:       'Open',
+          in_progress:'In Progress',
+          all:        'All',
+        },
+        emptyStates: {
+          active:     'No active work in your community right now.',
+          overdue:    'No overdue work in your community.',
+          upcoming:   'No upcoming community work.',
+          completed:  'No recently completed work to show.',
+          open:       'No open community requests.',
+          in_progress:'No work currently in progress.',
+          all:        'No community activity to show.',
+          default:    'No community activity to show.',
+        },
+      },
       sectionHeaders: {
         today: 'Recent work in your community',
         comingUp: 'Scheduled Work',
@@ -129,6 +195,28 @@ window.PortalRoleCopy = (function () {
     },
 
     property_manager: {
+      tasksPage: {
+        pageSubtitle: 'Oversight across community work orders',
+        tabLabels: {
+          active:     'Active',
+          overdue:    'Overdue',
+          upcoming:   'Upcoming',
+          completed:  'Completed',
+          open:       'Open Issues',
+          in_progress:'In Progress',
+          all:        'All',
+        },
+        emptyStates: {
+          active:     'No open issues needing review.',
+          overdue:    'No overdue items across current view.',
+          upcoming:   'No upcoming work scheduled for review.',
+          completed:  'No recent work completions to report.',
+          open:       'No open issues needing review.',
+          in_progress:'No work currently in progress.',
+          all:        'No tasks found.',
+          default:    'No tasks to show.',
+        },
+      },
       sectionHeaders: {
         today: 'Community issues to review',
         comingUp: 'Upcoming Work',

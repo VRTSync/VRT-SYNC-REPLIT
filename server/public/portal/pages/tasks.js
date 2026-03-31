@@ -44,6 +44,9 @@ PortalRouter.register('tasks', async function (container) {
   var isContractor = role === 'contractor';
   var isHoa = role === 'hoa_admin' || role === 'hoa_member';
   var isPM = role === 'property_manager';
+  var roleCopy = (window.PortalRoleCopy ? window.PortalRoleCopy.get(role) : null) || {};
+  var tasksPage = roleCopy.tasksPage || {};
+  var tabLabels = tasksPage.tabLabels || {};
   var tabs;
   var activeTab;
 
@@ -58,24 +61,24 @@ PortalRouter.register('tasks', async function (container) {
     activeTab = 'all';
   } else if (isContractor) {
     tabs = [
-      { key: 'active',    label: 'Active' },
-      { key: 'overdue',   label: 'Overdue' },
-      { key: 'upcoming',  label: 'Upcoming' },
-      { key: 'completed', label: 'Completed' }
+      { key: 'active',    label: tabLabels.active    || 'Active' },
+      { key: 'overdue',   label: tabLabels.overdue   || 'Overdue' },
+      { key: 'upcoming',  label: tabLabels.upcoming  || 'Upcoming' },
+      { key: 'completed', label: tabLabels.completed || 'Completed' }
     ];
     activeTab = 'active';
   } else if (isHoa) {
     tabs = [
-      { key: 'all',       label: 'All' },
-      { key: 'upcoming',  label: 'Upcoming' },
-      { key: 'completed', label: 'Completed' }
+      { key: 'all',       label: tabLabels.all       || 'All' },
+      { key: 'upcoming',  label: tabLabels.upcoming  || 'Upcoming' },
+      { key: 'completed', label: tabLabels.completed || 'Completed' }
     ];
     activeTab = 'all';
   } else {
     tabs = [
-      { key: 'all',       label: 'All' },
-      { key: 'active',    label: 'Active' },
-      { key: 'completed', label: 'Completed' }
+      { key: 'all',       label: tabLabels.all       || 'All' },
+      { key: 'active',    label: tabLabels.active    || 'Active' },
+      { key: 'completed', label: tabLabels.completed || 'Completed' }
     ];
     activeTab = 'all';
   }
@@ -128,7 +131,12 @@ PortalRouter.register('tasks', async function (container) {
       ? '<button class="tf-tab tf-tab--accent" id="btn-new-task">+ New Task</button>'
       : '';
 
+    var subtitleHtml = tasksPage.pageSubtitle
+      ? '<p class="pph-subtitle" style="margin:0 0 12px;font-size:13px;color:var(--text-muted,#888)">' + M.esc(tasksPage.pageSubtitle) + '</p>'
+      : '';
+
     return M.pageHeader('Tasks', community)
+      + subtitleHtml
       + '<div class="tf-bar tf-bar--with-sync">'
       + tabs.map(function (t) {
           return '<button class="tf-tab' + (t.key === current ? ' tf-tab--active' : '') + '" data-tab="' + t.key + '">'
@@ -454,7 +462,9 @@ PortalRouter.register('tasks', async function (container) {
 
     var nonPMFiltered = filterTasks(taskData, tab);
     if (nonPMFiltered.length === 0) {
-      listEl.innerHTML = '<div class="module-empty">No tasks in this category.</div>';
+      var emptyStates = tasksPage.emptyStates || {};
+      var emptyMsg = emptyStates[tab] || emptyStates['default'] || 'No tasks to show.';
+      listEl.innerHTML = '<div class="module-empty">' + M.esc(emptyMsg) + '</div>';
     } else {
       listEl.innerHTML = nonPMFiltered.map(function (t) {
         return isHoa ? hoaTaskRow(t) : M.taskRow(t);
