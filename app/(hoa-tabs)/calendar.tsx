@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import {
-  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl,
+  View, Text, FlatList, ScrollView, StyleSheet, TouchableOpacity, RefreshControl,
   ActivityIndicator, Platform,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,6 +15,7 @@ import CalendarView from '@/components/CalendarView';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
+import WeeklySummaryCard from '@/components/WeeklySummaryCard';
 
 type Task = {
   id: string;
@@ -37,7 +38,7 @@ type Task = {
   longitude?: number | null;
 };
 
-type FilterKey = 'all' | 'requests' | 'scheduled' | 'completed';
+type FilterKey = 'all' | 'overdue' | 'requests' | 'scheduled' | 'completed';
 type ViewMode = 'list' | 'calendar';
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -50,6 +51,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all',       label: 'All' },
+  { key: 'overdue',   label: 'Overdue' },
   { key: 'requests',  label: 'Requests' },
   { key: 'scheduled', label: 'Scheduled Work' },
   { key: 'completed', label: 'Completed' },
@@ -168,6 +170,7 @@ function EmptyState({
 }) {
   const messages: Record<FilterKey, { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; showCreate: boolean }> = {
     all:       { icon: 'clipboard-outline', title: 'No community work yet', subtitle: 'Work items will appear here once they are added', showCreate: false },
+    overdue:   { icon: 'alert-circle-outline', title: 'No overdue items', subtitle: 'All tasks are on track — nothing is past due', showCreate: false },
     requests:  { icon: 'document-text-outline', title: 'No requests yet', subtitle: 'Tap + to submit a new request for your community', showCreate: true },
     scheduled: { icon: 'calendar-outline', title: 'No scheduled work', subtitle: 'Scheduled maintenance tasks will appear here', showCreate: false },
     completed: { icon: 'checkmark-circle-outline', title: 'Nothing completed yet', subtitle: 'Completed work items will appear here', showCreate: false },
@@ -214,9 +217,34 @@ export default function HoaTasksScreen() {
     enabled: !!communityId,
   });
 
+  const isContractor = user?.role === 'contractor';
+
+  const summaryLabels = isContractor
+    ? { overdue: 'Overdue', active: 'My Active', requests: 'My Requests', completed: 'Done' }
+    : { overdue: 'Overdue', active: 'Active Tasks', requests: 'Requests', completed: 'Completed' };
+
+  const summaryCounts = useMemo(() => {
+    if (!tasks) return { overdue: 0, active: 0, requests: 0, completed: 0 };
+    const now = new Date();
+    const overdue = tasks.filter(t =>
+      t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now
+    ).length;
+    const active = tasks.filter(t =>
+      t.origin !== 'HOA' && t.status !== 'completed'
+    ).length;
+    const requests = tasks.filter(t =>
+      t.origin === 'HOA' && t.status !== 'completed'
+    ).length;
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    return { overdue, active, requests, completed };
+  }, [tasks]);
+
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
+    const now = new Date();
     switch (activeFilter) {
+      case 'overdue':
+        return tasks.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
       case 'requests':
         return tasks.filter(t => t.origin === 'HOA' && t.status !== 'completed');
       case 'scheduled':
@@ -257,7 +285,6 @@ export default function HoaTasksScreen() {
       <StatusBarFill />
       <NavyHeader {...navyHeaderProps}>
         <View style={ss.subtitleRow}>
-          <Text style={ss.subtitleText}>COMMUNITY WORK</Text>
           <View style={ss.subtitleActions}>
             <TouchableOpacity
               onPress={() => setShowCreateRequest(true)}
@@ -278,10 +305,24 @@ export default function HoaTasksScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        <WeeklySummaryCard
+          counts={summaryCounts}
+          labels={summaryLabels}
+          onStatPress={(filter) => {
+            setActiveFilter(filter);
+            if (viewMode === 'calendar') setViewMode('list');
+          }}
+          activeFilter={activeFilter}
+        />
       </NavyHeader>
 
       {viewMode === 'list' && (
-        <View style={styles.filterRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScrollWrapper}
+          contentContainerStyle={styles.filterRow}
+        >
           {FILTERS.map((f) => (
             <TouchableOpacity
               key={f.key}
@@ -294,7 +335,7 @@ export default function HoaTasksScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       )}
 
       {viewMode === 'calendar' ? (
@@ -349,19 +390,21 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  filterRow: {
-    flexDirection: 'row',
+  filterScrollWrapper: {
     marginHorizontal: 16,
     marginTop: 12,
     marginBottom: 4,
+  },
+  filterRow: {
+    flexDirection: 'row',
     backgroundColor: '#e8eaed',
     borderRadius: 10,
     padding: 3,
-    flexWrap: 'nowrap',
+    gap: 2,
   },
   filterTab: {
-    flex: 1,
     paddingVertical: 7,
+    paddingHorizontal: 12,
     alignItems: 'center',
     borderRadius: 8,
   },
