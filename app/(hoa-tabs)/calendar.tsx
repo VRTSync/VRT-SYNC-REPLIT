@@ -25,33 +25,14 @@ type Task = {
   address: string | null;
   assignedTo: string | null;
   dueDate: string | null;
+  category: string | null;
   version: number;
   createdAt: string;
   origin?: string | null;
 };
 
-const priorityColors: Record<string, string> = {
-  low: '#4caf50',
-  medium: '#ff9800',
-  high: '#f44336',
-  urgent: '#9c27b0',
-};
-
-const statusLabels: Record<string, string> = {
-  pending: 'Pending',
-  in_progress: 'In Progress',
-  completed: 'Completed',
-  submitted: 'Submitted',
-  acknowledged: 'Acknowledged',
-};
-
-const statusColors: Record<string, string> = {
-  pending: '#ff9800',
-  in_progress: '#25C1AC',
-  completed: '#4caf50',
-  submitted: '#e65100',
-  acknowledged: '#1565c0',
-};
+type FilterKey = 'all' | 'upcoming' | 'completed';
+type ViewMode = 'list' | 'calendar';
 
 function getTodayDenver(): Date {
   const now = new Date();
@@ -64,39 +45,20 @@ function toDateOnly(s: string): Date {
   return new Date(d + 'T00:00:00');
 }
 
-function diffDays(a: Date, b: Date): number {
-  return Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
+function getCommunityStatusLabel(status: Task['status']): string {
+  if (status === 'pending' || status === 'submitted' || status === 'acknowledged') return 'Scheduled';
+  if (status === 'in_progress') return 'In Progress';
+  if (status === 'completed') return 'Completed';
+  return 'Scheduled';
 }
 
-type WindowGroup = 'overdue' | 'active_window' | 'upcoming' | 'no_window';
-type FilterKey = 'all' | 'requests' | 'non-requests';
-type ViewMode = 'list' | 'calendar';
-
-function classifyTask(task: Task, today: Date): WindowGroup {
-  if (task.status === 'completed') return 'no_window';
-  if (!task.windowStart || !task.windowEnd) return 'no_window';
-  const start = toDateOnly(task.windowStart);
-  const end = toDateOnly(task.windowEnd);
-  if (today > end) return 'overdue';
-  if (today >= start && today <= end) return 'active_window';
-  return 'upcoming';
-}
-
-function getUrgencyChip(task: Task, today: Date): { label: string; color: string; bg: string } | null {
-  if (task.status === 'completed' || !task.windowStart || !task.windowEnd) return null;
-  const start = toDateOnly(task.windowStart);
-  const end = toDateOnly(task.windowEnd);
-  if (today > end) {
-    const overdueDays = diffDays(today, end);
-    return { label: `Overdue ${overdueDays}d`, color: '#c62828', bg: '#ffebee' };
+function getCommunityStatusColor(status: Task['status']): { color: string; bg: string } {
+  if (status === 'pending' || status === 'submitted' || status === 'acknowledged') {
+    return { color: '#1565c0', bg: '#e3f2fd' };
   }
-  if (today >= start && today <= end) {
-    const remaining = diffDays(end, today);
-    if (remaining <= 2) return { label: `${remaining}d left`, color: '#e65100', bg: '#fff3e0' };
-    return { label: `${remaining}d left`, color: '#2e7d32', bg: '#e8f5e9' };
-  }
-  const startsIn = diffDays(start, today);
-  return { label: `Starts in ${startsIn}d`, color: '#1565c0', bg: '#e3f2fd' };
+  if (status === 'in_progress') return { color: '#0d7a68', bg: '#e6f9f6' };
+  if (status === 'completed') return { color: '#2e7d32', bg: '#e8f5e9' };
+  return { color: '#1565c0', bg: '#e3f2fd' };
 }
 
 function formatWindowRange(task: Task): string | null {
@@ -106,14 +68,6 @@ function formatWindowRange(task: Task): string | null {
   const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
   return `${s.toLocaleDateString('en-US', opts)} – ${e.toLocaleDateString('en-US', opts)}`;
 }
-
-const GROUP_ORDER: WindowGroup[] = ['overdue', 'active_window', 'upcoming', 'no_window'];
-const GROUP_LABELS: Record<WindowGroup, string> = {
-  overdue: 'Overdue',
-  active_window: 'Active Window',
-  upcoming: 'Upcoming',
-  no_window: 'Other Tasks',
-};
 
 export default function HoaTasksScreen() {
   const router = useRouter();
@@ -139,114 +93,83 @@ export default function HoaTasksScreen() {
 
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
-    const active = tasks.filter(t => t.status !== 'completed');
     switch (activeFilter) {
-      case 'requests':
-        return active.filter(t => t.origin === 'HOA');
-      case 'non-requests':
-        return active.filter(t => t.origin !== 'HOA');
-      default:
-        return active;
+      case 'upcoming': {
+        return tasks
+          .filter(t => {
+            if (t.status === 'completed') return false;
+            if (!t.windowStart) return false;
+            return toDateOnly(t.windowStart) > today;
+          })
+          .sort((a, b) => {
+            const sa = a.windowStart ? toDateOnly(a.windowStart).getTime() : 0;
+            const sb = b.windowStart ? toDateOnly(b.windowStart).getTime() : 0;
+            return sa - sb;
+          });
+      }
+      case 'completed': {
+        return tasks
+          .filter(t => t.status === 'completed')
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      }
+      default: {
+        return tasks
+          .filter(t => t.status !== 'completed')
+          .sort((a, b) => {
+            const sa = a.windowStart ? toDateOnly(a.windowStart).getTime() : Infinity;
+            const sb = b.windowStart ? toDateOnly(b.windowStart).getTime() : Infinity;
+            return sa - sb;
+          });
+      }
     }
   }, [tasks, activeFilter]);
 
   const calendarTasks = useMemo(() => {
     if (!tasks) return [];
-    switch (activeFilter) {
-      case 'requests':
-        return tasks.filter(t => t.origin === 'HOA');
-      case 'non-requests':
-        return tasks.filter(t => t.origin !== 'HOA');
-      default:
-        return tasks;
-    }
-  }, [tasks, activeFilter]);
-
-  const buildGroupedList = (): (Task | { type: 'header'; title: string; count: number })[] => {
-    const groups: Record<WindowGroup, Task[]> = {
-      overdue: [],
-      active_window: [],
-      upcoming: [],
-      no_window: [],
-    };
-    for (const t of filteredTasks) {
-      const group = classifyTask(t, today);
-      groups[group].push(t);
-    }
-
-    groups.overdue.sort((a, b) => {
-      const endA = a.windowEnd ? toDateOnly(a.windowEnd).getTime() : 0;
-      const endB = b.windowEnd ? toDateOnly(b.windowEnd).getTime() : 0;
-      return endA - endB;
-    });
-    groups.active_window.sort((a, b) => {
-      const endA = a.windowEnd ? toDateOnly(a.windowEnd).getTime() : 0;
-      const endB = b.windowEnd ? toDateOnly(b.windowEnd).getTime() : 0;
-      return endA - endB;
-    });
-    groups.upcoming.sort((a, b) => {
-      const startA = a.windowStart ? toDateOnly(a.windowStart).getTime() : 0;
-      const startB = b.windowStart ? toDateOnly(b.windowStart).getTime() : 0;
-      return startA - startB;
-    });
-
-    const items: (Task | { type: 'header'; title: string; count: number })[] = [];
-    for (const group of GROUP_ORDER) {
-      if (groups[group].length > 0) {
-        items.push({ type: 'header', title: GROUP_LABELS[group], count: groups[group].length } as any);
-        items.push(...groups[group]);
-      }
-    }
-    return items;
-  };
-
-  const allItems = buildGroupedList();
+    return tasks;
+  }, [tasks]);
 
   const handleTaskPress = useCallback((taskId: string) => {
     router.push(`/task/${taskId}` as any);
   }, [router]);
 
   const renderTask = ({ item }: { item: Task }) => {
-    const urgency = getUrgencyChip(item, today);
     const windowRange = formatWindowRange(item);
-    const isHoa = item.origin === 'HOA';
-
+    const statusLabel = getCommunityStatusLabel(item.status);
+    const statusStyle = getCommunityStatusColor(item.status);
     const isCompleted = item.status === 'completed';
 
     return (
       <TouchableOpacity
-        style={[styles.taskCard, isHoa && styles.hoaTaskCard, isCompleted && styles.completedCard]}
+        style={[styles.taskCard, isCompleted && styles.completedCard]}
         onPress={() => handleTaskPress(item.id)}
         activeOpacity={0.7}
       >
         <View style={styles.taskHeader}>
-          <View style={[styles.priorityDot, { backgroundColor: priorityColors[item.priority] }]} />
-          <Text style={[styles.taskTitle, isCompleted && styles.completedTitle]} numberOfLines={1}>{item.title}</Text>
-          {isHoa ? (
-            <View style={styles.hoaBadge}>
-              <Text style={styles.hoaBadgeText}>REQUEST</Text>
-            </View>
-          ) : null}
-          {urgency ? (
-            <View style={[styles.statusBadge, { backgroundColor: urgency.bg }]}>
-              <Text style={[styles.statusText, { color: urgency.color }]}>{urgency.label}</Text>
-            </View>
-          ) : !isCompleted ? (
-            <View style={[styles.statusBadge, { backgroundColor: statusColors[item.status] + '20' }]}>
-              <Text style={[styles.statusText, { color: statusColors[item.status] }]}>
-                {statusLabels[item.status]}
-              </Text>
-            </View>
-          ) : null}
+          <Text style={[styles.taskTitle, isCompleted && styles.completedTitle]} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <View style={[styles.statusChip, { backgroundColor: statusStyle.bg }]}>
+            <Text style={[styles.statusChipText, { color: statusStyle.color }]}>{statusLabel}</Text>
+          </View>
         </View>
+
         {item.description ? (
           <Text style={styles.taskDescription} numberOfLines={2}>{item.description}</Text>
         ) : null}
+
         <View style={styles.taskFooter}>
           {windowRange ? (
             <View style={styles.taskMeta}>
-              <Ionicons name="time-outline" size={12} color="#999" />
+              <Ionicons name="calendar-outline" size={12} color="#999" />
               <Text style={styles.metaText}>{windowRange}</Text>
+            </View>
+          ) : item.dueDate ? (
+            <View style={styles.taskMeta}>
+              <Ionicons name="calendar-outline" size={12} color="#999" />
+              <Text style={styles.metaText}>
+                {toDateOnly(item.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
             </View>
           ) : null}
           {item.address ? (
@@ -255,18 +178,24 @@ export default function HoaTasksScreen() {
               <Text style={styles.metaText} numberOfLines={1}>{item.address}</Text>
             </View>
           ) : null}
-          {!windowRange && item.dueDate ? (
+          {item.category ? (
             <View style={styles.taskMeta}>
-              <Ionicons name="calendar-outline" size={12} color="#999" />
-              <Text style={styles.metaText}>
-                {new Date(item.dueDate).toLocaleDateString()}
-              </Text>
+              <Ionicons name="pricetag-outline" size={12} color="#999" />
+              <Text style={styles.metaText}>{item.category}</Text>
             </View>
           ) : null}
         </View>
       </TouchableOpacity>
     );
   };
+
+  const emptyMessage = () => {
+    if (activeFilter === 'upcoming') return { title: 'Nothing Coming Up', subtitle: 'Scheduled work will appear here' };
+    if (activeFilter === 'completed') return { title: 'No Completed Tasks', subtitle: 'Finished work will appear here' };
+    return { title: 'No Activity', subtitle: 'Community tasks will appear here' };
+  };
+
+  const empty = emptyMessage();
 
   return (
     <View style={styles.container}>
@@ -297,30 +226,17 @@ export default function HoaTasksScreen() {
 
       {viewMode === 'list' && (
         <View style={styles.filterRow}>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'all' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('all')}
-          >
-            <Text style={[styles.filterTabText, activeFilter === 'all' && styles.filterTabTextActive]}>
-              All
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'requests' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('requests')}
-          >
-            <Text style={[styles.filterTabText, activeFilter === 'requests' && styles.filterTabTextActive]}>
-              Requests
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterTab, activeFilter === 'non-requests' && styles.filterTabActive]}
-            onPress={() => setActiveFilter('non-requests')}
-          >
-            <Text style={[styles.filterTabText, activeFilter === 'non-requests' && styles.filterTabTextActive]}>
-              Non-Requests
-            </Text>
-          </TouchableOpacity>
+          {(['all', 'upcoming', 'completed'] as FilterKey[]).map((key) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.filterTab, activeFilter === key && styles.filterTabActive]}
+              onPress={() => setActiveFilter(key)}
+            >
+              <Text style={[styles.filterTabText, activeFilter === key && styles.filterTabTextActive]}>
+                {key === 'all' ? 'All' : key === 'upcoming' ? 'Upcoming' : 'Completed'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -346,44 +262,22 @@ export default function HoaTasksScreen() {
         <View style={styles.emptyState}>
           <ActivityIndicator size="large" color="#25C1AC" />
         </View>
-      ) : allItems.length === 0 ? (
+      ) : filteredTasks.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="clipboard-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyTitle}>
-            {activeFilter === 'requests' ? 'No Requests' : activeFilter === 'non-requests' ? 'No Contract Tasks' : 'No Tasks'}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {activeFilter === 'requests' ? 'HOA requests will appear here' : 'Tasks will appear here'}
-          </Text>
+          <Text style={styles.emptyTitle}>{empty.title}</Text>
+          <Text style={styles.emptySubtitle}>{empty.subtitle}</Text>
         </View>
       ) : (
         <FlatList
-          data={allItems}
-          keyExtractor={(item: any) => item.type === 'header' ? `header-${item.title}` : item.id}
-          renderItem={({ item }: any) => {
-            if (item.type === 'header') {
-              return (
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={[
-                    styles.sectionHeader,
-                    item.title === 'Overdue' && styles.sectionHeaderOverdue,
-                    item.title === 'Active Window' && styles.sectionHeaderActive,
-                  ]}>
-                    {item.title}
-                  </Text>
-                  <View style={styles.sectionCountBadge}>
-                    <Text style={styles.sectionCountText}>{item.count}</Text>
-                  </View>
-                </View>
-              );
-            }
-            return renderTask({ item });
-          }}
+          data={filteredTasks}
+          keyExtractor={(item) => item.id}
+          renderItem={renderTask}
           contentContainerStyle={styles.listContent}
           refreshControl={
             <RefreshControl refreshing={isLoading} onRefresh={refetch} />
           }
-          scrollEnabled={!!allItems.length}
+          scrollEnabled={!!filteredTasks.length}
         />
       )}
     </View>
@@ -417,25 +311,7 @@ const styles = StyleSheet.create({
   },
   filterTabText: { fontSize: 13, fontWeight: '600', color: '#888' },
   filterTabTextActive: { color: '#0C1D31' },
-  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  sectionHeader: { fontSize: 14, fontWeight: '700', color: '#0C1D31' },
-  sectionHeaderOverdue: { color: '#c62828' },
-  sectionHeaderActive: { color: '#25C1AC' },
-  sectionCountBadge: {
-    backgroundColor: '#e8eaed',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  sectionCountText: { fontSize: 12, fontWeight: '700', color: '#666' },
+  listContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
   taskCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -447,19 +323,10 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 1,
   },
-  hoaTaskCard: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#25C1AC',
-  },
   taskHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  priorityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
   },
   taskTitle: {
     flex: 1,
@@ -467,24 +334,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0C1D31',
   },
-  hoaBadge: {
-    backgroundColor: '#25C1AC20',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  hoaBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#25C1AC',
-    letterSpacing: 0.5,
-  },
-  statusBadge: {
+  statusChip: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
-  statusText: {
+  statusChipText: {
     fontSize: 11,
     fontWeight: '600',
   },
@@ -529,11 +384,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   completedCard: {
-    backgroundColor: '#fff',
-    borderLeftWidth: 4,
+    borderLeftWidth: 3,
     borderLeftColor: '#4caf50',
-    borderWidth: 1,
-    borderColor: '#4caf50',
   },
   completedTitle: {
     color: '#2E7D32',

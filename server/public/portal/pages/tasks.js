@@ -55,11 +55,11 @@ PortalRouter.register('tasks', async function (container) {
     activeTab = 'active';
   } else if (isHoa) {
     tabs = [
-      { key: 'open',        label: 'Open' },
-      { key: 'in_progress', label: 'In Progress' },
-      { key: 'completed',   label: 'Completed' }
+      { key: 'all',       label: 'All' },
+      { key: 'upcoming',  label: 'Upcoming' },
+      { key: 'completed', label: 'Completed' }
     ];
-    activeTab = 'open';
+    activeTab = 'all';
   } else {
     tabs = [
       { key: 'all',       label: 'All' },
@@ -237,15 +237,36 @@ PortalRouter.register('tasks', async function (container) {
 
   function filterTasks(tasks, tab, isContractor) {
     var result = tasks;
-    if (tab !== 'all') {
+    if (isHoa) {
+      if (tab === 'all') {
+        result = result.filter(function (t) { return t.status !== 'completed'; });
+        result = result.slice().sort(function (a, b) {
+          var sa = a.windowStart ? new Date(a.windowStart).getTime() : Infinity;
+          var sb = b.windowStart ? new Date(b.windowStart).getTime() : Infinity;
+          return sa - sb;
+        });
+      } else if (tab === 'upcoming') {
+        result = result.filter(function (t) {
+          if (t.status === 'completed') return false;
+          if (!t.windowStart) return false;
+          var start = new Date(t.windowStart.includes('T') ? t.windowStart.split('T')[0] : t.windowStart);
+          return start > new Date();
+        });
+        result = result.slice().sort(function (a, b) {
+          var sa = a.windowStart ? new Date(a.windowStart).getTime() : 0;
+          var sb = b.windowStart ? new Date(b.windowStart).getTime() : 0;
+          return sa - sb;
+        });
+      } else if (tab === 'completed') {
+        result = result.filter(function (t) { return t.status === 'completed'; });
+      }
+    } else if (tab !== 'all') {
       result = result.filter(function (t) {
         var cls = M.classifyTask(t);
         if (tab === 'active') return cls === 'active' || cls === 'other';
         if (tab === 'overdue') return cls === 'overdue';
         if (tab === 'upcoming') return cls === 'upcoming';
         if (tab === 'completed') return cls === 'completed';
-        if (tab === 'open') return t.status !== 'completed' && t.status !== 'in_progress';
-        if (tab === 'in_progress') return t.status === 'in_progress';
         return true;
       });
     }
@@ -255,6 +276,39 @@ PortalRouter.register('tasks', async function (container) {
     return result;
   }
 
+  function hoaStatusLabel(status) {
+    if (status === 'pending' || status === 'submitted' || status === 'acknowledged') return 'Scheduled';
+    if (status === 'in_progress') return 'In Progress';
+    if (status === 'completed') return 'Completed';
+    return 'Scheduled';
+  }
+
+  function hoaStatusBadgeClass(status) {
+    if (status === 'in_progress') return 'tr-badge tr-active';
+    if (status === 'completed') return 'tr-badge tr-done';
+    return 'tr-badge tr-acked';
+  }
+
+  function hoaTaskRow(task) {
+    var label = hoaStatusLabel(task.status);
+    var badgeCls = hoaStatusBadgeClass(task.status);
+    var dateStr = M.fmtDateRange(task.windowStart, task.windowEnd)
+      || (task.dueDate ? M.fmtDate(task.dueDate) : '');
+    var address = task.address ? M.esc(task.address) : '';
+    var category = task.category ? M.esc(task.category) : '';
+    return '<div class="task-row" data-task-id="' + M.esc(task.id) + '" style="cursor:pointer">'
+      + '<div class="tr-main">'
+      + '<span class="tr-title">' + M.esc(task.title || 'Untitled') + '</span>'
+      + '<div class="tr-meta">'
+      + (dateStr ? '<span class="tr-window">' + dateStr + '</span>' : '')
+      + (address ? '<span class="tr-window">' + address + '</span>' : '')
+      + (category ? '<span class="tr-window">' + category + '</span>' : '')
+      + '</div>'
+      + '</div>'
+      + '<span class="' + badgeCls + '">' + M.esc(label) + '</span>'
+      + '</div>';
+  }
+
   function renderList(container, taskData, tab, isContractor) {
     var listEl = container.querySelector('#tasks-list');
     if (!listEl) return;
@@ -262,7 +316,9 @@ PortalRouter.register('tasks', async function (container) {
     if (filtered.length === 0) {
       listEl.innerHTML = '<div class="module-empty">No tasks in this category.</div>';
     } else {
-      listEl.innerHTML = filtered.map(function (t) { return M.taskRow(t); }).join('');
+      listEl.innerHTML = filtered.map(function (t) {
+        return isHoa ? hoaTaskRow(t) : M.taskRow(t);
+      }).join('');
     }
     listEl.querySelectorAll('[data-task-id]').forEach(function (row) {
       row.addEventListener('click', function () {
