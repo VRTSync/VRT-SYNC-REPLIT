@@ -13,6 +13,7 @@ import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CalendarView from '@/components/CalendarView';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import DayWorkSheet from '@/components/DayWorkSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import WeeklySummaryCard from '@/components/WeeklySummaryCard';
@@ -204,6 +205,7 @@ export default function HoaTasksScreen() {
     user?.role === 'hoa_member' ? 'calendar' : 'list'
   );
   const [showCreateRequest, setShowCreateRequest] = useState(false);
+  const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
 
   const communityId = activeCommunity?.id;
 
@@ -267,6 +269,10 @@ export default function HoaTasksScreen() {
   const handleTaskPress = useCallback((taskId: string) => {
     router.push(`/task/${taskId}` as any);
   }, [router]);
+
+  const handleDayPress = useCallback((dateStr: string) => {
+    setSelectedDayStr(dateStr);
+  }, []);
 
   const handleViewOnMap = useCallback((_task: Task) => {
     router.push(`/(hoa-tabs)/map` as any);
@@ -346,6 +352,7 @@ export default function HoaTasksScreen() {
           pendingVisits={[]}
           onTaskPress={handleTaskPress}
           onLogVisit={() => {}}
+          onDayPress={handleDayPress}
           isOffline={false}
           role={user?.role}
           scope="month"
@@ -382,6 +389,16 @@ export default function HoaTasksScreen() {
       <CreateRequestSheet
         visible={showCreateRequest}
         onClose={handleCreateRequestClose}
+      />
+
+      <DayWorkSheet
+        visible={selectedDayStr !== null}
+        dateStr={selectedDayStr}
+        tasks={tasks ?? []}
+        onClose={() => setSelectedDayStr(null)}
+        onTaskPress={handleTaskPress}
+        onViewOnMap={handleViewOnMap}
+        role={user?.role}
       />
     </View>
   );

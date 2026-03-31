@@ -42,6 +42,7 @@ type Props = {
   pendingVisits: PendingServiceVisit[];
   onTaskPress: (taskId: string) => void;
   onLogVisit: (schedule: ServiceSchedule, dateStr: string) => void;
+  onDayPress?: (dateStr: string) => void;
   isOffline: boolean;
   role?: UserRole;
   scope?: 'week' | 'month';
@@ -255,7 +256,7 @@ function getBarColors(task: Task, todayStr: string): { backgroundColor: string; 
 
 export default function CalendarView({
   tasks, schedules, visits, pendingVisits,
-  onTaskPress, onLogVisit, isOffline, role, scope = 'week',
+  onTaskPress, onLogVisit, onDayPress, isOffline, role, scope = 'week',
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
@@ -454,13 +455,16 @@ export default function CalendarView({
             const showHeatmap = !roleConfig.showOverdueClusterBadge && !roleConfig.showRequestDensityBadge;
 
             return (
-              <View
+              <TouchableOpacity
                 key={colIndex}
                 style={[
                   styles.dayCell,
                   { width: cellWidth },
                   cellTint ? { backgroundColor: cellTint } : undefined,
                 ]}
+                onPress={() => onDayPress && onDayPress(dateStr)}
+                activeOpacity={onDayPress ? 0.6 : 1}
+                disabled={!onDayPress}
               >
                 <View style={[
                   styles.dayNumber,
@@ -516,7 +520,10 @@ export default function CalendarView({
                 {roleConfig.showMowingDots && mowingDays.map((md, i) => (
                   <TouchableOpacity
                     key={`mow-${md.schedule.id}-${i}`}
-                    onPress={() => isContractor ? onLogVisit(md.schedule, md.dateStr) : undefined}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      if (isContractor) onLogVisit(md.schedule, md.dateStr);
+                    }}
                     style={[styles.mowDot, md.logged && styles.mowDotLogged]}
                     activeOpacity={isContractor ? 0.6 : 1}
                     disabled={!isContractor}
@@ -528,7 +535,7 @@ export default function CalendarView({
                     )}
                   </TouchableOpacity>
                 ))}
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -596,7 +603,7 @@ export default function CalendarView({
         )}
       </View>
     );
-  }, [tasks, windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, overdueDueDateTasks, isContractor, roleConfig, openRequestsByDate, overdueCountByDate]);
+  }, [tasks, windowedTasks, schedules, visits, pendingVisits, currentMonth, todayStr, cellWidth, onTaskPress, onLogVisit, onDayPress, overdueDueDateTasks, isContractor, roleConfig, openRequestsByDate, overdueCountByDate]);
 
   const showRequestsCategory = roleConfig.showCategories.includes('requests');
   const showScheduledCategory = roleConfig.showCategories.includes('scheduled');
