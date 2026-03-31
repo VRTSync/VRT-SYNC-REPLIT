@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Alert, ActivityIndicator, Image, Modal, FlatList, Dimensions, Platform,
+  Alert, ActivityIndicator, Image, Modal, FlatList, Dimensions, Platform, Linking,
 } from 'react-native';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -653,12 +653,105 @@ export default function TaskDetailScreen() {
               <Text style={styles.description}>{task.description}</Text>
             ) : null}
           </View>
-        </>
-      )}
 
-      {!isHoaMember && (
-        <>
           <View style={styles.card}>
+            <Text style={styles.cardTitle}>Details</Text>
+            {task.windowStart && task.windowEnd ? (
+              <View style={styles.windowRow}>
+                <Ionicons name="time-outline" size={16} color={
+                  isInWindow(task) === 'after' ? '#c62828' :
+                  isInWindow(task) === 'in' ? '#25C1AC' : '#1565c0'
+                } />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.detailText}>
+                    Window: {toDateOnly(task.windowStart).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {toDateOnly(task.windowEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  {isInWindow(task) === 'after' && task.status !== 'completed' ? (
+                    <Text style={styles.windowWarning}>Window has passed</Text>
+                  ) : isInWindow(task) === 'before' && task.status !== 'completed' ? (
+                    <Text style={styles.windowUpcoming}>Not yet in window</Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
+            {task.address ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={16} color="#666" />
+                <Text style={styles.detailText}>{task.address}</Text>
+              </View>
+            ) : null}
+            <View style={styles.detailRow}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.detailText}>Created: {new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Text>
+            </View>
+          </View>
+
+          <LifecycleTimeline task={task!} completions={completions} />
+        </>
+      ) : (
+        /* ── All other roles: full view ── */
+        <>
+          {isHoaRequest && (
+            <View style={styles.hoaBanner}>
+              <View style={styles.hoaBannerTop}>
+                <View style={styles.hoaBadge}>
+                  <Ionicons name="home-outline" size={14} color="#fff" />
+                  <Text style={styles.hoaBadgeText}>HOA REQUEST</Text>
+                </View>
+                <View style={[
+                  styles.hoaStatusChip,
+                  { backgroundColor: task.status === 'submitted' ? '#fff3e0' : '#e8f5e9' }
+                ]}>
+                  <Text style={[
+                    styles.hoaStatusText,
+                    { color: task.status === 'submitted' ? '#e65100' : '#2e7d32' }
+                  ]}>
+                    {task.status === 'submitted' ? 'New Request' : 'Acknowledged'}
+                  </Text>
+                </View>
+              </View>
+              {task.address && (
+                <View style={styles.hoaBannerAddress}>
+                  <Ionicons name="location" size={14} color="#666" />
+                  <Text style={styles.hoaBannerAddressText}>{task.address}</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {(task.address || (isHoaRequest && task.latitude != null && task.longitude != null)) && (
+            <TouchableOpacity
+              style={styles.viewOnMapButton}
+              onPress={() => {
+                if (isHoaRequest && task.latitude != null && task.longitude != null) {
+                  router.push(`/request-map/${task.id}` as any);
+                } else if (task.address) {
+                  const addr = encodeURIComponent(task.address);
+                  if (Platform.OS === 'ios') {
+                    Linking.openURL(`maps://?q=${addr}`);
+                  } else {
+                    Linking.openURL(`https://maps.google.com/?q=${addr}`);
+                  }
+                }
+              }}
+            >
+              <Ionicons name="map-outline" size={18} color="#fff" />
+              <Text style={styles.viewOnMapButtonText}>View on Map</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.card}>
+            <View style={styles.titleRow}>
+              <View style={[styles.priorityBadge, { backgroundColor: priorityColors[task.priority] }]}>
+                <Text style={styles.priorityText}>{task.priority.toUpperCase()}</Text>
+              </View>
+              <Text style={styles.statusLabel}>{statusLabels[task.status]}</Text>
+            </View>
+            <Text style={styles.title}>{task.title}</Text>
+            {task.description ? (
+              <Text style={styles.description}>{task.description}</Text>
+            ) : null}
+          </View>
             <Text style={styles.cardTitle}>Details</Text>
             {task.windowStart && task.windowEnd ? (
               <View style={styles.windowRow}>
