@@ -43,9 +43,20 @@ PortalRouter.register('tasks', async function (container) {
 
   var isContractor = role === 'contractor';
   var isHoa = role === 'hoa_admin' || role === 'hoa_member';
+  var isPM = role === 'property_manager';
   var tabs;
   var activeTab;
-  if (isContractor) {
+
+  if (isPM) {
+    tabs = [
+      { key: 'all',            label: 'All' },
+      { key: 'open_requests',  label: 'Open Requests' },
+      { key: 'active_work',    label: 'Active Work' },
+      { key: 'overdue',        label: 'Overdue' },
+      { key: 'completed',      label: 'Completed' }
+    ];
+    activeTab = 'all';
+  } else if (isContractor) {
     tabs = [
       { key: 'active',    label: 'Active' },
       { key: 'overdue',   label: 'Overdue' },
@@ -70,7 +81,10 @@ PortalRouter.register('tasks', async function (container) {
   }
 
   var priorityFilter = 'all';
-  var isPM = role === 'property_manager';
+  /* PM view toggle: list (default) or calendar */
+  var pmViewMode = (function () {
+    try { return sessionStorage.getItem('pm_tasks_view') || 'list'; } catch (_) { return 'list'; }
+  })();
 
   var contractors = [];
   if (isPMorAdmin) {
@@ -79,6 +93,9 @@ PortalRouter.register('tasks', async function (container) {
       if (!Array.isArray(contractors)) contractors = [];
     } catch (e) { contractors = []; }
   }
+
+  /* For multi-community PM, community name comes from community context */
+  var isMultiCommunity = ctx.isMultiCommunityUser;
 
   container.innerHTML = renderPage(tabs, activeTab);
   renderList(container, tasks, activeTab, isContractor);
@@ -102,23 +119,11 @@ PortalRouter.register('tasks', async function (container) {
   }
 
   function renderPage(tabs, current) {
-    var priorityBar = '';
     if (isPM) {
-      var pTabs = [
-        { key: 'all', label: 'All Priorities' },
-        { key: 'urgent', label: 'Urgent' },
-        { key: 'high', label: 'High' },
-        { key: 'medium', label: 'Medium' },
-        { key: 'low', label: 'Low' }
-      ];
-      priorityBar = '<div class="tf-bar" style="margin-top:8px" id="priority-bar">'
-        + pTabs.map(function (p) {
-            return '<button class="tf-tab tf-tab--sm' + (p.key === priorityFilter ? ' tf-tab--active' : '') + '" data-priority="' + p.key + '">'
-              + M.esc(p.label) + '</button>';
-          }).join('')
-        + '</div>';
+      return renderPMPage(tabs, current);
     }
 
+    var priorityBar = '';
     var newTaskBtn = isPMorAdmin
       ? '<button class="tf-tab tf-tab--accent" id="btn-new-task">+ New Task</button>'
       : '';
@@ -140,10 +145,56 @@ PortalRouter.register('tasks', async function (container) {
       + '  </button>'
       + '</div>'
       + '</div>'
-      + priorityBar
       + '<div class="portal-module" style="margin-top:16px">'
       + '  <div class="pm-body pm-body--list" id="tasks-list"></div>'
       + '</div>';
+  }
+
+  function renderPMPage(tabs, current) {
+    var isListView = pmViewMode === 'list';
+
+    var tabsHtml = tabs.map(function (t) {
+      var isOverdueTab = t.key === 'overdue';
+      return '<button class="tf-tab' + (t.key === current ? ' tf-tab--active' : '') + (isOverdueTab ? ' tf-tab--overdue-filter' : '') + '" data-tab="' + t.key + '">'
+        + M.esc(t.label) + '</button>';
+    }).join('');
+
+    var newTaskBtn = '<button class="tf-tab tf-tab--accent" id="btn-new-task">+ New Task</button>';
+
+    var rightControls = '<div class="pm-bar-right">'
+      + '<div class="pm-view-toggle" id="pm-view-toggle">'
+      + '<button class="pm-view-btn' + (isListView ? ' pm-view-btn--active' : '') + '" data-view="list" title="List view">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>'
+      + '</button>'
+      + '<button class="pm-view-btn' + (!isListView ? ' pm-view-btn--active' : '') + '" data-view="calendar" title="Calendar view">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
+      + '</button>'
+      + '</div>'
+      + '<div class="sync-bar sync-bar--inline" id="tasks-sync-bar">'
+      + '  <span class="sync-label" id="tasks-sync-label">Syncing\u2026</span>'
+      + '  <button class="sync-refresh-btn" id="tasks-sync-btn" title="Refresh now">'
+      + '    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+      + '      <polyline points="23 4 23 10 17 10"/>'
+      + '      <path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>'
+      + '    </svg>'
+      + '  </button>'
+      + '</div>'
+      + '</div>';
+
+    var calendarHtml = !isListView
+      ? '<div class="portal-module" style="margin-top:16px"><div class="pm-body" id="tasks-calendar-placeholder" style="padding:60px 16px;text-align:center;color:var(--gray-400);font-size:14px">Calendar view — switch to list to see grouped tasks</div></div>'
+      : '';
+
+    return M.pageHeader('Tasks', community)
+      + '<div class="tf-bar tf-bar--with-sync pm-filter-bar">'
+      + tabsHtml
+      + newTaskBtn
+      + rightControls
+      + '</div>'
+      + '<div class="portal-module" style="margin-top:16px;' + (!isListView ? 'display:none' : '') + '">'
+      + '  <div class="pm-body pm-body--list" id="tasks-list"></div>'
+      + '</div>'
+      + calendarHtml;
   }
 
   function showCreateTaskModal() {
@@ -235,8 +286,8 @@ PortalRouter.register('tasks', async function (container) {
     });
   }
 
-  function filterTasks(tasks, tab, isContractor) {
-    var result = tasks;
+  function filterTasks(taskList, tab, isContractor) {
+    var result = taskList;
     if (isHoa) {
       if (tab === 'all') {
         result = result.filter(function (t) { return t.status !== 'completed'; });
@@ -263,10 +314,17 @@ PortalRouter.register('tasks', async function (container) {
     } else if (tab !== 'all') {
       result = result.filter(function (t) {
         var cls = M.classifyTask(t);
-        if (tab === 'active') return cls === 'active' || cls === 'other';
-        if (tab === 'overdue') return cls === 'overdue';
-        if (tab === 'upcoming') return cls === 'upcoming';
-        if (tab === 'completed') return cls === 'completed';
+        var isRequest = t.origin === 'hoa_request' || t.origin === 'HOA';
+        /* PM-specific filter keys */
+        if (tab === 'open_requests') return isRequest && t.status !== 'completed';
+        if (tab === 'active_work')   return !isRequest && (cls === 'active' || t.status === 'in_progress');
+        /* Shared filter keys */
+        if (tab === 'active')      return cls === 'active' || cls === 'other';
+        if (tab === 'overdue')     return cls === 'overdue';
+        if (tab === 'upcoming')    return cls === 'upcoming';
+        if (tab === 'completed')   return t.status === 'completed' || cls === 'completed';
+        if (tab === 'open')        return t.status !== 'completed' && t.status !== 'in_progress';
+        if (tab === 'in_progress') return t.status === 'in_progress';
         return true;
       });
     }
@@ -309,14 +367,96 @@ PortalRouter.register('tasks', async function (container) {
       + '</div>';
   }
 
+  /* Group tasks for PM urgency-first view */
+  function groupTasksForPM(taskList) {
+    var groups = {
+      overdue:       [],
+      open_requests: [],
+      active_work:   [],
+      upcoming:      [],
+      completed:     []
+    };
+    taskList.forEach(function (t) {
+      var cls = M.classifyTask(t);
+      var isRequest = t.origin === 'hoa_request' || t.origin === 'HOA';
+      if (cls === 'completed' || t.status === 'completed') {
+        groups.completed.push(t);
+      } else if (cls === 'overdue') {
+        groups.overdue.push(t);
+      } else if (isRequest && t.status !== 'completed') {
+        groups.open_requests.push(t);
+      } else if (cls === 'active' || t.status === 'in_progress') {
+        groups.active_work.push(t);
+      } else {
+        groups.upcoming.push(t);
+      }
+    });
+    return groups;
+  }
+
+  function renderPMGroupedList(listEl, taskList) {
+    var groups = groupTasksForPM(taskList);
+    var groupOrder = [
+      { key: 'overdue',       label: 'Overdue',        isUrgent: true },
+      { key: 'open_requests', label: 'Open Requests',  isUrgent: true },
+      { key: 'active_work',   label: 'Active Work',    isUrgent: false },
+      { key: 'upcoming',      label: 'Upcoming',       isUrgent: false },
+      { key: 'completed',     label: 'Completed',      isUrgent: false }
+    ];
+
+    var html = '';
+    var hasAny = false;
+
+    groupOrder.forEach(function (g) {
+      var items = groups[g.key];
+      if (!items || items.length === 0) return;
+      hasAny = true;
+      html += '<div class="pm-group' + (g.isUrgent ? ' pm-group--urgent' : '') + '">'
+        + '<div class="pm-group-header' + (g.isUrgent ? ' pm-group-header--urgent' : '') + '">'
+        + '<span class="pm-group-label">' + g.label + '</span>'
+        + '<span class="pm-group-count">' + items.length + '</span>'
+        + '</div>'
+        + '<div class="pm-group-body">'
+        + items.map(function (t) { return M.pmTaskCard(t, { showCommunity: isMultiCommunity }); }).join('')
+        + '</div>'
+        + '</div>';
+    });
+
+    if (!hasAny) {
+      html = '<div class="module-empty">No tasks in this category.</div>';
+    }
+
+    listEl.innerHTML = html;
+    wireCardActions(listEl);
+  }
+
   function renderList(container, taskData, tab, isContractor) {
     var listEl = container.querySelector('#tasks-list');
     if (!listEl) return;
-    var filtered = filterTasks(taskData, tab, isContractor);
-    if (filtered.length === 0) {
+
+    if (isPM) {
+      if (pmViewMode !== 'list') return;
+      var filtered = filterTasks(taskData, tab);
+      if (tab === 'all') {
+        renderPMGroupedList(listEl, filtered);
+      } else {
+        if (filtered.length === 0) {
+          listEl.innerHTML = '<div class="module-empty">No tasks in this category.</div>';
+        } else {
+          listEl.innerHTML = '<div class="pm-group-body pm-group-body--flat">'
+            + filtered.map(function (t) { return M.pmTaskCard(t, { showCommunity: isMultiCommunity }); }).join('')
+            + '</div>';
+          wireCardActions(listEl);
+        }
+      }
+      return;
+    }
+
+    var nonPMFiltered = filterTasks(taskData, tab);
+    if (nonPMFiltered.length === 0) {
       listEl.innerHTML = '<div class="module-empty">No tasks in this category.</div>';
     } else {
-      listEl.innerHTML = filtered.map(function (t) {
+      listEl.innerHTML = nonPMFiltered.map(function (t) {
         return isHoa ? hoaTaskRow(t) : M.taskRow(t);
       }).join('');
     }
@@ -324,6 +464,45 @@ PortalRouter.register('tasks', async function (container) {
       row.addEventListener('click', function () {
         if (typeof window.openTaskDetail === 'function') {
           window.openTaskDetail(row.dataset.taskId);
+        }
+      });
+    });
+  }
+
+  function wireCardActions(listEl) {
+    /* Open detail action */
+    listEl.querySelectorAll('.pm-card-open-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var taskId = btn.dataset.taskId;
+        if (typeof window.openTaskDetail === 'function') {
+          window.openTaskDetail(taskId);
+        }
+      });
+    });
+
+    /* Whole card click → open detail */
+    listEl.querySelectorAll('.pm-task-card').forEach(function (card) {
+      card.addEventListener('click', function (e) {
+        if (e.target.closest('.pm-card-action-btn')) return;
+        var taskId = card.dataset.taskId;
+        if (typeof window.openTaskDetail === 'function') {
+          window.openTaskDetail(taskId);
+        }
+      });
+    });
+
+    /* View on Map action */
+    listEl.querySelectorAll('.pm-card-map-btn').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var lat = btn.dataset.lat;
+        var lng = btn.dataset.lng;
+        var taskId = btn.dataset.taskId;
+        if (lat && lng) {
+          PortalRouter.navigate('map', true, { lat: lat, lng: lng, taskId: taskId });
+        } else {
+          PortalRouter.navigate('map');
         }
       });
     });
@@ -433,6 +612,7 @@ PortalRouter.register('tasks', async function (container) {
   }
 
   function wireEvents(container, tabs, taskData, isContractor) {
+    /* Tab filter buttons */
     container.querySelectorAll('.tf-tab[data-tab]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         activeTab = btn.dataset.tab;
@@ -441,6 +621,8 @@ PortalRouter.register('tasks', async function (container) {
         renderList(container, tasks, activeTab, isContractor);
       });
     });
+
+    /* Priority filter buttons (non-PM roles) */
     container.querySelectorAll('.tf-tab[data-priority]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         priorityFilter = btn.dataset.priority;
@@ -449,10 +631,29 @@ PortalRouter.register('tasks', async function (container) {
         renderList(container, tasks, activeTab, isContractor);
       });
     });
+
+    /* New task button */
     var newTaskBtn = container.querySelector('#btn-new-task');
     if (newTaskBtn) {
       newTaskBtn.addEventListener('click', function () {
         showCreateTaskModal();
+      });
+    }
+
+    /* PM view toggle (list / calendar) */
+    if (isPM) {
+      container.querySelectorAll('.pm-view-btn[data-view]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var newView = btn.dataset.view;
+          if (newView === pmViewMode) return;
+          pmViewMode = newView;
+          try { sessionStorage.setItem('pm_tasks_view', pmViewMode); } catch (_) {}
+          /* Re-render the entire page to switch view */
+          container.innerHTML = renderPage(tabs, activeTab);
+          renderList(container, tasks, activeTab, isContractor);
+          wireEvents(container, tabs, tasks, isContractor);
+          startSync(container);
+        });
       });
     }
   }

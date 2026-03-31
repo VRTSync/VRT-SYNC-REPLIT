@@ -187,6 +187,73 @@ window.PortalModules = (function () {
   }
 
   /* ═══════════════════════════════════════════════════════════════════════
+   * MODULE: PM Task Card (property manager oversight view)
+   * ══════════════════════════════════════════════════════════════════════ */
+  function pmTaskCard(task, opts) {
+    opts = opts || {};
+    const priority = task.priority || 'low';
+    const isRequest = task.origin === 'hoa_request' || task.origin === 'HOA';
+    const cls = classifyTask(task);
+    const isOverdue = cls === 'overdue';
+
+    let statusBadge = '';
+    if (isRequest) {
+      if (task.status === 'submitted') statusBadge = `<span class="tr-badge tr-new">Open</span>`;
+      else if (task.status === 'acknowledged') statusBadge = `<span class="tr-badge tr-acked">Acknowledged</span>`;
+      else if (task.status === 'in_progress') statusBadge = `<span class="tr-badge tr-active">In Progress</span>`;
+      else if (task.status === 'completed') statusBadge = `<span class="tr-badge tr-done">Completed</span>`;
+      else statusBadge = `<span class="tr-badge tr-new">${esc(task.status || 'Open')}</span>`;
+    } else {
+      if (isOverdue) statusBadge = `<span class="tr-badge tr-overdue">Overdue</span>`;
+      else if (cls === 'active') statusBadge = `<span class="tr-badge tr-active">Active</span>`;
+      else if (task.status === 'completed') statusBadge = `<span class="tr-badge tr-done">Completed</span>`;
+      else if (cls === 'upcoming') statusBadge = `<span class="tr-badge tr-upcoming">Upcoming</span>`;
+      else statusBadge = `<span class="tr-badge tr-new">${esc(task.status || 'Pending')}</span>`;
+    }
+
+    const typeTag = isRequest
+      ? `<span class="pm-card-type pm-card-type--request">Request</span>`
+      : `<span class="pm-card-type pm-card-type--task">Task</span>`;
+
+    const dateRange = fmtDateRange(task.windowStart, task.windowEnd);
+    const communityName = opts.showCommunity && task.communityName ? `<span class="pm-card-meta-item pm-card-community">${esc(task.communityName)}</span>` : '';
+    const contractorName = task.assignedToName || task.assignedTo
+      ? `<span class="pm-card-meta-item pm-card-contractor"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${esc(task.assignedToName || task.assignedTo)}</span>`
+      : `<span class="pm-card-meta-item pm-card-contractor pm-card-contractor--unassigned">Unassigned</span>`;
+    const location = task.address ? `<span class="pm-card-meta-item pm-card-location"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(task.address)}</span>` : '';
+
+    const overdueClass = isOverdue ? ' pm-card--overdue' : '';
+
+    return `
+      <div class="pm-task-card${overdueClass}" data-task-id="${esc(task.id)}">
+        <div class="pm-card-header">
+          <span class="pm-card-dot" style="background:${PRIORITY_COLOR[priority] || '#6b7280'}"></span>
+          <div class="pm-card-title-wrap">
+            ${typeTag}
+            <span class="pm-card-title">${esc(task.title || 'Untitled')}</span>
+          </div>
+          <div class="pm-card-badges">
+            ${statusBadge}
+          </div>
+        </div>
+        <div class="pm-card-meta">
+          ${communityName}
+          ${contractorName}
+          ${dateRange ? `<span class="pm-card-meta-item pm-card-date"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>${dateRange}</span>` : ''}
+          ${location}
+        </div>
+        <div class="pm-card-actions">
+          <button class="pm-card-action-btn pm-card-open-btn" data-action="open" data-task-id="${esc(task.id)}">Open Detail</button>
+          <button class="pm-card-action-btn pm-card-map-btn" data-action="map" data-task-id="${esc(task.id)}" data-lat="${esc(task.pinLat || '')}" data-lng="${esc(task.pinLng || '')}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+            View on Map
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
    * MODULE: Quick Links
    * ══════════════════════════════════════════════════════════════════════ */
   function quickLinksModule({ title, links = [] }) {
@@ -258,7 +325,7 @@ window.PortalModules = (function () {
   /* Public exports */
   return {
     pageHeader, statsRow, statCard,
-    listModule, taskRow,
+    listModule, taskRow, pmTaskCard,
     quickLinksModule,
     mapPreviewModule,
     notesModule,
