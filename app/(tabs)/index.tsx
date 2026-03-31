@@ -18,6 +18,7 @@ import MowingDayCard from '@/components/MowingDayCard';
 import LogVisitModal from '@/components/LogVisitModal';
 import NotificationBell from '@/components/NotificationBell';
 import SyncBar from '@/components/SyncBar';
+import { getRoleCopy } from '@/constants/roleCopy';
 
 type Task = {
   id: string;
@@ -89,6 +90,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { activeCommunity } = useCommunity();
   const { user } = useAuth();
+  const copy = getRoleCopy(user?.role);
   const navyHeaderProps = useNavyHeaderProps();
   const {
     isOnline, pendingCompletions, syncPendingCompletions,
@@ -297,7 +299,7 @@ export default function DashboardScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="business-outline" size={48} color="#ccc" />
             <Text style={styles.emptyTitle}>No community selected</Text>
-            <Text style={styles.emptySubtitle}>Select a community above to see your dashboard</Text>
+            <Text style={styles.emptySubtitle}>{copy.helperText.noCommunity}</Text>
           </View>
         ) : isLoading ? (
           <View style={styles.loadingState}>
@@ -333,7 +335,7 @@ export default function DashboardScreen() {
                 <View style={styles.section}>
                   <View style={styles.sectionHeaderRow}>
                     <Ionicons name="today-outline" size={18} color="#0C1D31" />
-                    <Text style={styles.sectionTitle}>Today</Text>
+                    <Text style={styles.sectionTitle}>{copy.sectionHeaders.today}</Text>
                     {(inWindow.length + totalRequests) > 0 && (
                       <View style={styles.countBadge}>
                         <Text style={styles.countBadgeText}>{inWindow.length + totalRequests}</Text>
@@ -348,11 +350,11 @@ export default function DashboardScreen() {
                   >
                     <View style={styles.requestsCardHeader}>
                       <Ionicons name="mail-unread-outline" size={20} color="#25C1AC" />
-                      <Text style={styles.requestsCardTitle}>Requests</Text>
+                      <Text style={styles.requestsCardTitle}>{copy.sectionHeaders.requests}</Text>
                       <Ionicons name="chevron-forward" size={16} color="#bbb" style={{ marginLeft: 'auto' }} />
                     </View>
                     {totalRequests === 0 ? (
-                      <Text style={styles.requestsNone}>No open requests</Text>
+                      <Text style={styles.requestsNone}>{copy.noDataMessages.noOpenRequests}</Text>
                     ) : (
                       <View style={styles.requestsBadgeRow}>
                         {newCount > 0 && (
@@ -374,7 +376,7 @@ export default function DashboardScreen() {
                   {inWindow.length === 0 ? (
                     <View style={styles.emptySection}>
                       <Ionicons name="checkmark-circle-outline" size={24} color="#ccc" />
-                      <Text style={styles.emptySectionText}>No active tasks in window</Text>
+                      <Text style={styles.emptySectionText}>{copy.emptyStates.noTasksInWindow}</Text>
                     </View>
                   ) : (
                     inWindow.map(renderTaskRow)
@@ -394,7 +396,7 @@ export default function DashboardScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="calendar-outline" size={18} color="#0C1D31" />
-                <Text style={styles.sectionTitle}>Coming Up</Text>
+                <Text style={styles.sectionTitle}>{copy.sectionHeaders.comingUp}</Text>
                 {dashboard?.comingUpTasks && dashboard.comingUpTasks.length > 0 && (
                   <View style={styles.countBadge}>
                     <Text style={styles.countBadgeText}>{dashboard.comingUpTasks.length}</Text>
@@ -404,7 +406,7 @@ export default function DashboardScreen() {
               {!dashboard?.comingUpTasks || dashboard.comingUpTasks.length === 0 ? (
                 <View style={styles.emptySection}>
                   <Ionicons name="calendar-clear-outline" size={24} color="#ccc" />
-                  <Text style={styles.emptySectionText}>No upcoming tasks</Text>
+                  <Text style={styles.emptySectionText}>{copy.emptyStates.noComingUp}</Text>
                 </View>
               ) : (
                 dashboard.comingUpTasks.map(renderTaskRow)
@@ -414,7 +416,7 @@ export default function DashboardScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="map-outline" size={18} color="#0C1D31" />
-                <Text style={styles.sectionTitle}>Quick Map Jump</Text>
+                <Text style={styles.sectionTitle}>{copy.sectionHeaders.mapSection}</Text>
               </View>
               <View style={styles.mapJumpGrid}>
                 {MAP_JUMPS.map(jump => (
@@ -437,7 +439,7 @@ export default function DashboardScreen() {
               <View style={styles.section}>
                 <View style={styles.sectionHeaderRow}>
                   <Ionicons name="flag-outline" size={18} color="#f39c12" />
-                  <Text style={[styles.sectionTitle, { color: '#f39c12' }]}>Follow-Up Needed</Text>
+                  <Text style={[styles.sectionTitle, { color: '#f39c12' }]}>{copy.sectionHeaders.followUp}</Text>
                   <View style={[styles.countBadge, { backgroundColor: '#f39c1220' }]}>
                     <Text style={[styles.countBadgeText, { color: '#f39c12' }]}>{dashboard.followUpTasks.length}</Text>
                   </View>
@@ -482,7 +484,7 @@ export default function DashboardScreen() {
               onPress={() => router.push('/(tabs)/tasks')}
             >
               <Ionicons name="list-outline" size={18} color="#25C1AC" />
-              <Text style={styles.viewAllBtnText}>View All Tasks</Text>
+              <Text style={styles.viewAllBtnText}>{copy.buttonLabels.viewAll}</Text>
               <Ionicons name="chevron-forward" size={16} color="#25C1AC" />
             </TouchableOpacity>
           </>

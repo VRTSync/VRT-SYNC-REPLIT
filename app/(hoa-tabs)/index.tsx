@@ -15,6 +15,7 @@ import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import NotificationBell from '@/components/NotificationBell';
 import SyncBar from '@/components/SyncBar';
+import { getRoleCopy } from '@/constants/roleCopy';
 
 type UpcomingTask = {
   id: string;
@@ -174,6 +175,7 @@ export default function HoaDashboardScreen() {
   const { activeCommunity } = useCommunity();
   const navyHeaderProps = useNavyHeaderProps();
   const isHoaAdmin = user?.role === 'hoa_admin';
+  const copy = getRoleCopy(user?.role);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
@@ -355,9 +357,9 @@ export default function HoaDashboardScreen() {
       >
         {/* ── 1. Requests Summary ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Requests</Text>
+          <Text style={styles.sectionTitle}>{copy.sectionHeaders.requests}</Text>
           <TouchableOpacity onPress={() => router.push('/(hoa-tabs)/requests')}>
-            <Text style={styles.viewAllText}>View All</Text>
+            <Text style={styles.viewAllText}>{copy.buttonLabels.viewAll}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.requestsCard}>
@@ -596,7 +598,7 @@ export default function HoaDashboardScreen() {
 
         {/* ── Command Center (below primary modules) ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Command Center</Text>
+          <Text style={styles.sectionTitle}>{copy.sectionHeaders.attention}</Text>
           {attentionItems.length > 0 && (
             <View style={styles.attentionBadge}>
               <Text style={styles.attentionBadgeText}>{attentionItems.length}</Text>
@@ -611,7 +613,7 @@ export default function HoaDashboardScreen() {
             <Text style={styles.ccCardTitle}>Service Day</Text>
           </View>
           {!activeMowingSchedule ? (
-            <Text style={styles.ccEmpty}>No service schedule configured</Text>
+            <Text style={styles.ccEmpty}>{copy.emptyStates.noServiceSchedule}</Text>
           ) : (
             <View>
               <Text style={styles.ccServiceDay}>{DAY_NAMES[activeMowingSchedule.dayOfWeek]}s</Text>
@@ -687,7 +689,7 @@ export default function HoaDashboardScreen() {
           {attentionItems.length === 0 ? (
             <View style={styles.ccAllClear}>
               <Ionicons name="checkmark-circle" size={16} color="#25C1AC" />
-              <Text style={styles.ccAllClearText}>All clear</Text>
+              <Text style={styles.ccAllClearText}>{copy.emptyStates.allClear}</Text>
             </View>
           ) : (
             <View>

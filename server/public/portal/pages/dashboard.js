@@ -122,6 +122,7 @@ function _wireDashSyncBtn(container, sm) {
  * ────────────────────────────────────────────────────────────────────────── */
 async function renderContractor(container, ctx) {
   const M   = PortalModules;
+  const C   = PortalRoleCopy.get('contractor');
   const { activeCommunity } = ctx;
   const I   = M.ICONS;
 
@@ -134,23 +135,23 @@ async function renderContractor(container, ctx) {
     ${M.pageHeader('Dashboard', activeCommunity)}
 
     ${M.statsRow([
-      { icon: I.task(), label: 'Active Tasks',  value: active.length,    color: 'var(--teal)' },
-      { icon: I.alert(), label: 'Overdue',      value: overdue.length,   color: 'var(--red)' },
-      { icon: I.inbox(), label: 'HOA Requests', value: pendingReqs.length, color: 'var(--amber)' },
-      { icon: I.done(), label: 'Upcoming',      value: upcoming.length,  color: 'var(--blue)' },
+      { icon: I.task(), label: C.summaryLabels.activeTasks,  value: active.length,      color: 'var(--teal)' },
+      { icon: I.alert(), label: C.summaryLabels.overdue,     value: overdue.length,     color: 'var(--red)' },
+      { icon: I.inbox(), label: C.summaryLabels.openRequests, value: pendingReqs.length, color: 'var(--amber)' },
+      { icon: I.done(), label: C.summaryLabels.upcoming,     value: upcoming.length,    color: 'var(--blue)' },
     ])}
 
     <div class="dash-tasks-header">
-      <span class="dash-tasks-title">Tasks</span>
+      <span class="dash-tasks-title">${M.esc(C.sectionHeaders.tasksPanel)}</span>
       ${_syncBadgeHtml('dash-sync-bar')}
     </div>
 
     <div class="dash-grid" id="dash-task-grid">
       <div class="dash-col-8" id="dash-todays-work-col">
         ${M.listModule({
-          title: "Today's Work",
+          title: C.sectionHeaders.today,
           rows: todayWork,
-          emptyMsg: 'No active or overdue tasks right now.',
+          emptyMsg: C.emptyStates.noTodayWork,
           viewAllRoute: 'tasks',
         })}
       </div>
@@ -158,9 +159,9 @@ async function renderContractor(container, ctx) {
         ${M.quickLinksModule({
           title: 'Quick Links',
           links: [
-            { icon: I.map(),      label: 'Open Map',        route: 'map' },
-            { icon: I.task(),     label: 'All Tasks',       route: 'tasks' },
-            { icon: I.calendar(), label: 'Service Schedule', route: 'service-schedule' },
+            { icon: I.map(),      label: C.buttonLabels.openMap,        route: 'map' },
+            { icon: I.task(),     label: C.buttonLabels.allTasks,       route: 'tasks' },
+            { icon: I.calendar(), label: C.buttonLabels.serviceSchedule, route: 'service-schedule' },
           ],
         })}
         ${M.mapPreviewModule({ community: activeCommunity })}
@@ -170,20 +171,20 @@ async function renderContractor(container, ctx) {
     <div class="dash-grid" style="margin-top:20px" id="dash-hoa-grid">
       <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-hoa-reqs-col">
         ${M.listModule({
-          title: 'HOA Requests',
+          title: C.sectionHeaders.requests,
           rows: pendingReqs.slice(0, 5),
-          emptyMsg: 'No pending HOA requests.',
+          emptyMsg: C.emptyStates.noRequests,
           viewAllRoute: 'tasks',
         })}
       </div>
       <div class="${_wc('dash-col-6', 'dash-col-4w')}">
-        ${M.notesModule({ title: 'Contractor Notes' })}
+        ${M.notesModule({ title: 'Contractor Notes', hint: C.helperText.notesHint })}
       </div>
       ${_wide() ? `<div class="dash-col-4w" id="dash-completed-col">
         ${M.listModule({
-          title: 'Completed Tasks',
+          title: C.sectionHeaders.recentWork,
           rows: completed.slice(0, 5),
-          emptyMsg: 'No completed tasks yet.',
+          emptyMsg: C.emptyStates.noCompleted,
           viewAllRoute: 'tasks',
         })}
       </div>` : ''}
@@ -206,10 +207,10 @@ async function renderContractor(container, ctx) {
         _updateStatsRow(container, [a.length, od.length, pending.length, up.length]);
 
         /* Patch task lists in-place */
-        _patchListModule(container, '#dash-todays-work-col', todayW, 'No active or overdue tasks right now.');
-        _patchListModule(container, '#dash-hoa-reqs-col', pending.slice(0, 5), 'No pending HOA requests.');
+        _patchListModule(container, '#dash-todays-work-col', todayW, C.emptyStates.noTodayWork);
+        _patchListModule(container, '#dash-hoa-reqs-col', pending.slice(0, 5), C.emptyStates.noRequests);
         if (_wide()) {
-          _patchListModule(container, '#dash-completed-col', comp.slice(0, 5), 'No completed tasks yet.');
+          _patchListModule(container, '#dash-completed-col', comp.slice(0, 5), C.emptyStates.noCompleted);
         }
 
         _updateDashSyncLabel(container);
@@ -425,15 +426,16 @@ function _buildAttentionItems(overdue, pendingReqs) {
 }
 
 /* ── Attention Required widget renderer ── */
-function _renderAttentionRequired(items) {
+function _renderAttentionRequired(items, copyObj) {
   const M = PortalModules;
+  const allClearMsg = (copyObj && copyObj.emptyStates && copyObj.emptyStates.allClear) || 'All clear';
   const alertIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
 
   let body;
   if (items.length === 0) {
     body = `<div class="cc-attention-clear">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      All clear
+      ${M.esc(allClearMsg)}
     </div>`;
   } else {
     const rows = items.slice(0, 8).map(function(item) {
@@ -465,6 +467,8 @@ function _renderAttentionRequired(items) {
  * ────────────────────────────────────────────────────────────────────────── */
 async function renderHoa(container, ctx, readOnly) {
   const M   = PortalModules;
+  const hoaRole = readOnly ? 'hoa_member' : 'hoa_admin';
+  const C   = PortalRoleCopy.get(hoaRole);
   const { activeCommunity } = ctx;
   const I   = M.ICONS;
 
@@ -497,10 +501,10 @@ async function renderHoa(container, ctx, readOnly) {
     <div class="dash-panel dash-panel--command">
       <div class="dash-panel-body">
         ${M.statsRow([
-          { icon: I.task(),  label: 'Active Tasks',  value: active.length,      color: 'var(--teal)' },
-          { icon: I.alert(), label: 'Overdue',        value: overdue.length,    color: 'var(--red)' },
-          { icon: I.inbox(), label: 'Open Requests',  value: pendingReqs.length, color: 'var(--amber)' },
-          { icon: I.done(),  label: 'Upcoming',       value: upcoming.length,   color: 'var(--blue)' },
+          { icon: I.task(),  label: C.summaryLabels.activeTasks,  value: active.length,      color: 'var(--teal)' },
+          { icon: I.alert(), label: C.summaryLabels.overdue,      value: overdue.length,     color: 'var(--red)' },
+          { icon: I.inbox(), label: C.summaryLabels.openRequests, value: pendingReqs.length, color: 'var(--amber)' },
+          { icon: I.done(),  label: C.summaryLabels.upcoming,     value: upcoming.length,    color: 'var(--blue)' },
         ])}
         <div class="cc-sections">
           <div class="cc-section cc-section--service">
@@ -510,7 +514,7 @@ async function renderHoa(container, ctx, readOnly) {
             ${_renderWaterUsageWidget(waterUsage)}
           </div>
           <div class="cc-section cc-section--attention">
-            ${_renderAttentionRequired(attentionItems)}
+            ${_renderAttentionRequired(attentionItems, C)}
           </div>
         </div>
       </div>
@@ -519,31 +523,31 @@ async function renderHoa(container, ctx, readOnly) {
     <!-- Panel 2: Tasks -->
     <div class="dash-panel dash-panel--tasks">
       <div class="dash-panel-header">
-        <span class="dash-panel-label">Tasks</span>
+        <span class="dash-panel-label">${M.esc(C.sectionHeaders.tasksPanel)}</span>
         ${_syncBadgeHtml('dash-sync-bar')}
       </div>
       <div class="dash-panel-body">
         <div id="dash-open-reqs-col">
           ${M.listModule({
-            title: 'Requests',
+            title: C.sectionHeaders.requests,
             rows: pendingReqs.slice(0, 5),
-            emptyMsg: 'No open requests.',
+            emptyMsg: C.emptyStates.noRequests,
             viewAllRoute: 'requests',
           })}
         </div>
         <div id="dash-upcoming-work-col">
           ${M.listModule({
-            title: 'Upcoming',
+            title: C.sectionHeaders.upcomingTasks,
             rows: upcoming.slice(0, 5),
-            emptyMsg: 'No upcoming work scheduled.',
+            emptyMsg: C.noDataMessages.noUpcoming,
             viewAllRoute: 'tasks',
           })}
         </div>
         <div id="dash-recent-work-col">
           ${M.listModule({
-            title: 'Recently Completed',
+            title: C.sectionHeaders.recentWork,
             rows: recentDone.slice(0, 5),
-            emptyMsg: 'No recent completions.',
+            emptyMsg: C.emptyStates.noCompleted,
             viewAllRoute: 'tasks',
           })}
         </div>
@@ -553,7 +557,7 @@ async function renderHoa(container, ctx, readOnly) {
     <!-- Panel 3: Map -->
     <div class="dash-panel dash-panel--map">
       <div class="dash-panel-header">
-        <span class="dash-panel-label">Community Map</span>
+        <span class="dash-panel-label">${M.esc(C.sectionHeaders.mapSection)}</span>
         <button class="module-view-all" onclick="PortalRouter.navigate('map')">Open full map</button>
       </div>
       <div class="dash-panel-body">
@@ -595,9 +599,9 @@ async function renderHoa(container, ctx, readOnly) {
         const pReqs = reqs.filter(r => r.status !== 'completed');
 
         _updateStatsRow(container, [ac.length, od.length, pReqs.length, up.length]);
-        _patchListModule(container, '#dash-open-reqs-col', pReqs.slice(0, 5), 'No open requests.');
-        _patchListModule(container, '#dash-upcoming-work-col', up.slice(0, 5), 'No upcoming work scheduled.');
-        _patchListModule(container, '#dash-recent-work-col', rd.slice(0, 5), 'No recent completions.');
+        _patchListModule(container, '#dash-open-reqs-col', pReqs.slice(0, 5), C.emptyStates.noRequests);
+        _patchListModule(container, '#dash-upcoming-work-col', up.slice(0, 5), C.noDataMessages.noUpcoming);
+        _patchListModule(container, '#dash-recent-work-col', rd.slice(0, 5), C.emptyStates.noCompleted);
 
         _updateDashSyncLabel(container);
         if (changed) PortalAPI.showToast('Tasks updated', 'info');
@@ -614,6 +618,7 @@ async function renderHoa(container, ctx, readOnly) {
  * ────────────────────────────────────────────────────────────────────────── */
 async function renderPM(container, ctx) {
   const M   = PortalModules;
+  const C   = PortalRoleCopy.get('property_manager');
   const { activeCommunity } = ctx;
   const I   = M.ICONS;
 
@@ -626,39 +631,39 @@ async function renderPM(container, ctx) {
     ${M.pageHeader('Dashboard', activeCommunity)}
 
     ${M.statsRow([
-      { icon: I.task(),  label: 'Active Tasks',    value: active.length,      color: 'var(--teal)' },
-      { icon: I.alert(), label: 'Overdue',          value: overdue.length,    color: 'var(--red)' },
-      { icon: I.inbox(), label: 'Open Requests',    value: pendingReqs.length, color: 'var(--amber)' },
-      { icon: I.done(),  label: 'Completed Tasks',  value: completed.length,  color: 'var(--green)' },
+      { icon: I.task(),  label: C.summaryLabels.activeTasks,    value: active.length,      color: 'var(--teal)' },
+      { icon: I.alert(), label: C.summaryLabels.overdue,        value: overdue.length,     color: 'var(--red)' },
+      { icon: I.inbox(), label: C.summaryLabels.openRequests,   value: pendingReqs.length, color: 'var(--amber)' },
+      { icon: I.done(),  label: C.summaryLabels.completedTasks, value: completed.length,   color: 'var(--green)' },
     ])}
 
     <div class="dash-tasks-header">
-      <span class="dash-tasks-title">Tasks</span>
+      <span class="dash-tasks-title">${M.esc(C.sectionHeaders.tasksPanel)}</span>
       ${_syncBadgeHtml('dash-sync-bar')}
     </div>
 
     <div class="dash-grid" style="margin-top:0">
       <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recently-completed-col">
         ${M.listModule({
-          title: 'Recently Completed',
+          title: C.sectionHeaders.recentWork,
           rows: recentDone,
-          emptyMsg: 'No completed tasks yet.',
+          emptyMsg: C.emptyStates.noCompleted,
           viewAllRoute: 'tasks',
         })}
       </div>
       <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recent-reqs-col">
         ${M.listModule({
-          title: 'Recent Requests',
+          title: C.sectionHeaders.requests,
           rows: pendingReqs.slice(0, 5),
-          emptyMsg: 'No open requests.',
+          emptyMsg: C.emptyStates.noRequests,
           viewAllRoute: 'tasks',
         })}
       </div>
       ${_wide() ? `<div class="dash-col-4w" id="dash-overdue-col">
         ${M.listModule({
-          title: 'Overdue Tasks',
+          title: 'Community issues to review',
           rows: overdue.slice(0, 5),
-          emptyMsg: 'No overdue tasks.',
+          emptyMsg: C.emptyStates.noOverdue,
           viewAllRoute: 'tasks',
         })}
       </div>` : ''}
@@ -667,9 +672,9 @@ async function renderPM(container, ctx) {
     <div class="dash-grid" style="margin-top:20px">
       <div class="dash-col-6" id="dash-upcoming-col">
         ${M.listModule({
-          title: 'Upcoming Work',
+          title: C.sectionHeaders.upcomingTasks,
           rows: upcoming.slice(0, 5),
-          emptyMsg: 'No upcoming work scheduled.',
+          emptyMsg: C.noDataMessages.noUpcoming,
           viewAllRoute: 'tasks',
         })}
       </div>
@@ -702,12 +707,12 @@ async function renderPM(container, ctx) {
         const recentD   = comp.slice(0, 5);
 
         _updateStatsRow(container, [a.length, od.length, pending.length, comp.length]);
-        _patchListModule(container, '#dash-recently-completed-col', recentD, 'No completed tasks yet.');
-        _patchListModule(container, '#dash-recent-reqs-col', pending.slice(0, 5), 'No open requests.');
+        _patchListModule(container, '#dash-recently-completed-col', recentD, C.emptyStates.noCompleted);
+        _patchListModule(container, '#dash-recent-reqs-col', pending.slice(0, 5), C.emptyStates.noRequests);
         if (_wide()) {
-          _patchListModule(container, '#dash-overdue-col', od.slice(0, 5), 'No overdue tasks.');
+          _patchListModule(container, '#dash-overdue-col', od.slice(0, 5), C.emptyStates.noOverdue);
         }
-        _patchListModule(container, '#dash-upcoming-col', up.slice(0, 5), 'No upcoming work scheduled.');
+        _patchListModule(container, '#dash-upcoming-col', up.slice(0, 5), C.noDataMessages.noUpcoming);
 
         _updateDashSyncLabel(container);
         if (changed) PortalAPI.showToast('Tasks updated', 'info');
