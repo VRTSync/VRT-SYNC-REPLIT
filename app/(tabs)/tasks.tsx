@@ -51,14 +51,6 @@ const statusColors: Record<string, string> = {
   acknowledged: '#1565c0',
 };
 
-const statusColors: Record<string, string> = {
-  pending: '#ff9800',
-  in_progress: '#25C1AC',
-  completed: '#4caf50',
-  submitted: '#e65100',
-  acknowledged: '#1565c0',
-};
-
 function getTodayDenver(): Date {
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' });
