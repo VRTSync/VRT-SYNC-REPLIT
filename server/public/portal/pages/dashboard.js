@@ -148,13 +148,14 @@ async function renderContractor(container, ctx) {
   const noWork = tasks.length === 0;
 
   container.innerHTML = `
+    <div class="contractor-role">
     ${M.pageHeader('Dashboard', activeCommunity)}
 
     ${M.statsRow([
-      { icon: I.task(),     label: 'Today',          value: active.length,          color: 'var(--teal)' },
-      { icon: I.alert(),    label: C.summaryLabels.overdue,  value: overdue.length, color: 'var(--red)' },
-      { icon: I.inbox(),    label: 'Unacknowledged',  value: unacknowledged.length,  color: 'var(--amber)' },
-      { icon: I.calendar(), label: C.summaryLabels.upcoming, value: upcoming.length, color: 'var(--blue)' },
+      { icon: I.alert(),    label: C.summaryLabels.overdue,  value: overdue.length,        color: 'var(--red)',   extraClass: 'stat-card--lead' },
+      { icon: I.task(),     label: 'Today',                  value: active.length,          color: 'var(--teal)' },
+      { icon: I.inbox(),    label: 'Unacknowledged',          value: unacknowledged.length,  color: 'var(--amber)' },
+      { icon: I.calendar(), label: C.summaryLabels.upcoming, value: upcoming.length,         color: 'var(--blue)' },
     ])}
 
     ${M.quickLinksModule({
@@ -234,8 +235,8 @@ async function renderContractor(container, ctx) {
         const { active: a, overdue: od, upcoming: up, completed: comp, hoaReqs: hr } = _partition(newTasks);
         const unacked = hr.filter(t => t.status === 'submitted');
 
-        /* Patch stats row */
-        _updateStatsRow(container, [a.length, od.length, unacked.length, up.length]);
+        /* Patch stats row — order: overdue (lead), active, unacknowledged, upcoming */
+        _updateStatsRow(container, [od.length, a.length, unacked.length, up.length]);
 
         /* Patch all task list modules */
         _patchListModule(container, '#dash-todays-work-col', a.slice(0, 6), C.emptyStates.noTodayWork);
@@ -599,6 +600,7 @@ async function renderHoa(container, ctx) {
   const attentionItems = _buildAttentionItems(overdue, pendingReqs);
 
   container.innerHTML = `
+    <div class="hoa-admin-role">
     ${M.pageHeader('Dashboard', activeCommunity)}
 
     <!-- Panel 1: Command Center -->
@@ -624,7 +626,7 @@ async function renderHoa(container, ctx) {
       </div>
     </div>
 
-    <!-- Panel 2: Tasks -->
+    <!-- Panel 2: Tasks — requests-first with prominent CTA -->
     <div class="dash-panel dash-panel--tasks">
       <div class="dash-panel-header">
         <span class="dash-panel-label">${M.esc(C.sectionHeaders.tasksPanel)}</span>
@@ -632,12 +634,24 @@ async function renderHoa(container, ctx) {
       </div>
       <div class="dash-panel-body">
         <div id="dash-open-reqs-col">
-          ${M.listModule({
-            title: C.sectionHeaders.requests,
-            rows: pendingReqs.slice(0, 5),
-            emptyMsg: C.emptyStates.noRequests,
-            viewAllRoute: 'requests',
-          })}
+          <div class="hoa-admin-cta-bar">
+            <span class="haa-label">${M.esc(C.sectionHeaders.requests)}</span>
+            <button class="hoa-admin-cta-btn" onclick="typeof window.openNewRequestForm==='function'&&window.openNewRequestForm()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New Request
+            </button>
+          </div>
+          <div class="portal-module portal-module--requests-lead module--accent-teal">
+            <div class="pm-header">
+              <span class="pm-title">${M.esc(C.sectionHeaders.requests)}</span>
+              <button class="module-view-all" onclick="PortalRouter.navigate('requests')">View all</button>
+            </div>
+            <div class="pm-body pm-body--list">
+              ${pendingReqs.slice(0, 5).length > 0
+                ? pendingReqs.slice(0, 5).map(r => M.taskRow(r)).join('')
+                : `<div class="module-empty">${M.esc(C.emptyStates.noRequests)}</div>`}
+            </div>
+          </div>
         </div>
         <div id="dash-upcoming-work-col">
           ${M.listModule({
@@ -653,6 +667,7 @@ async function renderHoa(container, ctx) {
             rows: recentDone.slice(0, 5),
             emptyMsg: C.emptyStates.noCompleted,
             viewAllRoute: 'tasks',
+            extraClass: 'module--trust-teal',
           })}
         </div>
       </div>
@@ -669,6 +684,7 @@ async function renderHoa(container, ctx) {
           <iframe id="dash-map-iframe" src="/leaflet-map.html" class="map-preview-iframe" tabindex="-1" aria-hidden="true"></iframe>
         </div>
       </div>
+    </div>
     </div>
   `;
   requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
@@ -767,6 +783,7 @@ async function renderHoaMember(container, ctx) {
   const serviceDayHtml = _renderServiceDayWidget(schedules, thisWeekVisits, { memberMode: true });
 
   container.innerHTML = `
+    <div class="hoa-member-role">
     ${M.pageHeader('Community Dashboard', activeCommunity)}
 
     <!-- Panel 1: Community Activity Summary -->
@@ -775,7 +792,7 @@ async function renderHoaMember(container, ctx) {
         ${M.statsRow([
           { icon: I.done(),     label: 'Completed this month', value: completed.length,      color: 'var(--teal)' },
           { icon: I.task(),     label: 'Scheduled upcoming',   value: upcoming.length,        color: 'var(--blue)' },
-          ...(requestsAllowed ? [{ icon: I.inbox(), label: 'Active requests', value: activeRequests.length, color: 'var(--amber)' }] : []),
+          ...(requestsAllowed ? [{ icon: I.inbox(), label: 'Active requests', value: activeRequests.length, color: 'var(--gray-500)' }] : []),
           { icon: I.calendar(), label: 'Service visits',        value: thisWeekVisits.length, color: 'var(--green)' },
         ])}
         <div class="cc-member-narrative">
@@ -852,6 +869,7 @@ async function renderHoaMember(container, ctx) {
         </div>
       </div>
     </div>` : ''}
+    </div>
   `;
 
   requestAnimationFrame(function() { _initMapPreview(activeCommunity.id); });
@@ -1115,6 +1133,7 @@ async function renderPM(container, ctx) {
   const nextSvcLabel   = _nextServiceLabel(schedules) || '—';
 
   container.innerHTML = `
+    <div class="pm-role">
     ${_renderPMContextHeader(activeCommunity, isMultiCommunityUser)}
 
     ${M.statsRow([
@@ -1125,7 +1144,7 @@ async function renderPM(container, ctx) {
     ])}
 
     <!-- Row 1: Requests breakdown + Service schedule + Map layers -->
-    <div class="dash-grid" style="margin-top:20px">
+    <div class="dash-grid" style="margin-top:16px">
       <div class="dash-col-4" id="dash-pm-reqs-breakdown">
         ${_renderRequestsBreakdown(hoaReqs)}
       </div>
@@ -1138,7 +1157,7 @@ async function renderPM(container, ctx) {
     </div>
 
     <!-- Row 2: Recent completions + Upcoming tasks -->
-    <div class="dash-panel dash-panel--tasks" style="margin-top:20px">
+    <div class="dash-panel dash-panel--tasks" style="margin-top:16px">
       <div class="dash-panel-header">
         <span class="dash-panel-label">Tasks</span>
         ${_syncBadgeHtml('dash-sync-bar')}
@@ -1150,6 +1169,7 @@ async function renderPM(container, ctx) {
             rows: recentDone,
             emptyMsg: 'No completed tasks yet.',
             viewAllRoute: 'tasks',
+            extraClass: 'module--accent-teal',
           })}
         </div>
         <div id="dash-pm-upcoming-col">
@@ -1158,9 +1178,11 @@ async function renderPM(container, ctx) {
             rows: upcomingSorted,
             emptyMsg: 'No upcoming tasks scheduled.',
             viewAllRoute: 'tasks',
+            extraClass: 'module--accent-teal',
           })}
         </div>
       </div>
+    </div>
     </div>
   `;
 

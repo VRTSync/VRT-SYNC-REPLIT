@@ -2578,3 +2578,205 @@
   color: var(--gray-500);
   margin: 0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Role Visual Priority — Slice 8
+ * Role wrapper classes cascade to card/module modifiers below.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Role wrapper classes ─────────────────────────────────────────────── */
+.contractor-role {}
+.hoa-admin-role  {}
+.hoa-member-role {}
+.pm-role         {}
+
+/* ── Card-level accent modifiers ──────────────────────────────────────── */
+
+/* Overdue / red-alert emphasis — contractor lead stat, overdue modules */
+.module--accent-red {
+  border-left: 4px solid var(--red) !important;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Teal trust frame — HOA Admin recent completions, PM summary accents */
+.module--accent-teal {
+  border-left: 4px solid var(--teal) !important;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Muted / de-emphasized — lower visual weight sections */
+.module--muted {
+  opacity: 0.85;
+}
+.module--muted .pm-title {
+  font-weight: 500;
+  color: var(--gray-500);
+}
+
+/* Lead stat card — largest, most prominent stat (contractor overdue) */
+.stat-card--lead {
+  border: 2px solid var(--red) !important;
+  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.18) !important;
+  background: rgba(239, 68, 68, 0.03) !important;
+}
+.stat-card--lead .psc-value {
+  font-size: 30px;
+  color: var(--red);
+}
+.stat-card--lead .psc-icon {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: var(--red) !important;
+}
+
+/* ── Contractor role visual priority ──────────────────────────────────── */
+
+/* Overdue count chip positioned first and extra prominent */
+.contractor-role .portal-stats-row {
+  /* Overdue stat is moved to first by JS reorder; just amplify lead card */
+}
+
+/* Overdue section top-border accent */
+.contractor-role .module--accent-red .pm-header {
+  border-bottom-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ── HOA Admin role visual priority ───────────────────────────────────── */
+
+/* Active requests card: taller header, stronger visual weight */
+.hoa-admin-role .portal-module--requests-lead .pm-header {
+  padding: 18px 20px;
+  border-bottom: 2px solid var(--teal);
+}
+.hoa-admin-role .portal-module--requests-lead .pm-title {
+  font-size: 14px;
+}
+
+/* New Request CTA — primary button style at top of section */
+.hoa-admin-cta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+.hoa-admin-cta-bar .haa-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--navy);
+}
+.hoa-admin-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(37, 193, 172, 0.3);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hoa-admin-cta-btn:hover {
+  background: linear-gradient(135deg, var(--teal-dark), #189985);
+  box-shadow: 0 4px 14px rgba(37, 193, 172, 0.45);
+  transform: translateY(-1px);
+}
+
+/* Recent completions: muted teal chip frame instead of neutral gray */
+.module--trust-teal {
+  background: rgba(37, 193, 172, 0.04);
+  border: 1px solid rgba(37, 193, 172, 0.22);
+  border-radius: var(--radius);
+}
+.module--trust-teal .pm-header {
+  background: rgba(37, 193, 172, 0.06);
+  border-bottom: 1px solid rgba(37, 193, 172, 0.18);
+}
+.module--trust-teal .pm-title {
+  color: var(--teal-dark);
+}
+
+/* ── HOA Member role visual priority ──────────────────────────────────── */
+
+/* Softer card borders — lower contrast */
+.hoa-member-role .portal-module,
+.hoa-member-role .portal-stat-card {
+  border-color: var(--gray-100);
+}
+
+/* Lighter section heading weight */
+.hoa-member-role .pm-title {
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--gray-600);
+  text-transform: none;
+  font-size: 13px;
+}
+
+/* More generous vertical whitespace between panels */
+.hoa-member-role .dash-panel + .dash-panel {
+  margin-top: 28px;
+}
+
+/* Neutral informational stat cards — no urgent red tones */
+.hoa-member-role .portal-stat-card .psc-value {
+  font-size: 22px;
+}
+.hoa-member-role .portal-stats-row {
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+/* ── Property Manager role visual priority ────────────────────────────── */
+
+/* Denser stat row — more metrics visible */
+.pm-role .portal-stats-row {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pm-role .portal-stat-card {
+  padding: 12px 14px;
+  gap: 10px;
+}
+.pm-role .psc-value {
+  font-size: 20px;
+}
+.pm-role .psc-icon {
+  width: 34px;
+  height: 34px;
+}
+
+/* Compact list row height */
+.pm-role .task-row {
+  padding: 7px 14px;
+}
+
+/* Compact section headings */
+.pm-role .pm-title {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+.pm-role .pm-header {
+  padding: 10px 14px;
+}
+
+/* Left-border accent on summary modules */
+.pm-role .portal-module,
+.pm-role .pm-widget {
+  border-left: 3px solid var(--teal);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Compact panel header */
+.pm-role .dash-panel-header {
+  padding: 10px 16px;
+}
+.pm-role .dash-panel-label {
+  font-size: 11px;
+}

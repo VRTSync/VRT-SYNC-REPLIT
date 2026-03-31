@@ -110,10 +110,11 @@ window.PortalModules = (function () {
     return `<div class="portal-stats-row">${cards.map(c => statCard(c)).join('')}</div>`;
   }
 
-  function statCard({ icon, label, value, color, note }) {
+  function statCard({ icon, label, value, color, note, extraClass }) {
     const c = color || 'var(--teal)';
+    const cls = extraClass ? ' ' + extraClass : '';
     return `
-      <div class="portal-stat-card">
+      <div class="portal-stat-card${cls}">
         <div class="psc-icon" style="background:${c}18;color:${c}">${icon || ''}</div>
         <div class="psc-body">
           <div class="psc-value">${value != null ? value : '—'}</div>
@@ -127,7 +128,7 @@ window.PortalModules = (function () {
   /* ═══════════════════════════════════════════════════════════════════════
    * MODULE: List Module (tasks, requests, invoices, etc.)
    * ══════════════════════════════════════════════════════════════════════ */
-  function listModule({ title, rows = [], emptyMsg, viewAllRoute, maxRows }) {
+  function listModule({ title, rows = [], emptyMsg, viewAllRoute, maxRows, extraClass }) {
     const limit = maxRows || 6;
     const visible = rows.slice(0, limit);
     const body = visible.length > 0
@@ -136,8 +137,9 @@ window.PortalModules = (function () {
     const viewAll = viewAllRoute
       ? `<button class="module-view-all" onclick="PortalRouter.navigate('${viewAllRoute}')">View all</button>`
       : '';
+    const cls = extraClass ? ' ' + extraClass : '';
     return `
-      <div class="portal-module">
+      <div class="portal-module${cls}">
         <div class="pm-header">
           <span class="pm-title">${esc(title)}</span>
           ${viewAll}
