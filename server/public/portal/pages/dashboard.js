@@ -837,81 +837,250 @@ async function renderHoaMember(container, ctx) {
 /* ───────────────────────────────────────────────────────────────────────────
  * Property Manager Dashboard
  * ────────────────────────────────────────────────────────────────────────── */
+
+/* Fetch map layers for a community (lightweight — no geojson needed here) */
+async function _fetchMapLayers(communityId) {
+  try {
+    const layers = await PortalAPI.apiFetch(`/api/map-layers?communityId=${encodeURIComponent(communityId)}`);
+    return Array.isArray(layers) ? layers : [];
+  } catch { return []; }
+}
+
+/* Completions this calendar week */
+function _completionsThisWeek(tasks) {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); /* 0=Sun */
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - dayOfWeek);
+  weekStart.setHours(0, 0, 0, 0);
+  return tasks.filter(function(t) {
+    if (t.status !== 'completed') return false;
+    const ca = t.completedAt ? new Date(t.completedAt) : null;
+    return ca && ca >= weekStart;
+  });
+}
+
+/* Format a next service window as a short label: "Mowing · Thu" */
+function _nextServiceLabel(schedules) {
+  const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const active = (schedules || []).filter(function(s) { return s.isActive; });
+  if (active.length === 0) return null;
+  const s = active[0];
+  const day = DOW_SHORT[s.dayOfWeek] || '?';
+  const name = s.name || s.serviceName || 'Service';
+  return name + ' \u00B7 ' + day;
+}
+
+/* Render the PM community context header */
+function _renderPMContextHeader(activeCommunity, isMultiCommunity) {
+  const M = PortalModules;
+  const homeIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
+  const switchCta = isMultiCommunity
+    ? `<button class="pm-ctx-switch-btn" onclick="PortalRouter.navigate('communities')">Switch Community
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>`
+    : '';
+  return `
+    <div class="pm-ctx-header">
+      <div class="pm-ctx-left">
+        <span class="pm-ctx-icon">${homeIcon}</span>
+        <div class="pm-ctx-info">
+          <span class="pm-ctx-role">Property Manager Dashboard</span>
+          <span class="pm-ctx-name">${M.esc(activeCommunity.name)}</span>
+        </div>
+      </div>
+      ${switchCta}
+    </div>`;
+}
+
+/* Render requests-by-status breakdown widget */
+function _renderRequestsBreakdown(hoaReqs) {
+  const M = PortalModules;
+  const pending    = hoaReqs.filter(function(r) { return r.status === 'pending' || r.status === 'new'; });
+  const inProgress = hoaReqs.filter(function(r) { return r.status === 'in_progress' || r.status === 'in-progress' || r.status === 'assigned'; });
+  const doneThisWk = _completionsThisWeek(hoaReqs);
+
+  const buckets = [
+    { label: 'Pending',     count: pending.length,    color: 'var(--amber)',  cls: 'pm-rb-amber' },
+    { label: 'In Progress', count: inProgress.length, color: 'var(--blue)',   cls: 'pm-rb-blue' },
+    { label: 'Done This Wk', count: doneThisWk.length, color: 'var(--green)', cls: 'pm-rb-green' },
+  ];
+
+  const inboxIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>`;
+
+  const rows = buckets.map(function(b) {
+    return `<div class="pm-rb-row">
+      <span class="pm-rb-dot ${b.cls}"></span>
+      <span class="pm-rb-label">${M.esc(b.label)}</span>
+      <span class="pm-rb-count" style="color:${b.color}">${b.count}</span>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="pm-widget pm-widget--requests">
+      <div class="pm-widget-header">
+        <span class="pm-widget-icon" style="color:var(--amber)">${inboxIcon}</span>
+        <span class="pm-widget-title">Requests by Status</span>
+        <button class="cc-widget-link" onclick="PortalRouter.navigate('tasks')">View all →</button>
+      </div>
+      <div class="pm-rb-body">${rows}</div>
+    </div>`;
+}
+
+/* Render the quick map layers panel */
+function _renderMapLayersPanel(layers, communityId) {
+  const M = PortalModules;
+  const layerIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>`;
+
+  const displayable = layers.filter(function(l) {
+    return l.isActive !== false && l.layerKey !== 'outline';
+  });
+
+  let body;
+  if (displayable.length === 0) {
+    body = `<div class="pm-widget-empty">No active map layers</div>`;
+  } else {
+    const items = displayable.slice(0, 8).map(function(l) {
+      const color = l.color || '#25C1AC';
+      const name  = M.esc(l.displayName || l.name || l.layerKey || 'Layer');
+      const onclick = `PortalRouter.navigate('map')`;
+      return `<div class="pm-ml-row" onclick="${onclick}" role="button" tabindex="0" title="Open ${name} on map">
+        <span class="pm-ml-dot" style="background:${color}"></span>
+        <span class="pm-ml-name">${name}</span>
+        <svg class="pm-ml-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>`;
+    }).join('');
+    body = `<div class="pm-ml-list">${items}</div>`;
+  }
+
+  return `
+    <div class="pm-widget pm-widget--layers">
+      <div class="pm-widget-header">
+        <span class="pm-widget-icon" style="color:var(--teal)">${layerIcon}</span>
+        <span class="pm-widget-title">Map Layers</span>
+        <button class="cc-widget-link" onclick="PortalRouter.navigate('map')">Open map →</button>
+      </div>
+      ${body}
+    </div>`;
+}
+
+/* Render the service schedule widget */
+function _renderPMServiceSchedule(schedules) {
+  const M = PortalModules;
+  const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const calIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+
+  const active = (schedules || []).filter(function(s) { return s.isActive; }).slice(0, 3);
+
+  let body;
+  if (active.length === 0) {
+    body = `<div class="pm-widget-empty">No service schedule on file</div>`;
+  } else {
+    const items = active.map(function(s) {
+      const dayName = DOW[s.dayOfWeek] || 'Unknown';
+      const name = M.esc(s.name || s.serviceName || 'Service');
+      /* Next occurrence on or after today */
+      const d = new Date(today);
+      const delta = (s.dayOfWeek - d.getDay() + 7) % 7;
+      d.setDate(d.getDate() + delta);
+      const nextStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const cadence = s.frequency ? M.esc(s.frequency) : 'Weekly';
+      return `<div class="pm-ss-row">
+        <div class="pm-ss-name">${name}</div>
+        <div class="pm-ss-meta">
+          <span class="pm-ss-day">${M.esc(dayName)}</span>
+          <span class="pm-ss-sep">·</span>
+          <span class="pm-ss-next">Next: ${M.esc(nextStr)}</span>
+          <span class="pm-ss-sep">·</span>
+          <span class="pm-ss-cadence">${cadence}</span>
+        </div>
+      </div>`;
+    }).join('');
+    body = `<div class="pm-ss-list">${items}</div>`;
+  }
+
+  return `
+    <div class="pm-widget pm-widget--schedule">
+      <div class="pm-widget-header">
+        <span class="pm-widget-icon" style="color:var(--teal)">${calIcon}</span>
+        <span class="pm-widget-title">Service Schedule</span>
+        <button class="cc-widget-link" onclick="PortalRouter.navigate('service-schedule')">Manage →</button>
+      </div>
+      ${body}
+    </div>`;
+}
+
 async function renderPM(container, ctx) {
   const M   = PortalModules;
-  const C   = PortalRoleCopy.get('property_manager');
-  const { activeCommunity } = ctx;
+  const { activeCommunity, isMultiCommunityUser } = ctx;
   const I   = M.ICONS;
 
-  const tasks = await _fetchTasks(activeCommunity.id);
-  const { active, overdue, upcoming, completed, hoaReqs } = _partition(tasks);
-  const pendingReqs = hoaReqs.filter(t => t.status !== 'completed');
-  const recentDone  = completed.slice(0, 5);
+  const [tasks, schedules, mapLayers] = await Promise.all([
+    _fetchTasks(activeCommunity.id),
+    _fetchServiceSchedules(activeCommunity.id),
+    _fetchMapLayers(activeCommunity.id),
+  ]);
+
+  const { overdue, upcoming, completed, hoaReqs } = _partition(tasks);
+  const openReqs       = hoaReqs.filter(function(t) { return t.status !== 'completed'; });
+  const completionsWk  = _completionsThisWeek(tasks);
+  const recentDone     = completed.slice().sort(function(a, b) {
+    return new Date(b.completedAt || 0) - new Date(a.completedAt || 0);
+  }).slice(0, 5);
+  const upcomingSorted = upcoming.slice().sort(function(a, b) {
+    return new Date(a.dueDate || '9999') - new Date(b.dueDate || '9999');
+  }).slice(0, 5);
+  const nextSvcLabel   = _nextServiceLabel(schedules) || '—';
 
   container.innerHTML = `
-    ${M.pageHeader('Dashboard', activeCommunity)}
+    ${_renderPMContextHeader(activeCommunity, isMultiCommunityUser)}
 
     ${M.statsRow([
-      { icon: I.task(),  label: C.summaryLabels.activeTasks,    value: active.length,      color: 'var(--teal)' },
-      { icon: I.alert(), label: C.summaryLabels.overdue,        value: overdue.length,     color: 'var(--red)' },
-      { icon: I.inbox(), label: C.summaryLabels.openRequests,   value: pendingReqs.length, color: 'var(--amber)' },
-      { icon: I.done(),  label: C.summaryLabels.completedTasks, value: completed.length,   color: 'var(--green)' },
+      { icon: I.inbox(), label: 'Open Requests',       value: openReqs.length,      color: 'var(--amber)' },
+      { icon: I.alert(), label: 'Overdue Tasks',        value: overdue.length,       color: 'var(--red)' },
+      { icon: I.done(),  label: 'Completions This Wk', value: completionsWk.length, color: 'var(--green)' },
+      { icon: I.calendar(), label: 'Next Service', value: nextSvcLabel, color: 'var(--teal)' },
     ])}
 
-    <div class="dash-tasks-header">
-      <span class="dash-tasks-title">${M.esc(C.sectionHeaders.tasksPanel)}</span>
-      ${_syncBadgeHtml('dash-sync-bar')}
-    </div>
-
-    <div class="dash-grid" style="margin-top:0">
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recently-completed-col">
-        ${M.listModule({
-          title: C.sectionHeaders.recentWork,
-          rows: recentDone,
-          emptyMsg: C.emptyStates.noCompleted,
-          viewAllRoute: 'tasks',
-        })}
-      </div>
-      <div class="${_wc('dash-col-6', 'dash-col-4w')}" id="dash-recent-reqs-col">
-        ${M.listModule({
-          title: C.sectionHeaders.requests,
-          rows: pendingReqs.slice(0, 5),
-          emptyMsg: C.emptyStates.noRequests,
-          viewAllRoute: 'tasks',
-        })}
-      </div>
-      ${_wide() ? `<div class="dash-col-4w" id="dash-overdue-col">
-        ${M.listModule({
-          title: 'Community issues to review',
-          rows: overdue.slice(0, 5),
-          emptyMsg: C.emptyStates.noOverdue,
-          viewAllRoute: 'tasks',
-        })}
-      </div>` : ''}
-    </div>
-
+    <!-- Row 1: Requests breakdown + Service schedule + Map layers -->
     <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-6" id="dash-upcoming-col">
-        ${M.listModule({
-          title: C.sectionHeaders.upcomingTasks,
-          rows: upcoming.slice(0, 5),
-          emptyMsg: C.noDataMessages.noUpcoming,
-          viewAllRoute: 'tasks',
-        })}
+      <div class="dash-col-4" id="dash-pm-reqs-breakdown">
+        ${_renderRequestsBreakdown(hoaReqs)}
       </div>
-      <div class="dash-col-6">
-        ${M.listModule({
-          title: 'Recent Invoices',
-          rows: [],
-          emptyMsg: 'Invoice data coming in a future update.',
-          viewAllRoute: 'invoices',
-        })}
+      <div class="dash-col-4" id="dash-pm-schedule">
+        ${_renderPMServiceSchedule(schedules)}
+      </div>
+      <div class="dash-col-4" id="dash-pm-layers">
+        ${_renderMapLayersPanel(mapLayers, activeCommunity.id)}
       </div>
     </div>
 
-    <div class="dash-grid" style="margin-top:20px">
-      <div class="dash-col-12">
-        ${M.graphModule({ title: 'Water Usage', hint: 'Water usage reporting coming in a future update.' })}
+    <!-- Row 2: Recent completions + Upcoming tasks -->
+    <div class="dash-panel dash-panel--tasks" style="margin-top:20px">
+      <div class="dash-panel-header">
+        <span class="dash-panel-label">Tasks</span>
+        ${_syncBadgeHtml('dash-sync-bar')}
+      </div>
+      <div class="dash-panel-body">
+        <div id="dash-pm-completed-col">
+          ${M.listModule({
+            title: 'Recent Completions',
+            rows: recentDone,
+            emptyMsg: 'No completed tasks yet.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
+        <div id="dash-pm-upcoming-col">
+          ${M.listModule({
+            title: 'Upcoming Tasks',
+            rows: upcomingSorted,
+            emptyMsg: 'No upcoming tasks scheduled.',
+            viewAllRoute: 'tasks',
+          })}
+        </div>
       </div>
     </div>
   `;
@@ -921,19 +1090,25 @@ async function renderPM(container, ctx) {
     const sm = SyncManager.create();
     window._dashSyncManager = sm;
     sm.start(
-      () => _fetchTasks(activeCommunity.id),
+      function() { return _fetchTasks(activeCommunity.id); },
       function (newTasks, changed) {
-        const { active: a, overdue: od, upcoming: up, completed: comp, hoaReqs: hr } = _partition(newTasks);
-        const pending   = hr.filter(t => t.status !== 'completed');
-        const recentD   = comp.slice(0, 5);
+        const { overdue: od, upcoming: up, completed: comp, hoaReqs: hr } = _partition(newTasks);
+        const openR     = hr.filter(function(t) { return t.status !== 'completed'; });
+        const compWk    = _completionsThisWeek(newTasks);
+        const recentD   = comp.slice().sort(function(a, b) {
+          return new Date(b.completedAt || 0) - new Date(a.completedAt || 0);
+        }).slice(0, 5);
+        const upSorted  = up.slice().sort(function(a, b) {
+          return new Date(a.dueDate || '9999') - new Date(b.dueDate || '9999');
+        }).slice(0, 5);
 
-        _updateStatsRow(container, [a.length, od.length, pending.length, comp.length]);
-        _patchListModule(container, '#dash-recently-completed-col', recentD, C.emptyStates.noCompleted);
-        _patchListModule(container, '#dash-recent-reqs-col', pending.slice(0, 5), C.emptyStates.noRequests);
-        if (_wide()) {
-          _patchListModule(container, '#dash-overdue-col', od.slice(0, 5), C.emptyStates.noOverdue);
-        }
-        _patchListModule(container, '#dash-upcoming-col', up.slice(0, 5), C.noDataMessages.noUpcoming);
+        _updateStatsRow(container, [openR.length, od.length, compWk.length, nextSvcLabel]);
+        _patchListModule(container, '#dash-pm-completed-col', recentD, 'No completed tasks yet.');
+        _patchListModule(container, '#dash-pm-upcoming-col', upSorted, 'No upcoming tasks scheduled.');
+
+        /* Patch requests breakdown */
+        const rbEl = container.querySelector('#dash-pm-reqs-breakdown');
+        if (rbEl) rbEl.innerHTML = _renderRequestsBreakdown(hr);
 
         _updateDashSyncLabel(container);
         if (changed) PortalAPI.showToast('Tasks updated', 'info');
@@ -941,7 +1116,7 @@ async function renderPM(container, ctx) {
       30000
     );
     _wireDashSyncBtn(container, sm);
-    window._dashSyncTicker = setInterval(() => _updateDashSyncLabel(container), 5000);
+    window._dashSyncTicker = setInterval(function() { _updateDashSyncLabel(container); }, 5000);
   }
 }
 
