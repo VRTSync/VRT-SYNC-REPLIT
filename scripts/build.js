@@ -137,17 +137,21 @@ async function startMetro(expoPublicDomain) {
     });
   }
 
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 120; i++) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const healthy = await checkMetroHealth();
     if (healthy) {
-      console.log("Metro ready");
+      console.log(`Metro ready (${i + 1}s)`);
       return;
+    }
+
+    if (i % 15 === 14) {
+      console.log(`Metro still starting... (${i + 1}s)`);
     }
   }
 
-  console.error("Metro timeout");
+  console.error("Metro startup timed out after 120s. Check Metro logs above for errors.");
   process.exit(1);
 }
 
@@ -161,7 +165,12 @@ async function downloadFile(url, outputPath) {
     const response = await fetch(url, { signal: controller.signal });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let body = "";
+      try {
+        body = await response.text();
+        body = body.slice(0, 500);
+      } catch (_) {}
+      throw new Error(`HTTP ${response.status} from Metro: ${body}`);
     }
 
     const file = fs.createWriteStream(outputPath);
