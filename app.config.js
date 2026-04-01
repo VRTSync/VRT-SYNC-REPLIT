@@ -25,7 +25,7 @@ export default {
     },
     updates: {
       url: "https://u.expo.dev/0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2",
-      checkOnLaunch: "NEVER",
+      checkOnLaunch: "ALWAYS",
     },
     splash: {
       image: "./assets/images/splash-icon.png",

@@ -1,8 +1,9 @@
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Notifications from "expo-notifications";
+import * as Updates from "expo-updates";
 import React, { useEffect, useRef, useState } from "react";
-import { Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
+import { Alert, Platform, View, Image, ImageBackground, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -113,6 +114,31 @@ function AuthNavigator() {
       setTimeout(() => SplashScreen.hideAsync(), 150);
     }
   }, [user, isLoading, segments]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || __DEV__) return;
+    if (isLoading) return;
+    let cancelled = false;
+    async function checkOTA() {
+      try {
+        const check = await Updates.checkForUpdateAsync();
+        if (cancelled || !check.isAvailable) return;
+        await Updates.fetchUpdateAsync();
+        if (cancelled) return;
+        Alert.alert(
+          'Update Available',
+          'A new version of VRTSync has been downloaded. Restart now to apply it.',
+          [
+            { text: 'Later', style: 'cancel' },
+            { text: 'Restart Now', onPress: () => Updates.reloadAsync() },
+          ]
+        );
+      } catch {
+      }
+    }
+    checkOTA();
+    return () => { cancelled = true; };
+  }, [isLoading]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
