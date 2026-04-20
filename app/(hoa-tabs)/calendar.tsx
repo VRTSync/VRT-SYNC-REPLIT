@@ -219,6 +219,7 @@ function EmptyState({
   summaryFilter,
   needsAttention,
   canCreateRequest,
+  isHoaMember,
   onCreateRequest,
   onViewAll,
   onViewRequests,
@@ -227,6 +228,7 @@ function EmptyState({
   summaryFilter: SummaryFilterKey;
   needsAttention: boolean;
   canCreateRequest: boolean;
+  isHoaMember: boolean;
   onCreateRequest: () => void;
   onViewAll: () => void;
   onViewRequests: () => void;
@@ -271,12 +273,25 @@ function EmptyState({
     return (
       <View style={styles.emptyState}>
         <Ionicons name="document-text-outline" size={52} color="#ccc" />
-        <Text style={styles.emptyTitle}>No active requests</Text>
-        <Text style={styles.emptySubtitle}>Community requests will appear here once submitted</Text>
+        <Text style={styles.emptyTitle}>
+          {isHoaMember ? 'Have a concern to report?' : 'No active requests'}
+        </Text>
+        <Text style={styles.emptySubtitle}>
+          {isHoaMember
+            ? 'Submit a request to let your HOA know about issues in your community'
+            : 'Community requests will appear here once submitted'}
+        </Text>
         {canCreateRequest ? (
-          <TouchableOpacity style={styles.emptyCreateBtn} onPress={onCreateRequest} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={styles.emptyCreateBtn}
+            onPress={onCreateRequest}
+            activeOpacity={0.8}
+            testID="empty-create-request-btn"
+          >
             <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.emptyCreateText}>Create Request</Text>
+            <Text style={styles.emptyCreateText}>
+              {isHoaMember ? 'Submit a Request' : 'Create Request'}
+            </Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -596,6 +611,7 @@ export default function HoaTasksScreen() {
           summaryFilter={activeSummaryFilter}
           needsAttention={needsAttentionActive}
           canCreateRequest={!!canCreateRequest}
+          isHoaMember={user?.role === 'hoa_member'}
           onCreateRequest={() => setShowCreateRequest(true)}
           onViewAll={handleViewAll}
           onViewRequests={handleViewRequests}
