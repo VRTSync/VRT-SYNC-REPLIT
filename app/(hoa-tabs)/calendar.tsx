@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, ScrollView, StyleSheet, TouchableOpacity, RefreshControl,
   ActivityIndicator, Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/query-client';
 import { useRouter } from 'expo-router';
@@ -48,6 +49,14 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
   pending:      { label: 'Pending',      bg: '#F3E5F5', text: '#7B1FA2' },
   in_progress:  { label: 'In Progress',  bg: '#E0F7FA', text: '#00838F' },
   completed:    { label: 'Completed',    bg: '#E8F5E9', text: '#2E7D32' },
+};
+
+const PREFS_STORAGE_KEY = 'hoa_tasks_prefs';
+const VALID_TABS: TabKey[] = ['all', 'requests', 'scheduled', 'completed'];
+
+type StoredPrefs = {
+  activeTab?: TabKey;
+  needsAttentionActive?: boolean;
 };
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -304,6 +313,37 @@ export default function HoaTasksScreen() {
   const [activeTab, setActiveTab] = useState<TabKey>('all');
   const [activeSummaryFilter, setActiveSummaryFilter] = useState<SummaryFilterKey>(null);
   const [needsAttentionActive, setNeedsAttentionActive] = useState(false);
+  const prefsHydratedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PREFS_STORAGE_KEY);
+        if (cancelled) return;
+        if (raw) {
+          const parsed = JSON.parse(raw) as StoredPrefs;
+          if (parsed.activeTab && VALID_TABS.includes(parsed.activeTab)) {
+            setActiveTab(parsed.activeTab);
+          }
+          if (typeof parsed.needsAttentionActive === 'boolean') {
+            setNeedsAttentionActive(parsed.needsAttentionActive);
+          }
+        }
+      } catch {
+        // Ignore corrupted prefs
+      } finally {
+        if (!cancelled) prefsHydratedRef.current = true;
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!prefsHydratedRef.current) return;
+    const prefs: StoredPrefs = { activeTab, needsAttentionActive };
+    AsyncStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs)).catch(() => {});
+  }, [activeTab, needsAttentionActive]);
   const [viewMode, setViewMode] = useState<ViewMode>(
     user?.role === 'hoa_member' ? 'calendar' : 'list'
   );
