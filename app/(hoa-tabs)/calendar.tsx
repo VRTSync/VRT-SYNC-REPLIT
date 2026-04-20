@@ -18,6 +18,7 @@ import DayWorkSheet from '@/components/DayWorkSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import WeeklySummaryCard, { type SummaryFilterKey } from '@/components/WeeklySummaryCard';
+import { REQUEST_AGING_DAYS_THRESHOLD, isRequestAging } from '@/constants/requestAging';
 
 type Task = {
   id: string;
@@ -400,6 +401,15 @@ export default function HoaTasksScreen() {
     return { overdue, active, requests, completed };
   }, [tasks]);
 
+  const agingRequestsCount = useMemo(() => {
+    if (!tasks) return 0;
+    return tasks.filter(t =>
+      t.origin === 'HOA' &&
+      t.status !== 'completed' &&
+      isRequestAging(t.createdAt)
+    ).length;
+  }, [tasks]);
+
   const handleTabPress = useCallback((tab: TabKey) => {
     setActiveTab(tab);
     setActiveSummaryFilter(null);
@@ -463,10 +473,7 @@ export default function HoaTasksScreen() {
         if (t.status === 'completed') return false;
         if (t.dueDate && new Date(t.dueDate) < now) return true;
         if (t.origin === 'HOA' && t.status === 'submitted') return true;
-        if (t.origin === 'HOA') {
-          const days = Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-          if (days >= 7) return true;
-        }
+        if (t.origin === 'HOA' && isRequestAging(t.createdAt)) return true;
         return false;
       });
     }
@@ -541,6 +548,7 @@ export default function HoaTasksScreen() {
             if (viewMode === 'calendar') setViewMode('list');
           }}
           activeSummaryFilter={activeSummaryFilter}
+          requestsWarning={agingRequestsCount > 0}
         />
       </NavyHeader>
 
@@ -553,18 +561,33 @@ export default function HoaTasksScreen() {
             style={styles.filterScrollWrapper}
             contentContainerStyle={styles.filterRow}
           >
-            {TABS.map((f) => (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.filterTab, activeTab === f.key && !activeSummaryFilter && styles.filterTabActive]}
-                onPress={() => handleTabPress(f.key)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.filterTabText, activeTab === f.key && !activeSummaryFilter && styles.filterTabTextActive]}>
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {TABS.map((f) => {
+              const showAgingBadge = f.key === 'requests' && agingRequestsCount > 0;
+              return (
+                <TouchableOpacity
+                  key={f.key}
+                  style={[styles.filterTab, activeTab === f.key && !activeSummaryFilter && styles.filterTabActive]}
+                  onPress={() => handleTabPress(f.key)}
+                  activeOpacity={0.7}
+                  testID={`tab-${f.key}`}
+                >
+                  <View style={styles.filterTabInner}>
+                    <Text style={[styles.filterTabText, activeTab === f.key && !activeSummaryFilter && styles.filterTabTextActive]}>
+                      {f.label}
+                    </Text>
+                    {showAgingBadge ? (
+                      <View
+                        style={styles.agingBadge}
+                        accessibilityLabel={`${agingRequestsCount} aging requests older than ${REQUEST_AGING_DAYS_THRESHOLD} days`}
+                        testID="aging-requests-badge"
+                      >
+                        <Text style={styles.agingBadgeText}>{agingRequestsCount}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           {/* Needs Attention chip */}
@@ -689,6 +712,26 @@ const styles = StyleSheet.create({
   },
   filterTabText: { fontSize: 11, fontWeight: '600', color: '#888' },
   filterTabTextActive: { color: '#0C1D31' },
+  filterTabInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  agingBadge: {
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agingBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    lineHeight: 12,
+  },
 
   chipRow: {
     flexDirection: 'row',

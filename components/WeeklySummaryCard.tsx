@@ -22,6 +22,7 @@ type Props = {
   labels?: { overdue: string; active: string; requests: string; completed: string };
   onStatPress: (filter: NonNullable<SummaryFilterKey>) => void;
   activeSummaryFilter?: SummaryFilterKey;
+  requestsWarning?: boolean;
 };
 
 const DEFAULT_HOA_LABELS = {
@@ -31,7 +32,7 @@ const DEFAULT_HOA_LABELS = {
   completed: 'Completed',
 };
 
-export default function WeeklySummaryCard({ counts, labels, onStatPress, activeSummaryFilter }: Props) {
+export default function WeeklySummaryCard({ counts, labels, onStatPress, activeSummaryFilter, requestsWarning }: Props) {
   const lbl = labels ?? DEFAULT_HOA_LABELS;
 
   const pills: Pill[] = [
@@ -45,17 +46,33 @@ export default function WeeklySummaryCard({ counts, labels, onStatPress, activeS
     <View style={styles.card}>
       {pills.map((pill) => {
         const isActive = activeSummaryFilter === pill.filter;
+        const showWarning = pill.filter === 'requests' && !!requestsWarning && pill.count > 0;
+        const warningColor = '#E65100';
+        const accentColor = showWarning ? warningColor : pill.color;
         return (
           <TouchableOpacity
             key={pill.filter}
-            style={[styles.pill, isActive && { backgroundColor: pill.color + '18', borderColor: pill.color, borderWidth: 1.5 }]}
+            style={[
+              styles.pill,
+              isActive && { backgroundColor: accentColor + '18', borderColor: accentColor, borderWidth: 1.5 },
+              showWarning && !isActive && { backgroundColor: warningColor + '12', borderColor: warningColor + '55' },
+            ]}
             onPress={() => onStatPress(pill.filter)}
             activeOpacity={0.7}
             testID={`summary-pill-${pill.filter}`}
           >
-            <View style={[styles.dot, { backgroundColor: pill.color }]} />
-            <Text style={[styles.count, isActive && { color: pill.color }]}>{pill.count}</Text>
-            <Text style={[styles.label, isActive && { color: pill.color }]} numberOfLines={1}>{pill.label}</Text>
+            <View style={styles.dotRow}>
+              <View style={[styles.dot, { backgroundColor: accentColor }]} />
+              {showWarning ? (
+                <View
+                  style={styles.warningDot}
+                  testID="requests-warning-dot"
+                  accessibilityLabel="Aging requests present"
+                />
+              ) : null}
+            </View>
+            <Text style={[styles.count, (isActive || showWarning) && { color: accentColor }]}>{pill.count}</Text>
+            <Text style={[styles.label, (isActive || showWarning) && { color: accentColor }]} numberOfLines={1}>{pill.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -84,11 +101,22 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
+  dotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 2,
+  },
   dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    marginBottom: 2,
+  },
+  warningDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E65100',
   },
   count: {
     fontSize: 20,
