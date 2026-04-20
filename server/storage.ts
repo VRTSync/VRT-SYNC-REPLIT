@@ -340,6 +340,21 @@ export async function getUsersByCommunity(communityId: string): Promise<User[]> 
     .orderBy(users.displayName);
 }
 
+export async function updateUserProfile(
+  userId: string,
+  updates: { displayName?: string; password?: string },
+): Promise<User | null> {
+  if (Object.keys(updates).length === 0) {
+    const [existing] = await db.select().from(users).where(eq(users.id, userId));
+    return existing || null;
+  }
+  const [updated] = await db.update(users)
+    .set(updates)
+    .where(eq(users.id, userId))
+    .returning();
+  return updated || null;
+}
+
 export async function updateUserStatus(userId: string, isActive: boolean): Promise<User | null> {
   const [updated] = await db.update(users)
     .set({ isActive })

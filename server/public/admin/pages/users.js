@@ -27,6 +27,37 @@ AdminRouter.register('users', async function(container) {
         </tbody>
       </table>
     </div>
+    <div class="modal-overlay" id="edit-user-modal" style="display:none">
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <h3>Edit Profile</h3>
+          <button class="modal-close" id="edit-user-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <div class="form-control" id="edit-username-display" style="background:#f9fafb;color:#6b7280;cursor:default;"></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input class="form-input" id="edit-display-name" placeholder="Display Name" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">New Password <span class="text-muted text-sm">(optional)</span></label>
+            <input class="form-input" id="edit-new-password" type="password" placeholder="Leave blank to keep current password" autocomplete="new-password" />
+            <div class="text-muted text-sm" style="margin-top:4px">Setting a new password does not require the user's current password.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm New Password</label>
+            <input class="form-input" id="edit-confirm-password" type="password" placeholder="Repeat new password" autocomplete="new-password" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="edit-user-cancel">Cancel</button>
+          <button class="btn btn-primary" id="edit-user-submit">Save Changes</button>
+        </div>
+      </div>
+    </div>
     <div class="modal-overlay" id="create-user-modal" style="display:none">
       <div class="modal" style="max-width:420px">
         <div class="modal-header">
@@ -92,6 +123,41 @@ AdminRouter.register('users', async function(container) {
   const closeModal = () => { document.getElementById('create-user-modal').style.display = 'none'; };
   document.getElementById('create-user-close').addEventListener('click', closeModal);
   document.getElementById('create-user-cancel').addEventListener('click', closeModal);
+
+  let editingUserId = null;
+  const editModal = document.getElementById('edit-user-modal');
+  const closeEditModal = () => { editModal.style.display = 'none'; editingUserId = null; };
+  document.getElementById('edit-user-close').addEventListener('click', closeEditModal);
+  document.getElementById('edit-user-cancel').addEventListener('click', closeEditModal);
+
+  document.getElementById('edit-user-submit').addEventListener('click', async () => {
+    if (!editingUserId) return;
+    const displayName = document.getElementById('edit-display-name').value.trim();
+    const newPassword = document.getElementById('edit-new-password').value;
+    const confirmPassword = document.getElementById('edit-confirm-password').value;
+
+    if (!displayName) { showToast('Display name cannot be empty', 'error'); return; }
+    const body = { displayName };
+    if (newPassword || confirmPassword) {
+      if (newPassword.length < 6) { showToast('New password must be at least 6 characters', 'error'); return; }
+      if (newPassword !== confirmPassword) { showToast('Passwords do not match', 'error'); return; }
+      body.newPassword = newPassword;
+    }
+    const submitBtn = document.getElementById('edit-user-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving…';
+    try {
+      await apiFetch(`/api/admin/users/${editingUserId}`, { method: 'PATCH', body });
+      showToast('User updated', 'success');
+      closeEditModal();
+      await loadUsers();
+    } catch (err) {
+      showToast(err.message || 'Failed to update user', 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Save Changes';
+    }
+  });
 
   document.getElementById('create-user-submit').addEventListener('click', async () => {
     const username = document.getElementById('new-username').value.trim();
@@ -163,9 +229,11 @@ AdminRouter.register('users', async function(container) {
 
         const toggleLabel = isActive ? 'Deactivate' : 'Reactivate';
 
+        const editBtn = `<button class="btn btn-secondary btn-xs edit-btn" data-id="${u.id}" data-username="${esc(u.username)}" data-display="${esc(u.displayName || '')}" style="margin-right:4px">Edit Profile</button>`;
         let actions = '';
         if (!isHoa) {
           actions = `
+            ${editBtn}
             <button class="btn btn-secondary btn-xs role-btn" data-id="${u.id}" data-role="${u.role}">
               ${u.role === 'admin' ? 'Make Contractor' : 'Make Admin'}
             </button>
@@ -175,6 +243,7 @@ AdminRouter.register('users', async function(container) {
           `;
         } else {
           actions = `
+            ${editBtn}
             <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-right:4px">
               ${toggleLabel}
             </button>
@@ -195,6 +264,18 @@ AdminRouter.register('users', async function(container) {
           <td class="text-right">${actions}</td>
         </tr>
       `;}).join('');
+
+      tbody.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          editingUserId = btn.dataset.id;
+          document.getElementById('edit-username-display').textContent = btn.dataset.username;
+          document.getElementById('edit-display-name').value = btn.dataset.display || '';
+          document.getElementById('edit-new-password').value = '';
+          document.getElementById('edit-confirm-password').value = '';
+          editModal.style.display = 'flex';
+          document.getElementById('edit-display-name').focus();
+        });
+      });
 
       tbody.querySelectorAll('.role-btn').forEach(btn => {
         btn.addEventListener('click', async () => {

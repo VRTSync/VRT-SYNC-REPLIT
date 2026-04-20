@@ -1476,6 +1476,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/admin/users/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id as string;
+      const { displayName, newPassword } = req.body ?? {};
+
+      const updates: { displayName?: string; password?: string } = {};
+
+      if (displayName !== undefined) {
+        if (typeof displayName !== "string" || displayName.trim().length === 0) {
+          return res.status(400).json({ error: "Display name cannot be empty" });
+        }
+        updates.displayName = displayName.trim();
+      }
+
+      if (newPassword !== undefined) {
+        if (typeof newPassword !== "string" || newPassword.length < 6) {
+          return res.status(400).json({ error: "New password must be at least 6 characters" });
+        }
+        updates.password = await bcrypt.hash(newPassword, 10);
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No changes provided" });
+      }
+
+      const existing = await storage.getUserById(userId);
+      if (!existing) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const updated = await storage.updateUserProfile(userId, updates);
+      if (!updated) {
+        return res.status(500).json({ error: "Failed to update user" });
+      }
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Admin update user error:", error);
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
   app.delete("/api/admin/users/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = req.params.id as string;
