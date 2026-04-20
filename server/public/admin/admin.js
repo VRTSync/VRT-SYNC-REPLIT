@@ -29,10 +29,15 @@
 
       const avatar = document.getElementById('user-avatar');
       if (avatar) {
-        const parts = name.split(' ').filter(Boolean);
-        avatar.textContent = parts.length >= 2
-          ? (parts[0][0] + parts[1][0]).toUpperCase()
-          : name.slice(0, 2).toUpperCase();
+        if (currentUser.avatarUrl) {
+          const safeUrl = String(currentUser.avatarUrl).replace(/"/g, '&quot;');
+          avatar.innerHTML = '<img src="' + safeUrl + '" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:block;" />';
+        } else {
+          const parts = name.split(' ').filter(Boolean);
+          avatar.textContent = parts.length >= 2
+            ? (parts[0][0] + parts[1][0]).toUpperCase()
+            : name.slice(0, 2).toUpperCase();
+        }
       }
 
       document.getElementById('logout-btn').addEventListener('click', async () => {

@@ -703,6 +703,8 @@ async function runStartupMigrations() {
 
       ALTER TABLE tasks ADD COLUMN IF NOT EXISTS acknowledged_at timestamp;
 
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text;
+
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'planner_record_status') THEN
           CREATE TYPE planner_record_status AS ENUM ('draft', 'reviewed', 'selected_for_estimate', 'archived');

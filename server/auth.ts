@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { pool, db } from "./db";
 import * as storage from "./storage";
 import { insertUserSchema, loginSchema, users } from "@shared/schema";
+import { ObjectStorageService } from "./objectStorage";
 
 const PgSession = connectPgSimple(session);
 
@@ -155,7 +156,7 @@ export function registerAuthRoutes(app: any) {
   app.patch("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.session.userId!;
-      const { displayName, currentPassword, newPassword } = req.body;
+      const { displayName, currentPassword, newPassword, avatarUrl } = req.body;
 
       if (displayName !== undefined && (typeof displayName !== "string" || displayName.trim().length === 0)) {
         return res.status(400).json({ message: "Display name cannot be empty" });
@@ -166,10 +167,33 @@ export function registerAuthRoutes(app: any) {
         return res.status(401).json({ message: "User not found" });
       }
 
-      const updates: { displayName?: string; password?: string } = {};
+      const updates: { displayName?: string; password?: string; avatarUrl?: string | null } = {};
 
       if (displayName !== undefined) {
         updates.displayName = displayName.trim();
+      }
+
+      if (avatarUrl !== undefined) {
+        if (avatarUrl === null || avatarUrl === "") {
+          updates.avatarUrl = null;
+        } else if (typeof avatarUrl !== "string") {
+          return res.status(400).json({ message: "Invalid avatar URL" });
+        } else {
+          try {
+            const objectStorageService = new ObjectStorageService();
+            const normalized = await objectStorageService.trySetObjectEntityAclPolicy(avatarUrl, {
+              owner: userId,
+              visibility: "public",
+            });
+            if (!normalized.startsWith("/objects/")) {
+              return res.status(400).json({ message: "Invalid avatar URL" });
+            }
+            updates.avatarUrl = normalized;
+          } catch (err) {
+            console.error("Avatar ACL error:", err);
+            return res.status(400).json({ message: "Failed to save avatar" });
+          }
+        }
       }
 
       if (newPassword !== undefined) {
