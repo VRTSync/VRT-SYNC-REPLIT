@@ -457,6 +457,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json([]);
       }
 
+      if (!communityId) {
+        const memberships = await storage.getUserCommunities(user.id);
+        if (memberships.length > 0) {
+          communityId = memberships[0].community.id;
+        }
+      }
+
       if (communityId) {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
         if (!isMember) {
@@ -466,7 +473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const rawUserTasks = await storage.getTasksForUser(req.session.userId!, communityId);
       const userTasks = await storage.enrichTasksWithAssigneeName(rawUserTasks);
-      console.log(`[GET /api/tasks] user=${user.id} count=${userTasks.length} (${Date.now() - t0}ms)`);
+      console.log(`[GET /api/tasks] user=${user.id} community=${communityId ?? "none"} count=${userTasks.length} (${Date.now() - t0}ms)`);
       res.json(userTasks);
     } catch (error) {
       console.error("Get tasks error:", error);

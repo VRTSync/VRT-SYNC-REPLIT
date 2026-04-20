@@ -195,7 +195,7 @@ export default function TasksScreen() {
       const res = await apiRequest('GET', route);
       return res.json();
     },
-    enabled: !!activeCommunity && isOnline,
+    enabled: isOnline,
   });
 
   React.useEffect(() => {

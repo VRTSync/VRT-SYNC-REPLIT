@@ -145,7 +145,10 @@ export async function getTasksDueInRange(from: Date, to: Date): Promise<Task[]> 
 export async function getTasksForUser(userId: string, communityId?: string): Promise<Task[]> {
   if (communityId) {
     return db.select().from(tasks)
-      .where(and(eq(tasks.assignedTo, userId), eq(tasks.communityId, communityId)))
+      .where(and(
+        eq(tasks.communityId, communityId),
+        or(eq(tasks.assignedTo, userId), isNull(tasks.assignedTo))
+      ))
       .orderBy(desc(tasks.createdAt));
   }
   return db.select().from(tasks)
