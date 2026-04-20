@@ -16,7 +16,7 @@ import CreateRequestSheet from '@/components/CreateRequestSheet';
 import DayWorkSheet from '@/components/DayWorkSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
-import WeeklySummaryCard from '@/components/WeeklySummaryCard';
+import WeeklySummaryCard, { type SummaryFilterKey } from '@/components/WeeklySummaryCard';
 
 type Task = {
   id: string;
@@ -39,20 +39,19 @@ type Task = {
   longitude?: number | null;
 };
 
-type FilterKey = 'all' | 'overdue' | 'requests' | 'scheduled' | 'completed';
+type TabKey = 'all' | 'requests' | 'scheduled' | 'completed';
 type ViewMode = 'list' | 'calendar';
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
-  submitted:    { label: 'Submitted',   bg: '#E3F2FD', text: '#1565C0' },
+  submitted:    { label: 'Submitted',    bg: '#E3F2FD', text: '#1565C0' },
   acknowledged: { label: 'Acknowledged', bg: '#FFF3E0', text: '#E65100' },
-  pending:      { label: 'Pending',     bg: '#F3E5F5', text: '#7B1FA2' },
-  in_progress:  { label: 'In Progress', bg: '#E0F7FA', text: '#00838F' },
-  completed:    { label: 'Completed',   bg: '#E8F5E9', text: '#2E7D32' },
+  pending:      { label: 'Pending',      bg: '#F3E5F5', text: '#7B1FA2' },
+  in_progress:  { label: 'In Progress',  bg: '#E0F7FA', text: '#00838F' },
+  completed:    { label: 'Completed',    bg: '#E8F5E9', text: '#2E7D32' },
 };
 
-const FILTERS: { key: FilterKey; label: string }[] = [
+const TABS: { key: TabKey; label: string }[] = [
   { key: 'all',       label: 'All' },
-  { key: 'overdue',   label: 'Overdue' },
   { key: 'requests',  label: 'Requests' },
   { key: 'scheduled', label: 'Scheduled Work' },
   { key: 'completed', label: 'Completed' },
@@ -78,6 +77,35 @@ function formatWindowRange(task: Task): string | null {
   return start === end ? start : `${start} – ${end}`;
 }
 
+function getAgingLabel(createdAt: string): string {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const days = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day old';
+  return `${days} days old`;
+}
+
+function sortTasks(tasks: Task[]): Task[] {
+  const now = new Date();
+  const rank = (t: Task): number => {
+    if (t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now) return 0; // Overdue
+    if (t.origin === 'HOA' && t.status !== 'completed') return 1;                    // Requests
+    if (t.status === 'in_progress' || t.status === 'pending') return 2;              // Active
+    if (t.status === 'completed') return 4;                                            // Completed
+    return 3;                                                                          // Upcoming/other
+  };
+  return [...tasks].sort((a, b) => {
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff !== 0) return rankDiff;
+    // Within requests, sort oldest first
+    if (a.origin === 'HOA' && b.origin === 'HOA') {
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    }
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+  });
+}
+
 function CommunityWorkCard({
   item,
   onPress,
@@ -87,7 +115,7 @@ function CommunityWorkCard({
   onPress: () => void;
   onViewOnMap?: () => void;
 }) {
-  const isHoa = item.origin === 'HOA';
+  const isRequest = item.origin === 'HOA';
   const statusCfg = STATUS_CONFIG[item.status] ?? { label: item.status, bg: '#ECEFF1', text: '#546E7A' };
   const windowRange = formatWindowRange(item);
   const hasLocation = item.latitude != null && item.longitude != null;
@@ -98,30 +126,44 @@ function CommunityWorkCard({
     ? `Submitted ${formatDate(item.createdAt)}`
     : null;
 
+  const agingLabel = isRequest && item.status !== 'completed' ? getAgingLabel(item.createdAt) : null;
+
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.typeBadge, isHoa ? styles.typeBadgeRequest : styles.typeBadgeScheduled]}>
-          <Text style={[styles.typeBadgeText, isHoa ? styles.typeBadgeTextRequest : styles.typeBadgeTextScheduled]}>
-            {isHoa ? 'REQUEST' : 'SCHEDULED'}
-          </Text>
-        </View>
+      {/* Row 1: title + status chip */}
+      <View style={styles.cardRow1}>
+        <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
         <View style={[styles.statusChip, { backgroundColor: statusCfg.bg }]}>
           <Text style={[styles.statusChipText, { color: statusCfg.text }]}>{statusCfg.label}</Text>
         </View>
       </View>
 
-      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+      {/* Row 2: type badge + description */}
+      <View style={styles.cardRow2}>
+        <View style={[styles.typeBadge, isRequest ? styles.typeBadgeRequest : styles.typeBadgeScheduled]}>
+          <Text style={[styles.typeBadgeText, isRequest ? styles.typeBadgeTextRequest : styles.typeBadgeTextScheduled]}>
+            {isRequest ? 'REQUEST' : 'SCHEDULED'}
+          </Text>
+        </View>
+        {item.description ? (
+          <Text style={styles.cardDescription} numberOfLines={2}>{item.description}</Text>
+        ) : null}
+      </View>
 
-      {item.description ? (
-        <Text style={styles.cardDescription} numberOfLines={2}>{item.description}</Text>
-      ) : null}
-
+      {/* Row 3: date + contractor + aging */}
       <View style={styles.cardMeta}>
         {dateLabel ? (
           <View style={styles.metaRow}>
             <Ionicons name="time-outline" size={13} color="#999" />
             <Text style={styles.metaText}>{dateLabel}</Text>
+            {agingLabel ? (
+              <Text style={styles.agingText}>{agingLabel}</Text>
+            ) : null}
+          </View>
+        ) : agingLabel ? (
+          <View style={styles.metaRow}>
+            <Ionicons name="hourglass-outline" size={13} color="#E65100" />
+            <Text style={[styles.metaText, { color: '#E65100' }]}>{agingLabel}</Text>
           </View>
         ) : null}
 
@@ -152,6 +194,7 @@ function CommunityWorkCard({
         ) : null}
       </View>
 
+      {/* Row 4: map link */}
       {hasLocation && onViewOnMap ? (
         <TouchableOpacity style={styles.mapAction} onPress={onViewOnMap} activeOpacity={0.7}>
           <Ionicons name="map-outline" size={14} color="#25C1AC" />
@@ -163,32 +206,89 @@ function CommunityWorkCard({
 }
 
 function EmptyState({
-  filterKey,
+  tabKey,
+  summaryFilter,
+  needsAttention,
+  canCreateRequest,
   onCreateRequest,
+  onViewAll,
+  onViewRequests,
 }: {
-  filterKey: FilterKey;
+  tabKey: TabKey;
+  summaryFilter: SummaryFilterKey;
+  needsAttention: boolean;
+  canCreateRequest: boolean;
   onCreateRequest: () => void;
+  onViewAll: () => void;
+  onViewRequests: () => void;
 }) {
-  const messages: Record<FilterKey, { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle: string; showCreate: boolean }> = {
-    all:       { icon: 'clipboard-outline', title: 'No community work yet', subtitle: 'Work items will appear here once they are added', showCreate: false },
-    overdue:   { icon: 'alert-circle-outline', title: 'No overdue items', subtitle: 'All tasks are on track — nothing is past due', showCreate: false },
-    requests:  { icon: 'document-text-outline', title: 'No requests yet', subtitle: 'Tap + to submit a new request for your community', showCreate: true },
-    scheduled: { icon: 'calendar-outline', title: 'No scheduled work', subtitle: 'Scheduled maintenance tasks will appear here', showCreate: false },
-    completed: { icon: 'checkmark-circle-outline', title: 'Nothing completed yet', subtitle: 'Completed work items will appear here', showCreate: false },
-  };
-  const msg = messages[filterKey];
+  if (needsAttention) {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="checkmark-circle-outline" size={52} color="#ccc" />
+        <Text style={styles.emptyTitle}>All clear</Text>
+        <Text style={styles.emptySubtitle}>No tasks need your attention right now</Text>
+      </View>
+    );
+  }
+
+  if (summaryFilter === 'overdue') {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="checkmark-circle-outline" size={52} color="#43A047" />
+        <Text style={styles.emptyTitle}>All tasks are on track</Text>
+        <Text style={styles.emptySubtitle}>Nothing is past due — great work!</Text>
+        <TouchableOpacity style={styles.emptyActionBtn} onPress={onViewRequests} activeOpacity={0.8}>
+          <Text style={styles.emptyActionText}>View Requests</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (summaryFilter === 'active' || tabKey === 'scheduled') {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="calendar-outline" size={52} color="#ccc" />
+        <Text style={styles.emptyTitle}>No scheduled work</Text>
+        <Text style={styles.emptySubtitle}>Scheduled maintenance tasks will appear here</Text>
+        <TouchableOpacity style={styles.emptyActionBtn} onPress={onViewAll} activeOpacity={0.8}>
+          <Text style={styles.emptyActionText}>View All Tasks</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (summaryFilter === 'requests' || tabKey === 'requests') {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="document-text-outline" size={52} color="#ccc" />
+        <Text style={styles.emptyTitle}>No active requests</Text>
+        <Text style={styles.emptySubtitle}>Community requests will appear here once submitted</Text>
+        {canCreateRequest ? (
+          <TouchableOpacity style={styles.emptyCreateBtn} onPress={onCreateRequest} activeOpacity={0.8}>
+            <Ionicons name="add" size={18} color="#fff" />
+            <Text style={styles.emptyCreateText}>Create Request</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (tabKey === 'completed') {
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="checkmark-done-outline" size={52} color="#ccc" />
+        <Text style={styles.emptyTitle}>Nothing completed yet</Text>
+        <Text style={styles.emptySubtitle}>Completed work items will appear here</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.emptyState}>
-      <Ionicons name={msg.icon} size={52} color="#ccc" />
-      <Text style={styles.emptyTitle}>{msg.title}</Text>
-      <Text style={styles.emptySubtitle}>{msg.subtitle}</Text>
-      {msg.showCreate ? (
-        <TouchableOpacity style={styles.emptyCreateBtn} onPress={onCreateRequest} activeOpacity={0.8}>
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={styles.emptyCreateText}>New Request</Text>
-        </TouchableOpacity>
-      ) : null}
+      <Ionicons name="clipboard-outline" size={52} color="#ccc" />
+      <Text style={styles.emptyTitle}>No community work yet</Text>
+      <Text style={styles.emptySubtitle}>Work items will appear here once they are added</Text>
     </View>
   );
 }
@@ -200,7 +300,10 @@ export default function HoaTasksScreen() {
   const { user } = useAuth();
   const navyHeaderProps = useNavyHeaderProps();
   const queryClient = useQueryClient();
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+
+  const [activeTab, setActiveTab] = useState<TabKey>('all');
+  const [activeSummaryFilter, setActiveSummaryFilter] = useState<SummaryFilterKey>(null);
+  const [needsAttentionActive, setNeedsAttentionActive] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>(
     user?.role === 'hoa_member' ? 'calendar' : 'list'
   );
@@ -208,6 +311,7 @@ export default function HoaTasksScreen() {
   const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
 
   const communityId = activeCommunity?.id;
+  const canCreateRequest = user?.role === 'hoa_admin' || user?.role === 'hoa_member' || user?.role === 'property_manager';
 
   const { data: tasks, isLoading, refetch } = useQuery<Task[]>({
     queryKey: ['/api/tasks', { communityId }],
@@ -241,30 +345,81 @@ export default function HoaTasksScreen() {
     return { overdue, active, requests, completed };
   }, [tasks]);
 
+  const handleTabPress = useCallback((tab: TabKey) => {
+    setActiveTab(tab);
+    setActiveSummaryFilter(null);
+    setNeedsAttentionActive(false);
+  }, []);
+
+  const handleSummaryPress = useCallback((filter: NonNullable<SummaryFilterKey>) => {
+    if (activeSummaryFilter === filter) {
+      setActiveSummaryFilter(null);
+      setActiveTab('all');
+      return;
+    }
+    setActiveSummaryFilter(filter);
+    setNeedsAttentionActive(false);
+    switch (filter) {
+      case 'overdue':   setActiveTab('all'); break;
+      case 'active':    setActiveTab('scheduled'); break;
+      case 'requests':  setActiveTab('requests'); break;
+      case 'completed': setActiveTab('completed'); break;
+    }
+  }, [activeSummaryFilter]);
+
+  const handleNeedsAttentionToggle = useCallback(() => {
+    setNeedsAttentionActive(prev => !prev);
+  }, []);
+
   const filteredTasks = useMemo(() => {
     if (!tasks) return [];
     const now = new Date();
-    switch (activeFilter) {
-      case 'overdue':
-        return tasks.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
-      case 'requests':
-        return tasks.filter(t => t.origin === 'HOA' && t.status !== 'completed');
-      case 'scheduled':
-        return tasks.filter(t => t.origin !== 'HOA' && t.status !== 'completed');
-      case 'completed':
-        return tasks.filter(t => t.status === 'completed');
-      default:
-        return tasks;
-    }
-  }, [tasks, activeFilter]);
 
-  const sortedTasks = useMemo(() => {
-    return [...filteredTasks].sort((a, b) => {
-      const aDate = new Date(a.updatedAt || a.createdAt).getTime();
-      const bDate = new Date(b.updatedAt || b.createdAt).getTime();
-      return bDate - aDate;
-    });
-  }, [filteredTasks]);
+    // Step 1: apply tab filter
+    let base: Task[];
+    switch (activeTab) {
+      case 'requests':
+        base = tasks.filter(t => t.origin === 'HOA' && t.status !== 'completed');
+        break;
+      case 'scheduled':
+        base = tasks.filter(t => t.origin !== 'HOA' && t.status !== 'completed');
+        break;
+      case 'completed':
+        base = tasks.filter(t => t.status === 'completed');
+        break;
+      default:
+        base = tasks;
+    }
+
+    // Step 2: apply summary filter (additive with tab)
+    if (activeSummaryFilter === 'overdue') {
+      base = base.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
+    } else if (activeSummaryFilter === 'active') {
+      base = base.filter(t => t.origin !== 'HOA' && t.status !== 'completed');
+    } else if (activeSummaryFilter === 'requests') {
+      base = base.filter(t => t.origin === 'HOA' && t.status !== 'completed');
+    } else if (activeSummaryFilter === 'completed') {
+      base = base.filter(t => t.status === 'completed');
+    }
+
+    // Step 3: apply Needs Attention as additional intersection (additive, not override)
+    if (needsAttentionActive) {
+      base = base.filter(t => {
+        if (t.status === 'completed') return false;
+        if (t.dueDate && new Date(t.dueDate) < now) return true;
+        if (t.origin === 'HOA' && t.status === 'submitted') return true;
+        if (t.origin === 'HOA') {
+          const days = Math.floor((now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+          if (days >= 7) return true;
+        }
+        return false;
+      });
+    }
+
+    return base;
+  }, [tasks, activeTab, activeSummaryFilter, needsAttentionActive]);
+
+  const sortedTasks = useMemo(() => sortTasks(filteredTasks), [filteredTasks]);
 
   const handleTaskPress = useCallback((taskId: string) => {
     router.push(`/task/${taskId}` as any);
@@ -283,6 +438,18 @@ export default function HoaTasksScreen() {
     queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
     queryClient.invalidateQueries({ queryKey: ['/api/tasks', { communityId }] });
   }, [queryClient, communityId]);
+
+  const handleViewAll = useCallback(() => {
+    setActiveTab('all');
+    setActiveSummaryFilter(null);
+    setNeedsAttentionActive(false);
+  }, []);
+
+  const handleViewRequests = useCallback(() => {
+    setActiveTab('requests');
+    setActiveSummaryFilter(null);
+    setNeedsAttentionActive(false);
+  }, []);
 
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom + 80;
 
@@ -315,33 +482,55 @@ export default function HoaTasksScreen() {
           counts={summaryCounts}
           labels={summaryLabels}
           onStatPress={(filter) => {
-            setActiveFilter(filter);
+            handleSummaryPress(filter);
             if (viewMode === 'calendar') setViewMode('list');
           }}
-          activeFilter={activeFilter}
+          activeSummaryFilter={activeSummaryFilter}
         />
       </NavyHeader>
 
       {viewMode === 'list' && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScrollWrapper}
-          contentContainerStyle={styles.filterRow}
-        >
-          {FILTERS.map((f) => (
+        <>
+          {/* Tab bar */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScrollWrapper}
+            contentContainerStyle={styles.filterRow}
+          >
+            {TABS.map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterTab, activeTab === f.key && !activeSummaryFilter && styles.filterTabActive]}
+                onPress={() => handleTabPress(f.key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterTabText, activeTab === f.key && !activeSummaryFilter && styles.filterTabTextActive]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Needs Attention chip */}
+          <View style={styles.chipRow}>
             <TouchableOpacity
-              key={f.key}
-              style={[styles.filterTab, activeFilter === f.key && styles.filterTabActive]}
-              onPress={() => setActiveFilter(f.key)}
-              activeOpacity={0.7}
+              style={[styles.attentionChip, needsAttentionActive && styles.attentionChipActive]}
+              onPress={handleNeedsAttentionToggle}
+              activeOpacity={0.75}
+              testID="needs-attention-chip"
             >
-              <Text style={[styles.filterTabText, activeFilter === f.key && styles.filterTabTextActive]}>
-                {f.label}
+              <Ionicons
+                name="alert-circle"
+                size={14}
+                color={needsAttentionActive ? '#fff' : '#E53935'}
+              />
+              <Text style={[styles.attentionChipText, needsAttentionActive && styles.attentionChipTextActive]}>
+                Needs Attention
               </Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          </View>
+        </>
       )}
 
       {viewMode === 'calendar' ? (
@@ -362,7 +551,15 @@ export default function HoaTasksScreen() {
           <ActivityIndicator size="large" color="#25C1AC" />
         </View>
       ) : sortedTasks.length === 0 ? (
-        <EmptyState filterKey={activeFilter} onCreateRequest={() => setShowCreateRequest(true)} />
+        <EmptyState
+          tabKey={activeTab}
+          summaryFilter={activeSummaryFilter}
+          needsAttention={needsAttentionActive}
+          canCreateRequest={!!canCreateRequest}
+          onCreateRequest={() => setShowCreateRequest(true)}
+          onViewAll={handleViewAll}
+          onViewRequests={handleViewRequests}
+        />
       ) : (
         <FlatList
           data={sortedTasks}
@@ -410,8 +607,8 @@ const styles = StyleSheet.create({
 
   filterScrollWrapper: {
     marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 8,
+    marginBottom: 0,
   },
   filterRow: {
     flexDirection: 'row',
@@ -421,7 +618,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   filterTab: {
-    paddingVertical: 7,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     alignItems: 'center',
     borderRadius: 8,
@@ -437,29 +634,87 @@ const styles = StyleSheet.create({
   filterTabText: { fontSize: 11, fontWeight: '600', color: '#888' },
   filterTabTextActive: { color: '#0C1D31' },
 
-  listContent: { paddingHorizontal: 16, paddingTop: 12 },
+  chipRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 2,
+    gap: 8,
+  },
+  attentionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: '#FFF0F0',
+    borderWidth: 1,
+    borderColor: '#FFCDD2',
+  },
+  attentionChipActive: {
+    backgroundColor: '#E53935',
+    borderColor: '#E53935',
+  },
+  attentionChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#E53935',
+  },
+  attentionChipTextActive: {
+    color: '#fff',
+  },
+
+  listContent: { paddingHorizontal: 16, paddingTop: 8 },
 
   card: {
     backgroundColor: '#fff',
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 10,
+    padding: 14,
+    marginBottom: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
-  cardHeader: {
+
+  cardRow1: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 6,
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0C1D31',
+    lineHeight: 21,
+  },
+  statusChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 20,
+    flexShrink: 0,
+  },
+  statusChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  cardRow2: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
   typeBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 5,
+    flexShrink: 0,
   },
   typeBadgeRequest: {
     backgroundColor: '#E0F7F4',
@@ -478,32 +733,16 @@ const styles = StyleSheet.create({
   typeBadgeTextScheduled: {
     color: '#512DA8',
   },
-  statusChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginLeft: 'auto',
-  },
-  statusChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0C1D31',
-    lineHeight: 21,
-    marginBottom: 4,
-  },
   cardDescription: {
+    flex: 1,
     fontSize: 13,
     color: '#666',
     lineHeight: 18,
-    marginBottom: 8,
   },
+
   cardMeta: {
-    gap: 4,
-    marginTop: 4,
+    gap: 3,
+    marginTop: 2,
   },
   metaRow: {
     flexDirection: 'row',
@@ -515,12 +754,22 @@ const styles = StyleSheet.create({
     color: '#777',
     flex: 1,
   },
+  agingText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#E65100',
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+
   mapAction: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
     alignSelf: 'flex-start',
@@ -536,18 +785,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
+    paddingBottom: 40,
   },
   emptyTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: '#333',
-    marginTop: 14,
+    marginTop: 12,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 14,
     color: '#999',
-    marginTop: 6,
+    marginTop: 5,
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -555,15 +805,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 20,
+    marginTop: 18,
     backgroundColor: '#25C1AC',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: 25,
   },
   emptyCreateText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#fff',
+  },
+  emptyActionBtn: {
+    marginTop: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    borderColor: '#25C1AC',
+  },
+  emptyActionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#25C1AC',
   },
 });
