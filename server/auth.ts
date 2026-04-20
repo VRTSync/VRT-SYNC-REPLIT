@@ -2,9 +2,10 @@ import { Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
-import { pool } from "./db";
+import { eq } from "drizzle-orm";
+import { pool, db } from "./db";
 import * as storage from "./storage";
-import { insertUserSchema, loginSchema } from "@shared/schema";
+import { insertUserSchema, loginSchema, users } from "@shared/schema";
 
 const PgSession = connectPgSimple(session);
 
@@ -149,6 +150,63 @@ export function registerAuthRoutes(app: any) {
       }
       res.json({ message: "Logged out" });
     });
+  });
+
+  app.patch("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId!;
+      const { displayName, currentPassword, newPassword } = req.body;
+
+      if (displayName !== undefined && (typeof displayName !== "string" || displayName.trim().length === 0)) {
+        return res.status(400).json({ message: "Display name cannot be empty" });
+      }
+
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+
+      const updates: { displayName?: string; password?: string } = {};
+
+      if (displayName !== undefined) {
+        updates.displayName = displayName.trim();
+      }
+
+      if (newPassword !== undefined) {
+        if (!currentPassword) {
+          return res.status(400).json({ message: "Current password is required to set a new password" });
+        }
+        if (typeof newPassword !== "string" || newPassword.length < 6) {
+          return res.status(400).json({ message: "New password must be at least 6 characters" });
+        }
+        const valid = await bcrypt.compare(currentPassword, user.password);
+        if (!valid) {
+          return res.status(400).json({ message: "Current password is incorrect" });
+        }
+        updates.password = await bcrypt.hash(newPassword, 10);
+      }
+
+      if (Object.keys(updates).length === 0) {
+        const { password: _, ...safeUser } = user;
+        return res.json(safeUser);
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, userId))
+        .returning();
+
+      if (!updated) {
+        return res.status(500).json({ message: "Failed to update user" });
+      }
+
+      const { password: _, ...safeUser } = updated;
+      res.json(safeUser);
+    } catch (error) {
+      console.error("Update me error:", error);
+      res.status(500).json({ message: "Failed to update account" });
+    }
   });
 
   app.get("/api/auth/me", async (req: Request, res: Response) => {
