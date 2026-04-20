@@ -1,0 +1,308 @@
+REQUESTS PAGE — HOA MOBILE (FINAL SLICES)
+Slice 1 — Add Priority Sorting (Fix Core Problem)
+What & Why
+
+Right now requests are listed, but not prioritized. HOA needs to immediately see what matters.
+
+Scope
+
+Sort requests using:
+
+Urgent
+Unacknowledged (Submitted)
+Acknowledged (but not in progress)
+Oldest (aging)
+Completed (bottom)
+
+Sort inputs:
+
+priority
+status
+createdAt
+Done Looks Like
+Urgent request always at top
+Oldest unacknowledged requests rise naturally
+Completed never mixed with active items
+Acceptance Tests
+Add mixed data → ordering is correct
+Urgent overrides all
+Older submitted beats newer submitted
+Guardrails
+No UI changes required for this slice
+Must be deterministic sorting
+Slice 2 — Add Request Aging Indicator
+What & Why
+
+HOA needs to know how long something has been sitting.
+
+Scope
+
+On each request card:
+
+Add:
+
+X days old
+
+Placement:
+
+under date line
+Done Looks Like
+“Submitted Mar 28” becomes:
+“Submitted Mar 28 • 2 days old”
+Acceptance Tests
+Correct day calculation
+Updates over time
+Works across all statuses
+Guardrails
+Keep subtle
+Do not add badges or large visuals
+Slice 3 — Strengthen Status Visibility
+What & Why
+
+Status chips exist but are visually weak relative to importance.
+
+Scope
+
+Adjust status hierarchy:
+
+Submitted → neutral blue (current OK)
+Acknowledged → orange (keep)
+Urgent → stronger red (increase contrast)
+Completed → muted green/gray
+
+Also:
+
+Ensure status chip is always top-right aligned
+Done Looks Like
+Status is instantly visible
+Urgent stands out clearly
+No confusion between states
+Acceptance Tests
+Compare cards → status easily scannable
+Urgent visually distinct from normal
+Guardrails
+Do not introduce new colors
+Only adjust intensity/contrast
+Slice 4 — Add “Needs Attention” Filter (High Value)
+What & Why
+
+HOA needs one-tap view of problems.
+
+Scope
+
+Add filter chip:
+
+“Needs Attention”
+
+Includes:
+
+Urgent
+Submitted (not acknowledged)
+Requests older than X days (optional threshold)
+Done Looks Like
+Tap → list filters instantly
+Shows only actionable issues
+Acceptance Tests
+Correct items included
+No completed items shown
+Works with existing filters
+Guardrails
+Keep styling consistent with tab chips
+Do not over-highlight
+Slice 5 — Improve Request Card Structure
+What & Why
+
+Cards are good but slightly inefficient for scanning.
+
+Scope
+
+Standardize layout:
+
+Top row:
+
+REQUEST label (left)
+Status chip (right)
+
+Second row:
+
+Title
+
+Third row:
+
+Description
+
+Fourth row:
+
+Date + Aging
+
+Fifth row:
+
+Location (Pinned location)
+Category (Landscape, Irrigation, etc.)
+
+Bottom:
+
+Action (Acknowledge if applicable)
+View on Map
+Done Looks Like
+Faster scan
+Cleaner hierarchy
+Consistent structure across cards
+Acceptance Tests
+All cards follow same structure
+No overflow or wrapping issues
+Guardrails
+Do not redesign card visually
+Only rearrange hierarchy
+Slice 6 — Fix “Acknowledge” Action Placement
+What & Why
+
+Right now:
+
+Button is floating awkwardly
+Not clearly tied to workflow
+Scope
+
+Move “Acknowledge” into:
+
+Bottom action row:
+
+Left: View on Map
+Right: Acknowledge button
+
+Only show when:
+
+status = Submitted
+Done Looks Like
+Action feels tied to card
+No floating UI elements
+Cleaner interaction model
+Acceptance Tests
+Button only appears when valid
+Button updates status correctly
+Layout consistent across cards
+Guardrails
+Do not change button styling
+Only reposition
+Slice 7 — Add “Create Request” Entry Point (List Page)
+What & Why
+
+Currently:
+
+FAB exists (good)
+But not strong enough as primary action
+Scope
+
+Keep FAB, but also:
+
+Add top CTA (optional but recommended):
+
+“Create Request”
+
+Placement:
+
+below header OR above filters
+Done Looks Like
+Clear entry point for new request
+Not reliant only on FAB
+Acceptance Tests
+Both FAB and CTA route correctly
+No duplication confusion
+Guardrails
+Do not clutter top section
+Keep CTA minimal
+Slice 8 — Add Request Lifecycle Visibility (Lightweight)
+What & Why
+
+Users need to understand progress, not just status.
+
+Scope
+
+Add optional subtext:
+
+Submitted → “Waiting for contractor”
+Acknowledged → “Contractor has seen this”
+In Progress → “Work in progress”
+Done Looks Like
+Status feels more informative
+Less ambiguity
+Acceptance Tests
+Correct message per status
+No mismatch
+Guardrails
+Keep text short
+Do not add new UI elements
+Slice 9 — Tighten Filters (Reduce Friction)
+What & Why
+
+Filters are good but slightly redundant with tasks page patterns.
+
+Scope
+
+Keep:
+
+All
+Submitted
+Acknowledged
+Completed
+
+Ensure:
+
+Selected state is very clear
+No overlap with summary cards
+Done Looks Like
+Filters are simple and predictable
+No confusion with other pages
+Acceptance Tests
+Each filter works independently
+No conflicting states
+Guardrails
+Do not add more filters
+Keep same UI component
+Slice 10 — Empty State Improvements
+What & Why
+
+Empty states should guide next action.
+
+Scope
+
+Examples:
+
+No Requests
+“No requests submitted”
+Button: “Create Request”
+No Submitted
+“No pending requests”
+No Completed
+“No completed requests yet”
+Done Looks Like
+No dead ends
+Always clear next step
+Acceptance Tests
+Correct message per state
+Buttons route correctly
+Guardrails
+Keep minimal text
+No large illustrations
+What To Build First
+
+Order:
+
+Slice 1 — sorting
+Slice 2 — aging
+Slice 6 — acknowledge placement
+Slice 5 — card structure
+Slice 4 — needs attention
+Slice 3 — status strength
+Slice 9 — filters cleanup
+Slice 10 — empty states
+Slice 7 — create CTA
+Slice 8 — lifecycle text
+What This Fixes
+
+After these:
+
+HOA immediately sees what matters
+Requests feel like a system, not a list
+Aging + priority becomes obvious
+Actions are cleaner and faster
