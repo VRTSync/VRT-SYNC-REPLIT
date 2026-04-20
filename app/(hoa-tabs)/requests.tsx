@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ScrollView, RefreshControl, ActivityIndicator, Platform,
+  ScrollView, RefreshControl, ActivityIndicator, Platform, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import SyncBar from '@/components/SyncBar';
+import { apiRequest } from '@/lib/query-client';
 import { getTaskPageConfigForRole } from '@/constants/taskPageRoleConfig';
 import type { FilterKey as ConfigFilterKey } from '@/constants/taskPageRoleConfig';
 
@@ -27,6 +28,7 @@ type ViewMode = 'list' | 'map';
 type HoaRequest = {
   id: string;
   title: string;
+  description?: string | null;
   status: string;
   priority: string;
   createdAt: string;
@@ -42,75 +44,148 @@ type HoaRequest = {
 
 type FilterKey = ConfigFilterKey;
 
+const AGED_THRESHOLD_DAYS = 7;
+
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   submitted: { bg: '#E3F2FD', text: '#1565C0' },
-  acknowledged: { bg: '#FFF3E0', text: '#E65100' },
-  completed: { bg: '#E8F5E9', text: '#2E7D32' },
+  acknowledged: { bg: '#FFE0B2', text: '#BF360C' },
+  completed: { bg: '#ECEFF1', text: '#546E7A' },
   pending: { bg: '#F3E5F5', text: '#7B1FA2' },
   in_progress: { bg: '#E0F7FA', text: '#00838F' },
 };
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', {
+const URGENT_STATUS_COLOR = { bg: '#FFCDD2', text: '#B71C1C' };
+
+const STATUS_LABELS: Record<string, string> = {
+  submitted: 'Submitted',
+  acknowledged: 'Acknowledged',
+  completed: 'Completed',
+  pending: 'Pending',
+  in_progress: 'In Progress',
+};
+
+const LIFECYCLE_SUBTEXT: Record<string, string> = {
+  submitted: 'Waiting for contractor',
+  acknowledged: 'Contractor has seen this',
+  in_progress: 'Work in progress',
+  pending: 'Waiting to start',
+  completed: 'Done',
+};
+
+function isUrgentReq(r: HoaRequest): boolean {
+  return r.priority === 'urgent' || r.priority === 'Urgent';
+}
+
+function daysSince(dateStr: string): number {
+  const ms = Date.now() - new Date(dateStr).getTime();
+  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
+
+function formatShortDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
+  });
+}
+
+function formatAgingText(req: HoaRequest): string {
+  const verb = req.status === 'completed' ? 'Completed' : 'Submitted';
+  const refDate = req.status === 'completed' && req.completedAt ? req.completedAt : req.createdAt;
+  const days = daysSince(req.createdAt);
+  const ageLabel = days === 0 ? 'today' : days === 1 ? '1 day old' : `${days} days old`;
+  return `${verb} ${formatShortDate(refDate)} \u2022 ${ageLabel}`;
+}
+
+function sortRequests(items: HoaRequest[]): HoaRequest[] {
+  const groupOf = (r: HoaRequest): number => {
+    if (r.status === 'completed') return 5;
+    if (isUrgentReq(r)) return 0;
+    if (r.status === 'submitted') return 1;
+    if (r.status === 'acknowledged') return 2;
+    return 3;
+  };
+  return [...items].sort((a, b) => {
+    const ga = groupOf(a);
+    const gb = groupOf(b);
+    if (ga !== gb) return ga - gb;
+    const ta = new Date(a.createdAt).getTime();
+    const tb = new Date(b.createdAt).getTime();
+    if (ga === 5) return tb - ta;
+    return ta - tb;
   });
 }
 
 function RequestCard({
   item,
   onPress,
+  onMapJump,
+  onAcknowledge,
   showAcknowledgeAction = false,
   showMapJumpAction = false,
+  acknowledging = false,
 }: {
   item: HoaRequest;
   onPress: () => void;
+  onMapJump?: () => void;
+  onAcknowledge?: () => void;
   showAcknowledgeAction?: boolean;
   showMapJumpAction?: boolean;
+  acknowledging?: boolean;
 }) {
-  const statusColor = STATUS_COLORS[item.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
-  const isUrgent = item.priority === 'urgent' || item.priority === 'Urgent';
+  const isUrgent = isUrgentReq(item);
   const isCompleted = item.status === 'completed';
+  const baseStatusColor = STATUS_COLORS[item.status] ?? { bg: '#ECEFF1', text: '#546E7A' };
+  const statusColor = isUrgent && !isCompleted ? URGENT_STATUS_COLOR : baseStatusColor;
+  const statusLabel = isUrgent && !isCompleted
+    ? 'Urgent'
+    : (STATUS_LABELS[item.status] ?? item.status.replace('_', ' '));
+  const lifecycle = LIFECYCLE_SUBTEXT[item.status];
   const canAcknowledge = showAcknowledgeAction && item.status === 'submitted';
+  const canShowMap = showMapJumpAction && (item.latitude != null && item.longitude != null);
+  const showActionRow = canAcknowledge || canShowMap;
+  const showLifecycle = !isCompleted && !!lifecycle;
 
   return (
-    <TouchableOpacity style={[styles.card, isCompleted && styles.completedCard]} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.cardTop}>
-        <Text style={styles.requestLabel}>REQUEST</Text>
-        {item.isArchived && <Text style={styles.archivedLabel}>ARCHIVED</Text>}
-      </View>
-      <Text style={[styles.cardTitle, isCompleted && styles.completedTitle]} numberOfLines={2}>{item.title}</Text>
-      <View style={styles.badgeRow}>
-        <View style={[styles.priorityBadge, { backgroundColor: isUrgent ? '#FFEBEE' : '#E0F2F1' }]}>
-          <Ionicons
-            name={isUrgent ? 'alert-circle' : 'flag'}
-            size={12}
-            color={isUrgent ? '#D32F2F' : '#25C1AC'}
-          />
-          <Text style={[styles.priorityText, { color: isUrgent ? '#D32F2F' : '#25C1AC' }]}>
-            {isUrgent ? 'Urgent' : 'General'}
-          </Text>
+    <TouchableOpacity
+      style={[styles.card, isCompleted && styles.completedCard, isUrgent && !isCompleted && styles.urgentCard]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      testID={`request-${item.id}`}
+    >
+      <View style={styles.cardTopRow}>
+        <View style={styles.cardTopLeft}>
+          <Text style={styles.requestLabel}>REQUEST</Text>
+          {item.isArchived && <Text style={styles.archivedLabel}>ARCHIVED</Text>}
         </View>
-        {!isCompleted && (
+        <View style={styles.cardTopRight}>
           <View style={[styles.statusChip, { backgroundColor: statusColor.bg }]}>
-            <Text style={[styles.statusText, { color: statusColor.text }]}>
-              {item.status.replace('_', ' ')}
-            </Text>
+            {isUrgent && !isCompleted && (
+              <Ionicons name="alert-circle" size={12} color={statusColor.text} style={{ marginRight: 4 }} />
+            )}
+            <Text style={[styles.statusText, { color: statusColor.text }]}>{statusLabel}</Text>
           </View>
-        )}
+          {showLifecycle && (
+            <Text style={styles.lifecycleText} numberOfLines={1}>{lifecycle}</Text>
+          )}
+        </View>
       </View>
+
+      <Text style={[styles.cardTitle, isCompleted && styles.completedTitle]} numberOfLines={2}>
+        {item.title}
+      </Text>
+
+      {item.description ? (
+        <Text style={styles.cardDescription} numberOfLines={2}>{item.description}</Text>
+      ) : null}
+
       <View style={styles.metaRow}>
         <Ionicons name="time-outline" size={13} color="#999" />
-        <Text style={styles.metaText}>{formatDate(item.createdAt)}</Text>
+        <Text style={styles.metaText}>{formatAgingText(item)}</Text>
       </View>
+
       <View style={styles.metaRow}>
         <Ionicons name="location-outline" size={13} color="#999" />
-        <Text style={styles.metaText}>
+        <Text style={styles.metaText} numberOfLines={1}>
           {item.assetId ? (item.assetLabel || 'Attached asset') : 'Pinned location'}
         </Text>
         {item.attachmentCount > 0 && (
@@ -120,29 +195,48 @@ function RequestCard({
           </View>
         )}
       </View>
+
       {item.category && (
         <View style={styles.metaRow}>
           <Ionicons name="pricetag-outline" size={13} color="#999" />
           <Text style={styles.metaText}>{item.category}</Text>
         </View>
       )}
-      {canAcknowledge && (
+
+      {showActionRow && (
         <View style={styles.cardActionRow}>
-          <TouchableOpacity
-            style={styles.acknowledgeBtn}
-            onPress={(e) => { e.stopPropagation(); onPress(); }}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
-            <Text style={styles.acknowledgeBtnText}>Acknowledge</Text>
-          </TouchableOpacity>
+          {canShowMap ? (
+            <TouchableOpacity
+              style={styles.mapJumpBtn}
+              onPress={(e) => { e.stopPropagation(); onMapJump?.(); }}
+              activeOpacity={0.7}
+              testID={`map-jump-${item.id}`}
+            >
+              <Ionicons name="map-outline" size={14} color="#0C1D31" />
+              <Text style={styles.mapJumpBtnText}>View on Map</Text>
+            </TouchableOpacity>
+          ) : <View />}
+          {canAcknowledge && (
+            <TouchableOpacity
+              style={[styles.acknowledgeBtn, acknowledging && styles.acknowledgeBtnDisabled]}
+              onPress={(e) => { e.stopPropagation(); onAcknowledge?.(); }}
+              activeOpacity={0.7}
+              disabled={acknowledging}
+              testID={`acknowledge-${item.id}`}
+            >
+              <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
+              <Text style={styles.acknowledgeBtnText}>
+                {acknowledging ? 'Acknowledging\u2026' : 'Acknowledge'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
   );
 }
 
-function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
+function generateAllRequestsMapHTML(requests: HoaRequest[], focusedId: string | null): string {
   const escaped = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   const markersJs = requests.map(r => {
     const color = r.priority === 'urgent' ? '#e74c3c' : '#25C1AC';
@@ -150,6 +244,7 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
     const statusLabel = r.status === 'submitted' ? 'Submitted' : r.status === 'acknowledged' ? 'Acknowledged' : r.status === 'completed' ? 'Completed' : r.status.charAt(0).toUpperCase() + r.status.slice(1);
     return `addPin(${r.latitude}, ${r.longitude}, '${color}', '${escaped(r.title)}', '${priorityLabel}', '${statusLabel}', '${r.id}');`;
   }).join('\n  ');
+  const focusedJs = focusedId ? `var __focusedId = ${JSON.stringify(focusedId)};` : 'var __focusedId = null;';
 
   return `<!DOCTYPE html>
 <html>
@@ -222,8 +317,10 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
     .setView([33.5, -112], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
 
+  ${focusedJs}
   var bounds = [];
   var count = 0;
+  var __markerById = {};
 
   function addPin(lat, lng, color, title, priority, status, id) {
     var icon = L.divIcon({
@@ -248,6 +345,7 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
       { closeButton: true, maxWidth: 220 }
     );
     bounds.push([lat, lng]);
+    __markerById[id] = { marker: m, lat: lat, lng: lng };
     count++;
   }
 
@@ -264,7 +362,11 @@ function generateAllRequestsMapHTML(requests: HoaRequest[]): string {
 
   document.getElementById('count').textContent = count + ' request' + (count !== 1 ? 's' : '');
 
-  if (bounds.length > 0) {
+  if (__focusedId && __markerById[__focusedId]) {
+    var f = __markerById[__focusedId];
+    map.setView([f.lat, f.lng], 18);
+    setTimeout(function() { f.marker.openPopup(); }, 250);
+  } else if (bounds.length > 0) {
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
   }
 
@@ -300,6 +402,8 @@ export default function HoaRequestsScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>(config.defaultView as ViewMode);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+  const [focusedRequestId, setFocusedRequestId] = useState<string | null>(null);
   const isHoaAdmin = user?.role === 'hoa_admin';
 
   const { data, isLoading, isRefetching, refetch, dataUpdatedAt } = useQuery<HoaRequest[]>({
@@ -361,23 +465,41 @@ export default function HoaRequestsScreen() {
 
   const filteredData = useMemo(() => {
     if (!data) return [];
+    let scoped: HoaRequest[];
     switch (activeFilter) {
+      case 'needs_attention':
+        scoped = data.filter(r => {
+          if (r.isArchived || r.status === 'completed') return false;
+          if (isUrgentReq(r)) return true;
+          if (r.status === 'submitted') return true;
+          if (r.status !== 'completed' && daysSince(r.createdAt) >= AGED_THRESHOLD_DAYS) return true;
+          return false;
+        });
+        break;
       case 'submitted':
-        return data.filter(r => r.status === 'submitted' && !r.isArchived);
+        scoped = data.filter(r => r.status === 'submitted' && !r.isArchived);
+        break;
       case 'acknowledged':
-        return data.filter(r => r.status === 'acknowledged' && !r.isArchived);
+        scoped = data.filter(r => r.status === 'acknowledged' && !r.isArchived);
+        break;
       case 'completed':
-        return data.filter(r => r.status === 'completed' && !r.isArchived);
+        scoped = data.filter(r => r.status === 'completed' && !r.isArchived);
+        break;
       case 'archived':
-        return data.filter(r => r.isArchived);
+        scoped = data.filter(r => r.isArchived);
+        break;
       case 'active':
-        return data.filter(r => r.status !== 'completed' && !r.isArchived);
+        scoped = data.filter(r => r.status !== 'completed' && !r.isArchived);
+        break;
       case 'your_requests':
-        return data.filter(r => !r.isArchived);
+        scoped = data.filter(r => !r.isArchived);
+        break;
       case 'all':
       default:
-        return data;
+        scoped = data;
+        break;
     }
+    return sortRequests(scoped);
   }, [data, activeFilter]);
 
   const geoRequests = useMemo(() => {
@@ -387,8 +509,8 @@ export default function HoaRequestsScreen() {
 
   const allRequestsMapHtml = useMemo(() => {
     if (geoRequests.length === 0) return '';
-    return generateAllRequestsMapHTML(geoRequests);
-  }, [geoRequests]);
+    return generateAllRequestsMapHTML(geoRequests, focusedRequestId);
+  }, [geoRequests, focusedRequestId]);
 
   const handleMapMessage = useCallback((event: any) => {
     try {
@@ -416,6 +538,37 @@ export default function HoaRequestsScreen() {
     refetch();
   }, [refetch]);
 
+  const handleAcknowledge = useCallback(async (req: HoaRequest) => {
+    if (acknowledgingId) return;
+    setAcknowledgingId(req.id);
+    try {
+      const detailRes = await apiRequest('GET', `/api/tasks/${req.id}/detail`);
+      const detail = await detailRes.json();
+      const version = detail?.task?.version ?? 0;
+      await apiRequest('PUT', `/api/tasks/${req.id}`, {
+        status: 'acknowledged',
+        version,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
+      await queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      await queryClient.invalidateQueries({ queryKey: [`/api/tasks/${req.id}/detail`] });
+      refetch();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to acknowledge request';
+      Alert.alert('Error', msg);
+    } finally {
+      setAcknowledgingId(null);
+    }
+  }, [acknowledgingId, queryClient, refetch]);
+
+  const handleMapJump = useCallback((req: HoaRequest) => {
+    if (req.latitude == null || req.longitude == null) return;
+    setFocusedRequestId(req.id);
+    setViewMode('map');
+  }, []);
+
+  const handleOpenCreate = useCallback(() => setShowCreateRequest(true), []);
+
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom + 80;
 
   return (
@@ -426,7 +579,14 @@ export default function HoaRequestsScreen() {
           <Text style={ss.subtitleText}>REQUESTS</Text>
           <View style={ss.subtitleActions}>
             <TouchableOpacity
-              onPress={() => setViewMode(viewMode === 'list' ? 'map' : 'list')}
+              onPress={() => {
+                if (viewMode === 'map') {
+                  setFocusedRequestId(null);
+                  setViewMode('list');
+                } else {
+                  setViewMode('map');
+                }
+              }}
               style={[ss.headerIconBtn, viewMode === 'map' && ss.headerIconBtnActive]}
             >
               <Ionicons
@@ -482,24 +642,61 @@ export default function HoaRequestsScreen() {
         )
       ) : (
         <>
+          {isHoaAdmin && (
+            <View style={styles.topCtaContainer}>
+              <TouchableOpacity
+                style={styles.topCtaBtn}
+                onPress={handleOpenCreate}
+                activeOpacity={0.8}
+                testID="top-create-request"
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                <Text style={styles.topCtaText}>Create Request</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={styles.filterContainer}>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterScroll}
             >
-              {config.availableFilters.map((f) => (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[styles.filterChip, activeFilter === f.key && styles.filterChipActive]}
-                  onPress={() => setActiveFilter(f.key as FilterKey)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.filterText, activeFilter === f.key && styles.filterTextActive]}>
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {config.availableFilters.map((f) => {
+                const isActive = activeFilter === f.key;
+                const isAttention = f.key === 'needs_attention';
+                return (
+                  <TouchableOpacity
+                    key={f.key}
+                    style={[
+                      styles.filterChip,
+                      isAttention && styles.filterChipAttention,
+                      isActive && styles.filterChipActive,
+                      isActive && isAttention && styles.filterChipAttentionActive,
+                    ]}
+                    onPress={() => setActiveFilter(f.key as FilterKey)}
+                    activeOpacity={0.7}
+                    testID={`filter-${f.key}`}
+                  >
+                    {isAttention && (
+                      <Ionicons
+                        name="alert-circle-outline"
+                        size={13}
+                        color={isActive ? '#fff' : '#B71C1C'}
+                        style={{ marginRight: 4 }}
+                      />
+                    )}
+                    <Text
+                      style={[
+                        styles.filterText,
+                        isAttention && styles.filterTextAttention,
+                        isActive && styles.filterTextActive,
+                      ]}
+                    >
+                      {f.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
 
@@ -529,8 +726,11 @@ export default function HoaRequestsScreen() {
                 <RequestCard
                   item={item}
                   onPress={() => router.push(`/task/${item.id}`)}
+                  onAcknowledge={() => handleAcknowledge(item)}
+                  onMapJump={() => handleMapJump(item)}
                   showAcknowledgeAction={config.showAcknowledgmentControls && config.cardActions.includes('acknowledge')}
                   showMapJumpAction={config.showMapJump && config.cardActions.includes('mapJump')}
+                  acknowledging={acknowledgingId === item.id}
                 />
               )}
               ListEmptyComponent={
@@ -542,6 +742,17 @@ export default function HoaRequestsScreen() {
                   <Text style={styles.emptySubtitle}>
                     {(config.emptyStateMessages[activeFilter] ?? config.emptyStateMessages[defaultFilterKey])?.subtitle ?? `No ${activeFilter} requests`}
                   </Text>
+                  {isHoaAdmin && (activeFilter === 'all' || activeFilter === 'needs_attention') && (
+                    <TouchableOpacity
+                      style={styles.emptyCtaBtn}
+                      onPress={handleOpenCreate}
+                      activeOpacity={0.8}
+                      testID="empty-create-request"
+                    >
+                      <Ionicons name="add" size={18} color="#fff" />
+                      <Text style={styles.emptyCtaText}>Create Request</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               }
             />
@@ -594,6 +805,14 @@ const styles = StyleSheet.create({
   filterChipActive: {
     backgroundColor: '#0C1D31',
   },
+  filterChipAttention: {
+    backgroundColor: '#FFEBEE',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+  },
+  filterChipAttentionActive: {
+    backgroundColor: '#B71C1C',
+  },
   filterText: {
     fontSize: 13,
     fontWeight: '600' as const,
@@ -601,6 +820,28 @@ const styles = StyleSheet.create({
   },
   filterTextActive: {
     color: '#fff',
+  },
+  filterTextAttention: {
+    color: '#B71C1C',
+  },
+  topCtaContainer: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  topCtaBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 6,
+    backgroundColor: '#25C1AC',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  topCtaText: {
+    color: '#fff',
+    fontWeight: '600' as const,
+    fontSize: 14,
   },
   listContent: {
     padding: 16,
@@ -624,11 +865,22 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  cardTop: {
+  cardTopRow: {
     flexDirection: 'row' as const,
     justifyContent: 'space-between' as const,
+    alignItems: 'flex-start' as const,
+    marginBottom: 8,
+    gap: 8,
+  },
+  cardTopLeft: {
+    flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    marginBottom: 6,
+    gap: 8,
+    flex: 1,
+  },
+  cardTopRight: {
+    alignItems: 'flex-end' as const,
+    maxWidth: 180,
   },
   requestLabel: {
     fontSize: 10,
@@ -650,35 +902,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: '#1a1a1a',
-    marginBottom: 10,
+    marginBottom: 6,
     lineHeight: 22,
   },
-  badgeRow: {
-    flexDirection: 'row' as const,
-    gap: 8,
+  cardDescription: {
+    fontSize: 13,
+    color: '#666',
     marginBottom: 10,
-  },
-  priorityBadge: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  priorityText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
+    lineHeight: 18,
   },
   statusChip: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   statusText: {
     fontSize: 12,
-    fontWeight: '600' as const,
-    textTransform: 'capitalize' as const,
+    fontWeight: '700' as const,
+  },
+  lifecycleText: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 4,
+    fontStyle: 'italic' as const,
+  },
+  urgentCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#B71C1C',
   },
   metaRow: {
     flexDirection: 'row' as const,
@@ -746,9 +998,27 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
   },
   cardActionRow: {
-    marginTop: 10,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
     flexDirection: 'row' as const,
-    justifyContent: 'flex-end' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+  },
+  mapJumpBtn: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  mapJumpBtnText: {
+    color: '#0C1D31',
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   acknowledgeBtn: {
     flexDirection: 'row' as const,
@@ -759,9 +1029,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
+  acknowledgeBtnDisabled: {
+    opacity: 0.6,
+  },
   acknowledgeBtnText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  emptyCtaBtn: {
+    marginTop: 16,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    backgroundColor: '#25C1AC',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  emptyCtaText: {
+    color: '#fff',
+    fontWeight: '600' as const,
+    fontSize: 14,
   },
 });

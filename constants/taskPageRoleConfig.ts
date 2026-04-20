@@ -9,7 +9,8 @@ export type FilterKey =
   | 'acknowledged'
   | 'archived'
   | 'active'
-  | 'your_requests';
+  | 'your_requests'
+  | 'needs_attention';
 
 export type TaskGrouping = 'window' | 'priority' | 'status' | 'flat';
 
@@ -120,10 +121,10 @@ const HOA_ADMIN_CONFIG: TaskPageRoleConfig = {
   defaultView: 'list',
   availableFilters: [
     { key: 'all', label: 'All' },
+    { key: 'needs_attention', label: 'Needs Attention' },
     { key: 'submitted', label: 'Submitted' },
     { key: 'acknowledged', label: 'Acknowledged' },
     { key: 'completed', label: 'Completed' },
-    { key: 'archived', label: 'Archived' },
   ],
   taskGrouping: 'priority',
   visibleMetadata: ['windowRange', 'address', 'dueDate', 'assignedTo', 'originBadge'],
@@ -145,21 +146,25 @@ const HOA_ADMIN_CONFIG: TaskPageRoleConfig = {
     hoa_requests: 'Requests',
   },
   emptyStateMessages: {
+    needs_attention: {
+      title: 'Nothing needs attention',
+      subtitle: 'You\u2019re all caught up \u2014 no urgent or unacknowledged requests right now',
+    },
     all: {
-      title: 'No requests found',
+      title: 'No requests submitted',
       subtitle: 'No HOA requests have been created yet',
     },
     submitted: {
-      title: 'No submitted requests',
-      subtitle: 'No submitted requests at this time',
+      title: 'No pending requests',
+      subtitle: 'No submitted requests waiting for action',
     },
     acknowledged: {
       title: 'No acknowledged requests',
       subtitle: 'No acknowledged requests at this time',
     },
     completed: {
-      title: 'No completed requests',
-      subtitle: 'No completed requests at this time',
+      title: 'No completed requests yet',
+      subtitle: 'Completed requests will show up here',
     },
     archived: {
       title: 'No archived requests',

@@ -2519,6 +2519,7 @@ export async function getHoaRequests(communityId: string) {
     return {
       id: task.id,
       title: task.title,
+      description: task.description ?? null,
       status: task.status,
       priority: task.priority,
       createdAt: task.createdAt,
