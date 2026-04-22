@@ -76,6 +76,12 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   .popup-action { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; color: #25C1AC; font-weight: 600; cursor: pointer; padding: 5px 0 2px; transition: color 0.15s; }
   .popup-action:hover { color: #1da894; }
   .popup-action svg { width: 14px; height: 14px; }
+  .paw-marker {
+    display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  .paw-marker svg { width: 11px; height: 11px; display: block; }
   .marker-cluster-small, .marker-cluster-medium, .marker-cluster-large {
     background: rgba(37,193,172,0.3) !important;
   }
@@ -225,6 +231,24 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
             }
             if (layer.subLayerKey === 'zone' && feature.properties && feature.properties.controllerFeatureRef) {
               c = colorMap[feature.properties.controllerFeatureRef] || c;
+            }
+            if (layer.subLayerKey === 'pet_station') {
+              var pawSvg = '<svg viewBox="0 0 24 24" fill="#fff" xmlns="http://www.w3.org/2000/svg">'
+                + '<ellipse cx="12" cy="15.5" rx="4.5" ry="3.5"/>'
+                + '<ellipse cx="7" cy="11" rx="2" ry="2.6"/>'
+                + '<ellipse cx="17" cy="11" rx="2" ry="2.6"/>'
+                + '<ellipse cx="9.5" cy="7.5" rx="1.6" ry="2"/>'
+                + '<ellipse cx="14.5" cy="7.5" rx="1.6" ry="2"/>'
+                + '</svg>';
+              return L.marker(latlng, {
+                icon: L.divIcon({
+                  className: '',
+                  html: '<div class="paw-marker" style="background:' + c + ';">' + pawSvg + '</div>',
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10],
+                  popupAnchor: [0, -12]
+                })
+              });
             }
             return L.circleMarker(latlng, {
               radius: 6, fillColor: c, fillOpacity: 0.7,
