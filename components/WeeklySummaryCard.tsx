@@ -55,24 +55,23 @@ export default function WeeklySummaryCard({ counts, labels, onStatPress, activeS
             style={[
               styles.pill,
               isActive && { backgroundColor: accentColor + '18', borderColor: accentColor, borderWidth: 1.5 },
-              showWarning && !isActive && { backgroundColor: warningColor + '12', borderColor: warningColor + '55' },
             ]}
             onPress={() => onStatPress(pill.filter)}
             activeOpacity={0.7}
             testID={`summary-pill-${pill.filter}`}
           >
+            {showWarning && (
+              <View
+                style={styles.warningBadge}
+                testID="requests-warning-dot"
+                accessibilityLabel="Aging requests present"
+              />
+            )}
             <View style={styles.dotRow}>
               <View style={[styles.dot, { backgroundColor: accentColor }]} />
-              {showWarning ? (
-                <View
-                  style={styles.warningDot}
-                  testID="requests-warning-dot"
-                  accessibilityLabel="Aging requests present"
-                />
-              ) : null}
             </View>
-            <Text style={[styles.count, (isActive || showWarning) && { color: accentColor }]}>{pill.count}</Text>
-            <Text style={[styles.label, (isActive || showWarning) && { color: accentColor }]} numberOfLines={1}>{pill.label}</Text>
+            <Text style={[styles.count, isActive && { color: accentColor }]}>{pill.count}</Text>
+            <Text style={[styles.label, isActive && { color: accentColor }]} numberOfLines={1}>{pill.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -112,11 +111,15 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  warningDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#E65100',
+  warningBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#D32F2F',
+    zIndex: 1,
   },
   count: {
     fontSize: 20,
