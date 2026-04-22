@@ -35,6 +35,8 @@ type Task = {
 
 type UserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin';
 
+export type CalendarActiveFilter = 'all' | 'overdue' | 'requests' | 'completed';
+
 type Props = {
   tasks: Task[];
   schedules: ServiceSchedule[];
@@ -47,6 +49,7 @@ type Props = {
   isOffline: boolean;
   role?: UserRole;
   scope?: 'week' | 'month';
+  activeFilter?: CalendarActiveFilter;
 };
 
 const priorityColors: Record<string, string> = {
@@ -256,12 +259,28 @@ function getBarColors(task: Task, todayStr: string): { backgroundColor: string; 
 }
 
 export default function CalendarView({
-  tasks, schedules, visits, pendingVisits,
+  tasks: rawTasks, schedules, visits, pendingVisits,
   onTaskPress, onLogVisit, onDayPress, onViewDayOnMap, isOffline, role, scope = 'week',
+  activeFilter = 'all',
 }: Props) {
   const todayStr = getTodayStr();
   const todayDate = parseDate(todayStr);
   const roleConfig = getCalendarRoleConfig(role);
+
+  const tasks = useMemo(() => {
+    if (activeFilter === 'all') return rawTasks;
+    const now = new Date();
+    if (activeFilter === 'overdue') {
+      return rawTasks.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
+    }
+    if (activeFilter === 'requests') {
+      return rawTasks.filter(t => t.origin === 'HOA' && t.status !== 'completed');
+    }
+    if (activeFilter === 'completed') {
+      return rawTasks.filter(t => t.status === 'completed');
+    }
+    return rawTasks;
+  }, [rawTasks, activeFilter]);
 
   const [currentYear, setCurrentYear] = useState(todayDate.getFullYear());
   const [currentMonth, setCurrentMonth] = useState(todayDate.getMonth());

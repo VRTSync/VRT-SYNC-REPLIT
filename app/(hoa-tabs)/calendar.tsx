@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  View, Text, FlatList, ScrollView, StyleSheet, TouchableOpacity, RefreshControl,
+  View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl,
   ActivityIndicator, Platform,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,7 +18,7 @@ import DayWorkSheet from '@/components/DayWorkSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import WeeklySummaryCard, { type SummaryFilterKey } from '@/components/WeeklySummaryCard';
-import { REQUEST_AGING_DAYS_THRESHOLD, isRequestAging } from '@/constants/requestAging';
+import { isRequestAging } from '@/constants/requestAging';
 
 type Task = {
   id: string;
@@ -41,7 +41,6 @@ type Task = {
   longitude?: number | null;
 };
 
-type TabKey = 'all' | 'requests' | 'scheduled' | 'completed';
 type ViewMode = 'list' | 'calendar';
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -53,19 +52,12 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }>
 };
 
 const PREFS_STORAGE_KEY = 'hoa_tasks_prefs';
-const VALID_TABS: TabKey[] = ['all', 'requests', 'scheduled', 'completed'];
+const VALID_FILTERS: SummaryFilterKey[] = ['all', 'overdue', 'requests', 'completed'];
 
 type StoredPrefs = {
-  activeTab?: TabKey;
+  activeFilter?: SummaryFilterKey;
   needsAttentionActive?: boolean;
 };
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'requests',  label: 'Requests' },
-  { key: 'scheduled', label: 'Scheduled Work' },
-  { key: 'completed', label: 'Completed' },
-];
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -216,8 +208,7 @@ function CommunityWorkCard({
 }
 
 function EmptyState({
-  tabKey,
-  summaryFilter,
+  filter,
   needsAttention,
   canCreateRequest,
   isHoaMember,
@@ -225,8 +216,7 @@ function EmptyState({
   onViewAll,
   onViewRequests,
 }: {
-  tabKey: TabKey;
-  summaryFilter: SummaryFilterKey;
+  filter: SummaryFilterKey;
   needsAttention: boolean;
   canCreateRequest: boolean;
   isHoaMember: boolean;
@@ -244,7 +234,7 @@ function EmptyState({
     );
   }
 
-  if (summaryFilter === 'overdue') {
+  if (filter === 'overdue') {
     return (
       <View style={styles.emptyState}>
         <Ionicons name="checkmark-circle-outline" size={52} color="#43A047" />
@@ -257,20 +247,7 @@ function EmptyState({
     );
   }
 
-  if (summaryFilter === 'active' || tabKey === 'scheduled') {
-    return (
-      <View style={styles.emptyState}>
-        <Ionicons name="calendar-outline" size={52} color="#ccc" />
-        <Text style={styles.emptyTitle}>No scheduled work</Text>
-        <Text style={styles.emptySubtitle}>Scheduled maintenance tasks will appear here</Text>
-        <TouchableOpacity style={styles.emptyActionBtn} onPress={onViewAll} activeOpacity={0.8}>
-          <Text style={styles.emptyActionText}>View All Tasks</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (summaryFilter === 'requests' || tabKey === 'requests') {
+  if (filter === 'requests') {
     return (
       <View style={styles.emptyState}>
         <Ionicons name="document-text-outline" size={52} color="#ccc" />
@@ -299,7 +276,7 @@ function EmptyState({
     );
   }
 
-  if (tabKey === 'completed') {
+  if (filter === 'completed') {
     return (
       <View style={styles.emptyState}>
         <Ionicons name="checkmark-done-outline" size={52} color="#ccc" />
@@ -311,8 +288,8 @@ function EmptyState({
 
   return (
     <View style={styles.emptyState}>
-      <Ionicons name="clipboard-outline" size={52} color="#ccc" />
-      <Text style={styles.emptyTitle}>No community work yet</Text>
+      <Ionicons name="checkmark-circle-outline" size={52} color="#ccc" />
+      <Text style={styles.emptyTitle}>All clear</Text>
       <Text style={styles.emptySubtitle}>Work items will appear here once they are added</Text>
     </View>
   );
@@ -326,8 +303,7 @@ export default function HoaTasksScreen() {
   const navyHeaderProps = useNavyHeaderProps();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
-  const [activeSummaryFilter, setActiveSummaryFilter] = useState<SummaryFilterKey>(null);
+  const [activeFilter, setActiveFilter] = useState<SummaryFilterKey>('all');
   const [needsAttentionActive, setNeedsAttentionActive] = useState(false);
   const prefsHydratedRef = useRef(false);
 
@@ -339,8 +315,8 @@ export default function HoaTasksScreen() {
         if (cancelled) return;
         if (raw) {
           const parsed = JSON.parse(raw) as StoredPrefs;
-          if (parsed.activeTab && VALID_TABS.includes(parsed.activeTab)) {
-            setActiveTab(parsed.activeTab);
+          if (parsed.activeFilter && VALID_FILTERS.includes(parsed.activeFilter)) {
+            setActiveFilter(parsed.activeFilter);
           }
           if (typeof parsed.needsAttentionActive === 'boolean') {
             setNeedsAttentionActive(parsed.needsAttentionActive);
@@ -357,9 +333,9 @@ export default function HoaTasksScreen() {
 
   useEffect(() => {
     if (!prefsHydratedRef.current) return;
-    const prefs: StoredPrefs = { activeTab, needsAttentionActive };
+    const prefs: StoredPrefs = { activeFilter, needsAttentionActive };
     AsyncStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs)).catch(() => {});
-  }, [activeTab, needsAttentionActive]);
+  }, [activeFilter, needsAttentionActive]);
   const [viewMode, setViewMode] = useState<ViewMode>(
     user?.role === 'hoa_member' ? 'calendar' : 'list'
   );
@@ -382,23 +358,20 @@ export default function HoaTasksScreen() {
   const isContractor = user?.role === 'contractor';
 
   const summaryLabels = isContractor
-    ? { overdue: 'Overdue', active: 'My Active', requests: 'My Requests', completed: 'Done' }
-    : { overdue: 'Overdue', active: 'Active Tasks', requests: 'Requests', completed: 'Completed' };
+    ? { all: 'All', overdue: 'Overdue', requests: 'My Requests', completed: 'Done' }
+    : { all: 'All', overdue: 'Overdue', requests: 'Requests', completed: 'Completed' };
 
   const summaryCounts = useMemo(() => {
-    if (!tasks) return { overdue: 0, active: 0, requests: 0, completed: 0 };
+    if (!tasks) return { all: 0, overdue: 0, requests: 0, completed: 0 };
     const now = new Date();
     const overdue = tasks.filter(t =>
       t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now
-    ).length;
-    const active = tasks.filter(t =>
-      t.origin !== 'HOA' && t.status !== 'completed'
     ).length;
     const requests = tasks.filter(t =>
       t.origin === 'HOA' && t.status !== 'completed'
     ).length;
     const completed = tasks.filter(t => t.status === 'completed').length;
-    return { overdue, active, requests, completed };
+    return { all: tasks.length, overdue, requests, completed };
   }, [tasks]);
 
   const agingRequestsCount = useMemo(() => {
@@ -410,27 +383,9 @@ export default function HoaTasksScreen() {
     ).length;
   }, [tasks]);
 
-  const handleTabPress = useCallback((tab: TabKey) => {
-    setActiveTab(tab);
-    setActiveSummaryFilter(null);
-    setNeedsAttentionActive(false);
+  const handleSummaryPress = useCallback((filter: SummaryFilterKey) => {
+    setActiveFilter(filter);
   }, []);
-
-  const handleSummaryPress = useCallback((filter: NonNullable<SummaryFilterKey>) => {
-    if (activeSummaryFilter === filter) {
-      setActiveSummaryFilter(null);
-      setActiveTab('all');
-      return;
-    }
-    setActiveSummaryFilter(filter);
-    setNeedsAttentionActive(false);
-    switch (filter) {
-      case 'overdue':   setActiveTab('all'); break;
-      case 'active':    setActiveTab('scheduled'); break;
-      case 'requests':  setActiveTab('requests'); break;
-      case 'completed': setActiveTab('completed'); break;
-    }
-  }, [activeSummaryFilter]);
 
   const handleNeedsAttentionToggle = useCallback(() => {
     setNeedsAttentionActive(prev => !prev);
@@ -440,14 +395,13 @@ export default function HoaTasksScreen() {
     if (!tasks) return [];
     const now = new Date();
 
-    // Step 1: apply tab filter
     let base: Task[];
-    switch (activeTab) {
+    switch (activeFilter) {
+      case 'overdue':
+        base = tasks.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
+        break;
       case 'requests':
         base = tasks.filter(t => t.origin === 'HOA' && t.status !== 'completed');
-        break;
-      case 'scheduled':
-        base = tasks.filter(t => t.origin !== 'HOA' && t.status !== 'completed');
         break;
       case 'completed':
         base = tasks.filter(t => t.status === 'completed');
@@ -456,18 +410,7 @@ export default function HoaTasksScreen() {
         base = tasks;
     }
 
-    // Step 2: apply summary filter (additive with tab)
-    if (activeSummaryFilter === 'overdue') {
-      base = base.filter(t => t.status !== 'completed' && t.dueDate && new Date(t.dueDate) < now);
-    } else if (activeSummaryFilter === 'active') {
-      base = base.filter(t => t.origin !== 'HOA' && t.status !== 'completed');
-    } else if (activeSummaryFilter === 'requests') {
-      base = base.filter(t => t.origin === 'HOA' && t.status !== 'completed');
-    } else if (activeSummaryFilter === 'completed') {
-      base = base.filter(t => t.status === 'completed');
-    }
-
-    // Step 3: apply Needs Attention as additional intersection (additive, not override)
+    // Needs Attention is additive on top of the selected filter
     if (needsAttentionActive) {
       base = base.filter(t => {
         if (t.status === 'completed') return false;
@@ -479,7 +422,7 @@ export default function HoaTasksScreen() {
     }
 
     return base;
-  }, [tasks, activeTab, activeSummaryFilter, needsAttentionActive]);
+  }, [tasks, activeFilter, needsAttentionActive]);
 
   const sortedTasks = useMemo(() => sortTasks(filteredTasks), [filteredTasks]);
 
@@ -502,14 +445,12 @@ export default function HoaTasksScreen() {
   }, [queryClient, communityId]);
 
   const handleViewAll = useCallback(() => {
-    setActiveTab('all');
-    setActiveSummaryFilter(null);
+    setActiveFilter('all');
     setNeedsAttentionActive(false);
   }, []);
 
   const handleViewRequests = useCallback(() => {
-    setActiveTab('requests');
-    setActiveSummaryFilter(null);
+    setActiveFilter('requests');
     setNeedsAttentionActive(false);
   }, []);
 
@@ -543,72 +484,31 @@ export default function HoaTasksScreen() {
         <WeeklySummaryCard
           counts={summaryCounts}
           labels={summaryLabels}
-          onStatPress={(filter) => {
-            handleSummaryPress(filter);
-            if (viewMode === 'calendar') setViewMode('list');
-          }}
-          activeSummaryFilter={activeSummaryFilter}
+          onStatPress={handleSummaryPress}
+          activeSummaryFilter={activeFilter}
           requestsWarning={agingRequestsCount > 0}
         />
       </NavyHeader>
 
+      {/* Needs Attention chip — list view only (additive on top of stat-card filter) */}
       {viewMode === 'list' && (
-        <>
-          {/* Tab bar */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.filterScrollWrapper}
-            contentContainerStyle={styles.filterRow}
+        <View style={styles.chipRow}>
+          <TouchableOpacity
+            style={[styles.attentionChip, needsAttentionActive && styles.attentionChipActive]}
+            onPress={handleNeedsAttentionToggle}
+            activeOpacity={0.75}
+            testID="needs-attention-chip"
           >
-            {TABS.map((f) => {
-              const showAgingBadge = f.key === 'requests' && agingRequestsCount > 0;
-              return (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[styles.filterTab, activeTab === f.key && !activeSummaryFilter && styles.filterTabActive]}
-                  onPress={() => handleTabPress(f.key)}
-                  activeOpacity={0.7}
-                  testID={`tab-${f.key}`}
-                >
-                  <View style={styles.filterTabInner}>
-                    <Text style={[styles.filterTabText, activeTab === f.key && !activeSummaryFilter && styles.filterTabTextActive]}>
-                      {f.label}
-                    </Text>
-                    {showAgingBadge ? (
-                      <View
-                        style={styles.agingBadge}
-                        accessibilityLabel={`${agingRequestsCount} aging requests older than ${REQUEST_AGING_DAYS_THRESHOLD} days`}
-                        testID="aging-requests-badge"
-                      >
-                        <Text style={styles.agingBadgeText}>{agingRequestsCount}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Needs Attention chip */}
-          <View style={styles.chipRow}>
-            <TouchableOpacity
-              style={[styles.attentionChip, needsAttentionActive && styles.attentionChipActive]}
-              onPress={handleNeedsAttentionToggle}
-              activeOpacity={0.75}
-              testID="needs-attention-chip"
-            >
-              <Ionicons
-                name="alert-circle"
-                size={14}
-                color={needsAttentionActive ? '#fff' : '#E53935'}
-              />
-              <Text style={[styles.attentionChipText, needsAttentionActive && styles.attentionChipTextActive]}>
-                Needs Attention
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
+            <Ionicons
+              name="alert-circle"
+              size={14}
+              color={needsAttentionActive ? '#fff' : '#E53935'}
+            />
+            <Text style={[styles.attentionChipText, needsAttentionActive && styles.attentionChipTextActive]}>
+              Needs Attention
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {viewMode === 'calendar' ? (
@@ -623,6 +523,7 @@ export default function HoaTasksScreen() {
           isOffline={false}
           role={user?.role}
           scope="month"
+          activeFilter={activeFilter}
         />
       ) : isLoading ? (
         <View style={styles.centered}>
@@ -630,8 +531,7 @@ export default function HoaTasksScreen() {
         </View>
       ) : sortedTasks.length === 0 ? (
         <EmptyState
-          tabKey={activeTab}
-          summaryFilter={activeSummaryFilter}
+          filter={activeFilter}
           needsAttention={needsAttentionActive}
           canCreateRequest={!!canCreateRequest}
           isHoaMember={user?.role === 'hoa_member'}
@@ -683,55 +583,6 @@ export default function HoaTasksScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
-  filterScrollWrapper: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 0,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    backgroundColor: '#e8eaed',
-    borderRadius: 10,
-    padding: 3,
-    gap: 2,
-  },
-  filterTab: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  filterTabActive: {
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  filterTabText: { fontSize: 11, fontWeight: '600', color: '#888' },
-  filterTabTextActive: { color: '#0C1D31' },
-  filterTabInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  agingBadge: {
-    minWidth: 16,
-    height: 16,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: '#E65100',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  agingBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-    lineHeight: 12,
-  },
 
   chipRow: {
     flexDirection: 'row',

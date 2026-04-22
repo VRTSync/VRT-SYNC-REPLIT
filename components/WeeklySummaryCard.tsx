@@ -1,11 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-export type SummaryFilterKey = 'overdue' | 'active' | 'requests' | 'completed' | null;
+export type SummaryFilterKey = 'all' | 'overdue' | 'requests' | 'completed';
 
 export type SummaryCounts = {
+  all: number;
   overdue: number;
-  active: number;
   requests: number;
   completed: number;
 };
@@ -14,20 +14,20 @@ type Pill = {
   color: string;
   count: number;
   label: string;
-  filter: NonNullable<SummaryFilterKey>;
+  filter: SummaryFilterKey;
 };
 
 type Props = {
   counts: SummaryCounts;
-  labels?: { overdue: string; active: string; requests: string; completed: string };
-  onStatPress: (filter: NonNullable<SummaryFilterKey>) => void;
-  activeSummaryFilter?: SummaryFilterKey;
+  labels?: { all: string; overdue: string; requests: string; completed: string };
+  onStatPress: (filter: SummaryFilterKey) => void;
+  activeSummaryFilter: SummaryFilterKey;
   requestsWarning?: boolean;
 };
 
 const DEFAULT_HOA_LABELS = {
+  all: 'All',
   overdue: 'Overdue',
-  active: 'Active Tasks',
   requests: 'Requests',
   completed: 'Completed',
 };
@@ -36,8 +36,8 @@ export default function WeeklySummaryCard({ counts, labels, onStatPress, activeS
   const lbl = labels ?? DEFAULT_HOA_LABELS;
 
   const pills: Pill[] = [
+    { color: '#0C1D31', count: counts.all,       label: lbl.all,       filter: 'all' },
     { color: '#E53935', count: counts.overdue,   label: lbl.overdue,   filter: 'overdue' },
-    { color: '#F9A825', count: counts.active,    label: lbl.active,    filter: 'active' },
     { color: '#1E88E5', count: counts.requests,  label: lbl.requests,  filter: 'requests' },
     { color: '#43A047', count: counts.completed, label: lbl.completed, filter: 'completed' },
   ];
