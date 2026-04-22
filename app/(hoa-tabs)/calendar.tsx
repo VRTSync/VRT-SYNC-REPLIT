@@ -511,6 +511,23 @@ export default function HoaTasksScreen() {
         </View>
       )}
 
+      {viewMode === 'calendar' && activeFilter !== 'all' && (
+        <View style={styles.chipRow}>
+          <TouchableOpacity
+            style={styles.filterChip}
+            onPress={() => setActiveFilter('all')}
+            activeOpacity={0.75}
+            testID="calendar-active-filter-chip"
+          >
+            <Ionicons name="funnel" size={12} color="#1565C0" />
+            <Text style={styles.filterChipText}>
+              Filtered: {summaryLabels[activeFilter]}
+            </Text>
+            <Ionicons name="close" size={14} color="#1565C0" />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {viewMode === 'calendar' ? (
         <CalendarView
           tasks={tasks ?? []}
@@ -613,6 +630,22 @@ const styles = StyleSheet.create({
   },
   attentionChipTextActive: {
     color: '#fff',
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1565C0',
   },
 
   listContent: { paddingHorizontal: 16, paddingTop: 8 },
