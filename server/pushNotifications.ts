@@ -192,28 +192,33 @@ export async function sendDueReminders(): Promise<void> {
 
 export async function notifyTaskCompleted(task: Task): Promise<void> {
   try {
-    const hoaAdmin = await storage.getHoaAdminForCommunity(task.communityId);
-    if (!hoaAdmin) return;
-
     const isHoaRequest = task.origin === "HOA";
     const type = isHoaRequest ? "HOA_REQUEST_COMPLETED" : "TASK_COMPLETED";
     const title = isHoaRequest ? "Request completed" : "Task completed";
     const body = task.title;
 
-    await storage.createNotification({
-      communityId: task.communityId,
-      recipientUserId: hoaAdmin.id,
-      type,
-      title,
-      body,
-      relatedTaskId: task.id,
-    });
+    const [hoaAdmins, propertyManagers] = await Promise.all([
+      storage.getHoaAdminsForCommunity(task.communityId),
+      storage.getPropertyManagersForCommunity(task.communityId),
+    ]);
 
-    await sendPushToUser(hoaAdmin.id, {
-      title,
-      body,
-      data: { type, taskId: task.id },
-    });
+    const recipients = [...hoaAdmins, ...propertyManagers];
+
+    await Promise.all(recipients.map(async (recipient) => {
+      await storage.createNotification({
+        communityId: task.communityId,
+        recipientUserId: recipient.id,
+        type,
+        title,
+        body,
+        relatedTaskId: task.id,
+      });
+      await sendPushToUser(recipient.id, {
+        title,
+        body,
+        data: { type, taskId: task.id },
+      });
+    }));
   } catch (error) {
     console.error("notifyTaskCompleted error:", error);
   }
@@ -221,25 +226,38 @@ export async function notifyTaskCompleted(task: Task): Promise<void> {
 
 export async function notifyHoaRequestSubmitted(task: Task): Promise<void> {
   try {
-    if (!task.assignedTo) return;
-
     const title = "New HOA request";
     const body = task.title;
 
-    await storage.createNotification({
-      communityId: task.communityId,
-      recipientUserId: task.assignedTo,
-      type: "HOA_REQUEST_SUBMITTED",
-      title,
-      body,
-      relatedTaskId: task.id,
-    });
+    const [hoaAdmins, propertyManagers] = await Promise.all([
+      storage.getHoaAdminsForCommunity(task.communityId),
+      storage.getPropertyManagersForCommunity(task.communityId),
+    ]);
 
-    await sendPushToUser(task.assignedTo, {
-      title,
-      body,
-      data: { type: "HOA_REQUEST_SUBMITTED", taskId: task.id },
-    });
+    const assignedRecipient = task.assignedTo
+      ? [{ id: task.assignedTo }]
+      : [];
+
+    const hoaAndPmRecipients = [...hoaAdmins, ...propertyManagers]
+      .filter(u => u.id !== task.assignedTo);
+
+    const allRecipients = [...assignedRecipient, ...hoaAndPmRecipients];
+
+    await Promise.all(allRecipients.map(async (recipient) => {
+      await storage.createNotification({
+        communityId: task.communityId,
+        recipientUserId: recipient.id,
+        type: "HOA_REQUEST_SUBMITTED",
+        title,
+        body,
+        relatedTaskId: task.id,
+      });
+      await sendPushToUser(recipient.id, {
+        title,
+        body,
+        data: { type: "HOA_REQUEST_SUBMITTED", taskId: task.id },
+      });
+    }));
   } catch (error) {
     console.error("notifyHoaRequestSubmitted error:", error);
   }

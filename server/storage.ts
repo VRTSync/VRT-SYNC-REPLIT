@@ -2784,6 +2784,7 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
     ));
 }
 
+/** @deprecated Use getHoaAdminsForCommunity to notify all admins, not just the first. */
 export async function getHoaAdminForCommunity(communityId: string): Promise<User | null> {
   const members = await db.select().from(communityMembers)
     .innerJoin(users, eq(communityMembers.userId, users.id))
@@ -2793,6 +2794,26 @@ export async function getHoaAdminForCommunity(communityId: string): Promise<User
     ))
     .limit(1);
   return members.length > 0 ? members[0].users : null;
+}
+
+export async function getHoaAdminsForCommunity(communityId: string): Promise<User[]> {
+  const members = await db.select().from(communityMembers)
+    .innerJoin(users, eq(communityMembers.userId, users.id))
+    .where(and(
+      eq(communityMembers.communityId, communityId),
+      eq(users.role, "hoa_admin"),
+    ));
+  return members.map(m => m.users);
+}
+
+export async function getPropertyManagersForCommunity(communityId: string): Promise<User[]> {
+  const members = await db.select().from(communityMembers)
+    .innerJoin(users, eq(communityMembers.userId, users.id))
+    .where(and(
+      eq(communityMembers.communityId, communityId),
+      eq(users.role, "property_manager"),
+    ));
+  return members.map(m => m.users);
 }
 
 export async function getContractorsForCommunity(communityId: string): Promise<User[]> {

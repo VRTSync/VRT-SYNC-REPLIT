@@ -144,7 +144,16 @@ export function registerAuthRoutes(app: any) {
     }
   });
 
-  app.post("/api/auth/logout", (req: Request, res: Response) => {
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    const userId = req.session?.userId;
+    const { deviceId } = req.body ?? {};
+    if (userId && deviceId) {
+      try {
+        await storage.removePushTokenByDevice(userId, deviceId);
+      } catch (err) {
+        console.error("Failed to remove push token on logout:", err);
+      }
+    }
     req.session.destroy((err) => {
       if (err) {
         return res.status(500).json({ message: "Logout failed" });

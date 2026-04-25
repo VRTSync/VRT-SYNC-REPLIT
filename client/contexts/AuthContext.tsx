@@ -200,11 +200,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await AsyncStorage.removeItem(PUSH_TOKEN_LAST_REG_KEY);
       } catch {}
+      let deviceId: string | undefined;
+      try {
+        deviceId = await getOrCreateDeviceId();
+      } catch {}
       try {
         await unregisterPushToken();
       } catch {}
       try {
-        await apiRequest('POST', '/api/auth/logout');
+        await apiRequest('POST', '/api/auth/logout', deviceId ? { deviceId } : undefined);
       } catch {}
     },
   });
