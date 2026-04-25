@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle, Ellipse } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { apiRequest } from '@/lib/query-client';
 import StatusBarFill from '@/components/StatusBarFill';
 import SyncBar from '@/components/SyncBar';
@@ -181,6 +181,17 @@ export default function NotificationsScreen() {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications/unread-count'] });
     } catch {}
   }, [queryClient]);
+
+  useFocusEffect(
+    useCallback(() => {
+      apiRequest('PUT', '/api/notifications/read-all')
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/notifications/unread-count'] });
+        })
+        .catch(() => {});
+    }, [queryClient]),
+  );
 
   const handleTapNotification = useCallback(async (item: NotificationItem) => {
     if (!item.readAt) {

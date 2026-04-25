@@ -348,7 +348,7 @@ export default function DashboardScreen() {
           <View style={ss.subtitleRow}>
             <Text style={ss.subtitleText}>DASHBOARD</Text>
             <View style={ss.subtitleActions}>
-              <NotificationBell />
+              {(user?.role === 'admin' || user?.role === 'property_manager') && <NotificationBell />}
               <TouchableOpacity
                 onPress={() => setSearchVisible(true)}
                 style={ss.headerIconBtn}
