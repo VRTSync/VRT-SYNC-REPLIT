@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   ActivityIndicator, Alert, Platform, KeyboardAvoidingView, ScrollView,
@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { apiRequest } from '@/lib/query-client';
+import Toast from '@/components/Toast';
 
 type EditMode = 'confirmPassword' | 'displayName' | 'password' | null;
 
@@ -15,6 +16,15 @@ export default function AccountDetailsCard() {
   const { user, updateProfile } = useAuth();
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [saving, setSaving] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const lastVerifiedAt = useRef<number | null>(null);
   const verifiedPassword = useRef<string>('');
@@ -84,6 +94,13 @@ export default function AccountDetailsCard() {
     }
   };
 
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
+
   const saveDisplayName = async () => {
     const combined = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
     if (!combined) {
@@ -101,7 +118,7 @@ export default function AccountDetailsCard() {
       await updateProfile({ displayName: combined, currentPassword: verifiedPassword.current });
       clearVerification();
       closeModal();
-      Alert.alert('Success', 'Display name updated successfully.');
+      showToast('Display name updated');
     } catch (err: unknown) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update display name.');
     } finally {
@@ -126,7 +143,7 @@ export default function AccountDetailsCard() {
     try {
       await updateProfile({ currentPassword, newPassword });
       closeModal();
-      Alert.alert('Success', 'Password updated successfully.');
+      showToast('Password updated');
     } catch (err: unknown) {
       Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update password.');
     } finally {
@@ -148,6 +165,7 @@ export default function AccountDetailsCard() {
 
   return (
     <>
+      <Toast visible={toastVisible} message={toastMessage} />
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <View style={styles.sectionLeft}>
