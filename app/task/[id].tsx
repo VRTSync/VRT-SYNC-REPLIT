@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   Alert, ActivityIndicator, Image, Modal, FlatList, Dimensions, Platform, Linking,
 } from 'react-native';
+import Toast from '@/components/Toast';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -217,6 +218,17 @@ export default function TaskDetailScreen() {
   const [photoViewerImages, setPhotoViewerImages] = useState<{ id: string; url: string }[]>([]);
   const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
   const [acknowledging, setAcknowledging] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      if (navTimeoutRef.current) clearTimeout(navTimeoutRef.current);
+    };
+  }, []);
 
   type TaskDetailBundle = { task: Task; completions: Completion[]; taskAttachments: { id: string; url: string; fileRef: string; createdAt: string }[]; taskLink: TaskLinkData | null };
 
@@ -347,9 +359,9 @@ export default function TaskDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
 
-      Alert.alert('Task Completed', 'The task has been marked as complete.', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/tasks') },
-      ]);
+      setToastMessage('Task marked complete');
+      setToastVisible(true);
+      navTimeoutRef.current = setTimeout(() => router.replace('/(tabs)/tasks'), 1500);
     } catch (e: any) {
       if (e.message?.includes('409')) {
         queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
@@ -378,7 +390,9 @@ export default function TaskDetailScreen() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
-      Alert.alert('Acknowledged', 'This HOA request has been acknowledged.');
+      setToastMessage('Request acknowledged');
+      setToastVisible(true);
+      toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 2800);
     } catch (e: any) {
       if (e.message?.includes('409')) {
         queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
@@ -1078,6 +1092,7 @@ export default function TaskDetailScreen() {
         );
       })()}
       </KeyboardAwareScrollViewCompat>
+      <Toast visible={toastVisible} message={toastMessage} />
     </View>
   );
 }
