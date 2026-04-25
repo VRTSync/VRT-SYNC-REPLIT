@@ -3849,14 +3849,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/notification-preferences", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const prefs = await storage.getUserNotificationPreferences(req.session.userId!);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Get notification preferences error:", error);
+      res.status(500).json({ error: "Failed to fetch notification preferences" });
+    }
+  });
+
+  app.put("/api/notification-preferences", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { taskAssigned, dueReminders, syncFailure } = req.body;
+      const prefs = {
+        taskAssigned: typeof taskAssigned === 'boolean' ? taskAssigned : true,
+        dueReminders: typeof dueReminders === 'boolean' ? dueReminders : true,
+        syncFailure: typeof syncFailure === 'boolean' ? syncFailure : true,
+      };
+      await storage.setUserNotificationPreferences(req.session.userId!, prefs);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Set notification preferences error:", error);
+      res.status(500).json({ error: "Failed to save notification preferences" });
+    }
+  });
+
   app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) return res.status(401).json({ error: "Not authenticated" });
-
-      if (user.role === "hoa_member") {
-        return res.json([]);
-      }
 
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = parseInt(req.query.offset as string) || 0;
@@ -3872,10 +3894,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) return res.status(401).json({ error: "Not authenticated" });
-
-      if (user.role === "hoa_member") {
-        return res.json({ count: 0 });
-      }
 
       const count = await storage.getUnreadNotificationCount(user.id);
       res.json({ count });

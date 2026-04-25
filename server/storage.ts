@@ -2734,6 +2734,28 @@ export async function getCommunityBounds(communityId: string): Promise<{ bounds:
   };
 }
 
+export type NotificationPreferences = {
+  taskAssigned: boolean;
+  dueReminders: boolean;
+  syncFailure: boolean;
+};
+
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  taskAssigned: true,
+  dueReminders: true,
+  syncFailure: true,
+};
+
+export async function getUserNotificationPreferences(userId: string): Promise<NotificationPreferences> {
+  const [user] = await db.select({ notificationPreferences: users.notificationPreferences }).from(users).where(eq(users.id, userId));
+  if (!user || !user.notificationPreferences) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+  return { ...DEFAULT_NOTIFICATION_PREFERENCES, ...(user.notificationPreferences as NotificationPreferences) };
+}
+
+export async function setUserNotificationPreferences(userId: string, prefs: NotificationPreferences): Promise<void> {
+  await db.update(users).set({ notificationPreferences: prefs }).where(eq(users.id, userId));
+}
+
 export async function createNotification(data: {
   communityId: string;
   recipientUserId: string;

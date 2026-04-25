@@ -26,13 +26,29 @@ const DEFAULT_PREFS: NotificationPreferences = {
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {
   try {
+    const res = await apiRequest('GET', '/api/notification-preferences');
+    if (res.ok) {
+      const serverPrefs = await res.json() as Partial<NotificationPreferences>;
+      const merged = { ...DEFAULT_PREFS, ...serverPrefs };
+      await AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch {}
+  try {
     const json = await AsyncStorage.getItem(NOTIF_PREFS_KEY);
     if (json) return { ...DEFAULT_PREFS, ...JSON.parse(json) };
   } catch {}
-  return DEFAULT_PREFS;
+  return { ...DEFAULT_PREFS };
 }
 
 export async function setNotificationPreferences(prefs: NotificationPreferences): Promise<void> {
+  try {
+    const res = await apiRequest('PUT', '/api/notification-preferences', prefs);
+    if (res.ok) {
+      await AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(prefs));
+      return;
+    }
+  } catch {}
   await AsyncStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(prefs));
 }
 

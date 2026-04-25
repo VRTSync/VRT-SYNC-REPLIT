@@ -22,6 +22,7 @@ export const users = pgTable("users", {
   hoaCommunityId: varchar("hoa_community_id").references(() => communities.id),
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").notNull().default(true),
+  notificationPreferences: jsonb("notification_preferences"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

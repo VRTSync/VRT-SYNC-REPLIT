@@ -102,6 +102,9 @@ export async function notifyTaskAssigned(taskId: string, taskTitle: string, comm
     const task = await storage.getTaskById(taskId);
     if (!task) return;
 
+    const prefs = await storage.getUserNotificationPreferences(assignedToUserId);
+    if (!prefs.taskAssigned) return;
+
     const title = "New task assigned";
     const body = `${taskTitle} – ${communityName}`;
 
@@ -171,6 +174,9 @@ export async function sendDueReminders(): Promise<void> {
   }
 
   for (const [userId, info] of byUser) {
+    const prefs = await storage.getUserNotificationPreferences(userId);
+    if (!prefs.dueReminders) continue;
+
     const title = "Tasks due today";
     const body = `You have ${info.count} task${info.count > 1 ? 's' : ''} due today`;
 

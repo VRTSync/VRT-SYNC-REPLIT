@@ -30,7 +30,10 @@ type Section = {
 };
 
 const TYPE_ICONS: Record<string, { name: keyof typeof Ionicons.glyphMap; color: string }> = {
+  TASK_ASSIGNED: { name: 'person-add-outline', color: '#3498db' },
+  TASK_DUE_REMINDER: { name: 'alarm-outline', color: '#f39c12' },
   TASK_COMPLETED: { name: 'checkmark-circle', color: '#4caf50' },
+  HOA_REQUEST_ACKNOWLEDGED: { name: 'checkmark-circle-outline', color: '#4caf50' },
   HOA_REQUEST_COMPLETED: { name: 'checkmark-done-circle', color: '#25C1AC' },
   HOA_REQUEST_SUBMITTED: { name: 'mail-unread', color: '#3498db' },
 };
