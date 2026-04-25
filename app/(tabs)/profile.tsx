@@ -8,6 +8,7 @@ import { useAuth, getNotificationPreferences, setNotificationPreferences, type N
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
+import AccountDetailsCard from '@/components/AccountDetailsCard';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -84,6 +85,8 @@ export default function ProfileScreen() {
           <Text style={styles.username}>@{user?.username}</Text>
         </View>
       </View>
+
+      <AccountDetailsCard />
 
       <View style={styles.section}>
         <TouchableOpacity

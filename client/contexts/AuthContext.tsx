@@ -82,6 +82,12 @@ type BootstrapPayload = {
   defaultCommunityId: string | null;
 };
 
+type UpdateProfileParams = {
+  displayName?: string;
+  currentPassword?: string;
+  newPassword?: string;
+};
+
 type AuthContextType = {
   user: User | null;
   bootstrapCommunities: Community[];
@@ -90,6 +96,7 @@ type AuthContextType = {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string, displayName: string, role: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateProfile: (params: UpdateProfileParams) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -241,8 +248,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await logoutMutation.mutateAsync();
   }, [logoutMutation]);
 
+  const updateProfile = useCallback(async (params: UpdateProfileParams) => {
+    try {
+      await apiRequest('PATCH', '/api/auth/me', params);
+      await queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : 'Failed to update profile';
+      const colonIdx = raw.indexOf(': ');
+      const detail = colonIdx !== -1 ? raw.slice(colonIdx + 2) : raw;
+      let serverMessage = detail;
+      try {
+        const parsed = JSON.parse(detail) as { message?: string };
+        if (typeof parsed.message === 'string') serverMessage = parsed.message;
+      } catch {
+        // detail is plain text, use as-is
+      }
+      throw new Error(serverMessage || 'Failed to update profile');
+    }
+  }, [queryClient]);
+
   return (
-    <AuthContext.Provider value={{ user, bootstrapCommunities, defaultCommunityId, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, bootstrapCommunities, defaultCommunityId, isLoading, login, register, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

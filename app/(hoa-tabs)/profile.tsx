@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth, getNotificationPreferences, setNotificationPreferences, type NotificationPreferences } from '@/client/contexts/AuthContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import AccountDetailsCard from '@/components/AccountDetailsCard';
 
 export default function HoaProfileScreen() {
   const { user, logout } = useAuth();
@@ -81,6 +82,8 @@ export default function HoaProfileScreen() {
             <Text style={styles.username}>@{user?.username}</Text>
           </View>
         </View>
+
+        <AccountDetailsCard />
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
