@@ -167,6 +167,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         await apiRequest('POST', `/api/assets/${assetId}/notes`, { noteText: text });
         setNoteText('');
         queryClient.invalidateQueries({ queryKey: [`/api/assets/${assetId}/notes`] });
+        showToast('Note saved');
       } catch (e: any) {
         Alert.alert('Error', e.message || 'Failed to save note');
       } finally {
@@ -183,7 +184,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         idempotencyKey: id,
       });
       setNoteText('');
-      Alert.alert('Saved Offline', 'Your note will be synced when you are back online.');
+      showToast('Note saved');
     }
   };
 
