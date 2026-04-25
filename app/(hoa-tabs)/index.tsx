@@ -502,6 +502,11 @@ export default function HoaDashboardScreen() {
                     <Text style={styles.ccAttnLabel} numberOfLines={1}>{item.label}</Text>
                     <Text style={styles.ccAttnReason}>{item.reason}</Text>
                   </View>
+                  <View style={item.type === 'request' ? styles.ccAttnTypeRequest : styles.ccAttnTypeTask}>
+                    <Text style={item.type === 'request' ? styles.ccAttnTypeRequestText : styles.ccAttnTypeTaskText}>
+                      {item.type === 'request' ? 'REQUEST' : 'TASK'}
+                    </Text>
+                  </View>
                   {isHoaAdmin && <Ionicons name="chevron-forward" size={14} color="#ccc" />}
                 </TouchableOpacity>
               ))}
@@ -1323,5 +1328,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999',
     marginTop: 1,
+  },
+  ccAttnTypeRequest: {
+    backgroundColor: '#E0F2F1',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  ccAttnTypeRequestText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#25C1AC',
+    letterSpacing: 0.8,
+  },
+  ccAttnTypeTask: {
+    backgroundColor: '#E8EAF6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  ccAttnTypeTaskText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#3949AB',
+    letterSpacing: 0.8,
   },
 });
