@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, RefreshControl,
   ActivityIndicator, Alert,
@@ -16,6 +16,7 @@ import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import SearchModal from '@/components/SearchModal';
 import MowingDayCard from '@/components/MowingDayCard';
 import LogVisitModal from '@/components/LogVisitModal';
+import Toast from '@/components/Toast';
 import NotificationBell from '@/components/NotificationBell';
 import SyncBar from '@/components/SyncBar';
 import { getRoleCopy } from '@/constants/roleCopy';
@@ -131,6 +132,20 @@ export default function DashboardScreen() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [logVisitSchedule, setLogVisitSchedule] = useState<ServiceSchedule | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
 
   const communityId = activeCommunity?.id;
 
@@ -573,8 +588,10 @@ export default function DashboardScreen() {
         schedule={logVisitSchedule}
         onClose={() => setLogVisitSchedule(null)}
         onSubmit={handleLogVisit}
+        onSuccess={() => showToast('Visit logged')}
         userName={user?.displayName || ''}
       />
+      <Toast visible={toastVisible} message={toastMessage} />
     </View>
   );
 }

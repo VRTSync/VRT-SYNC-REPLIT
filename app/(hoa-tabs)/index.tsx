@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator, Platform,
@@ -14,6 +14,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import Toast from '@/components/Toast';
 import NotificationBell from '@/components/NotificationBell';
 import SyncBar from '@/components/SyncBar';
 import { getRoleCopy } from '@/constants/roleCopy';
@@ -203,6 +204,20 @@ export default function HoaDashboardScreen() {
   const copy = getRoleCopy(user?.role);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
 
   const { data: roleData, isLoading, isRefetching, refetch, isError, dataUpdatedAt } = useQuery<RoleDashboardViewModel>({
     queryKey: ['/api/dashboard/role'],
@@ -770,7 +785,9 @@ export default function HoaDashboardScreen() {
           queryClient.invalidateQueries({ queryKey: ['/api/dashboard/role'] });
           queryClient.invalidateQueries({ queryKey: ['/api/hoa/requests'] });
         }}
+        onSuccess={() => showToast('Request submitted successfully')}
       />
+      <Toast visible={toastVisible} message={toastMessage} />
     </View>
   );
 }

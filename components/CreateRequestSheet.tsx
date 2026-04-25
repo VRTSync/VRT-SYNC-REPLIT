@@ -20,6 +20,7 @@ if (Platform.OS !== 'web') {
 type Props = {
   visible: boolean;
   onClose: () => void;
+  onSuccess?: () => void;
   assetId?: string;
   assetName?: string;
   assetLat?: number;
@@ -115,7 +116,7 @@ function generateReadOnlyMapHTML(lat: number, lng: number): string {
 </html>`;
 }
 
-export default function CreateRequestSheet({ visible, onClose, assetId, assetName, assetLat, assetLng }: Props) {
+export default function CreateRequestSheet({ visible, onClose, onSuccess, assetId, assetName, assetLat, assetLng }: Props) {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { activeCommunity } = useCommunity();
@@ -349,6 +350,7 @@ export default function CreateRequestSheet({ visible, onClose, assetId, assetNam
         return;
       }
 
+      onSuccess?.();
       handleClose();
     } catch (e: any) {
       let msg = e.message || 'Failed to submit request';

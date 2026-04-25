@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Platform, Image, Modal, Dimensions,
@@ -15,6 +15,7 @@ import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import { ASSET_FIELD_TEMPLATES, getRequiredFieldsMissing, getTemplateKeys } from '@shared/assetFieldTemplates';
 import { useAuth } from '@/client/contexts/AuthContext';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import Toast from '@/components/Toast';
 
 type AssetDetail = {
   id: string;
@@ -107,6 +108,21 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(60);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
+
   const [tabBarHeight, setTabBarHeight] = useState(44);
   const [webKeyboardHeight, setWebKeyboardHeight] = useState(0);
   const { isOnline, addPendingAssetNote, syncPendingAssetNotes, getPendingNotesForAsset, retryAssetNote, dismissAssetNote } = useOffline();
@@ -802,11 +818,13 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         <CreateRequestSheet
           visible={showCreateRequest}
           onClose={() => setShowCreateRequest(false)}
+          onSuccess={() => showToast('Request submitted successfully')}
           assetId={assetId}
           assetName={asset?.label}
           assetLat={asset?.latitude ?? undefined}
           assetLng={asset?.longitude ?? undefined}
         />
+        <Toast visible={toastVisible} message={toastMessage} />
       </View>
     </Modal>
   );

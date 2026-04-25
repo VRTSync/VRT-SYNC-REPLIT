@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Alert, ActivityIndicator, Platform, Modal, FlatList, Image, ImageBackground,
@@ -10,6 +10,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { apiRequest, getQueryFn, getApiUrl } from '@/lib/query-client';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
+import Toast from '@/components/Toast';
 
 type AppUser = {
   id: string;
@@ -141,6 +142,21 @@ export default function AdminScreen() {
   }, [user]);
 
   const [activeTab, setActiveTab] = useState<TabId>('actions');
+
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
 
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [showCreateCommunity, setShowCreateCommunity] = useState(false);
@@ -325,7 +341,7 @@ export default function AdminScreen() {
       setTaskLng('');
       setTaskPriority('medium');
       setTaskAssignee('');
-      Alert.alert('Success', 'Task created successfully');
+      showToast('Task created successfully');
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to create task');
     } finally {
@@ -1898,6 +1914,7 @@ export default function AdminScreen() {
           </ScrollView>
         </View>
       </Modal>
+      <Toast visible={toastVisible} message={toastMessage} />
     </View>
   );
 }

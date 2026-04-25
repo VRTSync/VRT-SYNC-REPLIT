@@ -14,6 +14,7 @@ import NavyHeader, { subtitleStyles as ss } from '@/components/NavyHeader';
 import { useNavyHeaderProps } from '@/components/useNavyHeaderProps';
 import CalendarView from '@/components/CalendarView';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
+import Toast from '@/components/Toast';
 import DayWorkSheet from '@/components/DayWorkSheet';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
@@ -350,6 +351,20 @@ export default function HoaTasksScreen() {
   );
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
+  }, []);
+
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    setToastVisible(true);
+    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
+  };
 
   const communityId = activeCommunity?.id;
   const canCreateRequest = user?.role === 'hoa_admin' || user?.role === 'hoa_member' || user?.role === 'property_manager';
@@ -591,6 +606,7 @@ export default function HoaTasksScreen() {
       <CreateRequestSheet
         visible={showCreateRequest}
         onClose={handleCreateRequestClose}
+        onSuccess={() => showToast('Request submitted successfully')}
       />
 
       <DayWorkSheet
@@ -602,6 +618,7 @@ export default function HoaTasksScreen() {
         onViewOnMap={handleViewOnMap}
         role={user?.role}
       />
+      <Toast visible={toastVisible} message={toastMessage} />
     </View>
   );
 }
