@@ -166,8 +166,18 @@ export default function TasksScreen() {
   const [markingInProgressId, setMarkingInProgressId] = React.useState<string | null>(null);
   const [completedExpanded, setCompletedExpanded] = React.useState(false);
   const [startingWork, setStartingWork] = React.useState(false);
+  const [undoStartEarly, setUndoStartEarly] = React.useState<{ taskId: string; taskVersion: number } | null>(null);
+  const undoTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const todayFlatListRef = React.useRef<FlatList<any>>(null);
   const qc = useQueryClient();
+
+  React.useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleSyncNow = async () => {
     setSyncing(true);
@@ -296,6 +306,51 @@ export default function TasksScreen() {
       Alert.alert('Error', e.message || 'Failed to update task status');
     } finally {
       setMarkingInProgressId(null);
+    }
+  };
+
+  const handleStartEarly = async (task: Task) => {
+    setMarkingInProgressId(task.id);
+    try {
+      await apiRequest('PUT', `/api/tasks/${task.id}`, {
+        status: 'in_progress',
+        version: task.version,
+      });
+      qc.invalidateQueries({ queryKey: ['/api/tasks'] });
+      const fetchResult = await refetch();
+      const freshTasks: Task[] = fetchResult.data || [];
+      const updatedTask = freshTasks.find(t => t.id === task.id);
+      const updatedVersion = updatedTask?.version ?? task.version + 1;
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      setUndoStartEarly({ taskId: task.id, taskVersion: updatedVersion });
+      undoTimerRef.current = setTimeout(() => {
+        setUndoStartEarly(null);
+        undoTimerRef.current = null;
+      }, 5000);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update task status');
+    } finally {
+      setMarkingInProgressId(null);
+    }
+  };
+
+  const handleUndoStartEarly = async () => {
+    if (!undoStartEarly) return;
+    const { taskId, taskVersion } = undoStartEarly;
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
+    setUndoStartEarly(null);
+    try {
+      await apiRequest('PUT', `/api/tasks/${taskId}`, {
+        status: 'pending',
+        version: taskVersion,
+      });
+      qc.invalidateQueries({ queryKey: ['/api/tasks'] });
+      await refetch();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to undo start early');
     }
   };
 
@@ -563,7 +618,7 @@ export default function TasksScreen() {
             {showStartEarly && (
               <TouchableOpacity
                 style={[styles.quickActionBtn, styles.quickActionStartEarly]}
-                onPress={(e) => { e.stopPropagation(); handleMarkInProgress(item); }}
+                onPress={(e) => { e.stopPropagation(); handleStartEarly(item); }}
                 disabled={markingInProgressId === item.id}
                 activeOpacity={0.7}
                 testID={`start-early-${item.id}`}
@@ -872,6 +927,20 @@ export default function TasksScreen() {
         userName={user?.displayName || ''}
         prefillDate={logVisitDate}
       />
+
+      {undoStartEarly && (
+        <View style={styles.undoToast} testID="undo-start-early-toast">
+          <Text style={styles.undoToastText}>Task started early</Text>
+          <TouchableOpacity
+            onPress={handleUndoStartEarly}
+            style={styles.undoToastBtn}
+            activeOpacity={0.7}
+            testID="undo-start-early-btn"
+          >
+            <Text style={styles.undoToastBtnText}>Undo</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -1103,5 +1172,41 @@ const styles = StyleSheet.create({
   },
   startWorkTextDisabled: {
     color: '#aaa',
+  },
+  undoToast: {
+    position: 'absolute',
+    bottom: Platform.OS === 'web' ? 50 : 106,
+    left: 16,
+    right: 16,
+    backgroundColor: '#1a1a2e',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  undoToastText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#e0e0e0',
+    flex: 1,
+  },
+  undoToastBtn: {
+    backgroundColor: '#7b1fa2',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginLeft: 12,
+  },
+  undoToastBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
   },
 });
