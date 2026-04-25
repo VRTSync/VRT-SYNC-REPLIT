@@ -730,6 +730,8 @@ async function runStartupMigrations() {
 
       CREATE INDEX IF NOT EXISTS planner_records_property_idx ON planner_records(property_id);
       CREATE INDEX IF NOT EXISTS planner_records_status_idx ON planner_records(status);
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences jsonb;
     `);
     console.log("Startup migrations applied.");
   } catch (err) {

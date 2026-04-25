@@ -2738,12 +2738,18 @@ export type NotificationPreferences = {
   taskAssigned: boolean;
   dueReminders: boolean;
   syncFailure: boolean;
+  taskCompleted: boolean;
+  requestSubmitted: boolean;
+  requestCompleted: boolean;
 };
 
 const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   taskAssigned: true,
   dueReminders: true,
   syncFailure: true,
+  taskCompleted: true,
+  requestSubmitted: true,
+  requestCompleted: true,
 };
 
 export async function getUserNotificationPreferences(userId: string): Promise<NotificationPreferences> {

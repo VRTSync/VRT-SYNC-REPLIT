@@ -211,6 +211,10 @@ export async function notifyTaskCompleted(task: Task): Promise<void> {
     const recipients = [...hoaAdmins, ...propertyManagers];
 
     await Promise.all(recipients.map(async (recipient) => {
+      const prefs = await storage.getUserNotificationPreferences(recipient.id);
+      const prefKey = isHoaRequest ? 'requestCompleted' : 'taskCompleted';
+      if (!prefs[prefKey]) return;
+
       await storage.createNotification({
         communityId: task.communityId,
         recipientUserId: recipient.id,
@@ -250,6 +254,9 @@ export async function notifyHoaRequestSubmitted(task: Task): Promise<void> {
     const allRecipients = [...assignedRecipient, ...hoaAndPmRecipients];
 
     await Promise.all(allRecipients.map(async (recipient) => {
+      const prefs = await storage.getUserNotificationPreferences(recipient.id);
+      if (!prefs.requestSubmitted) return;
+
       await storage.createNotification({
         communityId: task.communityId,
         recipientUserId: recipient.id,

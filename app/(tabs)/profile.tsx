@@ -19,6 +19,9 @@ export default function ProfileScreen() {
     taskAssigned: true,
     dueReminders: true,
     syncFailure: true,
+    taskCompleted: true,
+    requestSubmitted: true,
+    requestCompleted: true,
   });
 
   useEffect(() => {
@@ -286,6 +289,49 @@ export default function ProfileScreen() {
               thumbColor="#fff"
             />
           </View>
+
+          {(user?.role === 'admin' || user?.role === 'property_manager') && (
+            <>
+              <View style={styles.notifRow}>
+                <View style={styles.notifInfo}>
+                  <Text style={styles.notifLabel}>Task completed</Text>
+                  <Text style={styles.notifDesc}>When a contractor marks a task done</Text>
+                </View>
+                <Switch
+                  value={notifPrefs.taskCompleted}
+                  onValueChange={() => togglePref('taskCompleted')}
+                  trackColor={{ false: '#ddd', true: '#25C1AC' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={styles.notifRow}>
+                <View style={styles.notifInfo}>
+                  <Text style={styles.notifLabel}>Request submitted</Text>
+                  <Text style={styles.notifDesc}>When a resident submits a new HOA request</Text>
+                </View>
+                <Switch
+                  value={notifPrefs.requestSubmitted}
+                  onValueChange={() => togglePref('requestSubmitted')}
+                  trackColor={{ false: '#ddd', true: '#25C1AC' }}
+                  thumbColor="#fff"
+                />
+              </View>
+
+              <View style={styles.notifRow}>
+                <View style={styles.notifInfo}>
+                  <Text style={styles.notifLabel}>Request completed</Text>
+                  <Text style={styles.notifDesc}>When an HOA request is marked complete</Text>
+                </View>
+                <Switch
+                  value={notifPrefs.requestCompleted}
+                  onValueChange={() => togglePref('requestCompleted')}
+                  trackColor={{ false: '#ddd', true: '#25C1AC' }}
+                  thumbColor="#fff"
+                />
+              </View>
+            </>
+          )}
         </View>
       )}
 
