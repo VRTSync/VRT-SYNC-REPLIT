@@ -126,7 +126,7 @@ const SECTION_LABELS: Record<SectionGroup, string> = {
 type ListItem = Task | { type: 'header'; title: string; count: number; group: SectionGroup } | { type: 'collapsed_completed'; count: number };
 
 type TodayStatusGroup = 'pending' | 'in_progress' | 'done';
-type TodayListItem = Task | { type: 'today_header'; title: string; count: number; group: TodayStatusGroup };
+type TodayListItem = Task | { type: 'today_header'; title: string; count: number; group: TodayStatusGroup } | { type: 'upcoming_header'; count: number };
 
 const TODAY_STATUS_ORDER: TodayStatusGroup[] = ['pending', 'in_progress', 'done'];
 const TODAY_STATUS_LABELS: Record<TodayStatusGroup, string> = {
@@ -393,6 +393,13 @@ export default function TasksScreen() {
       items.push({ type: 'today_header', title: TODAY_STATUS_LABELS[group], count: groups[group].length, group });
       items.push(...groups[group]);
     }
+    const upcomingTasks = tasks
+      .filter(t => t.status !== 'completed' && t.status !== 'submitted' && t.windowStart && toDateOnly(t.windowStart) > today)
+      .sort((a, b) => toDateOnly(a.windowStart!).getTime() - toDateOnly(b.windowStart!).getTime());
+    if (upcomingTasks.length > 0) {
+      items.push({ type: 'upcoming_header', count: upcomingTasks.length });
+      items.push(...upcomingTasks);
+    }
     return items;
   };
 
@@ -595,8 +602,16 @@ export default function TasksScreen() {
   };
 
   const renderTodayItem = ({ item }: { item: TodayListItem }) => {
-    if ((item as any).type === 'today_header') {
-      const h = item as { type: 'today_header'; title: string; count: number; group: TodayStatusGroup };
+    if ('type' in item && item.type === 'upcoming_header') {
+      return (
+        <View style={styles.todaySectionHeader}>
+          <View style={[styles.todaySectionDot, { backgroundColor: '#1565c0' }]} />
+          <Text style={styles.todaySectionTitle}>Upcoming</Text>
+          <Text style={styles.todaySectionCount}>{item.count}</Text>
+        </View>
+      );
+    }
+    if ('type' in item && item.type === 'today_header') {
       const groupColor: Record<TodayStatusGroup, string> = {
         pending: '#ff9800',
         in_progress: '#25C1AC',
@@ -604,9 +619,9 @@ export default function TasksScreen() {
       };
       return (
         <View style={styles.todaySectionHeader}>
-          <View style={[styles.todaySectionDot, { backgroundColor: groupColor[h.group] }]} />
-          <Text style={styles.todaySectionTitle}>{h.title}</Text>
-          <Text style={styles.todaySectionCount}>{h.count}</Text>
+          <View style={[styles.todaySectionDot, { backgroundColor: groupColor[item.group] }]} />
+          <Text style={styles.todaySectionTitle}>{item.title}</Text>
+          <Text style={styles.todaySectionCount}>{item.count}</Text>
         </View>
       );
     }
@@ -717,6 +732,7 @@ export default function TasksScreen() {
             data={todayItems}
             keyExtractor={(item: any) => {
               if (item.type === 'today_header') return `today-header-${item.group}`;
+              if (item.type === 'upcoming_header') return 'upcoming-header';
               return item.id;
             }}
             renderItem={renderTodayItem}
