@@ -446,7 +446,7 @@ export default function TasksScreen() {
 
   const allItems = buildGroupedList();
 
-  const renderTask = ({ item }: { item: Task }) => {
+  const renderTask = ({ item, startEarly }: { item: Task; startEarly?: boolean }) => {
     const pending = pendingCompletions.find(c => c.taskId === item.id && c.state !== 'synced');
     const urgency = getUrgencyChip(item, today);
     const windowRange = formatWindowRange(item);
@@ -455,11 +455,12 @@ export default function TasksScreen() {
     const hasMapPin = item.latitude != null && item.longitude != null;
 
     const showAcknowledge = item.status === 'submitted' && config.showAcknowledgmentControls;
-    const showMarkInProgress = item.status === 'pending';
-    const showComplete = item.status === 'pending' || item.status === 'in_progress';
+    const showStartEarly = !!startEarly && item.status === 'pending';
+    const showMarkInProgress = !startEarly && item.status === 'pending';
+    const showComplete = !startEarly && (item.status === 'pending' || item.status === 'in_progress');
     const showViewOnMap = !!item.address;
 
-    const hasQuickActions = !isCompleted && (showAcknowledge || showMarkInProgress || showComplete || showViewOnMap);
+    const hasQuickActions = !isCompleted && (showAcknowledge || showStartEarly || showMarkInProgress || showComplete || showViewOnMap);
 
     return (
       <TouchableOpacity
@@ -559,6 +560,20 @@ export default function TasksScreen() {
                 </Text>
               </TouchableOpacity>
             )}
+            {showStartEarly && (
+              <TouchableOpacity
+                style={[styles.quickActionBtn, styles.quickActionStartEarly]}
+                onPress={(e) => { e.stopPropagation(); handleMarkInProgress(item); }}
+                disabled={markingInProgressId === item.id}
+                activeOpacity={0.7}
+                testID={`start-early-${item.id}`}
+              >
+                <Ionicons name="flash-outline" size={14} color="#fff" />
+                <Text style={styles.quickActionText}>
+                  {markingInProgressId === item.id ? 'Starting...' : 'Start Early'}
+                </Text>
+              </TouchableOpacity>
+            )}
             {showMarkInProgress && (
               <TouchableOpacity
                 style={[styles.quickActionBtn, styles.quickActionInProgress]}
@@ -625,7 +640,9 @@ export default function TasksScreen() {
         </View>
       );
     }
-    return renderTask({ item: item as Task });
+    const task = item as Task;
+    const isUpcoming = !!task.windowStart && toDateOnly(task.windowStart) > today;
+    return renderTask({ item: task, startEarly: isUpcoming });
   };
 
   return (
@@ -979,6 +996,9 @@ const styles = StyleSheet.create({
   },
   quickActionAcknowledge: {
     backgroundColor: '#1565c0',
+  },
+  quickActionStartEarly: {
+    backgroundColor: '#7b1fa2',
   },
   quickActionInProgress: {
     backgroundColor: '#e65100',
