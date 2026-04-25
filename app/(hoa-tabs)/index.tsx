@@ -542,7 +542,12 @@ export default function HoaDashboardScreen() {
               const isRequest = task.origin === 'HOA';
               const isUrgent = task.priority === 'urgent';
               return (
-                <View key={task.id} style={styles.taskCard}>
+                <TouchableOpacity
+                  key={task.id}
+                  style={styles.taskCard}
+                  onPress={() => router.push({ pathname: '/task/[id]', params: { id: task.id } })}
+                  activeOpacity={0.75}
+                >
                   <View style={styles.taskCardTop}>
                     {isRequest && (
                       <View style={styles.originBadge}>
@@ -572,7 +577,10 @@ export default function HoaDashboardScreen() {
                       </Text>
                     </View>
                   )}
-                </View>
+                  <View style={styles.taskCardChevronRow}>
+                    <Ionicons name="chevron-forward" size={14} color="#ccc" />
+                  </View>
+                </TouchableOpacity>
               );
             })}
           </ScrollView>
@@ -907,6 +915,11 @@ const styles = StyleSheet.create({
   taskDateText: {
     fontSize: 11,
     color: '#999',
+  },
+  taskCardChevronRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'flex-end' as const,
+    marginTop: 6,
   },
   mapGrid: {
     flexDirection: 'row' as const,
