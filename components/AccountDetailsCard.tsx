@@ -1,17 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   ActivityIndicator, Alert, Platform, KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/client/contexts/AuthContext';
+import { apiRequest } from '@/lib/query-client';
 
-type EditMode = 'displayName' | 'password' | null;
+type EditMode = 'confirmPassword' | 'displayName' | 'password' | null;
+
+const REAUTH_WINDOW_MS = 5 * 60 * 1000;
 
 export default function AccountDetailsCard() {
   const { user, updateProfile } = useAuth();
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [saving, setSaving] = useState(false);
+
+  const lastVerifiedAt = useRef<number | null>(null);
+  const verifiedPassword = useRef<string>('');
+
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -20,11 +28,23 @@ export default function AccountDetailsCard() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  const isRecentlyVerified = () => {
+    if (lastVerifiedAt.current === null) return false;
+    return Date.now() - lastVerifiedAt.current < REAUTH_WINDOW_MS;
+  };
+
   const openDisplayName = () => {
     const parts = (user?.displayName ?? '').split(' ');
     setFirstName(parts[0] ?? '');
     setLastName(parts.slice(1).join(' '));
-    setEditMode('displayName');
+
+    if (isRecentlyVerified()) {
+      setEditMode('displayName');
+    } else {
+      clearVerification();
+      setConfirmPasswordInput('');
+      setEditMode('confirmPassword');
+    }
   };
 
   const openPassword = () => {
@@ -37,6 +57,31 @@ export default function AccountDetailsCard() {
   const closeModal = () => {
     setEditMode(null);
     setSaving(false);
+    setConfirmPasswordInput('');
+  };
+
+  const clearVerification = () => {
+    lastVerifiedAt.current = null;
+    verifiedPassword.current = '';
+  };
+
+  const confirmCurrentPassword = async () => {
+    if (!confirmPasswordInput) {
+      Alert.alert('Validation', 'Please enter your current password.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiRequest('POST', '/api/auth/verify-password', { currentPassword: confirmPasswordInput });
+      lastVerifiedAt.current = Date.now();
+      verifiedPassword.current = confirmPasswordInput;
+      setConfirmPasswordInput('');
+      setEditMode('displayName');
+    } catch (err: unknown) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not verify password.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveDisplayName = async () => {
@@ -45,9 +90,16 @@ export default function AccountDetailsCard() {
       Alert.alert('Validation', 'Display name cannot be empty.');
       return;
     }
+    if (!verifiedPassword.current) {
+      Alert.alert('Error', 'Password verification expired. Please try again.');
+      lastVerifiedAt.current = null;
+      closeModal();
+      return;
+    }
     setSaving(true);
     try {
-      await updateProfile({ displayName: combined });
+      await updateProfile({ displayName: combined, currentPassword: verifiedPassword.current });
+      clearVerification();
       closeModal();
       Alert.alert('Success', 'Display name updated successfully.');
     } catch (err: unknown) {
@@ -80,6 +132,18 @@ export default function AccountDetailsCard() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const getModalTitle = () => {
+    if (editMode === 'confirmPassword') return 'Confirm Identity';
+    if (editMode === 'displayName') return 'Edit Name';
+    return 'Change Password';
+  };
+
+  const handleSave = () => {
+    if (editMode === 'confirmPassword') return confirmCurrentPassword();
+    if (editMode === 'displayName') return saveDisplayName();
+    return savePassword();
   };
 
   return (
@@ -135,11 +199,9 @@ export default function AccountDetailsCard() {
               <TouchableOpacity onPress={closeModal} style={styles.cancelBtn} testID="modal-cancel-btn">
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-              <Text style={styles.modalTitle}>
-                {editMode === 'displayName' ? 'Edit Name' : 'Change Password'}
-              </Text>
+              <Text style={styles.modalTitle}>{getModalTitle()}</Text>
               <TouchableOpacity
-                onPress={editMode === 'displayName' ? saveDisplayName : savePassword}
+                onPress={handleSave}
                 style={styles.saveBtn}
                 disabled={saving}
                 testID="modal-save-btn"
@@ -147,10 +209,35 @@ export default function AccountDetailsCard() {
                 {saving ? (
                   <ActivityIndicator size="small" color="#25C1AC" />
                 ) : (
-                  <Text style={styles.saveText}>Save</Text>
+                  <Text style={styles.saveText}>
+                    {editMode === 'confirmPassword' ? 'Continue' : 'Save'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
+
+            {editMode === 'confirmPassword' && (
+              <View style={styles.fields}>
+                <Text style={styles.confirmHint}>
+                  To edit your display name, please confirm your current password.
+                </Text>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Current Password</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={confirmPasswordInput}
+                    onChangeText={setConfirmPasswordInput}
+                    placeholder="Enter your password"
+                    placeholderTextColor="#bbb"
+                    secureTextEntry
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={confirmCurrentPassword}
+                    testID="confirm-identity-password-input"
+                  />
+                </View>
+              </View>
+            )}
 
             {editMode === 'displayName' && (
               <View style={styles.fields}>
@@ -283,7 +370,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: '600', color: '#0C1D31' },
   cancelBtn: { paddingVertical: 4, paddingHorizontal: 4 },
   cancelText: { fontSize: 16, color: '#888' },
-  saveBtn: { paddingVertical: 4, paddingHorizontal: 4, minWidth: 50, alignItems: 'flex-end' },
+  saveBtn: { paddingVertical: 4, paddingHorizontal: 4, minWidth: 60, alignItems: 'flex-end' },
   saveText: { fontSize: 16, fontWeight: '600', color: '#25C1AC' },
   fields: { padding: 20, gap: 16 },
   field: { gap: 6 },
@@ -297,5 +384,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#0C1D31',
+  },
+  confirmHint: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 4,
   },
 });

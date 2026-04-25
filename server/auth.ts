@@ -162,6 +162,28 @@ export function registerAuthRoutes(app: any) {
     });
   });
 
+  app.post("/api/auth/verify-password", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.session.userId!;
+      const { currentPassword } = req.body;
+      if (!currentPassword || typeof currentPassword !== "string") {
+        return res.status(400).json({ message: "Current password is required" });
+      }
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(401).json({ message: "User not found" });
+      }
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+      res.json({ verified: true });
+    } catch (error) {
+      console.error("Verify password error:", error);
+      res.status(500).json({ message: "Failed to verify password" });
+    }
+  });
+
   app.patch("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.session.userId!;
@@ -179,6 +201,13 @@ export function registerAuthRoutes(app: any) {
       const updates: { displayName?: string; password?: string; avatarUrl?: string | null } = {};
 
       if (displayName !== undefined) {
+        if (!currentPassword || typeof currentPassword !== "string") {
+          return res.status(400).json({ message: "Current password is required to update your display name" });
+        }
+        const valid = await bcrypt.compare(currentPassword, user.password);
+        if (!valid) {
+          return res.status(400).json({ message: "Current password is incorrect" });
+        }
         updates.displayName = displayName.trim();
       }
 

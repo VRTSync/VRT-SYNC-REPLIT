@@ -82,6 +82,18 @@ AdminRouter.register('account', async function (container) {
             <label class="form-label">Member Since</label>
             <div class="form-control" style="max-width:340px;background:var(--gray-50,#f9fafb);color:var(--gray-500,#6b7280);cursor:default;">${esc(formatDate(user.createdAt))}</div>
           </div>
+          <div style="margin-bottom:16px;">
+            <label class="form-label" for="acct-profile-pw">Current Password</label>
+            <input
+              id="acct-profile-pw"
+              class="form-control"
+              type="password"
+              placeholder="Required to save changes"
+              autocomplete="current-password"
+              style="max-width:340px;"
+            />
+            <div style="font-size:12px;color:var(--gray-500,#6b7280);margin-top:4px;">Enter your current password to confirm your identity before saving.</div>
+          </div>
           <div id="acct-profile-msg" style="margin-bottom:12px;display:none;"></div>
           <button class="btn btn-primary" id="acct-save-profile">Save Changes</button>
         </div>
@@ -191,8 +203,13 @@ AdminRouter.register('account', async function (container) {
   saveProfileBtn.addEventListener('click', async () => {
     hideMsg(profileMsg);
     const displayName = container.querySelector('#acct-display-name').value.trim();
+    const currentPassword = container.querySelector('#acct-profile-pw').value;
     if (!displayName) {
       showMsg(profileMsg, 'Display name cannot be empty.', 'error');
+      return;
+    }
+    if (!currentPassword) {
+      showMsg(profileMsg, 'Please enter your current password to save changes.', 'error');
       return;
     }
     saveProfileBtn.disabled = true;
@@ -200,10 +217,11 @@ AdminRouter.register('account', async function (container) {
     try {
       const updated = await apiFetch('/api/auth/me', {
         method: 'PATCH',
-        body: { displayName },
+        body: { displayName, currentPassword },
       });
       user.displayName = updated.displayName;
       updateTopbarName(updated.displayName);
+      container.querySelector('#acct-profile-pw').value = '';
       showMsg(profileMsg, 'Display name updated successfully.', 'success');
       showToast('Profile updated', 'success');
     } catch (err) {
