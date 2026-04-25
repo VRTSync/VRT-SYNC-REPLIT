@@ -156,6 +156,15 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setTick(t => t + 1);
+      const interval = setInterval(() => setTick(t => t + 1), 60_000);
+      return () => clearInterval(interval);
+    }, []),
+  );
 
   const { data: notifications, isLoading, refetch, isRefetching, dataUpdatedAt } = useQuery<NotificationItem[]>({
     queryKey: ['/api/notifications'],
@@ -236,7 +245,7 @@ export default function NotificationsScreen() {
         )}
       </TouchableOpacity>
     );
-  }, [handleTapNotification]);
+  }, [handleTapNotification, tick]);
 
   const renderSectionHeader = useCallback(({ section }: { section: Section }) => (
     <View style={styles.sectionHeader}>
