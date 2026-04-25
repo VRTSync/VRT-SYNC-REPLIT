@@ -80,6 +80,7 @@ type AttentionItem = {
   label: string;
   reason: string;
   color: string;
+  type: 'task' | 'request';
 };
 
 type ServiceVisit = {
@@ -279,19 +280,19 @@ export default function HoaDashboardScreen() {
       if (t.status === 'completed') return;
       const end = t.windowEnd ? new Date(t.windowEnd).getTime() : null;
       if (end && end < todayTs) {
-        items.push({ id: t.id, label: t.title || 'Untitled task', reason: 'Overdue', color: '#e74c3c' });
+        items.push({ id: t.id, label: t.title || 'Untitled task', reason: 'Overdue', color: '#e74c3c', type: 'task' });
       }
     });
 
     hoaRequests.forEach(r => {
       if (r.status === 'completed') return;
       if (r.priority === 'urgent') {
-        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Urgent priority', color: '#9c27b0' });
+        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Urgent priority', color: '#9c27b0', type: 'request' });
         return;
       }
       const created = r.createdAt ? new Date(r.createdAt).getTime() : 0;
       if (!r.assignedTo && created && (now - created) > THREE_DAYS_MS) {
-        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Unassigned 3+ days', color: '#f39c12' });
+        items.push({ id: r.id, label: r.title || 'Untitled request', reason: 'Unassigned 3+ days', color: '#f39c12', type: 'request' });
       }
     });
 
@@ -483,13 +484,26 @@ export default function HoaDashboardScreen() {
           ) : (
             <View>
               {attentionItems.slice(0, 8).map((item, i) => (
-                <View key={item.id + i} style={styles.ccAttnRow}>
+                <TouchableOpacity
+                  key={item.id + i}
+                  style={styles.ccAttnRow}
+                  activeOpacity={0.7}
+                  onPress={isHoaAdmin ? () => {
+                    if (item.type === 'request') {
+                      router.push({ pathname: '/(hoa-tabs)/requests', params: { requestId: item.id } });
+                    } else {
+                      router.push({ pathname: '/(hoa-tabs)/calendar', params: { taskId: item.id } });
+                    }
+                  } : undefined}
+                  testID={`attention-item-${item.id}`}
+                >
                   <View style={[styles.ccAttnDot, { backgroundColor: item.color }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.ccAttnLabel} numberOfLines={1}>{item.label}</Text>
                     <Text style={styles.ccAttnReason}>{item.reason}</Text>
                   </View>
-                </View>
+                  {isHoaAdmin && <Ionicons name="chevron-forward" size={14} color="#ccc" />}
+                </TouchableOpacity>
               ))}
             </View>
           )}

@@ -6,7 +6,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/query-client';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import StatusBarFill from '@/components/StatusBarFill';
@@ -302,6 +302,15 @@ export default function HoaTasksScreen() {
   const { user } = useAuth();
   const navyHeaderProps = useNavyHeaderProps();
   const queryClient = useQueryClient();
+  const { taskId } = useLocalSearchParams<{ taskId?: string }>();
+  const deepLinkTaskRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (taskId && deepLinkTaskRef.current !== taskId) {
+      deepLinkTaskRef.current = taskId;
+      router.push({ pathname: '/task/[id]', params: { id: taskId } });
+    }
+  }, [taskId, router]);
 
   const [activeFilter, setActiveFilter] = useState<SummaryFilterKey>('all');
   const [needsAttentionActive, setNeedsAttentionActive] = useState(false);

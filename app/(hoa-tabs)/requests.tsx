@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   ScrollView, RefreshControl, ActivityIndicator, Platform, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -399,6 +399,16 @@ export default function HoaRequestsScreen() {
   const config = getTaskPageConfigForRole(user?.role);
   const defaultFilterKey: FilterKey = (config.availableFilters[0]?.key ?? 'all') as FilterKey;
   const [activeFilter, setActiveFilter] = useState<FilterKey>(defaultFilterKey);
+  const { requestId } = useLocalSearchParams<{ requestId?: string }>();
+  const deepLinkRequestRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (requestId && deepLinkRequestRef.current !== requestId) {
+      deepLinkRequestRef.current = requestId;
+      router.push({ pathname: '/task/[id]', params: { id: requestId } });
+    }
+  }, [requestId, router]);
+
   const [viewMode, setViewMode] = useState<ViewMode>(config.defaultView as ViewMode);
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
