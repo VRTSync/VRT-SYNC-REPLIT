@@ -373,8 +373,6 @@ export default function HoaDashboardScreen() {
   const today = new Date();
 
   const activeMowingSchedule = mowingSchedules.length > 0 ? mowingSchedules[0] : null;
-  const svcInSeason = activeMowingSchedule ? isInSeason(activeMowingSchedule, today) : false;
-  const svcNextDate = activeMowingSchedule ? getNextServiceDate(activeMowingSchedule) : null;
   const thisWeekServiceDate = activeMowingSchedule ? (() => {
     const d = new Date(today);
     const sundayOffset = today.getDay();
@@ -466,56 +464,36 @@ export default function HoaDashboardScreen() {
           </View>
         )}
 
-        {/* ── 3. Recent Completions ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent Completions</Text>
-        </View>
-        {recentCompletions.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyText}>No recent work has been logged for your community yet.</Text>
+        {/* ── 3. Attention Required ── */}
+        <View style={styles.ccCard}>
+          <View style={styles.ccCardHeader}>
+            <Ionicons name="alert-circle-outline" size={16} color="#e74c3c" />
+            <Text style={styles.ccCardTitle}>Attention Required</Text>
+            {attentionItems.length > 0 && (
+              <View style={styles.ccAttnBadge}>
+                <Text style={styles.ccAttnBadgeText}>{attentionItems.length}</Text>
+              </View>
+            )}
           </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.horizontalScroll}
-          >
-            {recentCompletions.map((comp) => {
-              const isRequest = comp.origin === 'HOA';
-              return (
-                <View key={comp.id} style={styles.completionCard}>
-                  <View style={styles.completionCardTop}>
-                    {isRequest && (
-                      <View style={styles.originBadge}>
-                        <Text style={styles.originBadgeText}>REQUEST</Text>
-                      </View>
-                    )}
-                    {comp.hasPhotos && (
-                      <View style={styles.photoBadge}>
-                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
-                      </View>
-                    )}
+          {attentionItems.length === 0 ? (
+            <View style={styles.ccAllClear}>
+              <Ionicons name="checkmark-circle" size={16} color="#25C1AC" />
+              <Text style={styles.ccAllClearText}>{copy.emptyStates.allClear}</Text>
+            </View>
+          ) : (
+            <View>
+              {attentionItems.slice(0, 8).map((item, i) => (
+                <View key={item.id + i} style={styles.ccAttnRow}>
+                  <View style={[styles.ccAttnDot, { backgroundColor: item.color }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.ccAttnLabel} numberOfLines={1}>{item.label}</Text>
+                    <Text style={styles.ccAttnReason}>{item.reason}</Text>
                   </View>
-                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
-                  <View style={styles.completionStatusRow}>
-                    <View style={[styles.statusChipSmall, { backgroundColor: '#E8F5E9' }]}>
-                      <Text style={[styles.statusChipSmallText, { color: '#2E7D32' }]}>Completed</Text>
-                    </View>
-                  </View>
-                  <View style={styles.completionDateRow}>
-                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
-                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.viewOnMapBtn} disabled>
-                    <Ionicons name="map-outline" size={12} color="#aaa" />
-                    <Text style={styles.viewOnMapText}>View on map</Text>
-                  </TouchableOpacity>
                 </View>
-              );
-            })}
-          </ScrollView>
-        )}
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* ── 4. Upcoming Tasks ── */}
         <View style={styles.sectionHeader}>
@@ -581,27 +559,58 @@ export default function HoaDashboardScreen() {
           </ScrollView>
         )}
 
-        {/* ── 5. Quick Map Layers ── */}
+        {/* ── 5. Recent Completions ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Quick Map Layers</Text>
+          <Text style={styles.sectionTitle}>Recent Completions</Text>
         </View>
-        <View style={styles.mapGrid}>
-          {QUICK_MAP_BUTTONS.map((btn) => (
-            <TouchableOpacity
-              key={btn.key}
-              style={styles.mapGridBtn}
-              onPress={() => router.push(`/(hoa-tabs)/map?category=${btn.key}`)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.mapGridIcon, { backgroundColor: btn.color + '18' }]}>
-                <Ionicons name={btn.icon} size={24} color={btn.color} />
-              </View>
-              <Text style={styles.mapGridLabel}>{btn.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {recentCompletions.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="checkmark-circle-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyText}>No recent work has been logged for your community yet.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalScroll}
+          >
+            {recentCompletions.map((comp) => {
+              const isRequest = comp.origin === 'HOA';
+              return (
+                <View key={comp.id} style={styles.completionCard}>
+                  <View style={styles.completionCardTop}>
+                    {isRequest && (
+                      <View style={styles.originBadge}>
+                        <Text style={styles.originBadgeText}>REQUEST</Text>
+                      </View>
+                    )}
+                    {comp.hasPhotos && (
+                      <View style={styles.photoBadge}>
+                        <Ionicons name="camera-outline" size={12} color="#25C1AC" />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.completionTitle} numberOfLines={2}>{comp.title}</Text>
+                  <View style={styles.completionStatusRow}>
+                    <View style={[styles.statusChipSmall, { backgroundColor: '#E8F5E9' }]}>
+                      <Text style={[styles.statusChipSmallText, { color: '#2E7D32' }]}>Completed</Text>
+                    </View>
+                  </View>
+                  <View style={styles.completionDateRow}>
+                    <Ionicons name="checkmark-circle" size={12} color="#27ae60" />
+                    <Text style={styles.completionDateText}>{formatDateTime(comp.completedAt)}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.viewOnMapBtn} disabled>
+                    <Ionicons name="map-outline" size={12} color="#aaa" />
+                    <Text style={styles.viewOnMapText}>View on map</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
 
-        {/* ── 6. Service Schedule ── */}
+        {/* ── 6. Service Schedule (consolidated) ── */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Service Schedule</Text>
         </View>
@@ -618,6 +627,11 @@ export default function HoaDashboardScreen() {
               </View>
               <Text style={styles.mowingCardTitle}>Service Schedule</Text>
             </View>
+            {activeMowingSchedule && (
+              <Text style={[styles.ccVisitLabel, visitLoggedThisWeek ? styles.ccVisitLogged : styles.ccVisitPending, { marginBottom: 4 }]}>
+                {visitLoggedThisWeek ? 'This week: Logged ✓' : 'This week: Not yet logged'}
+              </Text>
+            )}
             {mowingSchedules.map((schedule) => {
               const inSeason = isInSeason(schedule, today);
               const nextDate = getNextServiceDate(schedule);
@@ -634,6 +648,11 @@ export default function HoaDashboardScreen() {
                       <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
                         <Text style={[styles.dayBadgeText, isToday && styles.dayBadgeTodayText]}>
                           {DAY_NAMES[schedule.dayOfWeek]}s
+                        </Text>
+                      </View>
+                      <View style={[styles.ccBadge, inSeason ? styles.ccBadgeGreen : styles.ccBadgeGray]}>
+                        <Text style={[styles.ccBadgeText, inSeason ? styles.ccBadgeTextGreen : styles.ccBadgeTextGray]}>
+                          {inSeason ? 'In Season' : 'Off Season'}
                         </Text>
                       </View>
                     </View>
@@ -656,47 +675,27 @@ export default function HoaDashboardScreen() {
           </View>
         )}
 
-        {/* ── Command Center (below primary modules) ── */}
+        {/* ── 7. Quick Map Layers ── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{copy.sectionHeaders.attention}</Text>
-          {attentionItems.length > 0 && (
-            <View style={styles.attentionBadge}>
-              <Text style={styles.attentionBadgeText}>{attentionItems.length}</Text>
-            </View>
-          )}
+          <Text style={styles.sectionTitle}>Quick Map Layers</Text>
         </View>
-
-        {/* Service Day Widget */}
-        <View style={styles.ccCard}>
-          <View style={styles.ccCardHeader}>
-            <Ionicons name="calendar-outline" size={16} color="#25C1AC" />
-            <Text style={styles.ccCardTitle}>Service Day</Text>
-          </View>
-          {!activeMowingSchedule ? (
-            <Text style={styles.ccEmpty}>{copy.emptyStates.noServiceSchedule}</Text>
-          ) : (
-            <View>
-              <Text style={styles.ccServiceDay}>{DAY_NAMES[activeMowingSchedule.dayOfWeek]}s</Text>
-              <View style={styles.ccServiceMeta}>
-                <View style={[styles.ccBadge, svcInSeason ? styles.ccBadgeGreen : styles.ccBadgeGray]}>
-                  <Text style={[styles.ccBadgeText, svcInSeason ? styles.ccBadgeTextGreen : styles.ccBadgeTextGray]}>
-                    {svcInSeason ? 'In Season' : 'Off Season'}
-                  </Text>
-                </View>
-                {svcNextDate && (
-                  <Text style={styles.ccServiceNext}>
-                    Next: {svcNextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  </Text>
-                )}
+        <View style={styles.mapGrid}>
+          {QUICK_MAP_BUTTONS.map((btn) => (
+            <TouchableOpacity
+              key={btn.key}
+              style={styles.mapGridBtn}
+              onPress={() => router.push(`/(hoa-tabs)/map?category=${btn.key}`)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.mapGridIcon, { backgroundColor: btn.color + '18' }]}>
+                <Ionicons name={btn.icon} size={24} color={btn.color} />
               </View>
-              <Text style={[styles.ccVisitLabel, visitLoggedThisWeek ? styles.ccVisitLogged : styles.ccVisitPending]}>
-                {visitLoggedThisWeek ? 'This week: Logged ✓' : 'This week: Not yet'}
-              </Text>
-            </View>
-          )}
+              <Text style={styles.mapGridLabel}>{btn.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* Water Usage Widget */}
+        {/* ── 8. Water Usage ── */}
         <View style={styles.ccCard}>
           <View style={styles.ccCardHeader}>
             <Ionicons name="water-outline" size={16} color="#2196F3" />
@@ -733,37 +732,6 @@ export default function HoaDashboardScreen() {
               </View>
             );
           })()}
-        </View>
-
-        {/* Attention Required Widget */}
-        <View style={styles.ccCard}>
-          <View style={styles.ccCardHeader}>
-            <Ionicons name="alert-circle-outline" size={16} color="#e74c3c" />
-            <Text style={styles.ccCardTitle}>Attention Required</Text>
-            {attentionItems.length > 0 && (
-              <View style={styles.ccAttnBadge}>
-                <Text style={styles.ccAttnBadgeText}>{attentionItems.length}</Text>
-              </View>
-            )}
-          </View>
-          {attentionItems.length === 0 ? (
-            <View style={styles.ccAllClear}>
-              <Ionicons name="checkmark-circle" size={16} color="#25C1AC" />
-              <Text style={styles.ccAllClearText}>{copy.emptyStates.allClear}</Text>
-            </View>
-          ) : (
-            <View>
-              {attentionItems.slice(0, 8).map((item, i) => (
-                <View key={item.id + i} style={styles.ccAttnRow}>
-                  <View style={[styles.ccAttnDot, { backgroundColor: item.color }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.ccAttnLabel} numberOfLines={1}>{item.label}</Text>
-                    <Text style={styles.ccAttnReason}>{item.reason}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
         </View>
 
       </ScrollView>
@@ -1205,21 +1173,6 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
   },
 
-  attentionBadge: {
-    backgroundColor: '#e74c3c',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingHorizontal: 5,
-  },
-  attentionBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-
   ccCard: {
     marginHorizontal: 16,
     marginBottom: 12,
@@ -1250,18 +1203,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic' as const,
   },
 
-  ccServiceDay: {
-    fontSize: 22,
-    fontWeight: '700' as const,
-    color: '#0C1D31',
-    marginBottom: 8,
-  },
-  ccServiceMeta: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 10,
-    marginBottom: 8,
-  },
   ccBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1275,10 +1216,6 @@ const styles = StyleSheet.create({
   },
   ccBadgeTextGreen: { color: '#2E7D32' },
   ccBadgeTextGray: { color: '#78909C' },
-  ccServiceNext: {
-    fontSize: 13,
-    color: '#666',
-  },
   ccVisitLabel: {
     fontSize: 13,
     fontWeight: '600' as const,
