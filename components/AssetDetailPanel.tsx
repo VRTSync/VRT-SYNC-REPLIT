@@ -110,6 +110,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const [headerHeight, setHeaderHeight] = useState(60);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastKey, setToastKey] = useState(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -120,6 +121,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(message);
     setToastVisible(true);
+    setToastKey(k => k + 1);
     toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
   };
 
@@ -825,7 +827,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           assetLat={asset?.latitude ?? undefined}
           assetLng={asset?.longitude ?? undefined}
         />
-        <Toast visible={toastVisible} message={toastMessage} />
+        <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
       </View>
     </Modal>
   );

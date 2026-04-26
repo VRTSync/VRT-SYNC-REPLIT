@@ -6,24 +6,36 @@ interface ToastProps {
   visible: boolean;
   message: string;
   type?: 'success' | 'error';
+  toastKey?: number;
 }
 
-export default function Toast({ visible, message, type = 'success' }: ToastProps) {
+export default function Toast({ visible, message, type = 'success', toastKey }: ToastProps) {
   const opacity = useRef(new Animated.Value(0)).current;
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (visible) {
+      if (animRef.current) {
+        animRef.current.stop();
+        animRef.current = null;
+      }
       opacity.setValue(0);
-      Animated.sequence([
+      const anim = Animated.sequence([
         Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
         Animated.delay(2200),
         Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
-      ]).start();
+      ]);
+      animRef.current = anim;
+      anim.start(() => { animRef.current = null; });
     } else {
+      if (animRef.current) {
+        animRef.current.stop();
+        animRef.current = null;
+      }
       opacity.setValue(0);
     }
-  }, [visible]);
+  }, [visible, toastKey]);
 
   if (!visible) return null;
 

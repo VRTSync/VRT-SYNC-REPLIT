@@ -165,6 +165,7 @@ export default function TasksScreen() {
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
   const [toastVisible, setToastVisible] = React.useState(false);
   const [toastMessage, setToastMessage] = React.useState('');
+  const [toastKey, setToastKey] = React.useState(0);
   const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -175,6 +176,7 @@ export default function TasksScreen() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(message);
     setToastVisible(true);
+    setToastKey(k => k + 1);
     toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
   };
 
@@ -958,7 +960,7 @@ export default function TasksScreen() {
           </TouchableOpacity>
         </View>
       )}
-      <Toast visible={toastVisible} message={toastMessage} />
+      <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
     </View>
   );
 }

@@ -353,6 +353,7 @@ export default function HoaTasksScreen() {
   const [selectedDayStr, setSelectedDayStr] = useState<string | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastKey, setToastKey] = useState(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -363,6 +364,7 @@ export default function HoaTasksScreen() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToastMessage(message);
     setToastVisible(true);
+    setToastKey(k => k + 1);
     toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
   };
 
@@ -618,7 +620,7 @@ export default function HoaTasksScreen() {
         onViewOnMap={handleViewOnMap}
         role={user?.role}
       />
-      <Toast visible={toastVisible} message={toastMessage} />
+      <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
     </View>
   );
 }
