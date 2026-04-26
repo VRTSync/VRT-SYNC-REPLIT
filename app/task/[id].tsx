@@ -220,6 +220,7 @@ export default function TaskDetailScreen() {
   const [acknowledging, setAcknowledging] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -317,11 +318,10 @@ export default function TaskDetailScreen() {
         photoUris: photos,
         createdAt: new Date().toISOString(),
       });
-      Alert.alert(
-        'Saved Offline',
-        'Your completion will be synced when you are back online.',
-        [{ text: 'OK', onPress: () => router.back() }],
-      );
+      setToastType('success');
+      setToastMessage('Saved offline — will sync when online');
+      setToastVisible(true);
+      navTimeoutRef.current = setTimeout(() => router.back(), 1800);
       setCompleting(false);
       return;
     }
@@ -359,17 +359,17 @@ export default function TaskDetailScreen() {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
 
+      setToastType('success');
       setToastMessage('Task marked complete');
       setToastVisible(true);
       navTimeoutRef.current = setTimeout(() => router.replace('/(tabs)/tasks'), 1500);
     } catch (e: any) {
       if (e.message?.includes('409')) {
         queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
-        Alert.alert(
-          'Update Conflict',
-          'This task was modified by someone else. The latest version has been loaded — please review and try again.',
-          [{ text: 'OK' }],
-        );
+        setToastType('error');
+        setToastMessage('Task was modified by someone else — latest version loaded, please try again');
+        setToastVisible(true);
+        toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       } else {
         Alert.alert('Error', e.message || 'Failed to complete task');
       }
@@ -390,13 +390,17 @@ export default function TaskDetailScreen() {
       });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
+      setToastType('success');
       setToastMessage('Request acknowledged');
       setToastVisible(true);
       toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 2800);
     } catch (e: any) {
       if (e.message?.includes('409')) {
         queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
-        Alert.alert('Update Conflict', 'This task was modified. Please try again.');
+        setToastType('error');
+        setToastMessage('Task was modified — latest version loaded, please try again');
+        setToastVisible(true);
+        toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       } else {
         Alert.alert('Error', e.message || 'Failed to acknowledge request');
       }
@@ -1092,7 +1096,7 @@ export default function TaskDetailScreen() {
         );
       })()}
       </KeyboardAwareScrollViewCompat>
-      <Toast visible={toastVisible} message={toastMessage} />
+      <Toast visible={toastVisible} message={toastMessage} type={toastType} />
     </View>
   );
 }

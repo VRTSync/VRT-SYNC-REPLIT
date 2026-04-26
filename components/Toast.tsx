@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 interface ToastProps {
   visible: boolean;
   message: string;
+  type?: 'success' | 'error';
 }
 
-export default function Toast({ visible, message }: ToastProps) {
+export default function Toast({ visible, message, type = 'success' }: ToastProps) {
   const opacity = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
 
@@ -39,7 +40,7 @@ export default function Toast({ visible, message }: ToastProps) {
         <Animated.View
           style={[
             styles.container,
-            { opacity, bottom: bottomOffset + 24 },
+            { opacity, bottom: bottomOffset + 24, backgroundColor: type === 'error' ? '#c62828' : '#1a2e44' },
           ]}
         >
           <Text style={styles.text}>{message}</Text>
@@ -58,7 +59,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 24,
     right: 24,
-    backgroundColor: '#1a2e44',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 20,
