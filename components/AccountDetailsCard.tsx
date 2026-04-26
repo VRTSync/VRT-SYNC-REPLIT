@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, TextInput,
   ActivityIndicator, Platform, KeyboardAvoidingView, ScrollView,
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/client/contexts/AuthContext';
 import { apiRequest } from '@/lib/query-client';
 import Toast from '@/components/Toast';
+import { useToast } from '@/hooks/useToast';
 
 type EditMode = 'confirmPassword' | 'displayName' | 'password' | null;
 
@@ -14,21 +15,12 @@ const REAUTH_WINDOW_MS = 5 * 60 * 1000;
 
 export default function AccountDetailsCard() {
   const { user, updateProfile } = useAuth();
+  const { showToast, toastProps } = useToast();
   const [editMode, setEditMode] = useState<EditMode>(null);
   const [saving, setSaving] = useState(false);
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastKey, setToastKey] = useState(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [bannerError, setBannerError] = useState('');
-
-  useEffect(() => {
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
 
   const lastVerifiedAt = useRef<number | null>(null);
   const verifiedPassword = useRef<string>('');
@@ -120,14 +112,6 @@ export default function AccountDetailsCard() {
     }
   };
 
-  const showToast = (message: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(message);
-    setToastVisible(true);
-    setToastKey(k => k + 1);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
-  };
-
   const saveDisplayName = async () => {
     const combined = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
     if (!combined) {
@@ -197,7 +181,7 @@ export default function AccountDetailsCard() {
 
   return (
     <>
-      <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
+      <Toast {...toastProps} />
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <View style={styles.sectionLeft}>

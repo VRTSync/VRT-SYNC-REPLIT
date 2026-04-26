@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useToast } from '@/hooks/useToast';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
   Alert, ActivityIndicator, Platform, Modal, FlatList, Image, ImageBackground,
@@ -141,24 +142,8 @@ export default function AdminScreen() {
     }
   }, [user]);
 
+  const { showToast, toastProps } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>('actions');
-
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastKey, setToastKey] = useState(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
-  }, []);
-
-  const showToast = (message: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(message);
-    setToastVisible(true);
-    setToastKey(k => k + 1);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
-  };
 
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [showCreateCommunity, setShowCreateCommunity] = useState(false);
@@ -1916,7 +1901,7 @@ export default function AdminScreen() {
           </ScrollView>
         </View>
       </Modal>
-      <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
+      <Toast {...toastProps} />
     </View>
   );
 }

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useToast } from '@/hooks/useToast';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, Platform, Image, Modal, Dimensions,
@@ -106,24 +107,9 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
   const [fullScreenPhoto, setFullScreenPhoto] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const { showToast, toastProps } = useToast();
   const [showCreateRequest, setShowCreateRequest] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(60);
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastKey, setToastKey] = useState(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
-  }, []);
-
-  const showToast = (message: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(message);
-    setToastVisible(true);
-    setToastKey(k => k + 1);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
-  };
 
   const [tabBarHeight, setTabBarHeight] = useState(44);
   const [webKeyboardHeight, setWebKeyboardHeight] = useState(0);
@@ -827,7 +813,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           assetLat={asset?.latitude ?? undefined}
           assetLng={asset?.longitude ?? undefined}
         />
-        <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
+        <Toast {...toastProps} />
       </View>
     </Modal>
   );

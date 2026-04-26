@@ -1,4 +1,5 @@
 import React from 'react';
+import { useToast } from '@/hooks/useToast';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert, Linking, Platform,
 } from 'react-native';
@@ -163,23 +164,7 @@ export default function TasksScreen() {
   const [contractorViewMode, setContractorViewMode] = React.useState<ContractorViewMode>('today');
   const [logVisitSchedule, setLogVisitSchedule] = React.useState<ServiceSchedule | null>(null);
   const [logVisitDate, setLogVisitDate] = React.useState<string | undefined>(undefined);
-  const [toastVisible, setToastVisible] = React.useState(false);
-  const [toastMessage, setToastMessage] = React.useState('');
-  const [toastKey, setToastKey] = React.useState(0);
-  const toastTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  React.useEffect(() => {
-    return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
-  }, []);
-
-  const showToast = (message: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToastMessage(message);
-    setToastVisible(true);
-    setToastKey(k => k + 1);
-    toastTimerRef.current = setTimeout(() => setToastVisible(false), 2700);
-  };
-
+  const { showToast, toastProps } = useToast();
   const [acknowledgingId, setAcknowledgingId] = React.useState<string | null>(null);
   const [markingInProgressId, setMarkingInProgressId] = React.useState<string | null>(null);
   const [completedExpanded, setCompletedExpanded] = React.useState(false);
@@ -960,7 +945,7 @@ export default function TasksScreen() {
           </TouchableOpacity>
         </View>
       )}
-      <Toast visible={toastVisible} message={toastMessage} toastKey={toastKey} />
+      <Toast {...toastProps} />
     </View>
   );
 }
