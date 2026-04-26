@@ -371,7 +371,10 @@ export default function TaskDetailScreen() {
         setToastVisible(true);
         toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       } else {
-        Alert.alert('Error', e.message || 'Failed to complete task');
+        setToastType('error');
+        setToastMessage(e.message || 'Failed to complete task');
+        setToastVisible(true);
+        toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       }
     } finally {
       setCompleting(false);
@@ -402,7 +405,10 @@ export default function TaskDetailScreen() {
         setToastVisible(true);
         toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       } else {
-        Alert.alert('Error', e.message || 'Failed to acknowledge request');
+        setToastType('error');
+        setToastMessage(e.message || 'Failed to acknowledge request');
+        setToastVisible(true);
+        toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       }
     } finally {
       setAcknowledging(false);
@@ -976,7 +982,10 @@ export default function TaskDetailScreen() {
               queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
               queryClient.invalidateQueries({ queryKey: [`/api/tasks/${id}/detail`] });
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to update task');
+              setToastType('error');
+              setToastMessage(e.message || 'Failed to update task');
+              setToastVisible(true);
+              toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
             }
           }}
         >
