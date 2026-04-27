@@ -1212,6 +1212,7 @@ const styles = StyleSheet.create({
 
   ccCard: {
     marginHorizontal: 16,
+    marginTop: 12,
     marginBottom: 12,
     backgroundColor: '#fff',
     borderRadius: 14,
