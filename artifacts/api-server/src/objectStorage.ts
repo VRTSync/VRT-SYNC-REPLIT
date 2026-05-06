@@ -37,6 +37,55 @@ export class ObjectNotFoundError extends Error {
   }
 }
 
+const UUID_V4_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function parseUploadURL(
+  rawUrl: string,
+): { valid: true; entityId: string } | { valid: false; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { valid: false, reason: "URL is not parseable" };
+  }
+
+  if (parsed.host !== "storage.googleapis.com") {
+    return {
+      valid: false,
+      reason: `Host must be storage.googleapis.com, got "${parsed.host}"`,
+    };
+  }
+
+  const privateObjectDir = process.env.PRIVATE_OBJECT_DIR ?? "";
+  if (!privateObjectDir) {
+    return { valid: false, reason: "PRIVATE_OBJECT_DIR not configured" };
+  }
+
+  const normalizedDir = privateObjectDir.endsWith("/")
+    ? privateObjectDir.slice(0, -1)
+    : privateObjectDir;
+  const expectedPrefix = `${normalizedDir}/uploads/`;
+
+  const pathname = parsed.pathname;
+  if (!pathname.startsWith(expectedPrefix)) {
+    return {
+      valid: false,
+      reason: "URL path does not match expected upload prefix",
+    };
+  }
+
+  const entityId = pathname.slice(expectedPrefix.length);
+  if (!UUID_V4_REGEX.test(entityId)) {
+    return {
+      valid: false,
+      reason: `Trailing path segment is not a valid UUIDv4: "${entityId}"`,
+    };
+  }
+
+  return { valid: true, entityId };
+}
+
 export class ObjectStorageService {
   constructor() {}
 

@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole } from "../auth";
-import { ObjectStorageService, ObjectNotFoundError } from "../objectStorage";
+import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission } from "../objectAcl";
 import * as storage from "../storage";
 import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "../pushNotifications";
@@ -765,6 +765,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
       }
 
+      const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
+      if (strictValidation) {
+        const parsed = parseUploadURL(uploadURL);
+        if (!parsed.valid) {
+          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+        }
+      }
+
       if (taskCompletionId) {
         const existing = await storage.getAttachmentByIdempotencyKey(taskCompletionId, idempotencyKey);
         if (existing) {
@@ -778,10 +786,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const objectStorageService = new ObjectStorageService();
-      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, {
-        owner: req.session.userId!,
-        visibility: "public",
-      });
+      let objectPath: string;
+      try {
+        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, {
+          owner: req.session.userId!,
+          visibility: "public",
+        });
+      } catch (error) {
+        if (strictValidation && error instanceof ObjectNotFoundError) {
+          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+        }
+        throw error;
+      }
 
       const attachment = await storage.createAttachment({
         taskCompletionId: taskCompletionId || null,
@@ -815,9 +831,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "fileRef, url, and idempotencyKey are required" });
       }
 
+      const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
+      let validatedHttpsUrl: string | undefined;
+      if (strictValidation) {
+        const candidateUrl = url.startsWith("https://") ? url : fileRef.startsWith("https://") ? fileRef : undefined;
+        if (candidateUrl) {
+          const parsed = parseUploadURL(candidateUrl);
+          if (!parsed.valid) {
+            return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+          }
+          validatedHttpsUrl = candidateUrl;
+        }
+      }
+
       const existing = await storage.getAttachmentByIdempotencyKey(completionId, idempotencyKey);
       if (existing) {
         return res.status(200).json(existing);
+      }
+
+      if (strictValidation && validatedHttpsUrl) {
+        const objectStorageService = new ObjectStorageService();
+        const normalizedPath = objectStorageService.normalizeObjectEntityPath(validatedHttpsUrl);
+        if (normalizedPath.startsWith("/objects/")) {
+          try {
+            await objectStorageService.getObjectEntityFile(normalizedPath);
+          } catch (error) {
+            if (error instanceof ObjectNotFoundError) {
+              return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+            }
+            throw error;
+          }
+        }
       }
 
       const attachment = await storage.createAttachment({

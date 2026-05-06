@@ -352,6 +352,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
         if (completion.photos.length > 0 && serverCompletionId) {
           const updatedPhotos = [...updatedList[i].photos];
           let allUploaded = true;
+          let hasInvalidUrlPhoto = false;
 
           for (let p = 0; p < updatedPhotos.length; p++) {
             const photo = updatedPhotos[p];
@@ -379,15 +380,35 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
             }
 
             let metadataCreated = false;
-            for (let attempt = 0; attempt < 3 && !metadataCreated; attempt++) {
+            let metadataUnrecoverable = false;
+            for (let attempt = 0; attempt < 3 && !metadataCreated && !metadataUnrecoverable; attempt++) {
               try {
                 await createAttachmentRecord(completion.taskId, serverCompletionId!, uploadURL!, idempotencyKey);
                 metadataCreated = true;
               } catch (err: any) {
-                if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-                if (!metadataCreated && attempt === 2) {
-                  updatedPhotos[p] = { ...photo, uploadState: 'failed', uploadURL, lastError: err.message || 'Metadata failed' };
+                const statusMatch = err?.message?.match(/^(\d+):/);
+                const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+                let bodyCode: string | undefined;
+                try {
+                  const bodyText = err.message.replace(/^\d+:\s*/, '');
+                  bodyCode = JSON.parse(bodyText)?.code;
+                } catch (_) {}
+
+                if (httpStatus === 422 && bodyCode === 'UPLOAD_NOT_RECEIVED') {
+                  updatedPhotos[p] = { ...photo, uploadState: 'pendingUpload', uploadURL: undefined, lastError: 'Upload not received — will retry' };
                   allUploaded = false;
+                  metadataUnrecoverable = true;
+                } else if (httpStatus === 400 && bodyCode === 'INVALID_UPLOAD_URL') {
+                  updatedPhotos[p] = { ...photo, uploadState: 'failed', uploadURL, lastError: 'Invalid upload URL — unrecoverable' };
+                  allUploaded = false;
+                  metadataUnrecoverable = true;
+                  hasInvalidUrlPhoto = true;
+                } else {
+                  if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                  if (attempt === 2) {
+                    updatedPhotos[p] = { ...photo, uploadState: 'failed', uploadURL, lastError: err.message || 'Metadata failed' };
+                    allUploaded = false;
+                  }
                 }
               }
             }
@@ -405,6 +426,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
             updatedList = updateItem(updatedList, i, {
               state: 'failed',
               lastError: `${failedCount} photo(s) failed to upload`,
+              ...(hasInvalidUrlPhoto ? { _dismissUnrecoverable: true } : {}),
             });
             setPendingCompletions([...updatedList]);
             pendingRef.current = [...updatedList];
