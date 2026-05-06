@@ -11,6 +11,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { apiRequest } from '@/lib/query-client';
 import StatusBarFill from '@/components/StatusBarFill';
 import SyncBar from '@/components/SyncBar';
+import { useTimeTick } from '@/hooks/useTimeTick';
 
 type NotificationItem = {
   id: string;
@@ -156,15 +157,7 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const [tick, setTick] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      setTick(t => t + 1);
-      const interval = setInterval(() => setTick(t => t + 1), 60_000);
-      return () => clearInterval(interval);
-    }, []),
-  );
+  const tick = useTimeTick();
 
   const { data: notifications, isLoading, refetch, isRefetching, dataUpdatedAt } = useQuery<NotificationItem[]>({
     queryKey: ['/api/notifications'],

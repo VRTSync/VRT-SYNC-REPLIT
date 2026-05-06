@@ -21,6 +21,7 @@ import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import WeeklySummaryCard, { type SummaryFilterKey } from '@/components/WeeklySummaryCard';
 import { isRequestAging } from '@/constants/requestAging';
+import { useTimeTick } from '@/hooks/useTimeTick';
 
 type Task = {
   id: string;
@@ -317,6 +318,7 @@ export default function HoaTasksScreen() {
   const [activeFilter, setActiveFilter] = useState<SummaryFilterKey>('all');
   const [needsAttentionActive, setNeedsAttentionActive] = useState(false);
   const prefsHydratedRef = useRef(false);
+  const tick = useTimeTick();
 
   useEffect(() => {
     let cancelled = false;
@@ -572,6 +574,7 @@ export default function HoaTasksScreen() {
         <FlatList
           data={sortedTasks}
           keyExtractor={(item) => item.id}
+          extraData={tick}
           renderItem={({ item }) => (
             <CommunityWorkCard
               item={item}

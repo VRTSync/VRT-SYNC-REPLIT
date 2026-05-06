@@ -19,6 +19,7 @@ import SyncBar from '@/components/SyncBar';
 import { apiRequest } from '@/lib/query-client';
 import { getTaskPageConfigForRole } from '@/constants/taskPageRoleConfig';
 import type { FilterKey as ConfigFilterKey } from '@/constants/taskPageRoleConfig';
+import { useTimeTick } from '@/hooks/useTimeTick';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -419,6 +420,7 @@ export default function HoaRequestsScreen() {
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
   const [focusedRequestId, setFocusedRequestId] = useState<string | null>(null);
   const isHoaAdmin = user?.role === 'hoa_admin';
+  const tick = useTimeTick();
 
   const { data, isLoading, isRefetching, refetch, dataUpdatedAt } = useQuery<HoaRequest[]>({
     queryKey: ['/api/hoa/requests'],
@@ -722,6 +724,7 @@ export default function HoaRequestsScreen() {
             <FlatList
               data={filteredData}
               keyExtractor={(item) => item.id}
+              extraData={tick}
               contentContainerStyle={[
                 styles.listContent,
                 { paddingBottom: bottomPad },
