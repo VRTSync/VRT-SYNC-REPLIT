@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
   Platform, ActivityIndicator, Image, ImageBackground,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,21 +18,35 @@ export default function RegisterScreen() {
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<'contractor' | 'admin'>('contractor');
   const [loading, setLoading] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [bannerError, setBannerError] = useState('');
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
 
   const handleRegister = async () => {
-    if (!username.trim() || !password.trim() || !displayName.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+    const errors: Record<string, string> = {};
+    if (!displayName.trim()) errors.displayName = 'Display name is required.';
+    if (!username.trim()) errors.username = 'Username is required.';
+    if (!password.trim()) errors.password = 'Password is required.';
+    else if (password.length < 6) errors.password = 'Password must be at least 6 characters.';
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
-    }
+    setFieldErrors({});
+    setBannerError('');
     setLoading(true);
     try {
       await register(username.trim(), password, displayName.trim(), role);
     } catch (e: any) {
-      Alert.alert('Registration Failed', e.message || 'Could not create account');
+      setBannerError(e.message || 'Could not create account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -60,34 +75,66 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.formCard}>
+          {!!bannerError && (
+            <View style={styles.errorBanner} testID="register-error-banner">
+              <Ionicons name="alert-circle-outline" size={16} color="#fff" />
+              <Text style={styles.errorBannerText}>{bannerError}</Text>
+            </View>
+          )}
+
           <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Display Name"
-              placeholderTextColor="#999"
-              value={displayName}
-              onChangeText={setDisplayName}
-              testID="register-displayname"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Username"
-              placeholderTextColor="#999"
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="register-username"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              testID="register-password"
-            />
+            <View style={styles.fieldWrap}>
+              <TextInput
+                style={[styles.input, !!fieldErrors.displayName && styles.inputError]}
+                placeholder="Display Name"
+                placeholderTextColor="#999"
+                value={displayName}
+                onChangeText={(v) => { setDisplayName(v); clearFieldError('displayName'); }}
+                testID="register-displayname"
+              />
+              {!!fieldErrors.displayName && (
+                <Text style={styles.fieldError} testID="register-displayname-error">
+                  {fieldErrors.displayName}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <TextInput
+                style={[styles.input, !!fieldErrors.username && styles.inputError]}
+                placeholder="Username"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={(v) => { setUsername(v); clearFieldError('username'); }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="register-username"
+              />
+              {!!fieldErrors.username && (
+                <Text style={styles.fieldError} testID="register-username-error">
+                  {fieldErrors.username}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <TextInput
+                style={[styles.input, !!fieldErrors.password && styles.inputError]}
+                placeholder="Password"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={(v) => { setPassword(v); clearFieldError('password'); }}
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleRegister}
+                testID="register-password"
+              />
+              {!!fieldErrors.password && (
+                <Text style={styles.fieldError} testID="register-password-error">
+                  {fieldErrors.password}
+                </Text>
+              )}
+            </View>
 
             <View style={styles.roleContainer}>
               <Text style={styles.roleLabel}>Role</Text>
@@ -155,14 +202,29 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderRadius: 20,
-    padding: 24,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 24,
     elevation: 8,
   },
-  form: { gap: 16 },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E53935',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#fff',
+    lineHeight: 18,
+  },
+  form: { gap: 16, padding: 24, paddingBottom: 8 },
+  fieldWrap: { gap: 6 },
   input: {
     backgroundColor: '#F5F7FA',
     borderRadius: 999,
@@ -172,6 +234,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e0e0e0',
     color: '#0C1D31',
+  },
+  inputError: {
+    borderColor: '#E53935',
+  },
+  fieldError: {
+    fontSize: 13,
+    color: '#E53935',
+    paddingHorizontal: 8,
   },
   roleContainer: { gap: 8 },
   roleLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
@@ -202,6 +272,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  linkText: { textAlign: 'center', color: '#666', marginTop: 20, fontSize: 14 },
+  linkText: { textAlign: 'center', color: '#666', fontSize: 14, padding: 24, paddingTop: 8 },
   linkBold: { color: '#25C1AC', fontWeight: '600' },
 });

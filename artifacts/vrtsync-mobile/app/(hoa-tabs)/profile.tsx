@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ImageBackground,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ImageBackground,
   Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,10 +8,14 @@ import { useAuth, getNotificationPreferences, setNotificationPreferences, type N
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import AccountDetailsCard from '@/components/AccountDetailsCard';
+import Toast from '@/components/Toast';
+import { useToast } from '@/hooks/useToast';
 
 export default function HoaProfileScreen() {
   const { user, logout } = useAuth();
   const { activeCommunity } = useCommunity();
+  const { showToast, toastProps } = useToast();
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
     taskAssigned: true,
     dueReminders: true,
@@ -37,7 +41,8 @@ export default function HoaProfileScreen() {
     try {
       await logout();
     } catch {
-      Alert.alert('Error', 'Could not sign out. Please try again.');
+      setConfirmLogout(false);
+      showToast('Could not sign out. Please try again.');
     }
   };
 
@@ -48,14 +53,12 @@ export default function HoaProfileScreen() {
       }
       return;
     }
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: doLogout },
-    ]);
+    setConfirmLogout(true);
   };
 
   return (
     <View style={styles.outerContainer}>
+      <Toast {...toastProps} />
       <StatusBarFill />
       <ScrollView
         style={styles.container}
@@ -193,10 +196,32 @@ export default function HoaProfileScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="hoa-logout-btn">
-          <Ionicons name="log-out-outline" size={20} color="#f44336" />
-          <Text style={styles.logoutText}>Sign Out</Text>
-        </TouchableOpacity>
+        {!confirmLogout ? (
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="hoa-logout-btn">
+            <Ionicons name="log-out-outline" size={20} color="#f44336" />
+            <Text style={styles.logoutText}>Sign Out</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.logoutConfirmCard}>
+            <Text style={styles.logoutConfirmQuestion}>Are you sure you want to sign out?</Text>
+            <View style={styles.logoutConfirmButtons}>
+              <TouchableOpacity
+                style={styles.logoutCancelBtn}
+                onPress={() => setConfirmLogout(false)}
+                testID="hoa-logout-cancel-btn"
+              >
+                <Text style={styles.logoutCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutConfirmBtn}
+                onPress={doLogout}
+                testID="hoa-logout-confirm-btn"
+              >
+                <Text style={styles.logoutConfirmBtnText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -286,6 +311,52 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   logoutText: { fontSize: 16, fontWeight: '600' as const, color: '#f44336' },
+  logoutConfirmCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 16,
+  },
+  logoutConfirmQuestion: {
+    fontSize: 15,
+    color: '#444',
+    textAlign: 'center' as const,
+  },
+  logoutConfirmButtons: {
+    flexDirection: 'row' as const,
+    gap: 12,
+  },
+  logoutCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center' as const,
+  },
+  logoutCancelText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#666',
+  },
+  logoutConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f44336',
+    alignItems: 'center' as const,
+  },
+  logoutConfirmBtnText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#fff',
+  },
   notifRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,

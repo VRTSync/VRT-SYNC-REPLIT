@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Image, ImageBackground,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ImageBackground,
   ActivityIndicator, Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,12 +9,17 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import AccountDetailsCard from '@/components/AccountDetailsCard';
+import Toast from '@/components/Toast';
+import { useToast } from '@/hooks/useToast';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { communities, activeCommunity, setActiveCommunity } = useCommunity();
   const { localPack, serverPackInfo, isDownloading, downloadProgress, hasUpdate, downloadPack, deletePack, refreshServerInfo } = useOfflinePack();
+  const { showToast, toastProps } = useToast();
   const [showCommunities, setShowCommunities] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [confirmDeletePack, setConfirmDeletePack] = useState(false);
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
     taskAssigned: true,
     dueReminders: true,
@@ -40,7 +45,8 @@ export default function ProfileScreen() {
     try {
       await logout();
     } catch {
-      Alert.alert('Error', 'Could not sign out. Please try again.');
+      setConfirmLogout(false);
+      showToast('Could not sign out. Please try again.');
     }
   };
 
@@ -51,14 +57,21 @@ export default function ProfileScreen() {
       }
       return;
     }
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: doLogout },
-    ]);
+    setConfirmLogout(true);
+  };
+
+  const handleDeletePack = () => {
+    setConfirmDeletePack(true);
+  };
+
+  const confirmDeletePackAction = () => {
+    setConfirmDeletePack(false);
+    deletePack();
   };
 
   return (
     <View style={styles.outerContainer}>
+      <Toast {...toastProps} />
       <StatusBarFill />
       <ScrollView
         style={styles.container}
@@ -219,18 +232,35 @@ export default function ProfileScreen() {
                       </Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity
-                    style={styles.packDeleteButton}
-                    onPress={() => {
-                      Alert.alert('Delete Pack', 'Remove the offline pack for this community?', [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: deletePack },
-                      ]);
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#f44336" />
-                    <Text style={styles.packDeleteText}>Delete</Text>
-                  </TouchableOpacity>
+
+                  {!confirmDeletePack ? (
+                    <TouchableOpacity
+                      style={styles.packDeleteButton}
+                      onPress={handleDeletePack}
+                      testID="delete-pack-btn"
+                    >
+                      <Ionicons name="trash-outline" size={16} color="#f44336" />
+                      <Text style={styles.packDeleteText}>Delete</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.deleteConfirmRow}>
+                      <Text style={styles.deleteConfirmText}>Remove this pack?</Text>
+                      <TouchableOpacity
+                        style={styles.deleteConfirmCancel}
+                        onPress={() => setConfirmDeletePack(false)}
+                        testID="delete-pack-cancel"
+                      >
+                        <Text style={styles.deleteConfirmCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteConfirmYes}
+                        onPress={confirmDeletePackAction}
+                        testID="delete-pack-confirm"
+                      >
+                        <Text style={styles.deleteConfirmYesText}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               </View>
             )}
@@ -335,10 +365,32 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="logout-btn">
-        <Ionicons name="log-out-outline" size={20} color="#f44336" />
-        <Text style={styles.logoutText}>Sign Out</Text>
-      </TouchableOpacity>
+      {!confirmLogout ? (
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="logout-btn">
+          <Ionicons name="log-out-outline" size={20} color="#f44336" />
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.logoutConfirmCard}>
+          <Text style={styles.logoutConfirmQuestion}>Are you sure you want to sign out?</Text>
+          <View style={styles.logoutConfirmButtons}>
+            <TouchableOpacity
+              style={styles.logoutCancelBtn}
+              onPress={() => setConfirmLogout(false)}
+              testID="logout-cancel-btn"
+            >
+              <Text style={styles.logoutCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.logoutConfirmBtn}
+              onPress={doLogout}
+              testID="logout-confirm-btn"
+            >
+              <Text style={styles.logoutConfirmBtnText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </ScrollView>
     </View>
   );
@@ -479,6 +531,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginTop: 12,
+    flexWrap: 'wrap',
   },
   packButton: {
     flexDirection: 'row',
@@ -509,6 +562,40 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#f44336',
   },
+  deleteConfirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  deleteConfirmText: {
+    fontSize: 13,
+    color: '#444',
+    marginRight: 4,
+  },
+  deleteConfirmCancel: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  deleteConfirmCancelText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666',
+  },
+  deleteConfirmYes: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#f44336',
+  },
+  deleteConfirmYesText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
   packProgress: {
     fontSize: 12,
     color: '#25C1AC',
@@ -531,6 +618,52 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   logoutText: { fontSize: 16, fontWeight: '600', color: '#f44336' },
+  logoutConfirmCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 16,
+  },
+  logoutConfirmQuestion: {
+    fontSize: 15,
+    color: '#444',
+    textAlign: 'center',
+  },
+  logoutConfirmButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  logoutCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+  },
+  logoutCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666',
+  },
+  logoutConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: '#f44336',
+    alignItems: 'center',
+  },
+  logoutConfirmBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
   notifRow: {
     flexDirection: 'row',
     alignItems: 'center',
