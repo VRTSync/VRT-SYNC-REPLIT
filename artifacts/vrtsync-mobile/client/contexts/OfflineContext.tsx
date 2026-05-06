@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { useAuth, getNotificationPreferences } from './AuthContext';
 import * as Notifications from 'expo-notifications';
+import { Directory as FSDirectory, File as FSFile, Paths as FSPaths } from 'expo-file-system';
 
 const TASKS_CACHE_KEY = 'offline_tasks_cache';
 const PENDING_COMPLETIONS_KEY = 'offline_pending_completions';
@@ -60,6 +61,8 @@ export type PendingAssetNote = {
 
 type PhotoState = {
   uri: string;
+  photoKey: string;
+  localUri?: string;
   uploadState: 'pendingUpload' | 'uploaded' | 'failed';
   uploadURL?: string;
   lastError?: string;
@@ -277,6 +280,25 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error('Failed to load offline cache:', e);
     }
+
+    if (Platform.OS !== 'web') {
+      try {
+        const pendingPhotosDir = new FSDirectory(FSPaths.document, 'pending-photos');
+        if (pendingPhotosDir.exists) {
+          const entries = pendingPhotosDir.list();
+          const knownIds = new Set(pendingRef.current.map(c => c.id));
+          for (const entry of entries) {
+            const entryName = entry.uri.replace(/\/$/, '').split('/').pop();
+            if (entry instanceof FSDirectory && entryName && !knownIds.has(entryName)) {
+              console.warn(`[OfflineContext] Sweeping orphaned photo dir: ${entryName}`);
+              entry.delete();
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[OfflineContext] Boot-time orphan sweep failed:', err);
+      }
+    }
   };
 
   const persistQueue = async (list: PendingCompletion[]) => {
@@ -300,9 +322,31 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
   const addPendingCompletion = useCallback(async (input: PendingCompletionInput) => {
     const { photoUris, ...rest } = input;
+
+    const photos: PhotoState[] = [];
+    for (let i = 0; i < photoUris.length; i++) {
+      const uri = photoUris[i];
+      const photoKey = crypto.randomUUID();
+      let localUri: string | undefined;
+
+      if (Platform.OS !== 'web') {
+        try {
+          const destDir = new FSDirectory(FSPaths.document, 'pending-photos', rest.id);
+          destDir.create({ intermediates: true, idempotent: true });
+          const destFile = new FSFile(FSPaths.document, 'pending-photos', rest.id, `${i}.jpg`);
+          new FSFile(uri).copy(destFile);
+          localUri = destFile.uri;
+        } catch (err) {
+          console.warn(`[OfflineContext] Failed to copy photo ${i} to documentDirectory:`, err);
+        }
+      }
+
+      photos.push({ uri, photoKey, localUri, uploadState: 'pendingUpload' });
+    }
+
     const completion: PendingCompletion = {
       ...rest,
-      photos: photoUris.map(uri => ({ uri, uploadState: 'pendingUpload' as const })),
+      photos,
       state: 'queued',
     };
     const updated = [...pendingRef.current, completion];
@@ -355,8 +399,19 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
           let hasInvalidUrlPhoto = false;
 
           for (let p = 0; p < updatedPhotos.length; p++) {
-            const photo = updatedPhotos[p];
-            const idempotencyKey = `${completion.id}-photo-${p}`;
+            let photo = updatedPhotos[p];
+
+            if (!photo.photoKey) {
+              photo = { ...photo, photoKey: `compat-${completion.id}-photo-${p}` };
+              updatedPhotos[p] = photo;
+              console.warn(`[OfflineContext] Legacy queued photo ${p} for completion ${completion.id} has no photoKey; derived compat key.`);
+            }
+
+            const idempotencyKey = photo.photoKey;
+            const uploadUri = photo.localUri ?? photo.uri;
+            if (!photo.localUri) {
+              console.warn(`[OfflineContext] Photo ${p} for completion ${completion.id} has no localUri; falling back to original uri.`);
+            }
 
             if (photo.uploadState === 'uploaded') continue;
 
@@ -366,7 +421,7 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
               let fileUploaded = false;
               for (let attempt = 0; attempt < 3 && !fileUploaded; attempt++) {
                 try {
-                  uploadURL = await uploadFileToStorage(photo.uri);
+                  uploadURL = await uploadFileToStorage(uploadUri);
                   fileUploaded = true;
                 } catch (err: any) {
                   if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
@@ -377,6 +432,10 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
                 }
               }
               if (!fileUploaded) continue;
+
+              updatedPhotos[p] = { ...photo, uploadURL };
+              updatedList = updateItem(updatedList, i, { photos: updatedPhotos });
+              await persistQueue(updatedList);
             }
 
             let metadataCreated = false;
@@ -415,6 +474,8 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
 
             if (metadataCreated) {
               updatedPhotos[p] = { ...photo, uploadState: 'uploaded', uploadURL, lastError: undefined };
+              updatedList = updateItem(updatedList, i, { photos: updatedPhotos });
+              await persistQueue(updatedList);
             }
           }
 
@@ -497,10 +558,22 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const syncedCompletions = updatedList.filter(c => c.state === 'synced');
       const remaining = updatedList.filter(c => c.state !== 'synced' && !c._dismissUnrecoverable);
       await persistQueue(remaining);
       setPendingCompletions(remaining);
       pendingRef.current = remaining;
+
+      if (Platform.OS !== 'web') {
+        for (const c of syncedCompletions) {
+          try {
+            const dir = new FSDirectory(FSPaths.document, 'pending-photos', c.id);
+            if (dir.exists) dir.delete();
+          } catch (err) {
+            console.warn(`[OfflineContext] Failed to delete photo dir for synced ${c.id}:`, err);
+          }
+        }
+      }
 
       if (synced > 0) {
         queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
@@ -547,6 +620,14 @@ export function OfflineProvider({ children }: { children: ReactNode }) {
     await persistQueue(updated);
     setPendingCompletions(updated);
     pendingRef.current = updated;
+    if (Platform.OS !== 'web') {
+      try {
+        const dir = new FSDirectory(FSPaths.document, 'pending-photos', completionId);
+        if (dir.exists) dir.delete();
+      } catch (err) {
+        console.warn(`[OfflineContext] Failed to delete photo dir for ${completionId}:`, err);
+      }
+    }
   }, []);
 
   const getCompletionForTask = useCallback((taskId: string) => {
