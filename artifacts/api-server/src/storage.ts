@@ -2741,6 +2741,7 @@ export type NotificationPreferences = {
   taskCompleted: boolean;
   requestSubmitted: boolean;
   requestCompleted: boolean;
+  requestStatusUpdates: boolean;
 };
 
 const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -2750,6 +2751,7 @@ const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   taskCompleted: true,
   requestSubmitted: true,
   requestCompleted: true,
+  requestStatusUpdates: true,
 };
 
 export async function getUserNotificationPreferences(userId: string): Promise<NotificationPreferences> {

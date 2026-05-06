@@ -132,6 +132,9 @@ export async function notifyRequestAcknowledged(taskId: string): Promise<void> {
     const task = await storage.getTaskById(taskId);
     if (!task || !task.createdBy) return;
 
+    const prefs = await storage.getUserNotificationPreferences(task.createdBy);
+    if (!prefs.requestStatusUpdates) return;
+
     const title = "Request Acknowledged";
     const body = task.title;
 
@@ -229,6 +232,28 @@ export async function notifyTaskCompleted(task: Task): Promise<void> {
         data: { type, taskId: task.id },
       });
     }));
+
+    if (isHoaRequest && task.createdBy) {
+      const isAlreadyRecipient = recipients.some((r) => r.id === task.createdBy);
+      if (!isAlreadyRecipient) {
+        const requesterPrefs = await storage.getUserNotificationPreferences(task.createdBy);
+        if (requesterPrefs.requestStatusUpdates) {
+          await storage.createNotification({
+            communityId: task.communityId,
+            recipientUserId: task.createdBy,
+            type,
+            title,
+            body,
+            relatedTaskId: task.id,
+          });
+          await sendPushToUser(task.createdBy, {
+            title,
+            body,
+            data: { type, taskId: task.id },
+          });
+        }
+      }
+    }
   } catch (error) {
     console.error("notifyTaskCompleted error:", error);
   }

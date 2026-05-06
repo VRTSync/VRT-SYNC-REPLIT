@@ -20,6 +20,7 @@ export type NotificationPreferences = {
   taskCompleted: boolean;
   requestSubmitted: boolean;
   requestCompleted: boolean;
+  requestStatusUpdates: boolean;
 };
 
 const DEFAULT_PREFS: NotificationPreferences = {
@@ -29,6 +30,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
   taskCompleted: true,
   requestSubmitted: true,
   requestCompleted: true,
+  requestStatusUpdates: true,
 };
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {
@@ -112,7 +114,7 @@ async function registerPushTokenWithServer() {
   if (Platform.OS === 'web') return;
   try {
     const prefs = await getNotificationPreferences();
-    if (!prefs.taskAssigned && !prefs.dueReminders && !prefs.taskCompleted && !prefs.requestSubmitted && !prefs.requestCompleted) return;
+    if (!prefs.taskAssigned && !prefs.dueReminders && !prefs.taskCompleted && !prefs.requestSubmitted && !prefs.requestCompleted && !prefs.requestStatusUpdates) return;
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;

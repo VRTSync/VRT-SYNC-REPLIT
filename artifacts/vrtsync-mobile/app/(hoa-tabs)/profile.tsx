@@ -23,6 +23,7 @@ export default function HoaProfileScreen() {
     taskCompleted: true,
     requestSubmitted: true,
     requestCompleted: true,
+    requestStatusUpdates: true,
   });
 
   useEffect(() => {
@@ -146,6 +147,19 @@ export default function HoaProfileScreen() {
               <Switch
                 value={notifPrefs.syncFailure}
                 onValueChange={() => togglePref('syncFailure')}
+                trackColor={{ false: '#ddd', true: '#25C1AC' }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={styles.notifRow}>
+              <View style={styles.notifInfo}>
+                <Text style={styles.notifLabel}>Request status updates</Text>
+                <Text style={styles.notifDesc}>When your submitted request is acknowledged or completed</Text>
+              </View>
+              <Switch
+                value={notifPrefs.requestStatusUpdates}
+                onValueChange={() => togglePref('requestStatusUpdates')}
                 trackColor={{ false: '#ddd', true: '#25C1AC' }}
                 thumbColor="#fff"
               />
