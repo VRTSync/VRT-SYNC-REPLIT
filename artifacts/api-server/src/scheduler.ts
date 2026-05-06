@@ -1,4 +1,6 @@
 import * as storage from "./storage";
+import { notifyTaskAssigned } from "./pushNotifications";
+import { logger } from "./lib/logger";
 
 function formatDate(d: Date): string {
   return d.toISOString().split("T")[0];
@@ -146,6 +148,12 @@ async function runSingleSchedule(schedule: any): Promise<ScheduleRunReport> {
           dueDate,
           scheduleInstanceKey: instanceKey,
         });
+        if (schedule.assignToUserId) {
+          const community = await storage.getCommunityById(schedule.communityId);
+          notifyTaskAssigned(task.id, task.title, community?.name ?? 'Unknown', schedule.assignToUserId).catch((err: unknown) => {
+            logger.error({ err, scheduleId: schedule.id, taskId: task.id }, "[Scheduler] notifyTaskAssigned failed");
+          });
+        }
         createdCount = 1;
       }
     } else {
@@ -189,6 +197,13 @@ async function runSingleSchedule(schedule: any): Promise<ScheduleRunReport> {
           linkType: "asset",
           assetId: asset.id,
         });
+
+        if (schedule.assignToUserId) {
+          const community = await storage.getCommunityById(schedule.communityId);
+          notifyTaskAssigned(task.id, task.title, community?.name ?? 'Unknown', schedule.assignToUserId).catch((err: unknown) => {
+            logger.error({ err, scheduleId: schedule.id, taskId: task.id }, "[Scheduler] notifyTaskAssigned failed");
+          });
+        }
 
         createdCount++;
       }

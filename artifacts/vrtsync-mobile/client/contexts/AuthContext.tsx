@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getQueryFn } from '@/lib/query-client';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 
@@ -121,7 +122,12 @@ async function registerPushTokenWithServer() {
     }
     if (finalStatus !== 'granted') return;
 
-    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const projectId = (Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId) as string | undefined;
+    if (!projectId) {
+      console.warn('Push token registration skipped: EAS projectId not configured');
+      return;
+    }
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
     const token = tokenData.data;
 
     // Client-side 24-hour throttle: skip the API call if the same token was registered recently.

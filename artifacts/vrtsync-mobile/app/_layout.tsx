@@ -28,6 +28,18 @@ Notifications.setNotificationHandler({
   }),
 });
 
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'VRTSync Alerts',
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: '#1A6FD6',
+    sound: 'default',
+    enableVibrate: true,
+    showBadge: true,
+  });
+}
+
 SplashScreen.preventAutoHideAsync();
 
 const asyncStoragePersister = createAsyncStoragePersister({

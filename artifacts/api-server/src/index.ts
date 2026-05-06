@@ -141,9 +141,30 @@ async function seedContacts() {
   server.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
     logger.info({ port }, "Server listening");
 
-    setInterval(() => {
-      sendDueReminders().catch((err: unknown) => logger.error({ err }, "Due reminder error"));
-    }, 24 * 60 * 60 * 1000);
+    let lastReminderDateKey = "";
+    async function maybeSendDueReminders() {
+      const now = new Date();
+      const localDateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (localDateKey === lastReminderDateKey) return;
+      await sendDueReminders();
+      lastReminderDateKey = localDateKey;
+    }
+
+    maybeSendDueReminders().catch((err: unknown) => logger.error({ err }, "Due reminder startup error"));
+
+    const msUntilNext6am = (() => {
+      const now = new Date();
+      const next6am = new Date(now);
+      next6am.setHours(6, 0, 0, 0);
+      if (next6am <= now) next6am.setDate(next6am.getDate() + 1);
+      return next6am.getTime() - now.getTime();
+    })();
+    setTimeout(() => {
+      maybeSendDueReminders().catch((err: unknown) => logger.error({ err }, "Due reminder 6am error"));
+      setInterval(() => {
+        maybeSendDueReminders().catch((err: unknown) => logger.error({ err }, "Due reminder error"));
+      }, 24 * 60 * 60 * 1000);
+    }, msUntilNext6am);
 
     setInterval(() => {
       processReceiptsForPendingTickets().catch((err: unknown) => logger.error({ err }, "Push receipt error"));
