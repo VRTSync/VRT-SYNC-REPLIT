@@ -552,6 +552,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
                                     try {
                                       await apiRequest('DELETE', `/api/assets/${assetId}/notes/${n.id}`);
                                       queryClient.invalidateQueries({ queryKey: [`/api/assets/${assetId}/notes`] });
+                                      showToast('Note deleted');
                                     } catch (e: any) {
                                       Alert.alert('Error', e.message || 'Failed to delete note');
                                     }
