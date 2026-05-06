@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     backgroundColor: '#fff',
     borderRadius: 14,
     padding: 24,
