@@ -1,0 +1,174 @@
+Fix Order (do in this exact sequence)
+1) Lock down access control on the API (server-enforced)
+
+Goal: Contractors cannot read/update anything outside their permissions even if they guess IDs.
+
+Fixes
+
+Add/verify middleware in server/auth.ts:
+
+requireAuth
+
+requireRole('admin') (or isAdmin)
+
+Add helper in server/storage.ts:
+
+isUserMemberOfCommunity(userId, communityId)
+
+canUserAccessTask(userId, taskId) (joins tasks → community_members)
+
+Apply checks in server/routes.ts for:
+
+GET /api/communities
+
+contractor: return only assigned communities
+
+admin: return all
+
+GET /api/tasks + GET /api/tasks/:id
+
+contractor: only tasks in assigned communities (and ideally only assignedTo = self)
+
+PUT /api/tasks/:id
+
+POST /api/tasks/:id/complete
+
+Why first: If you build UI/features before this, you’ll ship a security hole and you’ll also get confusing “data bleed” bugs.
+
+2) Define contractor visibility rule (assigned-only vs community-wide)
+
+Pick one and bake it into the API now, not later:
+
+Recommended: Contractors see only tasks assigned to them (tasks.assignedTo = userId)
+
+Admin sees all.
+
+Fixes
+
+Enforce this at query level in GET /api/tasks
+
+Enforce it in GET /api/tasks/:id, update, and complete endpoints.
+
+Why second: Task visibility affects every screen and offline caching rules.
+
+3) Fix the Task Completion schema to match your real workflow
+
+Right now task_completions is too thin.
+
+Add required fields
+
+employeeSignOffName (required on complete)
+
+completedAt (required; default server timestamp)
+
+optional: timeSpentMinutes, materialsUsed, followUpNeeded
+
+Update
+
+Zod validators in shared/schema.ts
+
+Completion endpoint POST /api/tasks/:id/complete
+
+Mobile UI in app/task/[id].tsx to capture sign-off + date
+
+Why third: Completion is the core contractor action. You want the DB right before you pile on offline/photo complexity.
+
+4) Harden optimistic locking consistency (update + complete + admin edits)
+
+You already have optimistic locking on task updates. Make sure it’s consistent everywhere.
+
+Fixes
+
+Ensure PUT /api/tasks/:id and POST /api/tasks/:id/complete both:
+
+require version
+
+return 409 with latest record when mismatch
+
+Ensure status changes increment version
+
+Ensure admin changes (assignments/due date) go through the same mechanism
+
+Why fourth: This protects you from the “admin edits while contractor offline” scenario.
+
+5) Make offline an explicit outbox queue with states
+
+You have OfflineContext.tsx, but the goal is clarity and reliability.
+
+Fixes
+
+Implement an “Outbox” stored in AsyncStorage:
+
+items: { type: 'taskComplete', taskId, versionAtOpen, payload, photos[], state }
+
+states: queued → syncing → synced or failed
+
+UI indicators:
+
+Task shows “Queued” or “Sync Error”
+
+A simple “Sync now” button
+
+Why fifth: Without this, offline feels flaky and you’ll lose contractor trust fast.
+
+6) Attachments pipeline: make it durable + retry-safe
+
+You already have:
+
+Expo ImagePicker
+
+object storage
+
+attachments table
+
+Fixes
+
+Ensure every photo upload creates a DB record with:
+
+taskCompletionId
+
+fileRef
+
+url (or resolvable storage path)
+
+uploadedBy
+
+createdAt
+
+Ensure offline queue can retry photo uploads individually
+
+Prevent duplicates on retries (idempotency key or “already uploaded” flag)
+
+Why sixth: Photos are often the biggest “sync pain” in field apps.
+
+7) Admin tools: membership + assignment are non-negotiable
+
+Your admin.tsx exists—make sure it truly controls the DB.
+
+Fixes
+
+Admin can:
+
+create community
+
+add contractors to community_members
+
+create tasks
+
+assign tasks to contractor (assignedTo)
+
+view completion details
+
+Why seventh: You said you need laptop control—this is the minimum.
+
+8) Push token registration (plumbing)
+
+You have push_tokens. Now ensure:
+
+device registers token on login
+
+token updates are handled
+
+token removed on logout (optional)
+
+Why eighth: It’s a foundation step, but it doesn’t block core task flow.

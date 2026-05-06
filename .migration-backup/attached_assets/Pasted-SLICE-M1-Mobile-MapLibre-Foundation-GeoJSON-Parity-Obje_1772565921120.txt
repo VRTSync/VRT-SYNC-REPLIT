@@ -1,0 +1,85 @@
+SLICE M1 — Mobile MapLibre Foundation (GeoJSON Parity)
+
+Objective
+Replace Leaflet-in-WebView with a native MapLibre map in the Contractor Mobile App while keeping current behavior and data sources (GeoJSON + existing asset resolution). This slice is parity-focused: same UX flows, same toggles, same “View Details” -> AssetDetailPanel.
+
+Scope (IN)
+1) MapLibre RN Map Screen (native)
+- Add a new Map screen implementation using MapLibre RN (no WebView/iframe).
+- Keep existing Map tab routing and header patterns.
+
+2) GeoJSON Rendering (same data you render today)
+Render the existing GeoJSON layers for the active community, grouped by your current category toggles:
+- COMMUNITY (polygons/points):
+  - Community Outline (polygon)
+  - Native Grass (polygon)
+  - Bluegrass Areas (polygon)
+  - Landscape Beds (polygon)
+  - Service Points (points):
+    - Pet Stations
+    - Trash Cans
+- IRRIGATION (points/polygons as currently served):
+  - Controllers
+  - Zones (and any other irrigation GeoJSON currently provided)
+- SNOW (polygons if present)
+- TREES (points if present)
+
+3) Layer Toggle Parity
+- Keep your existing category toggles: Community / Irrigation / Snow / Trees.
+- Keep sub-toggles where they exist today (e.g., Controllers show/hide, Zones show/hide).
+- Toggle updates must be immediate (show/hide layers without reloading the screen).
+
+4) Task Pins Overlay
+- Render task markers/pins from the existing tasks API filtered by active community.
+- Pins must appear above map layers.
+
+5) Tap -> Popup -> View Details -> AssetDetailPanel
+- Tapping an asset feature opens a lightweight popup (same philosophy as Leaflet).
+- Popup includes “View Details”.
+- “View Details” opens the existing AssetDetailPanel modal (Details | Work History | Notes) for that asset.
+
+6) Fit Bounds / Camera
+- On community switch, fit camera to the community outline bounds (or layer bounds fallback).
+- Provide a “recenter/fit” control (icon/button) if one exists today; if not, add a simple fit control.
+
+7) Location Display
+- Show the user’s current location indicator if enabled today.
+- Keep the same permission flow already used by the app.
+
+Scope (OUT)
+- Vector tiles (no tile pipeline in this slice)
+- Offline tile packs
+- New styling system beyond parity
+- Advanced selection rules (basic tap selection is OK for slice 1)
+
+Data / Integration Requirements
+- Continue using existing endpoints for GeoJSON layer download and task data.
+- Continue using existing asset identity mapping approach:
+  - If features already carry assetId, use it.
+  - If features carry featureRef only, resolve via the existing featureRef -> asset pipeline.
+- areaSqFt must display in AssetDetailPanel for polygon assets (no changes needed here beyond ensuring the correct asset opens).
+
+Implementation Notes (Guidance)
+- Prefer a single “active community map state” object:
+  - activeCommunityId
+  - enabledCategories {community, irrigation, snow, trees}
+  - enabledSubLayers (controllers, zones, servicePoints, etc.)
+- Keep popups lightweight:
+  - name/type + “View Details”
+- Do not move AssetDetailPanel logic; just route to it.
+
+Acceptance Criteria
+1) No WebView dependency: Map screen uses native MapLibre on iOS + Android.
+2) Parity: Category toggles show/hide the same layer groups as current Leaflet implementation.
+3) Task pins render and remain visible above layers.
+4) Tap an asset feature -> popup appears -> “View Details” opens the correct AssetDetailPanel.
+5) Switching communities refits the map to that community reliably.
+6) Performance baseline improves vs Leaflet on a mid-tier phone with your largest current GeoJSON set (no major stutter during pan/zoom).
+7) No regression to offline behavior for cached tasks and non-map screens (map offline improvements are not required yet; just don’t break existing offline flows).
+
+Deliverables
+- MapLibre-based Map screen wired into existing navigation
+- GeoJSON layer rendering by category + sublayer toggles
+- Task pin overlay
+- Tap -> popup -> AssetDetailPanel wiring
+- Fit-to-community camera behavior

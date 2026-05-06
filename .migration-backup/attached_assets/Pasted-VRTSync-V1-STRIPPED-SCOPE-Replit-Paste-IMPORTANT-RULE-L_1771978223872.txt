@@ -1,0 +1,96 @@
+VRTSync V1 — STRIPPED SCOPE (Replit Paste)
+
+IMPORTANT RULE:
+Leave ALL “asset details per asset type” EXACTLY as written in the user’s spec.
+This scope trimming applies ONLY to cross-cutting system features (invoices, snow events, billing workflows), not to the per-asset field lists.
+
+========================
+KEEP IN V1 (FOUNDATION)
+========================
+
+1) Global Identity + Geometry + Audit (applies to ALL mapped items)
+- id (UUID)
+- communityId
+- layer
+- subLayer
+- displayName
+- status (active/inactive)
+- tags[] (optional)
+- geometry (point or polygon)
+- mapLabel (optional)
+- createdAt / createdBy
+- updatedAt / updatedBy
+- optimistic locking/version stays as-is
+
+2) Polygon Requirement (MANDATORY for ALL polygons in ALL layers, including Snow)
+- areaSqFt is computed and stored
+- MUST recalc on create/edit/import
+- MUST display in the asset details panel
+
+3) Work History (MANDATORY)
+- workHistory[] remains universal for all mapped assets
+- permissions apply (contractors only in their communities)
+- no invoice requirements tied to work history in V1
+
+4) Media & Documents (MANDATORY)
+- photos[]
+- attachments[]
+- notes
+(Keep existing attachments/photo systems and offline queue patterns.)
+
+5) Hierarchy (MANDATORY)
+- Irrigation: Controllers → Zones (Zones belong to a Controller)
+- Trees: must support “select all” and “select all of one species” later (UI slice later)
+- Snow: may include polygons; if polygons exist they must store areaSqFt
+
+=================================
+STRIP / DEFER FROM V1 (REMOVED)
+=================================
+
+A) Invoice Module (DEFER — do not implement in V1)
+Remove/Defer these system-wide features:
+- invoiceLinks[] as a required universal feature
+- “Invoice attachment rule (deepest selected level)” enforcement
+- “Map-first invoice creation” workflow:
+  - Work History Panel → ➕ Add Invoice
+  - Auto-fill of layer/sub-layer/sub-sublayer/targets
+- Any contractor invoice uploading (explicitly OUT)
+
+NOTE:
+If invoiceLinks already exists in the schema, it may remain as a placeholder field,
+but V1 MUST NOT implement invoice UI, invoice linking logic, or attachment rules.
+
+B) Snow “Event” object (DEFER — do not implement in V1)
+Remove/Defer:
+- snow eventStart/eventEnd/accumulationRange as a dedicated “event entity”
+Keep:
+- snow polygons/assets mapping + areaSqFt enforcement
+
+C) Billing Workflows (DEFER — do not implement in V1)
+Remove/Defer:
+- any billing category enforcement
+- any invoice generation logic
+Keep:
+- metadata fields (like defaultBillingCategory) if they are part of asset details,
+but treat as informational only.
+
+=========================
+V1 OUTCOME (WHAT WE SHIP)
+=========================
+
+V1 includes:
+- Mapped assets (all layers) + correct per-asset details (UNCHANGED)
+- KML/GeoJSON import + asset auto-sync + archival
+- Universal areaSqFt enforcement for polygons
+- Tasks with execution windows + calendar windows
+- Service schedules (mowing day) + service visits + offline logging
+- Work history per asset (tasks/completions/photos/notes)
+- Admin hub for map uploads, assets editing, task/schedule creation
+
+V1 excludes:
+- Invoice workflows entirely (admin + contractor)
+- Snow event tracking as an entity
+- Any billing enforcement rules
+
+NEXT RECOMMENDED SLICE (if desired):
+“Universal areaSqFt enforcement + validation + display everywhere”

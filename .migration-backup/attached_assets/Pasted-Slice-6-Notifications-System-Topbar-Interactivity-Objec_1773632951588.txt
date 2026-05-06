@@ -1,0 +1,502 @@
+Slice 6 — Notifications System + Topbar Interactivity
+Objective
+
+Implement the centralized real-time notification layer and activate the topbar interactions across the new VRTSync web portals.
+
+This slice should turn the current topbar placeholders into working shared platform controls, including:
+
+notification bell
+
+unread count badge
+
+notification dropdown/panel
+
+mark as read behavior
+
+community selector interactivity
+
+user profile menu interactivity
+
+first-pass global “+” button framework
+
+This is a cross-portal shared system and should be built once in a reusable way for all portal shells.
+
+Core Principle
+
+Notifications in VRTSync are a real-time alert system, not the permanent history log.
+
+Permanent history already lives in:
+
+Tasks
+
+Requests
+
+Invoices
+
+Documents
+
+Asset Work History
+
+Notifications should answer:
+
+What just happened that I should know about right now?
+Critical Design Rule
+
+All topbar and notification UI must match the existing admin portal styling and reuse the established design system.
+
+Continue using:
+
+server/public/admin/admin.css
+
+plus existing shell structure and topbar styling already introduced in Slice 1.
+
+Do not create a new notification UI language.
+
+The notification system must feel like a native part of the admin portal family.
+
+Roles Included in This Slice
+
+This slice applies to:
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor
+
+If Super Admin support is already easy, keep it compatible, but focus on the new web portals.
+
+Notification Bell
+
+Activate the existing topbar notification bell placeholder.
+
+The bell should support:
+
+unread count badge
+
+open/close interaction
+
+notification list panel or dropdown
+
+empty state
+
+mark-read behavior
+
+Notification Bell UI
+
+Use the existing topbar area.
+
+Recommended interaction:
+
+Click bell
+→ opens a notification panel/dropdown anchored to the topbar
+
+Panel should include:
+
+title
+
+unread items first
+
+recent notifications list
+
+empty state if none
+
+“Mark all as read” action if easy
+
+Example notification panel structure:
+
+Notifications
+
+[Unread items]
+
+HOA Request Submitted
+Broken sprinkler head
+2 minutes ago
+
+Task Completed
+Spring cleanup
+10 minutes ago
+Notification Data Structure
+
+Use the existing or planned notification backend structure if already available.
+
+Conceptually each notification should include:
+
+id
+
+type
+
+title
+
+message / short body
+
+createdAt
+
+readAt or unread flag
+
+communityId
+
+relatedEntityType
+
+relatedEntityId
+
+Examples of relatedEntityType:
+
+task
+
+request
+
+invoice
+
+document
+
+Notification Types to Support
+
+At minimum, design the UI to support these event categories:
+
+HOA request submitted
+
+HOA request acknowledged
+
+task completed
+
+follow-up flagged
+
+invoice uploaded
+
+document uploaded
+
+Even if all event producers are not fully live yet, the UI must be structured for these types.
+
+Notification Panel Behavior
+Required behavior
+
+clicking bell toggles panel
+
+unread count displays on bell
+
+notifications render newest first
+
+unread notifications are visually distinct
+
+clicking a notification marks it read
+
+clicking a notification deep-links to the related page or a placeholder destination
+
+clicking outside closes the panel
+
+Notification Empty State
+
+If no notifications exist, show a clean empty state such as:
+
+No notifications yet
+
+This should still look polished and intentional.
+
+Mark as Read Behavior
+
+Implement:
+
+mark individual notification as read when opened/clicked
+
+optional “Mark all as read” action if easy
+
+The unread badge in the topbar should update immediately.
+
+Notification Deep Linking
+
+Clicking a notification should navigate the user to the relevant page.
+
+Examples:
+
+Task completed
+
+→ /tasks
+
+HOA request submitted
+
+→ /requests or /tasks depending on portal structure
+
+Invoice uploaded
+
+→ /invoices
+
+Document uploaded
+
+→ /documents
+
+If entity-specific deep linking is too much for this slice, it is acceptable to:
+
+route to the correct page
+
+defer record-specific modal opening for later
+
+But the structure should support deeper linking later.
+
+Topbar Community Selector Activation
+
+The topbar community selector introduced in Slice 1 should now be interactive.
+
+Required behavior:
+
+display current active community
+
+for multi-community users, open dropdown on click
+
+selecting a new community updates PortalState
+
+persist selection
+
+trigger page refresh/reload behavior for the current page context
+
+This interactivity must work at least across:
+
+dashboard
+
+tasks
+
+map
+
+documents
+
+If a page is not yet built, no errors should occur.
+
+Community Selector UX
+
+For users with only one community:
+
+display fixed label
+
+no dropdown interaction needed
+
+For users with multiple communities:
+
+dropdown opens with all assigned communities
+
+selecting a community updates active state and closes dropdown
+
+This should feel lightweight and quick.
+
+User Profile Menu
+
+Activate the user chip/profile area in the topbar.
+
+At minimum support:
+
+display name
+
+role label
+
+logout action
+
+Optional items if already easy:
+
+portal label
+
+current email
+
+Recommended click behavior:
+Click profile chip → open small dropdown/menu
+
+Menu actions:
+
+Logout
+
+Keep this simple.
+
+Global “+” Button Framework
+
+Activate the visual interaction for the global “+” button.
+
+This slice does not need to implement all create flows yet.
+
+But it should establish the framework for a role-aware action menu.
+
+Clicking the “+” button should open a small menu/dropdown.
+
+If no actions are wired yet, use placeholder items or disabled items appropriately.
+
+Plus Button Philosophy
+
+The “+” button is:
+
+role-aware
+
+page-aware
+
+feature-aware
+
+Do not hardcode the same menu for every role.
+
+This slice should establish the shared menu system, not the full action library.
+
+First-Pass Plus Button Menus
+
+Use lightweight initial menus such as:
+
+HOA Admin
+
+Create Task
+
+Upload Document
+
+Property Manager
+
+Create Task
+
+Add User
+
+Upload Document
+
+Contractor
+
+placeholder / none if no actions are ready yet
+
+HOA Member
+
+likely no active create options
+
+If actions are not yet implemented, show them as placeholders or “Coming Soon” entries without breaking the UI.
+
+Shared Topbar Componentization
+
+Refactor topbar interaction logic into reusable shared code if needed.
+
+Do not duplicate event handling separately per shell.
+
+The topbar should behave like one shared system with role-aware content.
+
+PortalState Integration
+
+Expand PortalState to support notification and topbar needs.
+
+At minimum, support patterns like:
+
+getUser()
+
+getCommunities()
+
+getActiveCommunity()
+
+setActiveCommunity()
+
+If helpful, add:
+
+getCommunityContext()
+
+getNotificationState()
+
+setNotificationState()
+
+Do not overbuild, but keep this reusable.
+
+API / Data Strategy
+
+Use real endpoints if notification data already exists or is easy to expose.
+
+If the full backend notification engine is not yet ready, it is acceptable to:
+
+build the topbar UI
+
+support mock or placeholder notification data
+
+structure the code for easy replacement with live data
+
+However, the ideal outcome is to wire to real notification records if available.
+
+Styling Requirements
+
+Use existing admin styling for:
+
+topbar
+
+dropdowns
+
+badges
+
+cards/panels
+
+menu items
+
+hover states
+
+Notifications should visually align with the rest of the portal.
+
+Do not build a chat-style interface.
+Do not build a mobile-style slide-up tray.
+This is a desktop web dropdown/panel interaction.
+
+Out of Scope for Slice 6
+
+Do NOT fully build the following yet unless already easy:
+
+notification preferences
+
+email notification settings
+
+push notification management
+
+full entity-specific deep linking into modals
+
+advanced notification filtering
+
+grouped notification categories
+
+messaging system
+
+Those can come later.
+
+Deliverables
+
+By the end of Slice 6, the system should support:
+
+working notification bell in the topbar
+
+unread badge count
+
+notification dropdown/panel
+
+mark-as-read behavior
+
+community selector dropdown interactivity
+
+user profile menu with logout
+
+working plus-button menu framework
+
+reusable shared topbar interactions across portals
+
+Success Criteria
+
+The system should be able to:
+
+open the notification panel from the topbar
+
+show unread count on the bell
+
+render a recent notifications list
+
+mark notifications read when clicked
+
+open the community selector for multi-community users
+
+switch active communities from the topbar
+
+open the user profile menu and logout
+
+open the global plus button menu
+
+preserve admin portal visual styling throughout
+
+Important Reminder to Replit
+
+This slice is not just a cosmetic polish step.
+
+The topbar is becoming the shared command layer of the full VRTSync web portal.
+
+Build it once, build it cleanly, and make it reusable across all shells.
+
+Keep the visual styling anchored to the existing admin portal.
+Do not create a new notification or dropdown design language.

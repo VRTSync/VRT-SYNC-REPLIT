@@ -1,0 +1,122 @@
+SLICE 2.0 (PASTE INTO REPLIT): VRT Core Web Hub Shell (Laptop-first Admin)
+
+Objective
+Add a desktop-first web interface inside the same Replit project that serves as the central hub (“data center”) for building and managing communities, map layers, assets, and tasks. This web UI must reuse the existing backend/API and database.
+
+⸻
+
+Scope
+
+1) Web route group (no impact to mobile)
+Create a new web-only route namespace:
+	•	/web/admin
+
+And child pages:
+	•	/web/admin/dashboard
+	•	/web/admin/communities
+	•	/web/admin/map-layers
+	•	/web/admin/assets
+	•	/web/admin/tasks
+
+These should be desktop/laptop optimized (tables, side nav, wide layouts). Mobile web is not required.
+
+⸻
+
+2) Auth + role gating
+	•	Only admin role can access /web/admin/*
+	•	Contractors visiting these routes should be redirected (or shown “Not authorized”)
+
+Reuse existing session auth. Do not create a separate auth system.
+
+⸻
+
+3) Web layout
+Implement a persistent web shell with:
+	•	Left sidebar navigation (Dashboard, Communities, Map Layers, Assets, Tasks)
+	•	Top bar with:
+	•	Active community selector (global)
+	•	Search (optional placeholder)
+	•	User menu
+
+⸻
+
+4) Dashboard page (simple but useful)
+Show cards:
+	•	Communities count
+	•	Active assets count
+	•	Incomplete assets count
+	•	Archived assets count
+	•	Tasks count (optional)
+
+Data can come from existing endpoints or add a small admin-only summary endpoint:
+	•	GET /api/admin/summary?communityId=... (optional)
+
+⸻
+
+5) Communities page (CRUD)
+Web UI for:
+	•	List communities
+	•	Create community
+	•	Edit community (name/description)
+Keep it minimal.
+
+(If user management is already in mobile admin tab, you can defer membership management to Slice 2.3.)
+
+⸻
+
+6) Map Layers page (web control plane)
+Web UI for:
+	•	List layers for selected community (group by layerKey/subLayerKey)
+	•	Create/update/delete map layers
+	•	Upload/paste GeoJSON data (file upload or textarea)
+	•	Trigger “Sync assets from layer” (manual sync endpoint you already added in 1.0.1)
+	•	Show coverage stats per layer:
+	•	features count
+	•	active assets
+	•	archived assets
+	•	incomplete assets
+
+⸻
+
+7) Assets page (web-first version)
+Reuse existing assets functionality but present as a table:
+	•	Filters: type, layer, incomplete only, archived toggle, missing key
+	•	Bulk edit panel (your 1.6 features)
+	•	“Save & Next” completion workflow
+
+⸻
+
+8) Tasks page (admin work definition)
+Minimal admin capabilities:
+	•	Create task
+	•	Assign to contractor
+	•	Link task to asset (existing task_links)
+	•	View task status / completion info
+
+⸻
+
+Non-goals (out of scope for 2.0)
+	•	HOA portal UI
+	•	Property manager portal UI
+	•	Reporting dashboards
+	•	KML conversion pipeline inside the app (GeoJSON is fine)
+	•	Billing/invoicing
+
+⸻
+
+Acceptance Criteria
+	1.	Admin can access /web/admin and navigate between sections.
+	2.	Contractors cannot access /web/admin/*.
+	3.	Admin can:
+	•	create a community
+	•	upload/update a GeoJSON map layer
+	•	trigger layer → asset sync
+	•	see incomplete assets and bulk-edit required fields
+	•	create/assign a task linked to an asset
+
+⸻
+
+Implementation Notes
+	•	Keep APIs unchanged where possible; web UI should consume existing endpoints.
+	•	Prefer table-based UI and multi-column forms for speed.
+	•	Use the same branding approach as vrtsync.com (colors/typography) but don’t overdesign in this slice.

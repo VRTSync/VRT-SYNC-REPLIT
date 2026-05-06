@@ -1,0 +1,503 @@
+Slice 6 — Proposal Builder Integration + Board-Ready Planning Packet
+Overview Scope Paragraph
+
+Build the sixth phase of the Xeriscape Conversion Planner by connecting saved community-scoped planning records to VRTSync’s internal proposal workflow and generating a polished, board-ready planning packet output. At this point, the planner already supports polygon selection, grouping, summaries, saved planning records, and community-scoped loading. Slice 6 should now make those planning records operational by allowing admins to take a selected planning scenario, launch a proposal-prep workflow from it, and generate a clean planning packet that can support internal sales discussions, board review, and scope-development conversations. This slice should not try to replace the full proposal builder, but it should create a strong bridge by packaging planner outputs into a reusable proposal-support format that can later connect to broader proposal generation tools.
+
+Slice 6 — Proposal Builder Integration + Board-Ready Planning Packet
+What & Why
+
+Build the layer that turns the Xeriscape Planner into a true pre-sales and proposal support engine. Slices 1–5 established the planning system and the correct community-bound architecture. Slice 6 should now allow admins to take a saved scenario that has been reviewed or marked as the selected estimating scenario and convert it into a polished planning packet that supports proposal writing, budget conversations, and HOA board presentations. This packet should clearly communicate what areas are being considered, how large they are, what the estimated conversion cost is, what the projected annual water savings are, and what the planning assumptions were. It should also prepare structured data that can be handed off into future proposal builder workflows without re-keying the scenario manually.
+
+Done Looks Like
+
+Admin users can now:
+
+open a saved planning record for an active community
+
+launch a Proposal Prep action from that record
+
+generate a board-ready planning packet view
+
+include community name, scenario name, selected groups, polygon detail, totals, assumptions, and disclaimer language
+
+generate a cleaner comparison packet if multiple groups/scenarios are being presented
+
+mark a packet as the active proposal-support version for that planning record
+
+export or print the packet in a polished layout
+
+pass a structured payload into proposal workflow prep without rebuilding the data manually
+
+This slice is still admin-only, but it should produce outputs that are ready to be used in real-world proposal and board workflows.
+
+Core Product Goal
+
+The goal of Slice 6 is not full proposal automation.
+
+The goal is to create a reliable bridge between:
+
+planner outputs
+and
+
+proposal / board communication workflows
+
+So that once a planning scenario is selected, the admin can immediately turn it into:
+
+a planning packet
+
+a proposal support sheet
+
+a board conversation document
+
+a structured handoff into a proposal builder later
+
+Functional Requirements
+1. Proposal Prep Launch Action
+
+From a saved planning record, add a clear action such as:
+
+Prepare Proposal Support
+
+Generate Planning Packet
+
+Send to Proposal Prep
+
+Requirements:
+
+available from saved planning record detail
+
+ideally available only for records in a meaningful state such as:
+
+reviewed
+
+selected_for_estimate
+
+opens a packet-generation workflow or dedicated output page
+
+carries the saved planning record data forward automatically
+
+This should feel like a natural next step after planning is complete.
+
+2. Board-Ready Planning Packet View
+
+Create a dedicated packet view that is cleaner and more polished than the standard planner summary screen.
+
+The packet should include:
+
+Header Section
+
+Community name
+
+Scenario / planning record name
+
+generated date
+
+internal status badge if useful
+
+“Admin Planning Packet” or similar internal-use label
+
+Executive Summary Section
+
+Total polygon count
+
+Total square footage
+
+Estimated conversion cost
+
+Estimated annual water savings
+
+Estimated payback period
+
+Group / Phase Breakdown
+
+For each group included in the record:
+
+group name
+
+polygon count
+
+total SF
+
+estimated cost
+
+estimated annual savings
+
+payback
+
+Polygon Detail Section
+
+For each polygon:
+
+polygon name
+
+square footage
+
+optional group association
+
+Assumptions Section
+
+conversion cost per SF used
+
+annual water savings per SF used
+
+payback basis
+
+Disclaimer Section
+
+Planning estimate disclaimer language
+
+This should feel like something you would confidently show during an internal prep session or turn into a board attachment.
+
+3. Comparison Packet Support
+
+If the planning record includes multiple groups or scenario options, support a comparison-style packet.
+
+Minimum comparison fields:
+
+Option / Group Name
+
+Polygon Count
+
+Total SF
+
+Estimated Cost
+
+Annual Savings
+
+Payback
+
+The packet should make it easy to answer:
+
+what is the cost difference between options?
+
+what is the scale difference?
+
+which phase makes sense to start with?
+
+This is especially important for phased HOA budgeting conversations.
+
+4. Optional Packet Notes / Summary Narrative
+
+Add a lightweight editable internal summary/narrative block near the top of the packet.
+
+This should allow admins to enter something like:
+
+“Phase 1 focuses on the highest-visibility entrance turf areas.”
+
+“This option reduces irrigated bluegrass in targeted sections while preserving flexibility for future conversion.”
+
+“This scenario is intended as a first-pass planning estimate only.”
+
+This is not a full scope-of-work generator yet, but it gives the packet needed context.
+
+Fields:
+
+internal summary / intro text
+
+optional recommendation note
+
+optional “next step” note
+
+This content should be saved with the packet version if packet persistence is included in this slice.
+
+5. Proposal Support Payload Builder
+
+Generate a structured proposal-support payload from the saved planning record.
+
+This payload should include at minimum:
+
+communityId
+
+communityName
+
+planningRecordId
+
+planningRecordName
+
+selected groups
+
+total square footage
+
+total estimated cost
+
+annual savings assumption
+
+estimated annual water savings
+
+payback
+
+packet notes / summary if entered
+
+polygon detail list
+
+This payload should be accessible to:
+
+future proposal builder modules
+
+scope-writing tools
+
+PDF composition workflows later
+
+The key here is:
+no manual re-entry of core planning numbers.
+
+6. Print / Export-Ready Packet Layout
+
+The packet view must print cleanly.
+
+Requirements:
+
+no unnecessary admin chrome in print mode
+
+no awkward page breaks where possible
+
+executive summary stays prominent
+
+tables remain readable
+
+assumptions and disclaimer remain visible
+
+group breakdown stays organized
+
+A browser print-friendly workflow is acceptable if full PDF generation would slow development.
+
+If easy, include:
+
+“Print Packet”
+
+“Export Packet”
+buttons
+
+Even if export is just browser print initially, name the actions in a way that can support future PDF generation.
+
+7. Packet Versioning or Saved Packet State
+
+At minimum, allow the generated planning packet to be reopened from the planning record.
+
+Recommended approaches:
+
+lightweight saved packet state attached to planning record
+
+or generated packet metadata attached to the record
+
+Suggested fields:
+
+packetTitle
+
+packetSummaryText
+
+generatedAt
+
+generatedBy
+
+maybe isActiveProposalPacket
+
+This does not need deep version history yet, but it should not feel disposable if the team is going to use it in real workflow.
+
+8. Proposal Packet Status / Flag
+
+Support a simple indicator for:
+
+current active packet
+
+outdated packet
+
+draft packet
+
+This helps when assumptions or planning record data change and someone regenerates a packet.
+
+Possible statuses:
+
+Draft Packet
+
+Active Proposal Support Packet
+
+Superseded
+
+Keep it lightweight.
+
+9. Community + Planner Traceability
+
+Every packet must clearly identify:
+
+active community
+
+source planning record
+
+generated date
+
+assumptions used
+
+This protects against confusion when packets are printed or saved outside the system.
+
+10. Keep It Separate From Final Proposal Scope Language
+
+Very important:
+Do not overpromise scope-writing automation in this slice.
+
+The packet should support proposal building, not replace it.
+
+It should communicate:
+
+mapped areas
+
+financial planning
+
+assumptions
+
+options
+
+It should not yet try to automatically write:
+
+final contract scope
+
+detailed exclusions
+
+plant counts
+
+irrigation conversion language
+unless you intentionally want that in a future slice
+
+This slice is the bridge, not the full proposal engine.
+
+UX / Design Constraints
+
+This should still feel like VRTSync Admin Portal, but more presentation-oriented.
+
+Design direction:
+
+clean and structured
+
+polished top-line metrics
+
+strong readability
+
+print-friendly
+
+not too GIS-heavy
+
+clearly internal but professional
+
+Recommended packet structure:
+
+Top
+
+community + packet title
+
+generated date
+
+status
+
+Executive Summary Cards
+
+total SF
+
+cost
+
+savings
+
+payback
+
+Narrative Block
+
+optional admin-written intro/recommendation
+
+Group Breakdown
+
+cards or table
+
+Polygon Detail
+
+table
+
+Assumptions + Disclaimer
+
+clearly separated footer section
+
+Optional:
+
+map preview block if already available from prior slices
+
+Technical Notes
+
+Reuse the saved planning record as the packet source of truth
+
+Reuse frozen assumptions stored with the planning record
+
+Generate a structured proposal-support payload in parallel with the packet UI
+
+Do not hard-wire this into the final proposal builder yet unless that system is already stable
+
+Build packet rendering in a reusable way so it can later feed:
+
+PDF export
+
+proposal builder attachments
+
+board packet generation
+
+Keep the architecture clear between:
+
+planning record
+
+packet output
+
+final proposal document
+
+Acceptance Tests
+
+Admin can open a saved planning record and launch proposal prep
+
+Proposal prep opens a board-ready planning packet view
+
+Packet correctly shows community name and planning record name
+
+Packet correctly shows total polygon count
+
+Packet correctly shows total square footage
+
+Packet correctly shows estimated conversion cost
+
+Packet correctly shows estimated annual water savings
+
+Packet correctly shows payback period
+
+Packet includes group/phase breakdown for included groups
+
+Packet includes polygon detail list
+
+Packet includes assumptions used for the planning record
+
+Packet includes disclaimer language
+
+Admin can add or edit summary/narrative text for the packet
+
+Packet prints cleanly with reduced admin UI clutter
+
+Proposal-support payload is generated from the planning record without manual re-entry
+
+Packet remains tied to the correct community and planning record
+
+Non-admin users still cannot access this workflow
+
+Out of Scope for Slice 7+
+
+Do not build yet:
+
+automatic final proposal PDF creation
+
+QuickBooks estimate merge
+
+full scope-of-work generation
+
+customer-facing board packet access
+
+approval workflow
+
+digital sharing links
+
+utility/AMI-backed live savings
+
+maintenance savings modeling
+
+contractor pricing breakdown automation

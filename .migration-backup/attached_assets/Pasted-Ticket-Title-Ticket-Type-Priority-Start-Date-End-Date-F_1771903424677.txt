@@ -1,0 +1,19 @@
+Ticket Title	Ticket Type	Priority	Start Date	End Date	Frequency	Total Visits	Description
+Spring Cleanup	Maintenance - Seasonal	High	3/1/2026	4/15/2026	One-Time	1	Remove winter debris and prepare site for mowing season
+Core Aeration	Maintenance - Turf Service	High	3/1/2026	4/15/2026	One-Time	1	Mechanical aeration of all turf areas
+Irrigation Turn ON	Irrigation - Seasonal	High	3/15/2026	4/30/2026	One-Time	1	Activate system and inspect for leaks and coverage
+Pre-Emergent & Spring Fertilizer	Turf Chemical Application	High	3/1/2026	4/15/2026	One-Time	1	Apply pre-emergent and spring fertilizer
+Spring Shrub Trim	Landscape Maintenance	Medium	5/15/2025	7/31/2026	One-Time	1	Prune and shape shrubs for seasonal growth
+Broadleaf Weed Control - Application 1	Turf Chemical Application	Medium	5/15/2025	5/31/2026	One-Time	1	First broadleaf weed treatment
+Broadleaf Weed Control - Application 2	Turf Chemical Application	Medium	7/1/2025	7/31/2026	One-Time	1	Second broadleaf weed treatment
+Broadleaf Weed Control - Application 3	Turf Chemical Application	Medium	9/1/2025	9/30/2026	One-Time	1	Third broadleaf weed treatment
+Summer Fertilizer Application	Turf Chemical Application	Medium	6/1/2026	6/30/2026	One-Time	1	Apply mid-season fertilizer
+Fall Fertilizer Application	Turf Chemical Application	High	8/15/2026	11/15/2026	One-Time	1	Apply fall fertilizer for root development
+Fall Shrub Trim	Landscape Maintenance	Medium	8/15/2025	10/15/2026	One-Time	1	Late-season shrub pruning
+Tree Trimming - Annual	Arbor Care	Medium	9/1/2026	10/31/2026	One-Time	1	Trim HOA trees for safety and health
+Irrigation Turn OFF & Blowout	Irrigation - Seasonal	Critical	10/1/2026	1/31/2026	One-Time	1	Winterize irrigation system
+Fall Cleanup	Maintenance - Seasonal	High	11/1/2025	12/31/2026	One-Time	1	Leaf removal and winter preparation
+Ornamental Grass Cutback	Landscape Maintenance	Medium	11/1/2025	1/31/2027	One-Time	1	Cut back ornamental grasses for spring regrowth
+Bluegrass Edging Service	Landscape Maintenance	Medium	4/1/2025	10/31/2026	Monthly	6	Mechanical edging of bluegrass areas
+Roundup Spot Spray	Landscape Chemical Application	Ongoing	4/1/2025	10/31/2026	Weekly	26	Spot treat weeds in landscape beds
+Weekly Landscape Maintenance Visit	Maintenance - Recurring	Core	4/1/2025	10/31/2026	Weekly	26	Mowing trimming blowing full service visit

@@ -1,0 +1,139 @@
+VRTSync HOA Expansion Context
+
+VRTSync is expanding the existing Contractor Portal to include an HOA-side experience within the same mobile app. HOA users will operate in an “Owner Mode” designed for transparency and structured communication with the contractor. HOA users will be limited to their specific community and will not have administrative control over the system. Their primary capabilities will be viewing upcoming work, seeing completed work with photos, exploring mapped assets, and submitting location-based requests (tickets) that become contractor tasks. HOA requests follow a strict workflow (Submitted → Acknowledged → Completed) and may be marked Normal or Urgent by the HOA Admin. These requests appear prominently in the contractor task list so they cannot be missed. The following slices implement the role permissions and structure required to support this HOA experience while preserving the existing contractor functionality.
+
+------------------------------------------------
+
+SLICE S0 — RBAC + Community-Scoped HOA Users
+
+Goal
+
+Introduce HOA roles and enforce strict single-community access for HOA users. All HOA user management will occur in the Web Admin Hub only.
+
+------------------------------------------------
+
+New Roles
+
+Add two new roles to the user system:
+
+HOA_ADMIN  
+HOA_MEMBER  
+
+Existing roles remain unchanged:
+
+ADMIN  
+CONTRACTOR
+
+------------------------------------------------
+
+HOA User Community Scoping (Hard Rule)
+
+HOA users are locked to exactly one community.
+
+Rules:
+
+• Each HOA user must belong to exactly one community  
+• HOA users cannot belong to multiple communities  
+• HOA users cannot switch communities in the mobile app  
+• HOA users may only access data for their assigned community
+
+API Enforcement:
+
+If role is HOA_ADMIN or HOA_MEMBER:
+
+Any request for data must automatically scope to the user's communityId.
+
+Requests attempting to access other communities must return 403.
+
+------------------------------------------------
+
+Community Limits
+
+Per community:
+
+• Exactly 1 HOA_ADMIN allowed  
+• Up to 4 HOA_MEMBER users allowed  
+
+These limits must be enforced in the Web Admin Hub.
+
+------------------------------------------------
+
+Web Admin Hub Responsibilities
+
+HOA users can only be managed in the Web Admin Hub.
+
+The Web Admin Hub must support:
+
+• Creating HOA users  
+• Assigning HOA role  
+• Assigning the user's community  
+• Editing HOA user name/email  
+• Deactivating or deleting HOA users
+
+Mobile App must NOT support:
+
+• Creating users  
+• Editing users  
+• Deleting users
+
+------------------------------------------------
+
+Database Requirements
+
+User records must support:
+
+role (enum)  
+hoaCommunityId (nullable)
+
+Rules:
+
+If role is HOA_ADMIN or HOA_MEMBER:
+
+hoaCommunityId must be present.
+
+If role is ADMIN or CONTRACTOR:
+
+hoaCommunityId should be null or ignored.
+
+------------------------------------------------
+
+Session / Auth Payload
+
+Authenticated sessions must include:
+
+userId  
+role  
+hoaCommunityId (if HOA role)
+
+------------------------------------------------
+
+API Authorization Middleware
+
+Add middleware to enforce HOA access restrictions.
+
+If role is HOA_ADMIN or HOA_MEMBER:
+
+• Force queries to use hoaCommunityId  
+• Reject requests for other communities
+
+Endpoints that must enforce this rule include:
+
+tasks  
+assets  
+map layers  
+service schedules  
+service visits  
+asset notes  
+work history
+
+------------------------------------------------
+
+Acceptance Criteria
+
+• HOA users can only access one community
+• HOA users cannot access other communities' data
+• Only one HOA_ADMIN allowed per community
+• Maximum four HOA_MEMBER per community
+• Web Admin Hub can create/edit/delete HOA users
+• Mobile app has no user management features
+• Existing ADMIN and CONTRACTOR functionality remains unchanged

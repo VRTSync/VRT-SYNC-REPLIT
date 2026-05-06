@@ -1,0 +1,241 @@
+✅ SLICE 1.2 (PASTE INTO REPLIT): Offline Map Packs (MBTiles + GeoJSON + Asset Index)
+
+Objective
+Enable true offline map usage per community by supporting downloadable offline “packs” that include:
+
+MBTiles basemap
+
+GeoJSON overlay layers
+
+Asset index (featureRef → assetId)
+
+Task snapshot for assigned contractor
+
+Recent work history snapshot per asset (optional but recommended)
+
+This must integrate cleanly with your existing map viewer (Slice 1.0) and asset history (Slice 1.1).
+
+Core Principles
+
+Offline packs are community-scoped.
+
+Contractors can only download packs for communities they belong to.
+
+Packs have a version and can be updated.
+
+App can render map fully offline:
+
+MBTiles basemap + cached GeoJSON overlays
+
+Tap features still resolves to assets (via offline asset index)
+
+Asset detail and work history shows cached snapshot (clearly labeled “Offline snapshot”)
+
+Backend Requirements (Pack Definition + Delivery)
+1) offline_packs table
+
+Fields:
+
+id (UUID)
+
+communityId (FK)
+
+packVersion (int)
+
+createdAt, updatedAt
+
+mbtilesRef (string) — object storage path/key
+
+manifestRef (string) — object storage path/key
+
+geojsonBundleRef (string) — optional if bundling all overlays into one file
+
+assetIndexRef (string)
+
+checksum (string) — optional integrity hash
+
+Constraint:
+
+unique (communityId, packVersion) or latest pointer
+
+2) Pack manifest structure (JSON)
+
+Manifest must include:
+
+communityId
+
+packVersion
+
+mbtiles metadata (minZoom/maxZoom/bounds if available)
+
+list of included map layers:
+
+layerKey, subLayerKey, displayName, updatedAt, geojsonRef (or embedded bundle path)
+
+asset index ref
+
+generatedAt timestamp
+
+3) Endpoints
+Contractor: list available pack versions
+
+GET /api/communities/:communityId/offline-pack
+Returns latest pack metadata:
+
+packVersion, updatedAt, manifest download URL/ref
+
+Permissions:
+
+contractor must be community member
+
+Contractor: get signed download URLs
+
+POST /api/offline-packs/:id/download-urls
+Returns signed URLs/refs for:
+
+mbtiles file
+
+manifest
+
+geojson bundle (or per-layer geojson refs)
+
+asset index json
+
+Permissions:
+
+contractor must be community member of pack’s community
+
+Admin: create/update pack metadata (manual for MVP)
+
+POST /api/offline-packs
+Admin provides:
+
+communityId
+
+packVersion
+
+mbtilesRef
+
+manifestRef
+
+assetIndexRef
+
+geojsonBundleRef (optional)
+
+NOTE: pack generation can be manual for now (you’ll upload MBTiles + JSON refs yourself).
+
+Mobile Requirements (Offline Pack Manager)
+1) New “Offline Packs” section (Profile screen is fine)
+
+For active community:
+
+Show:
+
+“Pack not downloaded” OR “Downloaded (vX)”
+
+“Update available” if server has newer version
+
+Buttons:
+
+Download pack
+
+Update pack
+
+Delete pack
+
+2) Local storage
+
+Store downloaded files:
+
+MBTiles saved locally (filesystem)
+
+Manifest JSON saved locally
+
+GeoJSON overlays saved locally (bundle or per layer)
+
+Asset index saved locally
+
+Use AsyncStorage to store:
+
+downloaded packVersion per community
+
+local file paths
+
+3) Map screen offline behavior
+
+If offline AND pack exists:
+
+Load MBTiles basemap from local path
+
+Load GeoJSON overlays from local storage
+
+Layer toggles should work exactly the same (using manifest as the layer source)
+
+If offline AND no pack:
+
+Show clear message: “Offline map not downloaded for this community.”
+
+4) Tap resolution offline
+
+When offline:
+
+Use local asset index mapping:
+
+featureRef → assetId
+
+Asset Detail should load from API when online, but offline should show:
+
+label/type + properties snapshot (if cached)
+
+“Offline snapshot” badge
+
+Work History offline:
+
+optional snapshot (last N) OR show “History unavailable offline” (choose one)
+
+Asset Index Requirements
+
+Generate/store a JSON index per community pack:
+
+featureRef → assetId
+Optionally include:
+
+asset label
+
+assetType
+
+minimal properties for popup
+
+This makes tap-to-popup fast offline.
+
+Acceptance Tests
+
+Contractor downloads pack for a community, switches to airplane mode:
+
+map loads MBTiles basemap offline
+
+overlays render
+
+tap feature opens popup and resolves to an asset
+
+Contractor without pack offline:
+
+sees “pack not downloaded” message
+
+Update pack:
+
+downloads newer version, replaces local files
+
+Permissions:
+
+contractor cannot download pack for non-member community
+
+Out of Scope (for now)
+
+Automatic pack generation from KML/GeoJSON
+
+Background downloads
+
+Partial downloads / streaming
+
+Offline editing of assets/history

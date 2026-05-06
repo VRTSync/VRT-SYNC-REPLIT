@@ -1,0 +1,369 @@
+Admin-Only Test Tool Positioning
+
+The Xeriscape Conversion Planner should initially live only in the admin web portal and be available only to VRTSync internal/admin users. Its purpose in this phase is to test the workflow, prove the value of the calculations, and refine how results are presented before exposing it to HOA or property manager users.
+
+In this first version, admins would be able to:
+
+view mapped bluegrass KML polygons
+
+select one or multiple polygons
+
+group selected polygons into planning phases or estimate groups
+
+calculate total square footage
+
+apply a default or editable conversion cost per square foot
+
+apply a default or editable annual water savings assumption
+
+generate estimated conversion cost, annual savings, and payback period
+
+save or export rough planning scenarios for internal use or proposal building
+
+Why This Is The Right First Step
+
+This keeps the feature safely in test mode while still making it highly useful. It gives your team a way to use it in real sales conversations, proposal creation, and internal planning without needing to fully productize the customer experience yet.
+
+It also helps you answer important questions first:
+
+Do the calculations feel credible?
+
+Does grouping work the way real estimates need it to?
+
+What outputs are most helpful in sales conversations?
+
+What assumptions need to stay editable?
+
+What do boards and PMs actually respond to?
+
+Future Commercial Positioning
+
+Once proven internally, this can later become an optional premium add-on for customers who purchase portal access.
+
+That future version could be positioned as something like:
+
+Xeriscape Planning Add-On
+A map-based planning tool that allows customers to evaluate mapped turf conversion areas, compare phased scenarios, and estimate project cost, water savings, and payback timelines.
+
+That keeps the rollout clean:
+
+Phase 1: Admin-only internal test tool
+
+Phase 2: Refined internal sales/planning engine
+
+Phase 3: Optional paid customer portal feature
+
+Strong Product Framing
+
+I would describe it internally like this:
+
+Xeriscape Conversion Planner (Admin Test Tool)
+An admin-only planning tool within the VRTSync Admin Web Portal that allows internal users to select mapped bluegrass polygons, group them into conversion scenarios, calculate estimated project cost and projected annual water savings, and generate rough payback timelines for planning and sales use. This tool is being developed first as an internal test feature and may later be offered as an optional customer portal add-on.
+
+Important Access Constraint
+
+You will want this clearly defined in the build:
+
+available only in admin portal
+
+hidden from HOA, PM, contractor, and customer-facing views
+
+marked internally as test/planning tool
+
+no customer billing or self-service exposure yet
+
+Best Strategic Reason
+
+This gives VRTSync a chance to use the feature to help sell work and prove value before you invest in making it polished enough for customer self-service. That is the right order.
+
+Here is the most concise product line for the slice:
+
+Build this first as an admin-only test tool in the VRTSync Admin Web Portal, with no customer-facing access. The purpose is to allow internal users to test mapped xeriscape planning workflows, estimate conversion cost and savings, and refine the feature before later offering it as an optional paid portal add-on.
+
+The next step should be turning this into a Replit-ready slice prompt with admin portal placement, permissions, workflow, outputs, and acceptance criteria.
+
+okay - lets give replit a full overview scope paragraph followed with the first slice for this tool.
+
+would it help you to see the kml file that i want to use to test this feature?
+
+Yes — the KML would absolutely help for testing, field naming, polygon structure, and validating how the area calculations should behave, especially if we want Replit to build the first slice around something close to your real data.
+
+But we do not need to stop here for that. We can give Replit a strong first slice now, and then tune the implementation once you upload the test KML.
+
+Here’s a clean version you can paste to Replit:
+
+Overview Scope Paragraph
+
+Build a new admin-only Xeriscape Conversion Planner inside the VRTSync Admin Web Portal as an internal test tool for evaluating turf-to-xeriscape conversion opportunities using mapped KML bluegrass polygons. This tool should allow admin users to view imported bluegrass polygon geometry on the map, select individual or multiple polygons, organize selections into named planning groups or phases, automatically calculate square footage from polygon geometry, apply configurable planning assumptions such as conversion cost per square foot and annual water savings per square foot, and generate rough planning outputs including estimated project cost, estimated annual water savings, and projected payback period. This first version is strictly for internal/admin use only and should not be exposed to HOA, PM, contractor, or any customer-facing portal views. The purpose of this phase is to validate the workflow, confirm that calculations and grouping logic are useful in real planning conversations, and refine the feature for possible future release as an optional paid customer portal add-on.
+
+Slice 1 — Admin-Only Xeriscape Conversion Planner Foundation
+What & Why
+
+Build the foundational admin-only test version of the Xeriscape Conversion Planner in the VRTSync Admin Web Portal. The goal of this first slice is to create the basic structure needed to display bluegrass polygons, select them, calculate square footage, and generate simple planning estimates using editable assumptions. This slice should prove the core concept works before adding saved scenarios, exports, or more advanced comparisons.
+
+Done Looks Like
+
+A new admin-only page exists in the Admin Web Portal called Xeriscape Planner
+
+Only Super Admin / Admin portal users can access this page
+
+The page contains:
+
+a map panel showing test bluegrass polygons loaded from KML-derived geometry or a temporary converted GeoJSON source
+
+a side planning panel showing assumptions and calculation outputs
+
+a polygon list or selection summary tied to the map
+
+Admin users can:
+
+view all loaded bluegrass polygons on the map
+
+click a polygon to select it
+
+select multiple polygons
+
+see selected polygons visually highlighted on the map
+
+see a running total of selected square footage
+
+apply a default conversion cost per SF
+
+apply a default annual water savings per SF
+
+see calculated outputs for the current selection:
+
+total selected area
+
+estimated conversion cost
+
+estimated annual water savings
+
+estimated water-only payback period
+
+This first slice does not yet need:
+
+saved groups/phases
+
+scenario comparison tables
+
+PDF export
+
+customer-facing access
+
+persistent saved estimates across sessions
+
+integration with live customer data
+
+AMI or water utility integrations
+
+Functional Requirements
+1. Admin Portal Placement + Access Control
+
+Add a new admin-only route, something like /web/admin/xeriscape-planner
+
+Route must only be accessible from the admin shell
+
+Do not expose this page in HOA, PM, or contractor portals
+
+Mark internally as a test/planning tool
+
+2. Map Display
+
+Render imported bluegrass polygons on the map
+
+Support polygon highlighting for hover and selected state
+
+Clicking a polygon toggles selection on/off
+
+Multiple polygons can be selected at once
+
+Map should zoom to the extent of loaded polygons on initial load if possible
+
+3. Polygon Data Model
+
+Each polygon should have at minimum:
+
+internal id
+
+name or fallback label
+
+geometry
+
+computed square footage
+
+optional source metadata if available from KML
+
+If the KML does not provide a usable name field, generate a fallback like:
+
+Bluegrass Area 1
+
+Bluegrass Area 2
+
+4. Area Calculation
+
+Compute square footage from the polygon geometry, not from a manual field
+
+Display square footage per selected polygon and total square footage for all selected polygons
+
+Round displayed values cleanly for user readability, but keep internal precision consistent
+
+5. Assumptions Panel
+
+Include editable admin inputs with defaults:
+
+Conversion cost per SF = 6.00
+
+Annual water savings per SF = user-editable default
+
+Calculation basis label = “Water-only payback”
+
+These inputs should instantly recalculate outputs when changed
+
+6. Calculation Logic
+
+For current selected polygons:
+
+Total Area = sum of all selected polygon square footage
+
+Estimated Conversion Cost = total area × conversion cost per SF
+
+Estimated Annual Water Savings = total area × annual water savings per SF
+
+Estimated Payback Period = conversion cost ÷ annual water savings
+
+If annual water savings is zero or blank:
+
+show payback as — or Not available
+
+7. Planning Summary Card
+
+Show a clear summary card with:
+
+Selected polygon count
+
+Total selected area
+
+Conversion cost assumption
+
+Water savings assumption
+
+Estimated conversion cost
+
+Estimated annual water savings
+
+Estimated payback period
+
+This should feel board-friendly, not GIS-heavy
+
+UX / Design Constraints
+
+Match the existing VRTSync Admin Portal styling exactly:
+
+same header behavior
+
+same spacing rhythm
+
+same card treatment
+
+same side panel patterns
+
+same typography hierarchy
+
+same table/list styling
+
+same button system
+
+same neutral, polished admin feel
+
+This tool should look like it belongs inside the admin portal already, not like a separate prototype.
+
+Recommended layout:
+
+Left: map as the main workspace
+
+Right: fixed or sticky planning panel
+
+Below or within side panel: selected polygon list
+
+Keep the experience clean and operational:
+
+map-first
+
+finance-second
+
+no clutter
+
+easy to explain in a sales meeting
+
+Technical Notes
+
+It is fine to use a temporary test data path for Slice 1
+
+If KML ingestion is messy, convert the test KML to a usable GeoJSON-backed source first and build the planner UI around that
+
+The important thing in this slice is proving:
+
+polygon rendering
+
+multi-select
+
+area calculation
+
+cost/savings/payback calculation
+
+Do not overbuild persistence yet
+
+Acceptance Tests
+
+Admin user can open the Xeriscape Planner page from the admin portal
+
+Non-admin portal users cannot access the page
+
+Test bluegrass polygons render correctly on the map
+
+Clicking one polygon selects it and highlights it
+
+Clicking multiple polygons adds them all to the current selection
+
+Deselecting a polygon removes it from totals
+
+Total selected square footage updates correctly as selections change
+
+Changing conversion cost per SF updates total estimated project cost instantly
+
+Changing annual water savings per SF updates annual savings and payback instantly
+
+Payback period displays correctly when savings is greater than zero
+
+Payback displays safely when savings is zero or empty
+
+Summary panel always reflects the active current selection
+
+Page visually matches the admin portal styling conventions
+
+Out of Scope for Slice 2+
+
+Save these for later slices:
+
+named groups / phases
+
+scenario compare
+
+save estimates
+
+export summary
+
+proposal integration
+
+customer add-on packaging
+
+AMI / water data connections
+
+maintenance savings inputs
+
+multi-factor ROI modeling
+
+Very Short Note to Add for Replit
+
+If the real KML file is provided, use it as the test source for this slice so the planner is built against realistic polygon structure and field naming. If direct KML handling is unreliable, convert the KML to a stable GeoJSON representation for use in the planner while preserving source labels where possible.

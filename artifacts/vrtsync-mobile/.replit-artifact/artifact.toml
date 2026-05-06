@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "VRTSync Mobile"
+version = "1.0.0"
+id = "artifacts/vrtsync-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 24922
+
+[services.development]
+run = "pnpm --filter @workspace/vrtsync-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/vrtsync-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/vrtsync-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "24922"
+BASE_PATH = "/"

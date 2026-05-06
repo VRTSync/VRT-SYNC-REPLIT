@@ -1,0 +1,248 @@
+REPLIT PASTE: Irrigation Controllers + Zones (KML ingestion + nesting + coloring rules)
+1) Source file structure (this is the contract)
+
+For irrigation “Controllers & Zones” KML files (like Miramonte - Irrigation - Controllers & Zones.kml), the file is structured like this:
+
+Document
+
+Folder: “Controller A”
+
+Placemark (Point): “Clock A” → this is the controller
+
+Folder: “Controller A - Zones”
+
+Placemark (Point): “Clock A zone 1 …”
+
+Placemark (Point): “Clock A zone 2 …”
+
+…
+
+Folder: “Controller B”
+
+Placemark: “Clock B”
+
+Folder: “Controller B - Zones”
+
+Placemark: “Clock B zone 1 …”
+
+…
+
+Key rule:
+✅ Each top-level controller folder contains exactly:
+
+1 controller placemark (the clock)
+
+1 zones folder containing N zone placemarks
+
+Zones are nested under their controller by folder, not by style color.
+
+2) What gets created in the database (Assets model)
+
+We are using the existing Assets system.
+
+We will create two asset types from this file:
+
+controller
+
+zone
+
+Controller asset creation
+
+For each top-level Folder:
+
+Find the controller Placemark directly inside that folder
+
+Create/update an assets row:
+
+assetType = "controller"
+
+label = placemark.name (ex: "Clock A")
+
+featureRef = placemark.@id (KML Placemark id, stable)
+
+mapLayerId = the irrigation/controller layer id
+
+communityId = selected community
+
+latitude/longitude = point coordinates
+
+Add/update required properties via asset_properties:
+
+controllerKey (ex: "A" or "Clock A", see parsing below)
+
+controllerColor (hex color for UI, see coloring rules below)
+
+Zone asset creation
+
+Inside each controller’s “Zones” folder:
+
+For each zone placemark:
+
+Create/update an assets row:
+
+assetType = "zone"
+
+label = placemark.name (ex: "Clock A zone 1 pop ups")
+
+featureRef = placemark.@id
+
+mapLayerId = the irrigation/zone layer id
+
+communityId
+
+latitude/longitude
+
+Add/update properties:
+
+controllerFeatureRef = <parent controller placemark id> ✅ (THIS IS THE NESTING LINK)
+
+controllerLabel = "Clock A" (optional convenience)
+
+zoneNumber = 1 (parsed if possible)
+
+zoneType = "pop ups" (parsed if possible)
+
+zoneLabelShort = "Zone 1" (optional convenience)
+
+Important:
+Zones belong to the controller by this relationship:
+✅ zone.controllerFeatureRef → controller.featureRef
+(Or alternatively link to controller assetId if we want, but featureRef is sufficient and stable during import.)
+
+3) Parsing rules (controllerKey, zoneNumber, zoneType)
+
+We should parse from placemark names when possible, but never break if format varies.
+
+Controller parsing
+
+Controller placemark names look like:
+
+"Clock A" / "Clock B" etc.
+
+Extract:
+
+controllerKey: letter after “Clock ” if present (A, B, C…)
+
+controllerLabel: full cleaned string “Clock A”
+
+Zone parsing
+
+Zone placemark names look like:
+
+"Clock A zone 1 pop ups"
+
+"Clock A zone 12 drip"
+
+etc.
+
+Extract if available:
+
+controllerKey (A) — optional for validation only
+
+zoneNumber: first integer after the word “zone”
+
+zoneType: remaining tail text after zone number (ex: “pop ups”, “drip”, etc.)
+
+If parsing fails, still create the asset; just omit those optional properties.
+
+4) Controller-based color system (critical requirement)
+
+Requirement: Every controller must have a unique color, and all zones under that controller must render using that same color.
+
+Source of truth for controller colors
+
+Controllers in the KML already have distinct icon URLs like:
+https://earth.google.com/earth/document/icon?color=ffa726&id=2345&scale=4
+
+So for each controller placemark:
+
+resolve its styleUrl → StyleMap → CascadingStyle → Icon href
+
+parse the color= hex (example: ffa726)
+
+store as controllerColor = "#ffa726" in controller asset properties
+
+Zone coloring rule
+
+Zones do NOT carry controller colors in the KML style.
+So zone display color must be derived by:
+
+find zone.controllerFeatureRef
+
+look up controller asset’s controllerColor
+
+render zone marker using that color
+
+5) Map UI behavior (must match current platform screenshot)
+
+In the Irrigation System tab, left side panel:
+
+A) Sublayers toggles (top section)
+
+Show checkboxes:
+
+Community Outline
+
+Zone
+
+Controller
+
+Backflow (etc)
+
+B) Controllers list section (second section)
+
+When “Controller” or “Zone” is enabled, show a “Controllers” list:
+
+Each row:
+
+checkbox
+
+color dot (controllerColor)
+
+label (Clock A)
+
+count of zones under it (N)
+
+Behavior:
+
+Checking a controller enables:
+
+controller marker (if Controller layer toggled)
+
+zones for that controller (if Zone layer toggled)
+
+Unchecking hides both (or hides zones only if you prefer separate toggles)
+
+Add “select all / none” at top of controller list
+
+C) Zone rendering
+
+Zones should render as:
+
+small circular markers (or rings) using controllerColor
+
+they do not need their own style per zone; all match controller
+
+6) Validation expectations during import (important)
+
+During KML ingest:
+
+If a controller folder is missing its controller placemark, flag it in validation results
+
+If zones exist but no controller found, mark zones as invalid/unlinked
+
+If a zone’s placemark name suggests “Clock X” but folder is “Controller Y”, ignore name and trust folder nesting
+
+7) Summary: “What matters most”
+
+Folder nesting defines parent/child relationship: Controller Folder → Zones Folder
+
+Controllers become assets of type controller
+
+Zones become assets of type zone
+
+Zone has a stored link controllerFeatureRef to parent controller
+
+Controller color is extracted once and stored
+
+Zone markers inherit controllerColor

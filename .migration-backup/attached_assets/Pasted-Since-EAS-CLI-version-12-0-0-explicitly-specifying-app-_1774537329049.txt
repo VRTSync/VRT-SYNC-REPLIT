@@ -1,0 +1,48 @@
+Since EAS CLI version `12.0.0` explicitly specifying app version source is required. Please select your app version source:
+	1) With the "local" app version source and "autoIncrement" option enabled, the build number/version code is sourced from local project files and incremented automatically if possible, by editing local project files. Learn more: https://docs.expo.dev/build-reference/app-versions/#local-version-source
+	2) With the "remote" app version source and "autoIncrement" option enabled, the build number/version code is stored on EAS servers and updated every time you create a new build. Remote auto-incrementation won't edit the version in the local project files, but instead, the new version will be injected automatically during the build process. Learn more: https://docs.expo.dev/build-reference/app-versions/#remote-version-source
+Until now, this project has been using the "local" version source (which was the previous default). App version source can now be set for you automatically, or you can configure it manually by setting the "appVersionSource" value in your eas.json.
+✔ What would you like to do? › Update eas.json to use the default "remote" version source (recommended)
+✔ Updated eas.json
+EAS project not configured.
+✔ Existing EAS project found for @rmangel03/vrtsyncmobile (id = 0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2). Configure this project? … yes
+
+Warning: Your project uses dynamic app configuration, and the EAS project ID can't automatically be added to it.
+https://docs.expo.dev/workflow/configuration/#dynamic-configuration-with-appconfigjs
+
+To complete the setup process, set "extra.eas.projectId" in your app.config.js:
+
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2"
+      }
+    }
+  }
+}
+
+✖ Linking local project to EAS project 0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2
+Cannot automatically write to dynamic config at: app.config.js
+    Error: build command failed.
+EAS project not configured.
+✔ Existing EAS project found for @rmangel03/vrtsyncmobile (id = 0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2). Configure this project? … yes
+
+Warning: Your project uses dynamic app configuration, and the EAS project ID can't automatically be added to it.
+https://docs.expo.dev/workflow/configuration/#dynamic-configuration-with-appconfigjs
+
+To complete the setup process, set "extra.eas.projectId" in your app.config.js:
+
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2"
+      }
+    }
+  }
+}
+
+✖ Linking local project to EAS project 0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2
+Cannot automatically write to dynamic config at: app.config.js
+    Error: submit command failed.

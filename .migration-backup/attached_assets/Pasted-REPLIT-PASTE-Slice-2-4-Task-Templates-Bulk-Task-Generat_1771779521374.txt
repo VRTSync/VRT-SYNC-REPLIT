@@ -1,0 +1,210 @@
+REPLIT PASTE: Slice 2.4 — Task Templates + Bulk Task Generation
+
+Implement a task template system in the Web Hub that can generate tasks for a community (or multiple communities) from reusable templates, with scheduling, assignment rules, and asset targeting.
+
+Goals
+
+Admin can define reusable Task Templates (title, description, priority, default due offset, required completion fields).
+
+Admin can generate tasks in bulk for a community from templates (with due dates).
+
+Templates can optionally target:
+
+assetType (e.g., backflow)
+
+a specific mapLayerId
+
+a specific assetId (rare)
+
+Generated tasks are auto-linked to assets when applicable (task_links created).
+
+Admin can assign generated tasks to a contractor (optional bulk assignment).
+
+Contractors see generated tasks immediately in mobile app.
+
+Backend
+A) New tables
+1) task_templates
+
+Fields:
+
+id (UUID)
+
+name (text) // internal template name
+
+title (text)
+
+description (text)
+
+priority (enum)
+
+defaultStatus (enum, default pending)
+
+dueDaysOffset (int nullable) // e.g., due in 7 days
+
+targetType (enum: none | assetType | mapLayer | specificAsset)
+
+targetAssetType (text nullable)
+
+targetMapLayerId (uuid nullable)
+
+targetAssetId (uuid nullable)
+
+requireSignOffName (bool default true)
+
+allowPhotos (bool default true)
+
+createdBy (userId)
+
+createdAt/updatedAt
+
+2) template_runs (optional but very useful)
+
+Tracks bulk generations.
+Fields:
+
+id
+
+templateId
+
+communityId
+
+createdBy
+
+runAt
+
+taskCountCreated
+
+assignmentUserId (nullable)
+
+3) template_run_items (optional)
+
+Tracks which taskIds were created.
+
+B) Endpoints (admin-only)
+Templates CRUD
+
+GET /api/task-templates
+
+POST /api/task-templates
+
+PATCH /api/task-templates/:id
+
+DELETE /api/task-templates/:id
+
+Bulk generate
+
+POST /api/task-templates/:id/generate
+Body:
+
+communityId
+
+dueDate (optional; overrides offset)
+
+assignToUserId (optional)
+
+limit (optional; for “first N assets”)
+
+includeArchivedAssets (default false)
+
+Behavior:
+
+If targetType=none → create 1 task for community
+
+If targetType=assetType → create 1 task per active asset of that type in community
+
+If targetType=mapLayer → create 1 task per active asset from that mapLayerId
+
+If targetType=specificAsset → create 1 task linked to that asset
+For each created task:
+
+set address/coords from asset if available
+
+create task_links row linking task to asset
+Return:
+
+createdCount
+
+skippedCount (e.g., no assets found)
+
+runId (if using template_runs)
+
+sample of created tasks
+
+Bulk assign (optional separate endpoint)
+
+POST /api/tasks/bulk/assign
+Body: { taskIds[], assignedTo }
+
+Web Hub UI
+A) New “Task Templates” page
+
+Route:
+
+/web/admin/task-templates
+
+UI:
+
+Templates table
+
+Create/Edit template modal:
+
+name
+
+title/description
+
+priority
+
+dueDaysOffset
+
+targeting options (none/assetType/mapLayer/specificAsset)
+
+toggles: require sign-off, allow photos
+
+“Generate” button per template:
+
+pick community
+
+choose dueDate or “use offset”
+
+optional assign contractor
+
+preview counts: how many tasks will be created (call a preview endpoint or do a lightweight check)
+
+B) Tasks page enhancement
+
+Add filters:
+
+by template run (optional)
+
+by community
+
+by assigned contractor
+
+status/priority
+
+Acceptance Criteria
+
+Create a template “Backflow Inspection” targeted to assetType=backflow.
+
+Generate for a community with 10 backflows:
+
+creates 10 tasks
+
+each task linked to the correct asset
+
+tasks carry coords/address from asset
+
+Contractor sees tasks in their list and can complete them normally.
+
+Archived assets do not generate tasks.
+
+Admin can bulk assign generated tasks to a contractor.
+
+Out of Scope
+
+Recurrence scheduler / cron automation (next slice)
+
+HOA approvals
+
+Invoice-related logic (explicitly excluded)

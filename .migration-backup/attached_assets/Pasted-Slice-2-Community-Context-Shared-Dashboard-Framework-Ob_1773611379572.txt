@@ -1,0 +1,499 @@
+Slice 2 — Community Context + Shared Dashboard Framework
+Objective
+
+Build the community-scoped experience layer for the new VRTSync web portals.
+
+This slice establishes:
+
+community selector behavior
+
+active community persistence
+
+shared community page header
+
+shared dashboard module framework
+
+first-pass role-based dashboard rendering for:
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor
+
+This slice should not go deep into feature-specific page functionality yet.
+The goal is to create the community-aware dashboard system that future pages will plug into.
+
+Core Principle
+
+Most non-admin web experiences in VRTSync are community-based.
+
+Users should feel like they are working inside a selected community, not just browsing generic pages.
+
+The system should follow this rule:
+
+1 assigned community → go directly into that community experience
+
+2+ assigned communities → go to community selector first
+
+Super Admin remains separate and does not use this pattern.
+
+Roles Included in This Slice
+
+This slice applies to:
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor
+
+This slice does not redesign the Super Admin dashboard.
+
+Community Selector Behavior
+Required Logic
+
+For all non-admin shells:
+
+If user has 1 assigned community
+
+Automatically set that as the active community and route to dashboard.
+
+If user has 2+ assigned communities
+
+Route to a community selector screen before entering the dashboard.
+
+Use existing portal state and /api/auth/me community data.
+
+Community Selector Screen
+
+Create a shared selector page for multi-community users.
+
+Suggested route examples:
+
+/web/contractor/communities
+/web/pm/communities
+
+If HOA users only ever have one community, they do not need to see this screen in normal use, but the framework should still support it cleanly.
+
+Community Selector UI
+
+Simple card-based selection screen.
+
+Each card should display:
+
+community name
+
+address if available
+
+optional small metadata if already easily available
+
+Example:
+
+Preserve Metro District
+1234 Main St
+
+Autumn Meadows
+987 Park Ave
+
+Clicking a card should:
+
+set active community in PortalState
+
+persist selection
+
+route to dashboard
+
+Active Community Persistence
+
+The active community selection should persist between page loads.
+
+Implement persistence using the same lightweight approach already used elsewhere in the portal.
+
+Acceptable approach:
+
+localStorage
+
+sessionStorage
+
+or existing portal state persistence if already available
+
+When the shell loads:
+
+get the user
+
+get assigned communities
+
+restore active community if valid
+
+if none selected:
+
+auto-select if only one
+
+go to selector if multiple
+
+PortalState Expansion
+
+Expand PortalState to better support community-aware rendering.
+
+Add support for a helper like:
+
+getCommunityContext()
+
+Target shape can be simple, for example:
+
+{
+  user,
+  role,
+  communities,
+  activeCommunity,
+  isMultiCommunityUser
+}
+
+This helper will be used heavily in future slices.
+
+Do not over-engineer permissions yet.
+
+Shared Community Page Header
+
+Create a reusable header block for all community-scoped pages.
+
+This should appear at the top of dashboard and later be reused on tasks, map, documents, invoices, reports, contacts, etc.
+
+Header content
+
+page title
+
+active community name
+
+optional address/subtext if available
+
+Example:
+
+Dashboard
+Preserve Metro District
+
+This is important so users always know which community they are viewing.
+
+Shared Dashboard Framework
+
+Create the dashboard rendering framework used by all community-scoped roles.
+
+Do not hardcode each dashboard as a totally separate page.
+
+Instead build a shared dashboard layout system that supports:
+
+shared page shell
+
+role-specific module visibility
+
+role-specific module ordering
+
+room for future module expansion
+
+This should be modular and lightweight.
+
+Dashboard Module System
+
+Create a first-pass module system with reusable dashboard blocks.
+
+At minimum support these module types:
+
+Map Preview Module
+List Module
+Quick Links Module
+Notes Module
+Graph/Chart Module
+Placeholder Stat Module
+
+These do not all need deep live functionality yet.
+The goal is to establish the module framework and dashboard composition pattern.
+
+Module Expectations for This Slice
+1. Map Preview Module
+
+Used on HOA Admin / HOA Member dashboards at minimum.
+
+For this slice, a placeholder or lightweight preview block is acceptable if embedding the real map adds too much depth here.
+
+Target purpose:
+
+establish visual hierarchy
+
+reserve the major map space on community dashboards
+
+Later slice will deepen real map interaction.
+
+2. List Module
+
+Reusable list-style card for:
+
+recent tasks
+
+requests
+
+invoices
+
+upcoming work
+
+For this slice, it is acceptable to render:
+
+real data if easy
+
+or placeholder data structures using live API shape if available
+
+The module should support:
+
+title
+
+rows
+
+empty state
+
+click target placeholder
+
+3. Quick Links Module
+
+Reusable action/navigation card.
+
+Examples:
+
+open map
+
+open tasks
+
+open documents
+
+open reports
+
+This is especially useful for contractor and HOA dashboards.
+
+4. Notes Module
+
+Used for contractor dashboard.
+
+This module can be a first-pass placeholder card labeled:
+
+Contractor Notes
+
+No full note system is required yet unless already easy to surface.
+
+Goal is to reserve the module and dashboard structure.
+
+5. Graph Module
+
+Used for water usage later.
+
+For this slice, create the reusable visual container even if it only renders a placeholder chart state for now.
+
+Role-Specific Dashboard Layouts
+
+Build the first-pass dashboards for the following roles.
+
+These should all use the shared community dashboard framework.
+
+Contractor Dashboard
+
+Purpose:
+Action-oriented community work dashboard.
+
+Required first-pass modules:
+
+Today / Active Work module
+
+HOA Requests module
+
+Quick Map Access module
+
+Contractor Notes module
+
+The contractor dashboard should feel execution-focused.
+
+Do not build full task completion here yet.
+
+HOA Admin Dashboard
+
+Purpose:
+Community command center with visual and oversight emphasis.
+
+Required first-pass modules:
+
+Large Map Preview module
+
+Recent Work module
+
+Upcoming Work module
+
+Recent Invoices module
+
+Documents Quick Link module
+
+Water Usage module placeholder
+
+This should be the most map-heavy community dashboard.
+
+HOA Member Dashboard
+
+Same overall dashboard layout as HOA Admin, but read-only and lighter where appropriate.
+
+For this slice, it is acceptable to reuse the HOA Admin dashboard structure and simply render it as read-only with no action controls.
+
+Property Manager Dashboard
+
+Purpose:
+Community oversight and change-awareness dashboard.
+
+Required first-pass modules:
+
+Recent Completed Work module
+
+Recent Invoices module
+
+Recent Requests module
+
+Upcoming Work module
+
+Water Usage module placeholder
+
+This should feel less map-dominant than HOA Admin and more operations-focused.
+
+Data Strategy for This Slice
+
+Use live data where it is already easy and stable.
+
+Good candidates:
+
+current user + communities from /api/auth/me
+
+task counts or task previews from existing task endpoints
+
+HOA dashboard endpoint if already available
+
+Do not get stuck building perfect endpoint coverage in this slice.
+
+This slice is primarily about:
+
+community-aware routing
+
+shared dashboard composition
+
+module rendering structure
+
+If necessary, use placeholder states with clean upgrade paths.
+
+Routing Requirements
+
+Add dashboard route handling for each portal.
+
+Examples:
+
+/web/contractor/dashboard
+/web/hoa/dashboard
+/web/pm/dashboard
+
+And add community selector routes where needed:
+
+/web/contractor/communities
+/web/pm/communities
+
+Shell boot behavior should send users to the correct route based on:
+
+role
+
+assigned community count
+
+active community state
+
+Community-Aware Navigation Behavior
+
+For this slice, make sure the dashboard experience respects active community context.
+
+Changing the community selector in the top bar should:
+
+update PortalState
+
+persist the selected community
+
+refresh dashboard content
+
+keep the user inside the same portal shell
+
+No need yet to wire this across all future pages beyond dashboard.
+
+Out of Scope for Slice 2
+
+Do NOT fully build the following yet:
+
+full task page
+
+full map page
+
+request creation flow
+
+invoice management flow
+
+documents drive
+
+contracts page
+
+users page
+
+reports page
+
+contacts page
+
+notification logic
+
+plus button actions
+
+Those belong in future slices.
+
+Deliverables for Slice 2
+
+By the end of Slice 2, the system should support:
+
+active community selection for multi-community users
+
+community auto-selection for single-community users
+
+persistent active community state
+
+shared community page header
+
+shared dashboard framework
+
+reusable dashboard module structure
+
+first-pass dashboards for:
+
+Property Manager
+
+HOA Admin
+
+HOA Member
+
+Contractor
+
+The dashboards should render inside the existing portal shells and feel like the beginning of the real product, even if some modules are still placeholder-level.
+
+Success Criteria
+
+The system should be able to:
+
+detect whether a user has one or multiple communities
+
+send multi-community users to a selector screen
+
+persist the selected community
+
+render the correct role-based dashboard
+
+show the active community clearly in the UI
+
+support reusable dashboard modules rather than one-off pages
+
+This slice establishes the community-centered desktop experience that the rest of the VRTSync web portal will build on.

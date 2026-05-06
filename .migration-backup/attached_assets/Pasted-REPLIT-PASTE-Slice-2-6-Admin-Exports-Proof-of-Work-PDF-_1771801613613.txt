@@ -1,0 +1,244 @@
+REPLIT PASTE: Slice 2.6 — Admin Exports (Proof-of-Work PDF + Optional Photos ZIP)
+
+Objective
+Add an Admin-only export tool in the Web Hub that generates a Proof-of-Work packet for a community over a date range. This is not a portal — it’s a hub output you can send to HOAs/PMs.
+
+Scope (Admin Web Hub only)
+1) New page
+
+Add sidebar item + route:
+
+/web/admin/exports
+
+Includes:
+
+“New Export” button (modal)
+
+Table of recent exports with status + download links
+
+Backend
+A) Database: exports table
+
+Create exports table with:
+
+id UUID PK
+
+communityId FK
+
+createdBy FK
+
+type TEXT (only "proof_of_work")
+
+status TEXT (queued | running | complete | failed)
+
+filters JSON (dateFrom/dateTo + optional filters below)
+
+pdfFileRef TEXT nullable
+
+photosZipRef TEXT nullable
+
+createdAt timestamp
+
+completedAt timestamp nullable
+
+errorMessage TEXT nullable
+
+Index:
+
+(communityId, createdAt desc)
+
+B) API endpoints (admin-only)
+1) Create export
+
+POST /api/exports/proof-of-work
+Body:
+
+communityId
+
+dateFrom (ISO string)
+
+dateTo (ISO string)
+
+optional filters:
+
+assetType?
+
+templateId? (if tasks store template reference; if not, omit filter)
+
+contractorId?
+
+status? (default "completed")
+
+includePhotosZip boolean (default false)
+
+Returns:
+
+{ exportId }
+
+2) Get export
+
+GET /api/exports/:id
+Returns:
+
+export row + pdfDownloadUrl? + zipDownloadUrl? if complete
+
+3) List exports
+
+GET /api/exports?communityId=
+Returns last 50 exports for that community.
+
+C) Export generation logic
+
+Implement synchronously for now (no background workers required) but preserve state transitions:
+
+set status running
+
+generate files
+
+set complete with refs OR failed with errorMessage
+
+Data included
+
+Query should join (use your existing schema/joins):
+
+tasks
+
+task_completions
+
+attachments (linked to completions)
+
+task_links → assets
+
+users (completedBy + signoff name is in completions)
+
+Filter:
+
+completions where completedAt is within [dateFrom, dateTo] (inclusive) in the community timezone (default America/Denver if community has no timezone field yet).
+
+Include fields per completion:
+
+completedAt
+
+completedBy displayName
+
+employeeSignOffName
+
+task title, status, priority, dueDate
+
+notes, timeSpent, materialsUsed, followUpNeeded (if present)
+
+linked asset: assetType, label, featureRef, coordinates/address if present
+
+attachments: urls/refs + original filename
+
+D) PDF output (clean + compact)
+
+Generate a PDF with:
+
+Page 1: Cover + Summary
+
+Community name
+
+Date range
+
+Generated timestamp
+
+Summary totals:
+
+total completions
+
+by contractor
+
+by assetType
+
+follow-ups needed count
+
+Detail section (grouped)
+
+Group by:
+
+assetType → asset label (recommended)
+Each completion entry shows:
+
+completedAt
+
+completedBy + signoff
+
+task title
+
+notes/time/materials/follow-up flags
+
+photo thumbnails (limit to first 2–3 per completion)
+
+show “+N more photos” if more exist
+
+Store PDF using your existing object storage/file ref pattern:
+
+save to pdfFileRef
+
+E) Optional photos ZIP
+
+If includePhotosZip=true:
+
+Create a ZIP of all attachments in the export
+
+Folder structure:
+
+/<assetType>/<assetLabel>/<taskTitle>/<filename>
+
+Save to photosZipRef
+
+Admin Web Hub UI
+A) New Export Modal
+
+Fields:
+
+community selector (default active community)
+
+dateFrom/dateTo
+
+optional filters (assetType, contractor, status)
+
+checkbox: includePhotosZip
+
+On submit:
+
+create export
+
+show status in modal and allow refresh/poll until complete
+
+then show download buttons
+
+B) Exports table
+
+Columns:
+
+Created At
+
+Date range
+
+Status
+
+Created By
+
+Download PDF
+
+Download ZIP (if present)
+
+Acceptance Criteria
+
+Admin can generate export for a community and download PDF successfully.
+
+PDF includes correct completions, signoff names, notes, and photo thumbnails.
+
+ZIP (if enabled) downloads with expected folder structure and all photos.
+
+Contractors cannot access any export endpoints or /web/admin/exports.
+
+Out of Scope
+
+emailing exports
+
+perfect branding
+
+HOA/PM portals

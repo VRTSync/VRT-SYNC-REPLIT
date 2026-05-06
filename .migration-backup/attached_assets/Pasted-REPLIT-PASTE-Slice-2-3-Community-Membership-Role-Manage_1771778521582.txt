@@ -1,0 +1,125 @@
+REPLIT PASTE: Slice 2.3 — Community Membership & Role Management (Web Hub)
+
+Implement community membership management in the Web Hub so admins can assign contractors to communities and control portal access.
+
+Goals
+
+Admin can add/remove users to/from communities (membership).
+
+Admin can create contractor users (or invite) and assign them to communities.
+
+Membership controls what contractors see in mobile app:
+
+Communities list
+
+Tasks list
+
+Assets/map layers visibility
+
+Provide a clean web UI for managing memberships per community.
+
+Backend
+A) User endpoints (admin-only)
+1) List users
+
+GET /api/admin/users?role=contractor|admin|all
+Returns: id, displayName, username/email, role, createdAt.
+
+2) Create user (simple)
+
+POST /api/admin/users
+Body: { username, password, displayName, role }
+
+role allowed: contractor/admin
+
+returns created user (without password)
+
+(If you already have this in mobile admin, reuse the same endpoints; just expose for web hub.)
+
+B) Membership endpoints (admin-only)
+1) List members for a community
+
+GET /api/admin/communities/:communityId/members
+Returns:
+
+members: [{ userId, displayName, role, username }]
+
+nonMembers (optional): contractors not in this community for quick add
+
+2) Add member(s)
+
+POST /api/admin/communities/:communityId/members
+Body: { userIds: string[] }
+Creates rows in community_members (ignore duplicates).
+Return counts: added/skipped.
+
+3) Remove member
+
+DELETE /api/admin/communities/:communityId/members/:userId
+Removes membership.
+
+C) Permission consistency checks
+
+Contractors:
+
+/api/communities returns only memberships
+
+/api/tasks?communityId= forbids communities they’re not a member of
+
+/api/map-layers and asset lookups should be membership-gated (already in earlier slices—confirm)
+
+Admin: full access
+
+Web Hub UI
+A) Community Members Panel
+
+On /web/admin/communities:
+
+When selecting a community, show a “Members” section/tab:
+
+List current members (contractors + admins)
+
+Remove buttons
+
+“Add Contractors” button opens modal:
+
+searchable list of contractor users not in community
+
+multi-select
+
+Add selected
+
+B) Users page (optional but recommended)
+
+Add route:
+
+/web/admin/users
+Allows:
+
+list users
+
+create contractor/admin user
+
+quick view: which communities a contractor belongs to
+
+(If you prefer to keep 2.3 smaller, you can embed “Create contractor” inside the add-member modal.)
+
+Acceptance Criteria
+
+Admin can add a contractor to a community in the web hub.
+
+Contractor logs into mobile app and sees that community appear (bootstrap payload includes it).
+
+Contractor cannot access tasks/assets/layers for a community they’re not assigned to.
+
+Removing a contractor immediately removes access.
+
+Membership changes do not require redeploy or manual DB edits.
+
+Out of Scope
+
+Email invites / password reset flows
+
+Community Admin role (explicitly deferred)
+
+SSO

@@ -1,0 +1,471 @@
+Slice 7 — Invoices Page (Asset Work History Engine)
+
+Objective
+
+Implement the Invoices page for the web portals as a structured, community-aware invoice system that functions as:
+
+• a searchable invoice record system
+• a PDF repository
+• the official asset-specific work history builder for VRTSync
+
+This slice establishes the invoice list experience for community-facing users and the master invoice management experience for Super Admin.
+
+Invoices must remain tied to the asset system and not behave like a generic accounting module.
+
+⸻
+
+Critical Design Rule
+
+All new invoice UI must match the existing admin portal styling.
+
+Use the existing design system located at:
+
+server/public/admin/admin.css
+
+Continue using the same layout patterns, buttons, forms, cards, and typography used in the admin portal.
+
+Do not introduce a separate accounting UI design language.
+
+The invoice system must visually feel like a natural extension of the existing admin portal.
+
+⸻
+
+Invoice System Purpose
+
+Invoices serve three connected roles:
+	1.	Structured invoice records
+	2.	Storage of invoice PDF documents
+	3.	Asset-specific maintenance history
+
+Every invoice must be tied to a specific level of the map asset hierarchy.
+
+⸻
+
+Invoice Attachment Model
+
+Invoices attach to the deepest selected level only.
+
+Examples:
+
+Trees → Blue Spruce → Tree #23
+Irrigation → Controller → Controller A
+Irrigation → Zone → Zone 14
+Community → Landscape Beds → Bed Polygon #4
+
+There is no automatic inheritance up or down the hierarchy.
+
+This preserves historical accuracy.
+
+⸻
+
+Roles Included in This Slice
+
+Build invoice behavior for:
+
+Super Admin
+Property Manager
+HOA Admin
+HOA Member
+
+Contractors must not have access to the Invoices page.
+
+Contractors only see work history records through asset views.
+
+⸻
+
+Role Behavior
+
+Super Admin
+
+• View invoices across all communities
+• Create invoices
+• Upload invoice PDFs
+• Edit invoice metadata
+• Delete invoices if supported
+• Inspect attachment target
+
+Super Admin experience acts as the platform-wide invoice ledger.
+
+⸻
+
+Property Manager
+
+Community-scoped visibility only.
+
+Can:
+
+• view invoices for the active community
+• open invoice details
+• view/download PDF
+
+Cannot:
+
+• create
+• edit
+• delete
+
+⸻
+
+HOA Admin
+
+Same visibility model as Property Manager.
+
+Can:
+
+• view invoices
+• open invoice details
+• view/download PDF
+
+Cannot:
+
+• create
+• edit
+• delete
+
+⸻
+
+HOA Member
+
+Read-only community visibility.
+
+Can:
+
+• view invoice list
+• open invoice details
+• download/view PDFs
+
+Cannot:
+
+• create
+• edit
+• delete
+
+⸻
+
+Contractor
+
+No invoice page access.
+
+Contractors will see work history details later via asset views but not financial information.
+
+⸻
+
+Routes
+
+Add or finalize routes:
+
+/web/admin/invoices
+/web/pm/invoices
+/web/hoa/invoices
+
+Use the existing SPA router pattern.
+
+⸻
+
+Community Context Rule
+
+For Property Manager and HOA portals, the invoice page must respect the active community from PortalState.
+
+PortalState.getActiveCommunity()
+
+Changing the community in the topbar must refresh the invoice list.
+
+Super Admin retains platform-wide invoice visibility.
+
+⸻
+
+Shared Page Header
+
+Community portals:
+
+Invoices
+Preserve Metro District
+
+Super Admin portal:
+
+Invoices
+All Communities
+
+⸻
+
+Page Layout
+
+The page should follow a structured layout:
+
+Page Header
+Filter / Action Bar
+Invoice List
+Invoice Detail View or Modal
+
+Keep layout consistent with the admin portal.
+
+⸻
+
+Default Page Behavior
+
+Invoices page opens with a searchable invoice list.
+
+This is the primary view.
+
+Invoice creation is form-first.
+
+Map-first invoice creation will be implemented later.
+
+⸻
+
+Invoice List View
+
+Recommended columns:
+
+Completion Date
+Community
+Contractor
+Service Type
+Target / Attachment
+Cost
+PDF Indicator
+
+For community-scoped portals, the Community column may be omitted.
+
+Maintain alignment with admin portal table/card design patterns.
+
+⸻
+
+Filtering
+
+Super Admin filters:
+
+Community
+Contractor
+Date Range
+Service Type
+Layer or attachment category if available
+
+Property Manager and HOA filters:
+
+Date Range
+Contractor if useful
+Service Type if available
+
+Do not build complex filtering yet.
+
+⸻
+
+Search
+
+If available, allow simple search by:
+
+Contractor
+Service Type
+Target label
+Invoice identifier or notes
+
+If search requires significant backend work, defer and rely on filters for now.
+
+⸻
+
+Invoice Detail View
+
+Clicking an invoice opens an invoice detail view.
+
+Detail must show:
+
+Contractor
+Completion date
+Cost
+Service type
+Notes if available
+Attachment target
+PDF access
+
+The attachment target must be clearly visible.
+
+⸻
+
+Attachment Target Display
+
+Examples:
+
+Trees → Blue Spruce → Tree #23
+Irrigation → Zone → Zone 14
+Community → Landscape Beds → Bed Polygon #4
+
+This should be visually clear because it is a core VRTSync concept.
+
+⸻
+
+PDF Handling
+
+Invoices must support PDF viewing.
+
+Acceptable behaviors:
+
+Open PDF in new tab
+Download PDF
+View PDF action button
+
+Inline preview is optional.
+
+⸻
+
+Super Admin Create Invoice Flow
+
+Super Admin must be able to create invoices from the invoice page.
+
+Creation form must support:
+
+Community
+Contractor
+Completion date
+Service type
+Cost
+Notes if available
+Attachment target selection
+PDF upload
+
+Use existing modal or panel patterns.
+
+⸻
+
+Attachment Target Selection
+
+Admins must be able to choose where the invoice attaches.
+
+The form should walk through:
+
+Layer category
+Sublayer
+Sub-sublayer or asset if applicable
+
+The attachment must be explicit.
+
+Do not automatically infer attachment.
+
+⸻
+
+Invoice Creation Principle
+
+Form-first entry is the primary creation method for this slice.
+
+Map-first creation from asset context will be added later.
+
+Structure the invoice creation logic so map entry can reuse it.
+
+⸻
+
+Read-Only Experience
+
+For Property Manager and HOA portals:
+
+No create button
+No edit actions
+No delete actions
+
+Users can:
+
+View invoice list
+Open invoice details
+Download PDFs
+
+The page should remain visually identical but without edit actions.
+
+⸻
+
+Data Strategy
+
+Use real invoice data where possible.
+
+Invoices must remain tied to the asset hierarchy.
+
+Do not reduce the invoice page to a document list.
+
+⸻
+
+Asset Work History Concept
+
+Invoices represent the official work history of infrastructure assets.
+
+Even if the map integration is not complete yet, the UI must make clear that invoices represent work tied to infrastructure targets.
+
+⸻
+
+Styling Requirements
+
+Continue using the admin design system.
+
+Use:
+
+Existing buttons
+Existing forms
+Existing modal styles
+Existing card/list patterns
+Navy/teal palette
+Existing typography and spacing
+
+Do not create a separate finance styling system.
+
+⸻
+
+Out of Scope for This Slice
+
+Do not implement:
+
+Map-first invoice creation
+Map deep linking
+OCR parsing
+Advanced invoice analytics
+Inline PDF annotation
+Contractor invoice visibility
+Bulk invoice imports
+
+These belong in later slices.
+
+⸻
+
+Deliverables
+
+By the end of Slice 7 the system must support:
+
+Invoices page for Super Admin
+Invoices page for Property Manager
+Invoices page for HOA Admin
+Invoices page for HOA Member
+
+Community-scoped invoice visibility
+Master invoice ledger for Super Admin
+Invoice detail view
+PDF viewing and downloading
+Invoice creation flow for Super Admin
+Attachment target selection
+
+All UI must match admin portal styling.
+
+⸻
+
+Success Criteria
+
+The system should be able to:
+
+Open the Invoices page inside admin, PM, and HOA portals
+Load invoices for the correct scope
+Render invoice list correctly
+Open invoice detail view
+Display attachment targets clearly
+Allow PDF viewing/downloading
+Allow Super Admin to create invoices
+Maintain admin portal styling throughout
+
+⸻
+
+Important Reminder to Replit
+
+The Invoices page is the asset work history engine of VRTSync.
+
+Users must clearly understand:
+
+what work was done
+when it was done
+who performed the work
+what infrastructure it was tied to
+
+Maintain the asset-centric structure and reuse the admin portal design system

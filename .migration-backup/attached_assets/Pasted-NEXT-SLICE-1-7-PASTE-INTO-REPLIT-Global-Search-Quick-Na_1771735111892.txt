@@ -1,0 +1,241 @@
+NEXT SLICE — 1.7 (PASTE INTO REPLIT)
+Global Search & Quick Navigation (Assets + Tasks + Map)
+
+Objective
+Enable fast lookup of assets and tasks by label, ID, address, serial number, or other key fields, and allow jumping directly to details or map location.
+
+This is essential for real-world use when someone says:
+
+“Can you check Backflow 12 near the clubhouse?”
+“Find the controller for building 7.”
+“Show me the task for the west pond.”
+
+Scope
+
+Search across:
+
+Contractors
+
+Their assigned tasks (current + recent)
+
+Assets in their communities
+
+Addresses / labels
+
+Admins
+
+All assets in selected community
+
+Tasks in selected community
+
+Feature labels / IDs
+
+Backend Requirements
+1) Search endpoint
+
+Add:
+
+GET /api/search?q=&communityId=&types=
+
+Parameters:
+
+q (required): search string
+
+communityId (optional but recommended)
+
+types (optional): comma-separated
+
+asset
+
+task
+
+address
+
+Permissions:
+
+Contractors: only within their communities
+
+Admins: all or filtered by communityId
+
+2) Asset search fields
+
+Search should match (case-insensitive, partial):
+
+asset.label
+
+featureRef
+
+selected properties:
+
+serialNumber
+
+name
+
+zoneNumber
+
+address (if stored)
+
+species (trees)
+
+controllerRef
+
+assetType (optional)
+
+Exclude archived assets unless explicitly requested.
+
+Return fields:
+
+id
+
+type: "asset"
+
+assetType
+
+label
+
+communityId
+
+coordinates (if available)
+
+address (if available)
+
+3) Task search fields
+
+Match:
+
+title
+
+description
+
+address
+
+taskId (exact)
+
+linked asset label (optional join)
+
+status
+
+Return:
+
+id
+
+type: "task"
+
+title
+
+status
+
+priority
+
+dueDate
+
+communityId
+
+coordinates (if present)
+
+Contractors only see tasks assigned to them.
+
+4) Result ranking
+
+Order by relevance:
+
+exact matches
+
+prefix matches
+
+substring matches
+
+Limit results to ~20–50.
+
+Frontend Requirements
+1) Global search entry point
+
+Add search icon/button to top bars:
+
+Contractor dashboard
+
+Tasks tab
+
+Map tab
+
+Admin assets tab
+
+Opens a Search Screen (full screen or modal).
+
+2) Search UI behavior
+
+Input field at top:
+
+autofocus
+
+shows recent searches (optional)
+
+debounced API calls (~300ms)
+
+Results grouped by type:
+
+Assets
+
+assetType badge
+
+label
+
+optional address or key property
+
+Tasks
+
+title
+
+status badge
+
+due date
+
+3) Tap behavior
+
+If result is an asset:
+
+Provide options:
+
+“View Details” → Asset Detail screen
+
+“Show on Map” → Map centered on feature + popup
+
+If result is a task:
+
+Open Task Detail screen
+
+4) Map integration
+
+When selecting “Show on Map”:
+
+Switch to map tab
+
+Ensure correct community is active
+
+Center camera on coordinates
+
+Highlight feature / show popup
+
+Acceptance Tests
+
+Contractor searches “Backflow 3” → correct asset appears
+
+Contractor searches address → task at that location appears
+
+Admin searches by serial number → asset appears
+
+Archived assets do NOT appear by default
+
+Selecting result navigates correctly
+
+Search respects permissions
+
+Out of Scope
+
+Offline search indexing (future slice)
+
+Fuzzy matching algorithms
+
+Cross-community global admin search (optional later)
+
+Voice search

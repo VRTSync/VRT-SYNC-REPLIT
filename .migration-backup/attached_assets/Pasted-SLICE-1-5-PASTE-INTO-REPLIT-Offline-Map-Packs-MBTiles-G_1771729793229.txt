@@ -1,0 +1,248 @@
+SLICE 1.5 (PASTE INTO REPLIT): Offline Map Packs (MBTiles + GeoJSON + Asset Index) End-to-End
+
+Objective
+Enable true offline mapping per community by supporting downloadable offline packs containing:
+
+MBTiles basemap
+
+GeoJSON overlays (all selected layers)
+
+Asset index (featureRef → assetId + minimal popup data)
+
+Task snapshot (assigned tasks for the contractor in that community)
+
+Optional: recent work history snapshot (last N per asset)
+
+This must integrate with the existing map viewer so the same UI works online/offline.
+
+Scope
+
+Offline pack metadata in DB + APIs
+
+Admin pack management (upload refs; generation can be manual)
+
+Mobile pack download/update/delete
+
+Offline map rendering using local MBTiles + local GeoJSON
+
+Offline tap resolution uses local asset index
+
+Clear “Offline snapshot” labeling for data that’s cached
+
+Backend Requirements
+1) Database table: offline_packs
+
+Fields:
+
+id (UUID)
+
+communityId (FK, not null)
+
+packVersion (int, not null)
+
+manifestRef (string, not null)
+
+mbtilesRef (string, not null)
+
+geojsonBundleRef (string, nullable) OR store per-layer refs in manifest
+
+assetIndexRef (string, not null)
+
+taskSnapshotRef (string, nullable) (optional server-generated; can be client-built)
+
+createdAt, updatedAt
+
+Constraints:
+
+unique (communityId, packVersion)
+
+also enforce only one “latest” per community (either via query ordering or a boolean isLatest)
+
+2) Manifest file format (JSON)
+
+Manifest must include:
+
+communityId
+
+packVersion
+
+generatedAt
+
+mbtiles metadata (optional)
+
+layers array:
+
+layerId
+
+layerKey
+
+subLayerKey
+
+displayName
+
+version
+
+geojsonRef (or bundle pointer)
+
+assetIndexRef
+
+optional taskSnapshotRef
+
+3) API endpoints (permissions enforced)
+
+GET /api/communities/:communityId/offline-pack
+
+Returns latest pack metadata (or null if none)
+
+Contractor must be member of community
+
+POST /api/offline-packs/:id/download-urls
+
+Returns signed URLs (or direct refs) for:
+
+mbtiles
+
+manifest
+
+geojson bundle OR per-layer geojson refs
+
+asset index
+
+optional task snapshot
+
+Contractor must be member of pack’s community
+
+Admin endpoints
+
+POST /api/offline-packs (admin only) — create/update latest pack for community
+
+GET /api/offline-packs?communityId= (admin only) — list pack versions
+
+DELETE /api/offline-packs/:id (admin only)
+
+Notes:
+
+Pack generation can remain manual: admin uploads MBTiles + JSON to object storage and registers refs here.
+
+Client Requirements (Mobile)
+1) Offline Pack Manager UI
+
+Add to Profile (or Community selector modal):
+For active community:
+
+status: “Not downloaded” / “Downloaded vX” / “Update available (vY)”
+
+actions:
+
+Download
+
+Update
+
+Delete
+
+2) Local storage
+
+Use filesystem storage for:
+
+MBTiles file
+
+manifest.json
+
+assetIndex.json
+
+geojson bundle (or per-layer files)
+
+Use AsyncStorage to store per-community:
+
+downloaded packVersion
+
+local paths
+
+download timestamp
+
+3) Map screen behavior
+
+If online:
+
+behave exactly as now (layers load via API)
+If offline AND pack exists for active community:
+
+basemap uses local MBTiles
+
+overlays load from local GeoJSON
+
+toggles are driven by manifest layer list
+If offline AND no pack:
+
+show clear message and disable toggles:
+
+“Offline map pack not downloaded for this community.”
+
+4) Offline tap resolution
+
+When offline:
+
+use local assetIndex mapping:
+
+featureRef → assetId (+ optional label/type)
+
+popup should still show asset label/type
+
+Details screen can show cached minimal fields (if included) OR show:
+
+“Details require connection” (but do not crash)
+
+Work History:
+
+either show “History requires connection” OR show cached snapshot (optional)
+
+5) Cache labeling
+
+Any screen showing cached/offline data should display:
+
+“Offline snapshot” badge
+
+Asset Index Requirements (offline)
+
+Generate/store JSON per pack:
+
+featureRef -> { assetId, label, assetType }
+Optional:
+
+a few key properties for popup
+
+This must match your existing assets.featureRef.
+
+Acceptance Tests
+
+Contractor downloads pack, enables airplane mode:
+
+map loads with MBTiles basemap
+
+overlays render
+
+tap feature opens popup and resolves to an asset
+
+No pack + offline:
+
+message appears, map does not break
+
+Update pack:
+
+server packVersion increments; app shows “Update available”
+
+update replaces files cleanly
+
+Permissions:
+
+contractor cannot download pack for non-member community
+
+Out of Scope
+
+Automatic MBTiles generation
+
+Background downloads
+
+Partial region downloads
+
+Offline editing of assets/history

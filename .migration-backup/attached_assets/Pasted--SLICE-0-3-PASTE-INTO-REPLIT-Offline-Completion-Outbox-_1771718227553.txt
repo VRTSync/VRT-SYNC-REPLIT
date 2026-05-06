@@ -1,0 +1,143 @@
+✅ SLICE 0.3 (PASTE INTO REPLIT): Offline Completion Outbox Hardening
+
+Objective
+Make offline task completion reliable, observable, and retry-safe.
+
+Scope
+
+Enhance the existing offline queue so it behaves like a real field-ready outbox:
+
+Explicit state machine
+
+Automatic sync on connectivity
+
+Retry behavior
+
+Clear UI feedback
+
+Safe handling of version conflicts
+
+Required Behaviors
+1) Explicit Outbox State Model
+
+Each queued completion must include:
+
+type: "taskComplete"
+taskId
+taskVersionAtOpen
+payload:
+  employeeSignOffName
+  completedAt
+  notes
+  timeSpentMinutes (optional)
+  materialsUsed (optional)
+  followUpNeeded (optional)
+photos[] (local URIs)
+state: "queued" | "syncing" | "synced" | "failed"
+lastError (optional)
+createdAt
+
+
+Persist in AsyncStorage.
+
+2) Automatic Sync Engine
+
+Trigger sync when:
+
+App regains connectivity
+
+App launches while online
+
+User taps “Sync now” (manual trigger)
+
+Process queue FIFO:
+
+Mark item syncing
+
+Submit completion to API
+
+Upload photos and create attachment records
+
+Mark item synced and remove from queue
+
+3) Failure Handling
+
+If any step fails:
+
+Mark state = failed
+
+Preserve item for retry
+
+Store error message
+
+User must be able to retry.
+
+4) Version Conflict Handling
+
+If API returns 409 VERSION_CONFLICT:
+
+Mark item failed
+
+Do NOT discard payload
+
+Show error indicating task changed
+
+Allow user to refresh task and retry
+
+5) UI Feedback
+
+Provide clear indicators:
+
+Task list:
+
+Badge: “Queued” or “Sync Error”
+
+Task detail:
+
+Status banner: Queued / Syncing / Failed
+
+Retry button when failed
+
+Optional:
+
+Small “Sync status” indicator in header
+
+Acceptance Tests
+
+Airplane mode:
+
+Complete a task
+
+Item shows queued
+
+Task marked locally as completed
+
+Connectivity restored:
+
+Completion syncs automatically
+
+Queue item removed
+
+Task shows completed server state
+
+Force network failure:
+
+Item becomes failed
+
+Retry works
+
+Version conflict:
+
+Item marked failed
+
+User prompted to refresh
+
+Out of Scope
+
+Full offline map packs
+
+Background sync service
+
+Notifications tied to sync
+
+Multi-device reconciliation

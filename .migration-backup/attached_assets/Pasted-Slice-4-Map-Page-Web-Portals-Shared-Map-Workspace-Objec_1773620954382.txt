@@ -1,0 +1,593 @@
+Slice 4 — Map Page (Web Portals) + Shared Map Workspace
+Objective
+
+Implement the Map page for the new web portals (Contractor, HOA Admin / HOA Member, Property Manager) using the existing Leaflet map infrastructure, while preserving the admin portal design system and visual styling.
+
+This slice should establish the shared web map workspace for the full VRTSync platform.
+
+The map is not just a reference page. It is a core operating page of the platform.
+
+Critical Design Rule
+
+All new map page UI must visually match the existing admin portal styling.
+
+Continue using:
+
+server/public/admin/admin.css
+
+and the existing shell/page structure.
+
+Do not introduce a new design language.
+
+The map page should feel like a natural extension of the current admin portal, not a separate product.
+
+Existing Map Infrastructure to Reuse
+
+The following already exists and should be reused rather than rebuilt:
+
+server/public/leaflet-map.html
+
+current Leaflet iframe communication pattern
+
+window.postMessage bridge
+
+existing layer loading logic
+
+existing GeoJSON rendering logic
+
+existing asset click → viewAssetDetail message flow
+
+existing community bounds / fitBounds behavior
+
+existing task marker rendering support
+
+existing request pin support
+
+existing browser geolocation support
+
+This slice is about building the web page and panel system around the map, not replacing the map engine.
+
+Roles Included in This Slice
+
+Build map experience for:
+
+Contractor
+
+HOA Admin
+
+HOA Member
+
+Property Manager
+
+Do not redesign the Super Admin map page in this slice unless required for shared reuse.
+
+Map Page Routes
+
+Add or finalize routes for:
+
+/web/contractor/map
+/web/hoa/map
+/web/pm/map
+
+All routes must use the existing SPA router pattern.
+
+Map Page Purpose by Role
+Contractor
+
+Map is an operational tool.
+
+Used to:
+
+find assets
+
+locate irrigation components
+
+view request locations
+
+open asset details
+
+understand property layout
+
+HOA Admin / HOA Member
+
+Map is a visual understanding and oversight tool.
+
+Used to:
+
+explore the community
+
+view assets by layer
+
+understand where work applies
+
+open work history tied to assets
+
+Property Manager
+
+Map is an oversight and property intelligence tool.
+
+Used to:
+
+inspect infrastructure
+
+review assets
+
+understand work context
+
+open asset details and history
+
+Default Map Behavior
+
+When the map page opens, it must always start on the Community map.
+
+Do not restore the user’s last map category.
+
+Do not default to irrigation, snow, or trees.
+
+This is intentional and must remain consistent.
+
+Reason:
+The repeatable path makes the system easier to learn and gives users a stable spatial starting point.
+
+Default state:
+
+Category = Community
+
+Community map should be the first visible context every time.
+
+Shared Map Workspace Layout
+
+The web map page should use a three-part workspace layout:
+
+Layers Panel | Map Canvas | Detail Panel
+
+This is a core desktop advantage over mobile and should be the primary web map experience.
+
+Layout Requirements
+Left Panel — Layers Panel
+
+Contains category and sublayer controls.
+
+Center — Map Canvas
+
+Embeds the existing leaflet-map.html in an iframe.
+
+Right Panel — Detail Panel
+
+Displays the selected asset details.
+
+All three should be visible together on desktop if screen width allows.
+
+The page should still degrade reasonably on smaller widths, but desktop is the priority.
+
+Community Page Header
+
+Reuse the shared community page header pattern established in Slice 2.
+
+Example:
+
+Map
+Preserve Metro District
+
+This must appear above the map workspace so users always know which community they are viewing.
+
+Layers Panel
+
+Create a reusable layers panel for the map page.
+
+The panel should support:
+
+category selection
+
+grouped sublayer toggles
+
+active state indication
+
+Category Structure
+
+Use these top-level categories:
+
+Community
+Irrigation
+Snow
+Trees
+
+Do not flatten everything into one long list.
+
+Categories should behave like clear grouped sections.
+
+Community Category Sublayers
+Bluegrass Areas
+Native Areas
+Landscape Beds
+Pet Stations
+
+If community outline is separately represented in the map system, it should remain visible as the orientation layer.
+
+Community context should always be visually clear.
+
+Irrigation Category Sublayers
+Backflow
+Controller
+Zone
+Master Valve
+Flow Meter
+QC/ISO Valve
+
+Do not include runtime in the details view for irrigation assets.
+
+Snow Category Sublayers
+Plow
+ATV
+Hand Shovel
+Ice Melt
+Slicer
+Storage Area
+Trees Category Sublayers
+Tree
+Layer UI Behavior
+
+The layers panel should support:
+
+selecting a category
+
+toggling sublayers on/off
+
+active sublayer styling
+
+sending visible layer ids to the iframe map
+
+Use the existing message bridge to control map visibility.
+
+No new map engine should be created.
+
+Map Iframe Integration
+
+Embed the existing Leaflet map as an iframe.
+
+The page should communicate with it via:
+
+iframe.contentWindow.postMessage(...)
+window.addEventListener('message', ...)
+
+Reuse the existing bridge pattern.
+
+Required behaviors:
+
+load active community bounds
+
+fit to community on load
+
+send visible layer ids
+
+handle asset click events
+
+handle request / feature tap events if already supported
+
+Asset Selection Behavior
+
+When a map feature is clicked, the iframe should send the existing asset detail event back to the page.
+
+The page should then open/update the Detail Panel.
+
+This should use the existing featureRef-based asset resolution flow.
+
+Do not replace this architecture.
+
+Detail Panel
+
+The right-side detail panel is a critical part of the web map experience.
+
+This panel should remain visible alongside the map when an asset is selected.
+
+It should support tabs.
+
+Detail Panel Tabs
+
+Use these tabs:
+
+Details
+Work History
+Contractor Notes
+Photos
+
+These tabs are the official VRTSync map detail structure for web.
+
+Details Tab
+
+Show asset details based on the selected asset.
+
+Examples by type:
+
+Tree
+
+species
+
+date planted
+
+warranty
+
+location
+
+Controller
+
+location
+
+brand
+
+date installed
+
+seasonal adjustment percent if available in asset properties
+
+Zone
+
+controller
+
+zone number
+
+zone type
+
+location
+
+brand
+
+date installed
+
+number of heads
+
+Backflow
+
+location
+
+brand
+
+serial number
+
+size
+
+date installed
+
+Landscape / Community assets
+
+show available asset properties cleanly using the current metadata structure
+
+Do not invent fields not present in the system.
+
+Work History Tab
+
+This tab should display the selected asset’s work history.
+
+For this slice, the goal is to establish the panel and loading structure.
+
+If full invoice-backed history is not yet ready for all roles, it is acceptable to render:
+
+placeholder structure
+
+partial live records
+
+or “No work history available yet”
+
+But the tab and rendering path must exist.
+
+Important role rule:
+
+Contractors may see work history details, but not invoice financial details.
+
+Contractor Notes Tab
+
+This tab should display contractor notes tied to the asset.
+
+For this slice, read-only rendering is acceptable unless adding note creation is already easy.
+
+Goal:
+
+establish the tab
+
+display notes if available
+
+reserve the correct place in the experience
+
+This is especially important for contractor workflows.
+
+Photos Tab
+
+This tab should display photos tied to the asset history.
+
+For this slice, a placeholder or empty-state implementation is acceptable if full photo retrieval is not yet wired for map detail context.
+
+But the tab must exist.
+
+Role Behavior on Map Page
+Contractor
+
+Map is fully usable as an operational tool.
+
+Should see:
+
+layers panel
+
+map
+
+detail panel
+
+work history tab
+
+contractor notes tab
+
+HOA Admin
+
+Should see:
+
+same map workspace
+
+asset details
+
+work history
+
+photos
+
+HOA Member
+
+Same map experience as HOA Admin, but fully read-only.
+
+Property Manager
+
+Should see the same workspace with emphasis on:
+
+map exploration
+
+infrastructure inspection
+
+work history visibility
+
+Request / Operational Layers
+
+The map system should remain architecturally open to operational layers like:
+
+Request layer
+
+Irrigation Repair layer
+
+Landscape Enhancement layer
+
+Do not fully implement these in this slice unless already easy.
+
+But do not design the page in a way that prevents them.
+
+The map workspace should be built so additional categories/sublayers can be added later.
+
+Task Markers
+
+If task marker rendering is already available in the shared map engine, preserve compatibility.
+
+Do not make task markers the primary focus of this slice.
+
+This slice is primarily about:
+
+base layer interaction
+
+asset detail flow
+
+web map workspace
+
+Task-specific map functionality can deepen later.
+
+Community Selector Integration
+
+The map page must respect the active community from PortalState.
+
+If the user changes communities in the top bar:
+
+update active community
+
+reload map context
+
+fit to the new community
+
+refresh visible layers
+
+clear selected asset state if necessary
+
+Styling Requirements
+
+Continue using the admin portal design language.
+
+The following visual principles are required:
+
+navy/teal palette
+
+same border radii
+
+same shadows
+
+same card styling
+
+same typography
+
+same spacing logic
+
+The layers panel and detail panel should feel like admin portal cards/panels, not a custom GIS product UI.
+
+Empty / Initial States
+Before asset selection
+
+Detail panel should show a clean empty state such as:
+
+Select a map item to view details
+No data states
+
+Each tab should render clean empty states if no records exist.
+
+Out of Scope for Slice 4
+
+Do NOT fully build the following yet unless already easy:
+
+map-based task creation
+
+full request map flow
+
+asset editing
+
+invoice creation from map
+
+deep contractor note editing workflow
+
+document linking in map panel
+
+advanced filters
+
+saved views
+
+Those belong in future slices.
+
+Deliverables
+
+By the end of Slice 4, the system should support:
+
+map page routes for contractor / HOA / PM
+
+shared map workspace layout
+
+category-based layers panel
+
+iframe map integration
+
+community-default map behavior
+
+asset click → detail panel flow
+
+detail panel tab structure
+
+clean admin-styled map page UI
+
+Success Criteria
+
+The system should be able to:
+
+open the map page inside each portal shell
+
+load the active community context
+
+fit the map to the community
+
+default to the Community map category
+
+toggle visible sublayers
+
+click a feature and open the detail panel
+
+switch between Details / Work History / Contractor Notes / Photos tabs
+
+maintain admin portal visual styling across the experience
+
+Important Reminder to Replit
+
+The web map page is one of the most important parts of VRTSync.
+
+Build it as a desktop workspace, not a stretched mobile screen.
+
+But visually it must still feel like the same product as the admin portal.
+
+Reuse the existing map engine. Reuse the existing design system. Reuse the existing shell.
+
+Do not rebuild the map system from scratch.

@@ -1,0 +1,2869 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document id="1_zAvLlqHGMe-aWGeYRKLWBBUgQlnF5u2">
+	<name>Miramonte - Irrigation - Controllers &amp; Zones</name>
+	<Schema name="__managed_schema" id="__managed_schema">
+		<SimpleField type="int" name="COL57FBC82696BF8433">
+			<displayName>Accuracy (m)</displayName>
+		</SimpleField>
+		<SimpleField type="int" name="COL57FBC826969AC5E9">
+			<displayName>Accuracy (m)</displayName>
+		</SimpleField>
+		<SimpleField type="int" name="COL57FBC82696C3FA82">
+			<displayName>Accuracy (m)</displayName>
+		</SimpleField>
+	</Schema>
+	<gx:CascadingStyle kml:id="__managed_style_5D1CA447613DBD12E668">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=8d6e63&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff636e8d</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_EE7DDF600B3DBD12E660">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>0.813</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_6A3476EDCD3DBD12E668">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_7194C101F43DBD12E668</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_828A3012163DBD12E668</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="__managed_style_DCFBD2AD393DBD12E660">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_EE7DDF600B3DBD12E660</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_F3494A1C713DBD12E660</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_EAD3C782C73DBD12E667">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=7b1fa2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ffa21f7b</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_C34A7A5E583DBD12E667">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_D8E8EA2E633DBD12E667</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_EAD3C782C73DBD12E667</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_B37F1F2DB23DBD12E667">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=303f9f&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff9f3f30</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_4A8E7645843DBD12E666">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=ffa726&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff007cf5</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_04935A4A453DBD12E667">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_1EDE9E88EF3DBD12E667</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_2EFA085FB03DBD12E667</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_8A17E4E33B3DBD12E667">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ffd27619</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_6DE20187A43DBD12E666">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_71529987553DBD12E666</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_8E8431D03C3DBD12E666</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_7807B73EA03DBD12E667">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ffd27619</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_190CEF95483DBD12E668">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=d32f2f&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff2f2fd3</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_9EAC56AB7E3DBD12E667">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_ABA801DB7F3DBD12E667</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_B37F1F2DB23DBD12E667</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="__managed_style_6BC753711E3DBD12E667">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_7807B73EA03DBD12E667</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_8A17E4E33B3DBD12E667</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_5AE499046B3DBD12E667">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=00796b&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff6b7900</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_7194C101F43DBD12E668">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=757575&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff757575</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_F3494A1C713DBD12E660">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.2195</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_40A580B9693DBD12E667">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=00796b&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff6b7900</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_ABA801DB7F3DBD12E667">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=303f9f&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff9f3f30</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_2AAFE8E8E83DBD12E668">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=d32f2f&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff2f2fd3</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_35490EB6D93DBD12E667">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_40A580B9693DBD12E667</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_5AE499046B3DBD12E667</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_D8E8EA2E633DBD12E667">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=7b1fa2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ffa21f7b</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_8E8431D03C3DBD12E666">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=fbc02d&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff2dc0fb</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_4CAC8FDB223DBD12E668">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=8d6e63&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff636e8d</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_0D7CF7D3D63DBD12E668">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_190CEF95483DBD12E668</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_2AAFE8E8E83DBD12E668</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_71529987553DBD12E666">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=fbc02d&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff2dc0fb</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_5E50827DB93DBD12E65E">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_4C72AACA813DBD12E65E">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_304CE2444A3DBD12E666">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_4A8E7645843DBD12E666</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_5D1824CD843DBD12E666</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="__managed_style_3C5BB8CFB73DBD12E65E">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_4C72AACA813DBD12E65E</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_5E50827DB93DBD12E65E</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_5D1824CD843DBD12E666">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=ffa726&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff007cf5</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_37677CDB213DBD12E668">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_4CAC8FDB223DBD12E668</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_5D1CA447613DBD12E668</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_27DF017BD73DBD12E65C">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>3</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_1EDE9E88EF3DBD12E667">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=388e3c&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff3c8e38</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_828A3012163DBD12E668">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=757575&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff757575</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_2EFA085FB03DBD12E667">
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=388e3c&amp;id=2345&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+				<color>ff3c8e38</color>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>1.5</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_1CF6FDF9E63DBD12E65C">
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>2</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_032F152EF73DBD12E65C">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_1CF6FDF9E63DBD12E65C</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_27DF017BD73DBD12E65C</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Folder id="57FBC8259E000001">
+		<name>Controller A</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259E000002">
+			<name>Clock A </name>
+			<LookAt>
+				<longitude>-105.0870308204613</longitude>
+				<latitude>39.9327573576854</latitude>
+				<altitude>1655.179781673887</altitude>
+				<heading>121.9476725733936</heading>
+				<tilt>40.7401044234101</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>33.70418704419536</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_304CE2444A3DBD12E666</styleUrl>
+			<Point>
+				<coordinates>-105.0870308204613,39.9327573576854,1655.179781673887</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="09157A98E53B1E24DC7B">
+			<name>Controller A - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBD71097000003">
+				<name>Clock A zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0865248154955</longitude>
+					<latitude>39.93249069878346</latitude>
+					<altitude>1653.28772199347</altitude>
+					<heading>121.9480338986942</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>55.32595528054117</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0865248154955,39.93249069878346,1653.28772199347</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000004">
+				<name>Clock A zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.0867313323256</longitude>
+					<latitude>39.93252447784954</latitude>
+					<altitude>1653.271253290578</altitude>
+					<heading>10.34059780946877</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.38855981509641</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0867313323256,39.93252447784954,1653.271253290578</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000005">
+				<name>Clock A zone 3 pop ups </name>
+				<LookAt>
+					<longitude>-105.0870378990648</longitude>
+					<latitude>39.93285154901813</latitude>
+					<altitude>1655.901394489636</altitude>
+					<heading>10.34038461644291</heading>
+					<tilt>0.410452143664928</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>71.06383496581657</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0870378990648,39.93285154901813,1655.901394489636</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000006">
+				<name>Clock A zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0870206935867</longitude>
+					<latitude>39.93286367084992</latitude>
+					<altitude>1655.958809698123</altitude>
+					<heading>10.34039566120581</heading>
+					<tilt>0.4104521392623891</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>71.00641825780258</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0870206935867,39.93286367084992,1655.958809698123</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000007">
+				<name>Clock A zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0868911500136</longitude>
+					<latitude>39.93311557472494</latitude>
+					<altitude>1656.543196561858</altitude>
+					<heading>-78.32637725816244</heading>
+					<tilt>0.1871269990769088</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>52.36701603027541</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868911500136,39.93311557472494,1656.543196561858</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000008">
+				<name>Clock A zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.0866289226616</longitude>
+					<latitude>39.93296320432484</latitude>
+					<altitude>1654.645165398744</altitude>
+					<heading>-78.32623889529154</heading>
+					<tilt>0.1871270180551983</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>53.30154263086115</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0866289226616,39.93296320432484,1654.645165398744</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000009">
+				<name>Clock a zone 7 drip</name>
+				<LookAt>
+					<longitude>-105.0866171479971</longitude>
+					<latitude>39.93295203707785</latitude>
+					<altitude>1654.657148477908</altitude>
+					<heading>-1.750399798697956</heading>
+					<tilt>0.1871273634289573</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>67.7839439084164</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0866171479971,39.93295203707785,1654.657148477908</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000A">
+				<name>Clock A zone 8 pop ups</name>
+				<LookAt>
+					<longitude>-105.0868361124829</longitude>
+					<latitude>39.93335015413285</latitude>
+					<altitude>1657.269912434532</altitude>
+					<heading>84.70597955049008</heading>
+					<tilt>0.1871265488951129</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>37.71079434632157</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868361124829,39.93335015413285,1657.269912434532</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000B">
+				<name>Clock A zone 9 pop ups</name>
+				<LookAt>
+					<longitude>-105.0868315870317</longitude>
+					<latitude>39.93336694511669</latitude>
+					<altitude>1657.399452666872</altitude>
+					<heading>84.70598245708827</heading>
+					<tilt>0.1871265437999438</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>37.58124894909997</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868315870317,39.93336694511669,1657.399452666872</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000C">
+				<name>Clock A zone 10 pop ups</name>
+				<LookAt>
+					<longitude>-105.0866736845638</longitude>
+					<latitude>39.93348988146504</latitude>
+					<altitude>1657.894481214694</altitude>
+					<heading>15.57856266982283</heading>
+					<tilt>0.1871264136549423</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>33.48439097226674</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.086670058686,39.93349134344458,1657.894481214694</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000D">
+				<name>Clock A zone 11 rotors</name>
+				<LookAt>
+					<longitude>-105.0866548716923</longitude>
+					<latitude>39.93348956096375</latitude>
+					<altitude>1657.88756151581</altitude>
+					<heading>15.57857474679928</heading>
+					<tilt>0.1871264132537169</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>33.49131238287556</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0866548716923,39.93348956096375,1657.88756151581</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000E">
+				<name>Clock A zone 12 pop ups???</name>
+				<LookAt>
+					<longitude>-105.0867778683063</longitude>
+					<latitude>39.93350191129592</latitude>
+					<altitude>1658.363152163706</altitude>
+					<heading>15.57848593202666</heading>
+					<tilt>0.1871272672249246</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>62.76823028536455</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0864771439672,39.93345571666385,1658.363152163706</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD7109800000F">
+				<name>Clock A zone 13 rotors</name>
+				<LookAt>
+					<longitude>-105.0863298763401</longitude>
+					<latitude>39.93344224859005</latitude>
+					<altitude>1656.909393853849</altitude>
+					<heading>15.57877769483583</heading>
+					<tilt>0.1871266564759928</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>42.05395777435115</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0862147778743,39.93342365577596,1656.909393853849</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000010">
+				<name>Clock A zone 14 pop ups</name>
+				<LookAt>
+					<longitude>-105.0861787846502</longitude>
+					<latitude>39.9334296398213</latitude>
+					<altitude>1656.603485908666</altitude>
+					<heading>-1.750399773691291</heading>
+					<tilt>0.1871263179198163</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>30.71422747438647</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0861787846502,39.9334296398213,1656.603485908666</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000011">
+				<name>Clock A zone 15 pop ups</name>
+				<LookAt>
+					<longitude>-105.0860834059212</longitude>
+					<latitude>39.93341907460434</latitude>
+					<altitude>1656.348532810836</altitude>
+					<heading>-1.750399780844536</heading>
+					<tilt>0.1871264857586343</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>37.2178386771384</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0860834059212,39.93341907460434,1656.348532810836</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000012">
+				<name>Clock A zone 16 drip???</name>
+				<LookAt>
+					<longitude>-105.0870947308037</longitude>
+					<latitude>39.93275687058212</latitude>
+					<altitude>1655.42357723326</altitude>
+					<heading>-1.750399906708511</heading>
+					<tilt>0.1871316354758185</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>214.2797569257891</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0870947308037,39.93275687058212,1655.42357723326</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000013">
+				<name>Clock A zone 17 rotors</name>
+				<LookAt>
+					<longitude>-105.0858784365175</longitude>
+					<latitude>39.93340769951301</latitude>
+					<altitude>1655.989787774851</altitude>
+					<heading>-1.75039979936817</heading>
+					<tilt>0.1871273598159995</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>67.39867426305865</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0858784365175,39.93340769951301,1655.989787774851</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD71098000014">
+				<name>Clock A zone ? drip</name>
+				<LookAt>
+					<longitude>-105.0865098502799</longitude>
+					<latitude>39.93346598841375</latitude>
+					<altitude>1657.459474943624</altitude>
+					<heading>15.57866783902225</heading>
+					<tilt>0.1871264225383835</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>33.91939974585057</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0865098502799,39.93346598841375,1657.459474943624</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="01C7CA4EF73B1E206798">
+		<name>Controller B</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259E000003">
+			<name>Clock B</name>
+			<LookAt>
+				<longitude>-105.0855696908791</longitude>
+				<latitude>39.9319539011585</latitude>
+				<altitude>1651.572859436746</altitude>
+				<heading>235.6710228963027</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>512.8625444029487</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_6DE20187A43DBD12E666</styleUrl>
+			<ExtendedData>
+				<SchemaData schemaUrl="#__managed_schema">
+					<SimpleData name="COL57FBC82696C3FA82">4</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Point>
+				<extrude>1</extrude>
+				<coordinates>-105.0856223407954,39.93197074531277,1651.626238987543</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="0BBB6F369E3B1E24C6DE">
+			<name>Controller B - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBD8A881000003">
+				<name>Clock B zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0857376875791</longitude>
+					<latitude>39.93282117434308</latitude>
+					<altitude>1652.855239506069</altitude>
+					<heading>256.214311096874</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.94171192558861</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0857376875791,39.93282117434308,1652.855239506069</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000004">
+				<name>Clock B zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.085732730396</longitude>
+					<latitude>39.93330253548173</latitude>
+					<altitude>1654.2824839211</altitude>
+					<heading>256.2143200468831</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.78928444339908</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.085732730396,39.93330253548173,1654.2824839211</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000005">
+				<name>Clock B zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0857394558014</longitude>
+					<latitude>39.93299569146698</latitude>
+					<altitude>1653.233547536511</altitude>
+					<heading>256.2143033496281</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.40483048984698</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0857394558014,39.93299569146698,1653.233547536511</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000006">
+				<name>Clock B zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0857272234623</longitude>
+					<latitude>39.93279841065429</latitude>
+					<altitude>1652.687235734954</altitude>
+					<heading>256.214283934564</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>31.9325087323341</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0857370722857,39.93279031262554,1652.687235734954</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000007">
+				<name>Clock B zone 6 drip</name>
+				<LookAt>
+					<longitude>-105.0857323788024</longitude>
+					<latitude>39.93310361599702</latitude>
+					<altitude>1653.886073558869</altitude>
+					<heading>256.2143059990473</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.01532803540613</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0857323788024,39.93310361599702,1653.886073558869</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000008">
+				<name>Clock B zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.0854234307163</longitude>
+					<latitude>39.93261290148995</latitude>
+					<altitude>1651.786983677135</altitude>
+					<heading>358.9999905702533</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>48.27723591284666</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0854234307163,39.93261290148995,1651.786983677135</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000009">
+				<name>Clock B zone 8 rotors</name>
+				<LookAt>
+					<longitude>-105.0854586963249</longitude>
+					<latitude>39.93239510783253</latitude>
+					<altitude>1651.868277590387</altitude>
+					<heading>358.9999804299859</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>56.00847184328813</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0854586963249,39.93239510783253,1651.868277590387</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000A">
+				<name>Clock B zone 9 rotors???</name>
+				<LookAt>
+					<longitude>-105.0853888725877</longitude>
+					<latitude>39.9325296388779</latitude>
+					<altitude>1651.692478044195</altitude>
+					<heading>358.9999790171934</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>80.34523509663815</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0853353081999,39.93250318929121,1651.692478044195</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000B">
+				<name>Clock B zone 10 rotors</name>
+				<LookAt>
+					<longitude>-105.0854621217694</longitude>
+					<latitude>39.93238391191079</latitude>
+					<altitude>1651.866066204937</altitude>
+					<heading>358.9999734550789</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>43.37814907257325</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0854621217694,39.93238391191079,1651.866066204937</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000C">
+				<name>Clock B zone 11 pop ups</name>
+				<LookAt>
+					<longitude>-105.0856747033485</longitude>
+					<latitude>39.93265899584542</latitude>
+					<altitude>1652.202023148023</altitude>
+					<heading>358.9999710117722</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>40.05376281880217</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0857434780457,39.93266808315195,1652.202023148023</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000D">
+				<name>Clock B zone 12 pop ups</name>
+				<LookAt>
+					<longitude>-105.0856009697129</longitude>
+					<latitude>39.93230916445978</latitude>
+					<altitude>1651.722608027891</altitude>
+					<heading>358.9999682734419</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>68.99021047829594</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0859244007311,39.93238196365088,1651.722608027891</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000E">
+				<name>Clock B zone 13 pop ups</name>
+				<LookAt>
+					<longitude>-105.0851940524216</longitude>
+					<latitude>39.93192577067211</latitude>
+					<altitude>1650.978347600901</altitude>
+					<heading>358.9999606199337</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>45.51277410440889</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0851940524216,39.93192577067211,1650.978347600901</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A88200000F">
+				<name>Clock B zone 14 rotors</name>
+				<LookAt>
+					<longitude>-105.0852647034673</longitude>
+					<latitude>39.93200142817949</latitude>
+					<altitude>1650.945399844135</altitude>
+					<heading>358.999958926138</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>45.54571816469888</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0852573172003,39.9320044951458,1650.945399844135</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000010">
+				<name>Clock B zone 15 rotors</name>
+				<LookAt>
+					<longitude>-105.0851755506623</longitude>
+					<latitude>39.93194249265853</latitude>
+					<altitude>1650.688581184387</altitude>
+					<heading>358.9999570765705</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>45.44651514223915</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0851755506623,39.93194249265853,1650.688581184387</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000011">
+				<name>Clock B zone 16 pop ups</name>
+				<LookAt>
+					<longitude>-105.0856523226861</longitude>
+					<latitude>39.93195518738701</latitude>
+					<altitude>1651.714173345256</altitude>
+					<heading>358.9999495798884</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>52.66062406456514</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0856523226861,39.93195518738701,1651.714173345256</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000012">
+				<name>Clock B Zone 17 rotors</name>
+				<LookAt>
+					<longitude>-105.0854263916969</longitude>
+					<latitude>39.93169913067575</latitude>
+					<altitude>1651.496686911767</altitude>
+					<heading>49.68238045445777</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>44.8725711464931</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0854263916969,39.93169913067575,1651.496686911767</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000013">
+				<name>Clock B zone 18 pop ups</name>
+				<LookAt>
+					<longitude>-105.0856742083172</longitude>
+					<latitude>39.9319299130033</latitude>
+					<altitude>1651.787428241712</altitude>
+					<heading>358.9999435462973</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>82.00643158675121</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0856742083172,39.9319299130033,1651.787428241712</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000014">
+				<name>Clock B zone 19 drip</name>
+				<LookAt>
+					<longitude>-105.0856318853918</longitude>
+					<latitude>39.93196179211251</latitude>
+					<altitude>1651.702115421288</altitude>
+					<heading>358.9999423661105</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>82.09174832999452</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0856318853918,39.93196179211251,1651.702115421288</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000015">
+				<name>ClockB zone 22 pop ups</name>
+				<LookAt>
+					<longitude>-105.0859845522192</longitude>
+					<latitude>39.93141276006394</latitude>
+					<altitude>1652.032144621191</altitude>
+					<heading>73.55484455577752</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>37.88206231959066</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0859845522192,39.93141276006394,1652.032144621191</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000016">
+				<name>Clock B zone 23 rotors</name>
+				<LookAt>
+					<longitude>-105.0853884467069</longitude>
+					<latitude>39.93254215372723</latitude>
+					<altitude>1651.63684871331</altitude>
+					<heading>90.95704056728577</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>123.4583801897315</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0853884467069,39.93254215372723,1651.63684871331</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD8A882000017">
+				<name>Stop and waste</name>
+				<LookAt>
+					<longitude>-105.0868950144118</longitude>
+					<latitude>39.93259139275231</latitude>
+					<altitude>1654.306506110823</altitude>
+					<heading>52.16297864655387</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>55.26421015584675</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868950144118,39.93259139275231,1654.306506110823</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="04688292AF3B1E20FC08">
+		<name>Controller C</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259E000004">
+			<name>Clock C </name>
+			<LookAt>
+				<longitude>-105.0857746955739</longitude>
+				<latitude>39.93214451341755</latitude>
+				<altitude>1651.803174967476</altitude>
+				<heading>209.7543058370941</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>104.4924635312236</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_04935A4A453DBD12E667</styleUrl>
+			<ExtendedData>
+				<SchemaData schemaUrl="#__managed_schema">
+					<SimpleData name="COL57FBC82696BF8433">4</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Point>
+				<extrude>1</extrude>
+				<coordinates>-105.0858229723324,39.93209708063178,1651.94554348896</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="08D50049403B1E24B28E">
+			<name>Controller C - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBD97756000003">
+				<name>Clock C Zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0858293128402</longitude>
+					<latitude>39.93213575704459</latitude>
+					<altitude>1651.863487416908</altitude>
+					<heading>209.7542300430438</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>34.54270333663317</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0858293128402,39.93213575704459,1651.863487416908</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000004">
+				<name>Clock C zone 2 pop up</name>
+				<LookAt>
+					<longitude>-105.0862431081339</longitude>
+					<latitude>39.93192520601659</latitude>
+					<altitude>1652.537003784249</altitude>
+					<heading>330.4638682663863</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>125.0558382816052</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0862714682816,39.93187140642779,1652.537003784249</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000005">
+				<name>clock C zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.0864043049327</longitude>
+					<latitude>39.93209237086088</latitude>
+					<altitude>1652.679122081309</altitude>
+					<heading>330.4637587150659</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>86.29484952509303</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0863656742504,39.93206603019075,1652.679122081309</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000006">
+				<name>Clock C zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0863912627045</longitude>
+					<latitude>39.93209653719191</latitude>
+					<altitude>1652.653607457332</altitude>
+					<heading>330.4638195457507</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>50.884524625626</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0863912627045,39.93209653719191,1652.653607457332</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000007">
+				<name>Clock C zone 6 pop ups</name>
+				<LookAt>
+					<longitude>-105.0867988187679</longitude>
+					<latitude>39.93202243756348</latitude>
+					<altitude>1652.952051230925</altitude>
+					<heading>330.4635192103369</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.32494483940263</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0867988187679,39.93202243756348,1652.952051230925</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000008">
+				<name>Clock C zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.086895772609</longitude>
+					<latitude>39.93205858870729</latitude>
+					<altitude>1653.174124991459</altitude>
+					<heading>330.4634526565131</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.74293661770753</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868953215056,39.9320590636141,1653.174124991459</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD97756000009">
+				<name>Clock C zone 8 pop ups</name>
+				<LookAt>
+					<longitude>-105.0867394144841</longitude>
+					<latitude>39.93223426574395</latitude>
+					<altitude>1653.101150693294</altitude>
+					<heading>359.000039021306</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>500.4723307154628</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<ExtendedData>
+					<SchemaData schemaUrl="#__managed_schema">
+						<SimpleData name="COL57FBC82696C3FA82">27</SimpleData>
+					</SchemaData>
+				</ExtendedData>
+				<Point>
+					<extrude>1</extrude>
+					<coordinates>-105.0870264248681,39.93215412808737,1653.111196244596</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9775600000A">
+				<name>Clock C zone 9 pop ups</name>
+				<LookAt>
+					<longitude>-105.087006852369</longitude>
+					<latitude>39.93214262841726</latitude>
+					<altitude>1653.532341429924</altitude>
+					<heading>358.9999956557265</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>65.13131401688952</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.087006852369,39.93214262841726,1653.532341429924</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9775600000B">
+				<name>Clock C zone 11 drip</name>
+				<LookAt>
+					<longitude>-105.0867693408015</longitude>
+					<latitude>39.93202230420349</latitude>
+					<altitude>1652.969257951642</altitude>
+					<heading>358.9999919813237</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.4374297833465</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0867693408015,39.93202230420349,1652.969257951642</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9775600000C">
+				<name>Clock C zone 12 pop ups</name>
+				<LookAt>
+					<longitude>-105.0866344596848</longitude>
+					<latitude>39.93178019954266</latitude>
+					<altitude>1652.728360288196</altitude>
+					<heading>358.9999800952813</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>86.96783430010328</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0864467441733,39.9318211633288,1652.728360288196</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="00D967B6E23B1E211130">
+		<name>Controller D</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259E000005">
+			<name>Clock D</name>
+			<LookAt>
+				<longitude>-105.0880181666349</longitude>
+				<latitude>39.93154475263815</latitude>
+				<altitude>1654.440263721261</altitude>
+				<heading>329.1318684898176</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>131.3548608148085</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_35490EB6D93DBD12E667</styleUrl>
+			<Point>
+				<coordinates>-105.0880181666349,39.93154475263815,1654.440263721261</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="07F967C6EB3B1E249F16">
+			<name>Controller D - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBD9EEBB000003">
+				<name>Clock D zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.088408296322</longitude>
+					<latitude>39.93161891154113</latitude>
+					<altitude>1655.513500408375</altitude>
+					<heading>308.7872441225719</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>69.03312959791037</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.088408296322,39.93161891154113,1655.513500408375</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9EEBC000004">
+				<name>Clock D zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.0878691268689</longitude>
+					<latitude>39.93107526155827</latitude>
+					<altitude>1652.89351047866</altitude>
+					<heading>-138.4109549558499</heading>
+					<tilt>0.05739227397155899</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>62.2732900342362</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0878691268689,39.93107526155827,1652.89351047866</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9EEBC000005">
+				<name>Clock D zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0878700804478</longitude>
+					<latitude>39.9310875403715</latitude>
+					<altitude>1652.85639443068</altitude>
+					<heading>-138.4109555673851</heading>
+					<tilt>0.05739226862450898</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>62.31039737081119</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0878700804478,39.9310875403715,1652.85639443068</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9EEBC000006">
+				<name>Clock D zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0881609550901</longitude>
+					<latitude>39.93128229219596</latitude>
+					<altitude>1654.02786611616</altitude>
+					<heading>-138.4111509886799</heading>
+					<tilt>0.05739210374207132</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>45.76822311855267</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0881609550901,39.93128229219596,1654.02786611616</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9EEBC000007">
+				<name>Clock D zone 6 pop ups</name>
+				<LookAt>
+					<longitude>-105.0882694102679</longitude>
+					<latitude>39.93136096707614</latitude>
+					<altitude>1654.796760722501</altitude>
+					<heading>-138.4112206018838</heading>
+					<tilt>0.05739209156193716</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>44.99933233459161</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0882694102679,39.93136096707614,1654.796760722501</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBD9EEBC000008">
+				<name>Clock D zone 7 drip</name>
+				<LookAt>
+					<longitude>-105.0881687800682</longitude>
+					<latitude>39.93129650435507</latitude>
+					<altitude>1654.169307346935</altitude>
+					<heading>-138.4111629679476</heading>
+					<tilt>0.05739206060355534</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>42.65180077223705</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0881687800682,39.93129650435507,1654.169307346935</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="092138CCD43B1E211E58">
+		<name>Controller E</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259E000006">
+			<name>Clock E</name>
+			<LookAt>
+				<longitude>-105.0872861793887</longitude>
+				<latitude>39.93163196540161</latitude>
+				<altitude>1653.483146509191</altitude>
+				<heading>359.000099976373</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>500.1995890389138</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_6BC753711E3DBD12E667</styleUrl>
+			<ExtendedData>
+				<SchemaData schemaUrl="#__managed_schema">
+					<SimpleData name="COL57FBC826969AC5E9">10</SimpleData>
+				</SchemaData>
+			</ExtendedData>
+			<Point>
+				<extrude>1</extrude>
+				<coordinates>-105.0873005599454,39.93162659755272,1653.483195929191</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="063712D6933B1E23D5FB">
+			<name>Controller E - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBDA86D1000003">
+				<name>Clock E zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.0873080751455</longitude>
+					<latitude>39.93164877655874</latitude>
+					<altitude>1653.523471503831</altitude>
+					<heading>359.0000152250756</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>33.73574334572368</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0873000432746,39.93165140632342,1653.523471503831</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000004">
+				<name>Clock E zone 3 pop ups??</name>
+				<LookAt>
+					<longitude>-105.0876697122122</longitude>
+					<latitude>39.93151319092213</latitude>
+					<altitude>1654.035417514969</altitude>
+					<heading>359.0000084691793</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>88.76588872003596</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0876697122122,39.93151319092213,1654.035417514969</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000005">
+				<name>Clock E zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0876105778812</longitude>
+					<latitude>39.93191793314583</latitude>
+					<altitude>1654.330817201455</altitude>
+					<heading>32.40498014130763</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>103.5187725821197</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0876105778812,39.93191793314583,1654.330817201455</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000006">
+				<name>Clock E zone 5 pop ups </name>
+				<LookAt>
+					<longitude>-105.0874871140051</longitude>
+					<latitude>39.93176402170076</latitude>
+					<altitude>1653.918277732583</altitude>
+					<heading>130.7936818522077</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.50723665836722</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0874871140051,39.93176402170076,1653.918277732583</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000007">
+				<name>Clock E zone 6 pop ups</name>
+				<LookAt>
+					<longitude>-105.0872752218865</longitude>
+					<latitude>39.93221932728751</latitude>
+					<altitude>1653.7922833306</altitude>
+					<heading>130.7938925494892</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>60.37308034512536</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0872752218865,39.93221932728751,1653.7922833306</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000008">
+				<name>Clock E zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.0874306227594</longitude>
+					<latitude>39.93207572447475</latitude>
+					<altitude>1654.099800688729</altitude>
+					<heading>130.7939152945183</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>30.85888466639062</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0874306227594,39.93207572447475,1654.099800688729</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D1000009">
+				<name>Clock E zone 8 drip???</name>
+				<LookAt>
+					<longitude>-105.087009006575</longitude>
+					<latitude>39.93201220806199</latitude>
+					<altitude>1653.545226387052</altitude>
+					<heading>0</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>184.3139370319295</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.087009006575,39.93201220806199,1653.545226387052</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDA86D100000A">
+				<name>Clock E zone 9 drip???</name>
+				<LookAt>
+					<longitude>-105.0872809202507</longitude>
+					<latitude>39.93174244272947</latitude>
+					<altitude>1653.560474217254</altitude>
+					<heading>0</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>95.70524458515138</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0872809202507,39.93174244272947,1653.560474217254</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="0E99C7EC673B1E223CDE">
+		<name>Controller F</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259F000007">
+			<name>Clock F</name>
+			<LookAt>
+				<longitude>-105.0872242427997</longitude>
+				<latitude>39.93119916348192</latitude>
+				<altitude>1652.840415149451</altitude>
+				<heading>53.11961353628705</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>209.955257259644</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_9EAC56AB7E3DBD12E667</styleUrl>
+			<Point>
+				<coordinates>-105.0872213574451,39.93127666274621,1652.840415149451</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="0B82D796F83B1E243FF8">
+			<name>Controller F - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBDB377B000003">
+				<name>Clock F Zone 1  pop ups</name>
+				<LookAt>
+					<longitude>-105.0868186262157</longitude>
+					<latitude>39.93124978453211</latitude>
+					<altitude>1652.234365689912</altitude>
+					<heading>59.19067266402266</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.72022141328398</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868186262157,39.93124978453211,1652.234365689912</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000004">
+				<name>Clock F Zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.0863034870698</longitude>
+					<latitude>39.93134295853308</latitude>
+					<altitude>1651.904752420687</altitude>
+					<heading>73.55464440546737</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>44.66654836298404</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0863034870698,39.93134295853308,1651.904752420687</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000005">
+				<name>Clock F Zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0871675691535</longitude>
+					<latitude>39.93116174403292</latitude>
+					<altitude>1652.687539987629</altitude>
+					<heading>53.87001835410241</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.50072043417004</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0871675691535,39.93116174403292,1652.687539987629</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000006">
+				<name>Clock at Zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0871808538706</longitude>
+					<latitude>39.93115957957032</latitude>
+					<altitude>1652.791040334212</altitude>
+					<heading>53.87000982708858</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.39722665862882</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0871808538706,39.93115957957032,1652.791040334212</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000007">
+				<name>Clock F Zone 6 pop ups</name>
+				<LookAt>
+					<longitude>-105.0871937936715</longitude>
+					<latitude>39.93115449921498</latitude>
+					<altitude>1652.854937284829</altitude>
+					<heading>53.87000152146138</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.33332311999403</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0871937936715,39.93115449921498,1652.854937284829</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000008">
+				<name>Clock F Zone ? drip</name>
+				<LookAt>
+					<longitude>-105.0868385149961</longitude>
+					<latitude>39.93124561976316</latitude>
+					<altitude>1652.304370017181</altitude>
+					<heading>59.1906598980585</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.65021637161772</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868385149961,39.93124561976316,1652.304370017181</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B000009">
+				<name>Clock F Zone ? drip</name>
+				<LookAt>
+					<longitude>-105.0868543080781</longitude>
+					<latitude>39.93124150419639</latitude>
+					<altitude>1652.412308784918</altitude>
+					<heading>59.19064976098901</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.54228118859919</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0868543080781,39.93124150419639,1652.412308784918</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDB377B00000A">
+				<name>Clock F Zone? drip</name>
+				<LookAt>
+					<longitude>-105.087143525504</longitude>
+					<latitude>39.9311658410619</latitude>
+					<altitude>1652.557684672066</altitude>
+					<heading>53.87003378691186</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>35.63057872898298</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.087143525504,39.9311658410619,1652.557684672066</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="08A1DA6B173B1E2245B7">
+		<name>Controller G</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259F000008">
+			<name>Clock G</name>
+			<LookAt>
+				<longitude>-105.0878148996875</longitude>
+				<latitude>39.93198351007133</latitude>
+				<altitude>1654.454653854383</altitude>
+				<heading>306.8915453662546</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>101.8299136271708</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_C34A7A5E583DBD12E667</styleUrl>
+			<Point>
+				<coordinates>-105.0878148996875,39.93198351007133,1654.454653854383</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="0E2F854B7D3B1E2453A3">
+			<name>Controller G - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBDBB310000003">
+				<name>Clock G zone 1</name>
+				<LookAt>
+					<longitude>-105.0879571478093</longitude>
+					<latitude>39.93197108104805</latitude>
+					<altitude>1654.716808569304</altitude>
+					<heading>122.0630732228436</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>82.76631497616108</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0879571478093,39.93197108104805,1654.716808569304</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDBB310000004">
+				<name>Clock G zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.0877421865917</longitude>
+					<latitude>39.932169710897</latitude>
+					<altitude>1654.303958104128</altitude>
+					<heading>135.7679998071352</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>47.30620169606937</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0877421865917,39.932169710897,1654.303958104128</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDBB310000005">
+				<name>Clock G zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.087619232001</longitude>
+					<latitude>39.93227529276049</latitude>
+					<altitude>1654.154121297258</altitude>
+					<heading>132.2500539334912</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>31.42899566664255</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.087619232001,39.93227529276049,1654.154121297258</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDBB310000006">
+				<name>Clcok G zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0873985441837</longitude>
+					<latitude>39.93246097083818</latitude>
+					<altitude>1654.407196617683</altitude>
+					<heading>132.2501886852753</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>39.40311835237481</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_3C5BB8CFB73DBD12E65E</styleUrl>
+				<Point>
+					<coordinates>-105.0873985441837,39.93246097083818,1654.407196617683</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="0B1D1279713B1E224F07">
+		<name>Controller H</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259F000009">
+			<name>Clock H</name>
+			<LookAt>
+				<longitude>-105.0886002377527</longitude>
+				<latitude>39.93098073720373</latitude>
+				<altitude>1654.957859067119</altitude>
+				<heading>334.593730365193</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>77.04731766133591</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_0D7CF7D3D63DBD12E668</styleUrl>
+			<Point>
+				<coordinates>-105.0886002377527,39.93098073720373,1654.957859067119</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="04480F40FD3B1E2460EB">
+			<name>Controller H - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBDFF32A000003">
+				<name>Clock H zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888884955502</longitude>
+					<latitude>39.9301363197308</latitude>
+					<altitude>1653.800714687397</altitude>
+					<heading>359.6075642641726</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>90.73134335134455</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888884955502,39.9301363197308,1653.800714687397</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000004">
+				<name>clock H zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.0889750878875</longitude>
+					<latitude>39.93009139323438</latitude>
+					<altitude>1653.467951721903</altitude>
+					<heading>340.202336068723</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>128.7867943945457</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.088925432201,39.93026032294015,1653.467951721903</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000005">
+				<name>Clock H zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888869638573</longitude>
+					<latitude>39.93052465989664</latitude>
+					<altitude>1654.247770444057</altitude>
+					<heading>271.4372803660646</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>48.70081233554629</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888869638573,39.93052465989664,1654.247770444057</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000006">
+				<name>Clock H zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888812749119</longitude>
+					<latitude>39.93065714076577</latitude>
+					<altitude>1654.626550162129</altitude>
+					<heading>271.4372816492586</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>48.32202952080934</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888812749119,39.93065714076577,1654.626550162129</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000007">
+				<name>Clock H zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888916178053</longitude>
+					<latitude>39.93079076344934</latitude>
+					<altitude>1654.750052356809</altitude>
+					<heading>259.2376760172282</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.42752715402003</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888916178053,39.93079076344934,1654.750052356809</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000008">
+				<name>Clock H zone 6 pop ups </name>
+				<LookAt>
+					<longitude>-105.0888856374486</longitude>
+					<latitude>39.93083176163954</latitude>
+					<altitude>1654.974276520129</altitude>
+					<heading>280.5043781456822</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>25.00362334772944</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888856374486,39.93083176163954,1654.974276520129</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A000009">
+				<name>Clock H zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.0887108870715</longitude>
+					<latitude>39.93132859877901</latitude>
+					<altitude>1656.031609415896</altitude>
+					<heading>280.5044800556774</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>38.98568399350552</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0887108870715,39.93132859877901,1656.031609415896</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A00000A">
+				<name>Clock H zone 9 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888576996601</longitude>
+					<latitude>39.93100216488514</latitude>
+					<altitude>1655.711288243456</altitude>
+					<heading>280.5044108621233</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>93.38599548841557</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888576996601,39.93100216488514,1655.711288243456</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A00000B">
+				<name>Clock H zone 10 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888916206262</longitude>
+					<latitude>39.93078195187318</latitude>
+					<altitude>1654.709123254218</altitude>
+					<heading>281.9966278022136</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>53.89161533856168</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888916206262,39.93078195187318,1654.709123254218</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A00000C">
+				<name>Clock H Zone 11 pop ups</name>
+				<LookAt>
+					<longitude>-105.088011731258</longitude>
+					<latitude>39.93077709013004</latitude>
+					<altitude>1653.86953942566</altitude>
+					<heading>53.86947104939707</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>38.28062142098133</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.088011731258,39.93077709013004,1653.86953942566</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A00000D">
+				<name>Clock H Zone 12 pop ups</name>
+				<LookAt>
+					<longitude>-105.0883048758079</longitude>
+					<latitude>39.93052268441696</latitude>
+					<altitude>1653.84259463742</altitude>
+					<heading>358.9999982210542</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>43.17702835132878</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0883173897506,39.93052283200871,1653.84259463742</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBDFF32A00000E">
+				<name>Clock H Zone 13 pop ups</name>
+				<LookAt>
+					<longitude>-105.0883407314383</longitude>
+					<latitude>39.93016981235574</latitude>
+					<altitude>1653.433352664452</altitude>
+					<heading>358.9999962749601</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>43.58626942882438</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0883358698127,39.93034027759661,1653.433352664452</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="05894AB2253B1E225599">
+		<name>Controller I</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259F00000A">
+			<name>Clock I</name>
+			<LookAt>
+				<longitude>-105.0882277274339</longitude>
+				<latitude>39.92997973731939</latitude>
+				<altitude>1653.317647643936</altitude>
+				<heading>167.3248397670041</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>134.780996729769</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_37677CDB213DBD12E668</styleUrl>
+			<Point>
+				<coordinates>-105.0882277274339,39.92997973731939,1653.317647643936</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="03266375433B1E24708C">
+			<name>Controller I - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBE08824000003">
+				<name>Clock I zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0882325461941</longitude>
+					<latitude>39.93001210079126</latitude>
+					<altitude>1653.433140420509</altitude>
+					<heading>145.6692082555454</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>97.03083523093483</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0882325461941,39.93001210079126,1653.433140420509</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08824000004">
+				<name>Clock I zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.088103160322</longitude>
+					<latitude>39.92993632816628</latitude>
+					<altitude>1653.25140051247</altitude>
+					<heading>145.6692913019696</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>97.21257078751479</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.088103160322,39.92993632816628,1653.25140051247</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08824000005">
+				<name>Clock I zone 3 pop ups</name>
+				<LookAt>
+					<longitude>-105.0880100037571</longitude>
+					<latitude>39.92984271798264</latitude>
+					<altitude>1653.191897366412</altitude>
+					<heading>145.6693510944006</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>97.27206189067147</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0880100037571,39.92984271798264,1653.191897366412</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08824000006">
+				<name>Clock I zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0876749069</longitude>
+					<latitude>39.92949751837834</latitude>
+					<altitude>1652.40915365357</altitude>
+					<heading>52.51946611607598</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>102.3856545158197</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0876705101921,39.92950033097505,1652.40915365357</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08825000007">
+				<name>clock I zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0878884752848</longitude>
+					<latitude>39.92970964492952</latitude>
+					<altitude>1652.887345851188</altitude>
+					<heading>52.51932903841391</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>101.9074658746285</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0878623124825,39.92971085904077,1652.887345851188</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08825000008">
+				<name>Clock I zone 6 rotors</name>
+				<LookAt>
+					<longitude>-105.08754113554</longitude>
+					<latitude>39.92937812050196</latitude>
+					<altitude>1652.224099610534</altitude>
+					<heading>52.51957117335946</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>60.07881754365371</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.08754113554,39.92937812050196,1652.224099610534</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE08825000009">
+				<name>Clock I zone 7 rotors</name>
+				<LookAt>
+					<longitude>-105.0877240732055</longitude>
+					<latitude>39.92918297070287</latitude>
+					<altitude>1652.640950158155</altitude>
+					<heading>304.7460291171273</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>43.02099095803896</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0877240732055,39.92918297070287,1652.640950158155</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE0882500000A">
+				<name>Clock I zone 8 rotors</name>
+				<LookAt>
+					<longitude>-105.0876828665469</longitude>
+					<latitude>39.92920416963279</latitude>
+					<altitude>1652.663328723075</altitude>
+					<heading>304.7460574594306</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>42.99861008865719</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0876828665469,39.92920416963279,1652.663328723075</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE0882500000B">
+				<name>Clock I zone 9 drip</name>
+				<LookAt>
+					<longitude>-105.0879660340461</longitude>
+					<latitude>39.92980289865447</latitude>
+					<altitude>1653.010353665862</altitude>
+					<heading>304.7457704170254</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>201.447687638647</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0879660340461,39.92980289865447,1653.010353665862</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE0882500000C">
+				<name>Clock I zone 12 drip</name>
+				<LookAt>
+					<longitude>-105.087745039001</longitude>
+					<latitude>39.92916921273638</latitude>
+					<altitude>1652.64094595665</altitude>
+					<heading>304.7459117730533</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>63.8506821194642</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.087745039001,39.92916921273638,1652.64094595665</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+	<Folder id="01F627A7BE3B1E22608B">
+		<name>Controller J</name>
+		<open>1</open>
+		<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+		<Placemark id="57FBC8259F00000B">
+			<name>Clock J </name>
+			<LookAt>
+				<longitude>-105.0888250575875</longitude>
+				<latitude>39.92913303156606</latitude>
+				<altitude>1653.251395654568</altitude>
+				<heading>167.3244222634353</heading>
+				<tilt>0</tilt>
+				<gx:fovy>35</gx:fovy>
+				<range>86.26534444110803</range>
+				<altitudeMode>absolute</altitudeMode>
+			</LookAt>
+			<styleUrl>#__managed_style_6A3476EDCD3DBD12E668</styleUrl>
+			<Point>
+				<coordinates>-105.0888250575875,39.92913303156606,1653.251395654568</coordinates>
+			</Point>
+		</Placemark>
+		<Folder id="0D362456EF3B1E248BD3">
+			<name>Controller J - Zones</name>
+			<styleUrl>#__managed_style_032F152EF73DBD12E65C</styleUrl>
+			<Placemark id="57FBE14641000003">
+				<name>Clock J zone 1 pop ups</name>
+				<LookAt>
+					<longitude>-105.0889033520608</longitude>
+					<latitude>39.92965486806771</latitude>
+					<altitude>1653.310303325603</altitude>
+					<heading>276.7174627691645</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>63.15647825224006</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0889033520608,39.92965486806771,1653.310303325603</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000004">
+				<name>Clock J zone 2 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888904598077</longitude>
+					<latitude>39.92971993958516</latitude>
+					<altitude>1653.49832982644</altitude>
+					<heading>276.7174697153286</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>62.96844997743393</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888973893659,39.9293813453672,1653.49832982644</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000005">
+				<name>Clock J zone 3 pop ups </name>
+				<LookAt>
+					<longitude>-105.0888829456634</longitude>
+					<latitude>39.92956512674036</latitude>
+					<altitude>1653.459460279331</altitude>
+					<heading>276.7174627740515</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>50.74469416868851</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888829456634,39.92956512674036,1653.459460279331</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000006">
+				<name>Clock J zone 4 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888861378809</longitude>
+					<latitude>39.92955104078872</latitude>
+					<altitude>1653.461744823322</altitude>
+					<heading>276.7174456324968</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>28.22453320915884</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888861378809,39.92955104078872,1653.461744823322</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000007">
+				<name>Clock J zone 5 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888870495325</longitude>
+					<latitude>39.92927414189488</latitude>
+					<altitude>1653.435614057722</altitude>
+					<heading>264.9620262102735</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>66.13889641065727</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888870495325,39.92927414189488,1653.435614057722</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000008">
+				<name>Clock J zone 6 pop ups</name>
+				<LookAt>
+					<longitude>-105.0888857732553</longitude>
+					<latitude>39.9290703057147</latitude>
+					<altitude>1653.403972164308</altitude>
+					<heading>264.9620079393432</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>43.97135365338727</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888857732553,39.9290703057147,1653.403972164308</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE14642000009">
+				<name>Clock J zone 7 pop ups</name>
+				<LookAt>
+					<longitude>-105.0886929256945</longitude>
+					<latitude>39.92896906346802</latitude>
+					<altitude>1653.17863283224</altitude>
+					<heading>185.750926393594</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>33.02024505908776</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0886929256945,39.92896906346802,1653.17863283224</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000A">
+				<name>Clock J zone 8 pop ups</name>
+				<LookAt>
+					<longitude>-105.0883094972702</longitude>
+					<latitude>39.9289512331256</latitude>
+					<altitude>1652.986923957768</altitude>
+					<heading>0.0001318246300454048</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>58.654948082185</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0880555055842,39.92912684789333,1652.986923957768</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000B">
+				<name>Clock J zone 9 pop ups</name>
+				<LookAt>
+					<longitude>-105.088217985673</longitude>
+					<latitude>39.92892683995604</latitude>
+					<altitude>1653.061411539228</altitude>
+					<heading>0.0001314122709160095</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>58.5804552778427</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.088217985673,39.92892683995604,1653.061411539228</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000C">
+				<name>clock J zone 11 rotors</name>
+				<LookAt>
+					<longitude>-105.0877670646925</longitude>
+					<latitude>39.92915960859357</latitude>
+					<altitude>1652.640946968123</altitude>
+					<heading>324.4945209203246</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>76.61769188520339</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0877670646925,39.92915960859357,1652.640946968123</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000D">
+				<name>Clock J zone 12 drip</name>
+				<LookAt>
+					<longitude>-105.0881998128029</longitude>
+					<latitude>39.92893024844458</latitude>
+					<altitude>1653.03710167651</altitude>
+					<heading>0.0001312452453239772</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>58.6047685795711</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0881998128029,39.92893024844458,1653.03710167651</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000E">
+				<name>Clock J zone? drip </name>
+				<LookAt>
+					<longitude>-105.0888843095173</longitude>
+					<latitude>39.92937387013249</latitude>
+					<altitude>1653.26317422933</altitude>
+					<heading>264.9620409010104</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>36.75519930791779</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.0888983804667,39.92981459573732,1653.26317422933</coordinates>
+				</Point>
+			</Placemark>
+			<Placemark id="57FBE1464200000F">
+				<name>Clock J zone ?? drip</name>
+				<LookAt>
+					<longitude>-105.08888071932</longitude>
+					<latitude>39.92918187322639</latitude>
+					<altitude>1653.280447657793</altitude>
+					<heading>264.9620191967363</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>52.91427971195844</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_DCFBD2AD393DBD12E660</styleUrl>
+				<Point>
+					<coordinates>-105.08888071932,39.92918187322639,1653.280447657793</coordinates>
+				</Point>
+			</Placemark>
+		</Folder>
+	</Folder>
+</Document>
+</kml>

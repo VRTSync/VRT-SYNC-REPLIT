@@ -1,0 +1,398 @@
+Slice 3 — Tasks System (Web Portals) + Admin Design System Enforcement
+Objective
+
+Implement the Tasks experience for the new web portals (Contractor, HOA Admin, Property Manager) while strictly enforcing reuse of the existing admin portal design system and styling.
+
+The goal is to ensure that the new web portals visually match the admin portal exactly and use the same CSS component classes, layout patterns, and interaction styles.
+
+The Tasks system is the first operational module implemented in the web portal expansion.
+
+Design System Rule (Critical)
+
+All new portal pages must use the existing admin design system.
+
+The following file is the single source of truth for styling:
+
+server/public/admin/admin.css
+
+This file defines:
+
+color variables
+
+typography
+
+button styles
+
+badges
+
+layout helpers
+
+form styles
+
+modal styles
+
+stat cards
+
+list cards
+
+No new design system should be created.
+
+Brand Tokens (Already Defined)
+--navy: #0C1D31
+--teal: #25C1AC
+
+Typography:
+
+Inter
+
+These values must remain the standard across all portals.
+
+Required UI Component Reuse
+
+All new pages must reuse the existing classes.
+
+Buttons
+
+Use existing classes:
+
+.btn
+.btn-primary
+.btn-secondary
+.btn-ghost
+.btn-danger
+
+Do not create new button classes.
+
+Badges / Chips
+
+Use the existing badge system.
+
+Examples:
+
+.badge
+.badge-teal
+.badge-amber
+
+These will be used for:
+
+priority chips
+
+HOA request indicator
+
+urgency chips
+
+Dashboard Cards
+
+Use existing dashboard card styles:
+
+.stat-card
+.community-card
+
+Do not build new card systems.
+
+Forms
+
+Use the admin form styling:
+
+.form-group
+.form-input
+.form-select
+
+All forms across portals must use these classes.
+
+Modals
+
+Reuse the modal system:
+
+.modal-overlay
+.modal
+
+Existing dynamic modal pattern must be used.
+
+Layout Rules
+
+All pages must follow the existing admin portal page structure.
+
+Example page layout:
+
+Page Title
+Community Name
+--------------------------------
+Content
+
+All content must render inside:
+
+#page-content
+
+via the existing router.
+
+Tasks System Overview
+
+The Tasks module powers the operational workflow for the platform.
+
+Two task types exist:
+
+Contract Tasks
+HOA Requests
+
+Both are stored in the same tasks table.
+
+Tasks Page Implementation
+
+Implement Tasks page for the following roles:
+
+Contractor
+HOA Admin
+Property Manager
+
+HOA Member does not need the full Tasks page yet.
+
+Page Routes
+
+Add routes for:
+
+/web/contractor/tasks
+/web/hoa/tasks
+/web/pm/tasks
+
+All routes must use the shared SPA router.
+
+Example pattern:
+
+Router.register('tasks', async function(container) {
+   container.innerHTML = ...
+});
+API Endpoint
+
+Use the existing endpoint:
+
+GET /api/tasks
+
+Server-side logic already scopes tasks correctly based on role.
+
+Do not add client-side filtering logic.
+
+Task Grouping Logic
+
+Tasks must be grouped by window classification.
+
+Rules:
+
+Overdue
+Active Window
+Upcoming
+No Window
+
+Classification rules:
+
+Overdue: today > windowEnd
+Active: windowStart ≤ today ≤ windowEnd
+Upcoming: today < windowStart
+No Window: no window dates
+
+Create a utility function:
+
+classifyTask(task, today)
+Task Card UI
+
+Tasks should render as card-style list items, not tables.
+
+Each card should include:
+
+priority indicator
+
+title
+
+urgency chip
+
+service window
+
+address/location
+
+request badge if applicable
+
+Example card layout:
+
+[Priority Dot] Task Title
+
+Service Window
+Location
+
+Urgency Chip
+Priority Colors
+
+Map priority to color:
+
+low = green
+medium = orange
+high = red
+urgent = purple
+
+Use badge classes for chips.
+
+HOA Request Indicator
+
+Tasks where:
+
+origin === 'hoa_request'
+
+should display:
+
+HOA REQUEST
+
+as a teal badge.
+
+Contractor Actions
+
+Contractor task cards must support:
+
+acknowledge request
+
+open task detail
+
+Completion will be implemented in the next slice.
+
+Task Detail Modal
+
+Clicking a task card should open a modal.
+
+Reuse existing modal pattern.
+
+Modal should display:
+
+Task title
+Description
+Priority
+Service window
+Status
+
+No completion form yet.
+
+Requests Tab (HOA Portal)
+
+The HOA portal should include a Requests tab that filters tasks by:
+
+origin = 'hoa_request'
+
+Display grouping:
+
+Urgent requests
+Normal requests
+
+Sorted by creation date.
+
+Calendar View
+
+Calendar view should be supported.
+
+For this slice:
+
+Add toggle button:
+
+List View
+Calendar View
+
+Calendar rendering logic can be implemented in the next slice.
+
+Placeholder acceptable.
+
+Empty States
+
+When no tasks exist:
+
+Display empty state card:
+
+No tasks available for this community
+
+Reuse card styling.
+
+Notifications Hook
+
+For this slice:
+
+When a task card loads, prepare hooks for:
+
+task completed
+request acknowledged
+
+Actual notification behavior will be implemented later.
+
+Portal Integration
+
+Tasks page must respect:
+
+PortalState.getActiveCommunity()
+
+All task queries must include the active community.
+
+Out of Scope
+
+Do not implement:
+
+task completion form
+
+photo attachments
+
+GPS capture
+
+service schedule system
+
+map task integration
+
+request creation flow
+
+Those belong in later slices.
+
+Deliverables
+
+By the end of Slice 3:
+
+The following must work:
+
+Tasks page for Contractor
+
+Tasks page for HOA Admin
+
+Tasks page for Property Manager
+
+task grouping by window
+
+urgency chips
+
+request badge
+
+modal task detail
+
+list view rendering
+
+admin design system styling reused
+
+Success Criteria
+
+The system should:
+
+Load tasks from the API
+
+Group tasks correctly
+
+Render tasks using admin styling
+
+Display urgency indicators
+
+Allow opening task detail modal
+
+Respect active community context
+
+Maintain identical visual style to the admin portal
+
+Important Reminder to Replit
+
+The new web portals must visually match the admin portal exactly.
+
+All styling must come from:
+
+admin.css
+
+No new design systems should be introduced.
+
+The admin portal styling is the canonical design system for the entire web platform.

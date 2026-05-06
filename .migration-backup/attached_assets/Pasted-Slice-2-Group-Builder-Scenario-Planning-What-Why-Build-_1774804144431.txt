@@ -1,0 +1,349 @@
+Slice 2 — Group Builder + Scenario Planning
+What & Why
+
+Build the second phase of the admin-only Xeriscape Conversion Planner inside the VRTSync Admin Web Portal by adding the ability to turn selected polygons into named planning groups or phases. Slice 1 proved that polygons can be displayed, selected, measured, and run through basic cost/savings/payback calculations. Slice 2 should now allow admin users to organize those selected areas into meaningful scenario groups such as Phase 1, Entrances, Tree Lawns, or Full Conversion, and compare those groups as planning options. This is the slice that transforms the planner from a live selection tool into a usable internal sales and decision-support engine.
+
+Done Looks Like
+
+Admin users can now:
+
+select one or more polygons on the map
+
+create a named group from the current selection
+
+view multiple saved groups in the planner
+
+click a group to review which polygons belong to it
+
+see group totals for:
+
+polygon count
+
+total square footage
+
+estimated conversion cost
+
+estimated annual water savings
+
+estimated payback period
+
+create multiple scenario groups from the same property dataset
+
+compare groups side by side in a clean planning table or stacked card layout
+
+edit assumptions globally and have all group calculations update automatically
+
+delete a group without affecting source polygon geometry
+
+reselect a saved group on the map and visually highlight its polygons
+
+This slice is still admin-only and still test/internal-use only.
+
+Functional Requirements
+1. Named Group Creation
+
+Admins must be able to take the current active polygon selection and save it as a named group.
+
+Example group names:
+
+Phase 1
+
+South Entry
+
+Tree Lawns North
+
+Full Community Conversion
+
+When saving a group:
+
+require a name
+
+save the selected polygon IDs into that group
+
+store a snapshot of the current selection relationship
+
+do not duplicate polygon geometry in storage if avoidable
+
+2. Group Data Model
+
+Each saved group should include at minimum:
+
+id
+
+name
+
+polygonIds[]
+
+polygonCount
+
+totalSquareFootage
+
+conversionCostPerSF (derived from current assumptions, not hard-locked unless later needed)
+
+annualWaterSavingsPerSF (derived from current assumptions)
+
+computed outputs:
+
+estimatedConversionCost
+
+estimatedAnnualWaterSavings
+
+estimatedPaybackYears
+
+createdAt
+
+optional notes field placeholder for future use
+
+Important:
+For Slice 2, assumptions should still behave as global planner assumptions, not per-group custom assumptions. If assumptions change, all group outputs should recalculate using current planner values.
+
+3. Group List / Scenario Panel
+
+Add a saved groups area in the planner side panel or below the assumptions panel.
+
+Each saved group should show:
+
+group name
+
+polygon count
+
+total SF
+
+estimated cost
+
+annual savings
+
+payback period
+
+Each group row/card should also support:
+
+View on Map
+
+Rename
+
+Delete
+
+Optional but recommended:
+
+Duplicate group
+
+4. Map Interaction with Groups
+
+When a saved group is selected from the list:
+
+all polygons in that group should highlight on the map
+
+map should zoom to that group’s extent if practical
+
+selected group should be visually distinct from ad hoc current selection
+
+This allows the admin to say:
+
+“Here is Phase 1”
+and immediately show those areas on the map.
+
+5. Scenario Comparison View
+
+Add a compact comparison area that displays all saved groups together.
+
+This can be:
+
+a table
+
+stacked comparison cards
+
+or both if easy
+
+Minimum fields:
+
+Group Name
+
+Polygon Count
+
+Total SF
+
+Cost
+
+Annual Savings
+
+Payback
+
+This comparison view is one of the primary values of Slice 2 and should feel clear enough to use in an internal sales conversation without further cleanup.
+
+6. Global Assumption Recalculation
+
+The assumptions panel from Slice 1 remains global:
+
+Conversion Cost per SF
+
+Annual Water Savings per SF
+
+When these values change:
+
+current selection outputs update
+
+all saved group outputs update
+
+comparison table updates
+
+payback values update safely
+
+This is important because admins will want to test:
+
+$6.00/SF vs $7.25/SF
+
+$0.35/SF/year vs $0.50/SF/year
+
+without rebuilding every scenario manually.
+
+7. Current Selection vs Saved Groups
+
+Keep a clear distinction between:
+
+Current Selection
+
+Temporary polygons actively selected right now on the map
+
+Saved Groups
+
+Named scenario sets built from previous selections
+
+Admins should be able to:
+
+clear current selection without deleting saved groups
+
+load a saved group back into selection state if needed
+
+8. Validation Rules
+
+Cannot save an empty selection as a group
+
+Group names should not be blank
+
+If duplicate names are allowed, handle cleanly
+
+If a polygon is already in another group, that is okay
+
+the same polygon can belong to multiple scenarios
+
+Deleting a group does not delete polygons or source data
+
+UX / Design Constraints
+
+Keep this fully aligned to the existing VRTSync Admin Portal style.
+
+The planner should still feel:
+
+map-first
+
+finance-aware
+
+simple to explain
+
+operationally clean
+
+Recommended layout refinement:
+
+Left
+
+map workspace
+
+Right
+
+assumptions card
+
+current selection summary card
+
+“Save as Group” action
+
+saved groups list
+
+Lower section or tab in right panel
+
+scenario comparison table
+
+Use existing admin design language:
+
+matching cards
+
+matching button styles
+
+matching spacing
+
+matching typography
+
+polished neutral interface
+
+no experimental styling
+
+Technical Notes
+
+Reuse Slice 1 polygon selection and area calculation logic
+
+A group should store polygon references, not cloned geometry, unless local state architecture requires temporary snapshots
+
+All financial outputs should be derived from polygon square footage + current global assumptions
+
+If no persistence layer is ready yet, local/session state is acceptable for initial Slice 2 testing, but structure it so database persistence can be added in a future slice
+
+Keep group model architecture clean enough that future export, notes, and proposal integration can attach easily
+
+Acceptance Tests
+
+Admin can select multiple polygons and save them as a named group
+
+Saved group appears in the planner UI immediately
+
+Saved group correctly stores and displays polygon count
+
+Saved group correctly stores and displays total square footage
+
+Saved group correctly calculates estimated conversion cost
+
+Saved group correctly calculates estimated annual water savings
+
+Saved group correctly calculates payback period
+
+Multiple groups can be created from the same source polygon dataset
+
+The same polygon can exist in more than one group
+
+Clicking a saved group highlights its polygons on the map
+
+Map can zoom to the saved group extent
+
+Renaming a group updates the UI correctly
+
+Deleting a group removes only the group, not the source polygons
+
+Changing global assumptions updates all saved group outputs
+
+Comparison table/card view updates automatically when groups are added, edited, or removed
+
+Empty selections cannot be saved as groups
+
+Non-admin users still cannot access any part of this tool
+
+Out of Scope for Slice 3+
+
+Do not build yet:
+
+PDF export
+
+proposal integration
+
+customer-facing add-on access
+
+per-group custom assumptions
+
+maintenance savings model
+
+AMI or real utility data connections
+
+database-backed long-term scenario library if that slows this slice down too much
+
+board presentation formatting beyond a clean admin comparison view
+
+Short Replit Direction Note
+
+The goal of Slice 2 is to make the planner usable for real internal planning conversations. Focus on turning temporary map selections into named scenario groups and making those groups easy to compare visually and financially. The experience should feel like an internal planning engine, not a GIS editor.

@@ -1,0 +1,261 @@
+TASKS PAGE — HOA MOBILE (FINAL SLICES)
+Slice 1 — Summary Cards → Interactive Filters
+What & Why
+
+Convert the top summary cards (Overdue / Active / Requests / Completed) from static counts into primary filtering controls. This removes duplication and gives the user a fast way to change context.
+
+Scope
+Add activeSummaryFilter state:
+'all' | 'overdue' | 'active' | 'requests' | 'completed'
+Make each summary card:
+tappable
+visually “selected” when active
+Sync filter logic:
+selecting a summary card updates task list
+selecting “All” resets filter
+Selected styling:
+slightly darker background
+stronger border or shadow
+keep within current design system
+Done Looks Like
+Tapping “Requests (4)” shows only requests
+Tapping “Overdue” shows overdue only
+Selected card is visually obvious
+No lag between tap and list update
+Acceptance Tests
+Tap each card → list updates correctly
+Only one card active at a time
+Reset to “All” works
+No visual glitches between states
+Guardrails
+Do not change card layout or spacing
+Do not introduce new colors
+Keep animation subtle (opacity / background only)
+Slice 2 — Simplify Tabs (Remove Redundancy)
+What & Why
+
+Tabs and summary cards are duplicating filtering logic. Simplify to reduce confusion.
+
+Scope
+Keep tabs:
+All
+Requests
+Scheduled Work
+Completed
+Remove:
+Overdue tab (handled by summary)
+Sync behavior:
+Summary selection overrides tab
+Tab selection resets summary filter to “all”
+Done Looks Like
+Tabs feel secondary, not primary
+No duplicate “Overdue” filtering paths
+Switching tabs resets summary state cleanly
+Acceptance Tests
+Select summary filter → tab state updates logically
+Select tab → summary resets to “all”
+No conflicting filters applied
+Guardrails
+Do not add more tabs
+Keep tab styling exactly as-is
+Slice 3 — Priority-Based Sorting (Critical)
+What & Why
+
+Tasks must be ordered by importance, not just recency.
+
+Scope
+
+Implement sorting logic:
+
+Priority order:
+
+Overdue
+Requests (oldest first)
+Active / in progress
+New / upcoming
+Completed
+
+Sorting inputs:
+
+status
+createdAt
+updatedAt
+optional: windowStart
+Done Looks Like
+Overdue always appears at top
+Older requests appear before newer ones
+Completed always at bottom
+Acceptance Tests
+Add test data with mixed statuses → order is correct
+Changing filter preserves sorting logic
+No inconsistent ordering between renders
+Guardrails
+Do not rely on client-only sorting if backend can support it later
+Keep sort deterministic
+Slice 4 — Request Aging Indicator
+What & Why
+
+HOA users need to see how long requests have been sitting.
+
+Scope
+
+On request cards:
+
+Add computed field:
+daysSinceCreated
+
+Display:
+
+“2 days old”
+“5 days old”
+
+Placement:
+
+near submitted date
+small secondary text
+Done Looks Like
+Every request shows age
+Age updates correctly over time
+Acceptance Tests
+Correct day count for multiple test cases
+No negative or incorrect values
+Updates after app reload
+Guardrails
+Keep text subtle
+Do not add heavy visual elements (no big badges)
+Slice 5 — Empty State Improvements
+What & Why
+
+Empty states should guide the user, not stop them.
+
+Scope
+
+Replace current empty states:
+
+Overdue
+“All tasks are on track”
+Add button: “View Requests”
+Scheduled Work
+“No scheduled work”
+Add button: “View All Tasks”
+Requests (if empty)
+“No active requests”
+Add button: “Create Request” (if role allows)
+Done Looks Like
+No screen feels like a dead end
+User always has a next action
+Acceptance Tests
+Each empty state shows correct message
+Buttons route correctly
+No layout shift issues
+Guardrails
+Do not increase vertical space
+Keep messaging short
+Slice 6 — Task Card Structure Tightening
+What & Why
+
+Cards need faster scan readability.
+
+Scope
+
+Reorganize content hierarchy:
+
+Top row:
+
+Title (bold)
+Status chip (right aligned)
+
+Second row:
+
+Type (REQUEST / TASK)
+Description
+
+Third row:
+
+Date
+Contractor
+
+Bottom:
+
+“View on Map”
+Done Looks Like
+Cards scan quickly top-to-bottom
+Status is immediately visible
+Acceptance Tests
+All cards follow same structure
+No overflow issues
+Text truncation works correctly
+Guardrails
+Do not redesign card style
+Do not add new components
+Slice 7 — “Needs Attention” Filter
+What & Why
+
+HOA needs a one-tap “what’s wrong” view.
+
+Scope
+
+Add chip above list:
+
+“Needs Attention”
+
+Filter includes:
+
+overdue
+unacknowledged requests
+requests older than X days (optional threshold)
+Done Looks Like
+Tap “Needs Attention” → filtered list appears
+Shows only actionable problems
+Acceptance Tests
+Correct items included
+No false positives
+Works with summary filters
+Guardrails
+Keep chip styling consistent with existing UI
+Do not over-highlight
+Slice 8 — Spacing + Density Adjustment
+What & Why
+
+Page feels too empty in states with little data.
+
+Scope
+Reduce vertical padding:
+between summary cards and tabs
+between tabs and list
+Reduce empty state vertical space by ~20–30%
+Pull list higher on screen
+Done Looks Like
+Less dead space
+More content visible above fold
+Acceptance Tests
+No overlap issues
+No clipping on smaller devices
+Scroll behavior unchanged
+Guardrails
+Do not compress too aggressively
+Maintain readability
+What You Should Build First
+
+Order:
+
+Slice 1 (interactive summary)
+Slice 3 (sorting)
+Slice 4 (aging)
+Slice 2 (tabs cleanup)
+Slice 5 (empty states)
+Slice 6 (card tightening)
+Slice 7 (needs attention)
+Slice 8 (spacing)
+If you want next
+
+Next page should be:
+→ Requests page (HOA mobile)
+
+That’s where:
+
+most user interaction happens
+most friction exists
+biggest differentiation opportunity is
+
+I’ll structure that the same way if you want to keep going.

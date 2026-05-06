@@ -1,0 +1,134 @@
+import { isLiquidGlassAvailable } from "expo-glass-effect";
+import { Tabs } from "expo-router";
+import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
+import { BlurView } from "expo-blur";
+import { Ionicons } from "@expo/vector-icons";
+import { Platform, StyleSheet, useColorScheme } from "react-native";
+import React from "react";
+import { useAuth } from "@/client/contexts/AuthContext";
+
+function NativeTabLayout() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  return (
+    <NativeTabs>
+      <NativeTabs.Trigger name="index">
+        <Icon sf={{ default: "house", selected: "house.fill" }} />
+        <Label>Home</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="tasks">
+        <Icon sf={{ default: "checklist", selected: "checklist" }} />
+        <Label>Tasks</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="map">
+        <Icon sf={{ default: "map", selected: "map.fill" }} />
+        <Label>Map</Label>
+      </NativeTabs.Trigger>
+      {isAdmin && (
+        <NativeTabs.Trigger name="admin">
+          <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
+          <Label>Admin</Label>
+        </NativeTabs.Trigger>
+      )}
+      <NativeTabs.Trigger name="profile">
+        <Icon sf={{ default: "person", selected: "person.fill" }} />
+        <Label>Profile</Label>
+      </NativeTabs.Trigger>
+    </NativeTabs>
+  );
+}
+
+function ClassicTabLayout() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === "dark";
+
+  return (
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: "#25C1AC",
+        tabBarInactiveTintColor: "#999",
+        headerShown: true,
+        tabBarStyle: {
+          position: "absolute",
+          backgroundColor: Platform.select({
+            ios: "transparent",
+            android: isDark ? "#000" : "#fff",
+            web: "#fff",
+          }),
+          borderTopWidth: 0,
+          elevation: 0,
+          height: Platform.OS === "web" ? 84 : undefined,
+        },
+        tabBarBackground: () =>
+          Platform.OS === "ios" ? (
+            <BlurView
+              intensity={100}
+              tint={isDark ? "dark" : "light"}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : null,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Home",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="tasks"
+        options={{
+          title: "Tasks",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkmark-done-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: "Map",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "Admin",
+          headerShown: false,
+          href: isAdmin ? undefined : null,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="settings-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: "Profile",
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+    </Tabs>
+  );
+}
+
+export default function TabLayout() {
+  if (isLiquidGlassAvailable()) {
+    return <NativeTabLayout />;
+  }
+  return <ClassicTabLayout />;
+}

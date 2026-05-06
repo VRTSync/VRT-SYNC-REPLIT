@@ -1,0 +1,388 @@
+Slice 1 — Web Portal Expansion Foundation
+Objective
+
+Convert the existing admin portal architecture into the base platform shell for the full VRTSync web portal, supporting multiple user roles while preserving the current admin functionality.
+
+This slice establishes the role-aware shell system, community context support, and navigation framework that all future pages will run inside.
+
+The current admin portal remains intact and becomes the Super Admin experience within the broader web platform.
+
+Key Principle
+
+We are not building a new app.
+
+We are expanding the existing admin portal architecture to support multiple portal experiences using the same foundation.
+
+Reuse these existing systems wherever possible:
+
+admin.css design system
+
+admin shell layout pattern
+
+router.js SPA routing
+
+api.js fetch helper
+
+session authentication
+
+server-side role scoping
+
+modal system
+
+toast system
+
+Leaflet map iframe
+
+Target User Roles (for the web portal)
+
+The web portal must support these roles:
+
+Super Admin
+Property Manager
+HOA Admin
+HOA Member
+Contractor
+
+Each role will eventually receive a role-aware dashboard and navigation set, but that will be implemented in later slices.
+
+Slice 1 only establishes the framework required to support those roles.
+
+Portal Architecture
+
+The web portal uses a shared SPA architecture.
+
+All portals share:
+
+design system
+
+API layer
+
+router
+
+authentication
+
+session management
+
+notification system
+
+map integration
+
+Each role receives a different shell template and sidebar configuration.
+
+Required Shell Templates
+
+Create the following new shell templates alongside the existing admin shell.
+
+Existing:
+
+server/templates/admin-shell.html
+
+New shells:
+
+server/templates/contractor-shell.html
+server/templates/hoa-shell.html
+server/templates/pm-shell.html
+
+Each shell should reuse the same structure as the admin shell:
+
+sidebar
+
+top bar
+
+#page-content injection container
+
+The only difference between shells should be the sidebar navigation list.
+
+Do not duplicate CSS or layout logic.
+
+All shells should load:
+
+admin.css
+router.js
+api.js
+Sidebar Navigation Model
+
+The following navigation system will eventually exist across the platform.
+
+Dashboard
+Map
+Tasks
+Contracts
+Invoices
+Documents
+Reports
+Users
+Contacts
+
+For Slice 1, simply ensure the shells can support role-based navigation.
+
+Example:
+
+Admin sidebar (existing)
+
+Contractor sidebar (future)
+
+Dashboard
+Map
+Tasks
+
+HOA sidebar (future)
+
+Dashboard
+Map
+Tasks
+Documents
+Reports
+Contacts
+
+Property Manager sidebar (future)
+
+Dashboard
+Map
+Tasks
+Invoices
+Documents
+Reports
+Users
+Contacts
+
+Role filtering will be implemented in later slices.
+
+Route Entry Points
+
+Add new web entry routes in the server.
+
+Example:
+
+/web/admin
+/web/contractor
+/web/hoa
+/web/pm
+
+Each route should serve the corresponding shell template.
+
+Example behavior:
+
+Admin user
+→ /web/admin
+
+Contractor user
+→ /web/contractor
+
+HOA user
+→ /web/hoa
+
+Property manager
+→ /web/pm
+
+Login Redirect Logic
+
+After login, the system must detect the user role and redirect accordingly.
+
+Use the existing endpoint:
+
+GET /api/auth/me
+
+This returns:
+
+role
+
+communities
+
+hoaCommunityId (if applicable)
+
+Redirect logic example:
+
+Super Admin
+→ /web/admin
+
+Contractor
+→ /web/contractor
+
+HOA Admin / HOA Member
+→ /web/hoa
+
+Property Manager
+→ /web/pm
+
+Community Context System
+
+Most pages in VRTSync are community-scoped.
+
+The top bar must support a community selector.
+
+Add placeholder support in the shell top bar for:
+
+Community: [dropdown]
+
+Behavior rules:
+
+Users with one community
+→ automatically scoped to that community
+
+Users with multiple communities
+→ will eventually land on a community selector screen (implemented later)
+
+Super Admin
+→ platform-wide context
+
+Slice 1 only adds the UI placeholder and page state support.
+
+Top Bar Expansion
+
+Expand the shell top bar to include placeholders for:
+
+Community Selector
+Notification Bell
+User Profile Menu
+Global "+" Button
+
+These elements should exist visually but may remain inactive in this slice.
+
+Example layout:
+
+[Community ▼]    [🔔]   [+]   [User]
+Notification Bell Placeholder
+
+Add a placeholder notification bell in the top bar.
+
+Example:
+
+🔔
+
+Click behavior can remain inactive in Slice 1.
+
+Later slices will wire this to the notification system.
+
+Global "+" Button Placeholder
+
+Add a global action button placeholder in the top bar.
+
+Example:
+
++
+
+This will eventually allow actions like:
+
+create task
+
+submit request
+
+upload document
+
+add user
+
+Slice 1 only establishes the UI position.
+
+Router Integration
+
+All new shells must use the existing router pattern.
+
+Example:
+
+Router.register('dashboard', async function(container) {
+   container.innerHTML = ...
+});
+
+Ensure the router can run inside each shell without modification.
+
+Authentication and Session
+
+Reuse the existing system:
+
+express-session
+PostgreSQL session store
+/api/auth/login
+/api/auth/me
+
+All new portal routes must rely on the same authentication system.
+
+No new authentication logic should be introduced.
+
+Server-Side Role Scoping
+
+All role permissions and community scoping must continue to be enforced server-side.
+
+Do not implement client-side filtering logic.
+
+Use existing middleware such as:
+
+requireAuth
+enforceHoaScoping
+Map System
+
+No changes to the map engine are required in this slice.
+
+The map will continue to use:
+
+server/public/leaflet-map.html
+
+Later slices will embed the map iframe inside portal pages.
+
+Deliverables for Slice 1
+
+By the end of Slice 1, the system must support:
+
+multiple portal shells
+
+role-based entry routing
+
+shared design system across portals
+
+shared router architecture
+
+shared API helper
+
+shared authentication system
+
+top bar with community selector placeholder
+
+notification bell placeholder
+
+global "+" button placeholder
+
+The admin portal must remain fully functional.
+
+Out of Scope for Slice 1
+
+Do NOT build the following yet:
+
+dashboards
+
+tasks pages
+
+map pages
+
+documents
+
+invoices
+
+contracts
+
+reports
+
+users
+
+contacts
+
+notification logic
+
+community selector logic
+
+These will be implemented in later slices.
+
+Success Criteria
+
+The system should be able to:
+
+Authenticate a user
+
+Detect the user role
+
+Redirect to the correct web portal shell
+
+Load the SPA router
+
+Render a placeholder page inside the shell
+
+This establishes the foundation for the full VRTSync web portal expansion.

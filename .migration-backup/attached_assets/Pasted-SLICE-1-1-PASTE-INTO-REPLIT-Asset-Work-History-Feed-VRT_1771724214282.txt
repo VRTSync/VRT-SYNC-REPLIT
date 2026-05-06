@@ -1,0 +1,151 @@
+SLICE 1.1 (PASTE INTO REPLIT): Asset Work History Feed (VRT Parity)
+
+Objective
+Provide a unified Work History for each asset, derived from task completions and attachments, matching current VRT behavior.
+
+Scope
+
+Add asset-centric history endpoint
+
+Build Work History screen in mobile app
+
+Aggregate completion data + photos
+
+Enable navigation from:
+
+Asset Detail screen
+
+Map popup “Work History” button
+
+Linked asset on task detail
+
+Backend Requirements
+New endpoint
+GET /api/assets/:id/history
+
+Permissions
+
+Contractor:
+
+Must be a member of the asset’s community
+
+Admin:
+
+Can access all
+
+Response Structure
+
+Return chronological list (newest first):
+
+[
+  {
+    id,
+    type: "task_completion",
+    completedAt,
+    completedBy: {
+      id,
+      displayName
+    },
+    employeeSignOffName,
+    notes,
+    task: {
+      id,
+      title
+    },
+    attachments: [
+      { id, url }
+    ]
+  }
+]
+
+Data Source
+
+Derived from:
+
+task_links (task → asset)
+
+tasks
+
+task_completions
+
+attachments
+
+users
+
+Include only completions for tasks linked to this asset.
+
+Sorting
+
+Newest first by completedAt.
+
+Performance
+
+Use a single optimized query or minimal joins.
+Do not N+1 fetch attachments.
+
+Mobile App Requirements
+New screen: Asset History
+
+Route example:
+
+/asset/[id]/history
+
+UI behavior
+
+Header:
+
+Asset label + type
+
+Feed list:
+Each entry shows:
+
+Completion date/time
+
+Completed by (employeeSignOffName)
+
+Task title
+
+Notes (if present)
+
+Photo thumbnails (if present)
+
+Tap photo → full screen viewer
+
+Empty state:
+
+“No work history yet”
+
+Navigation integration
+
+Add entry points:
+
+Asset Detail screen → “View Work History” button
+
+Map popup → Work History button
+
+Task detail → linked asset → open history
+
+Acceptance Tests
+
+Complete a task linked to an asset with photos
+→ History shows new entry with attachments
+
+Multiple completions over time
+→ Entries appear newest first
+
+Contractor from different community
+→ Cannot access history (403/404)
+
+History loads quickly (<1s typical)
+
+Out of Scope
+
+Filtering/search
+
+Exporting reports
+
+Admin editing history
+
+Non-task events (inspections, installations, etc.)
+
+Offline history caching (later slice)

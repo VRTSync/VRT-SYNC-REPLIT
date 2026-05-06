@@ -1,0 +1,72 @@
+SLICE 3.10 — Asset Detail Field Rendering (Canonical Layout, No Field Changes)
+
+Goal:
+Make the AssetDetailPanel → Details tab render fields in a consistent, predictable way that matches the user’s canonical “VRTSync Hierarchy + Stored Details (v1)” list EXACTLY.
+No changes to the field list. No renaming. No new fields. Only presentation + validation indicators.
+
+Scope:
+MOBILE (AssetDetailPanel Details tab)
+Admin Hub can remain as-is for now.
+
+Inputs:
+- asset record (identity, layer/subLayer, geometry, areaSqFt, tags, audit)
+- asset properties (key/value)
+- known asset type from (layer + subLayer) or current type mapping
+- canonical field list per type from the user’s spec (hardcoded templates)
+
+Approach:
+1) Create a canonical template map in server or shared code (preferred shared/):
+- For each asset type:
+  - displayName label
+  - grouped sections + ordered fields
+  - required vs optional flags
+  - field label text (human readable)
+  - data source: column vs property
+  - (optional) type hint: text/date/number/enum
+
+2) In AssetDetailPanel Details tab:
+Render sections in this order:
+A) Identity (always)
+B) Geometry (always)
+C) Polygon Area (only if polygon; always show areaSqFt)
+D) Asset Details (type-specific, ordered per template)
+E) Media & Documents (counts + shortcut links; optional)
+F) Audit (always)
+
+3) Type-specific fields must match the spec exactly:
+
+COMMUNITY
+- Native Grass (Polygon): maintenanceResponsibility, serviceNotes, defaultBillingCategory
+- Landscape Bed (Polygon): bedType, irrigationType, plantingNotes, materialNotes, lastEnhancementDate, warrantyEndDate
+- Bluegrass Areas (Polygon): serviceNotes
+- Pet Stations (Point): stationCode (required), serviceFrequency, bagType, canSize, placementNotes
+
+IRRIGATION
+- Backflows (Point): backflowType, brand, model, size, serialNumber, installDate, lastTestDate, testDueDate, locationNotes
+- Controllers (Point): controllerCode (required), brand, model, installDate, locationNotes, zoneIds[]
+- Zones (Child): controllerId (required), zoneNumber (required), zoneType, brand, installDate, locationNotes, geometry (optional), areaSqFt (required if polygon)
+
+SNOW
+- Snow (Layer-level entity in spec):
+  - For V1 display: show eventStart, eventEnd, accumulationRange, notes, photos[], invoiceLinks[] if present
+  - (Do not implement invoice workflows; display only if the system stores them)
+
+TREES
+- Trees (Point): treeCode, species (required), caliper, installDate, warrantyEndDate, healthStatus, treatmentNotes, locationNotes
+
+4) Required field behavior:
+- If required field is missing/empty:
+  - show “Missing” badge next to the field
+  - surface “Incomplete” status at top of Details tab (e.g., “2 required fields missing”)
+- This should reuse the same required-field logic you already use in the Assets tab completeness tracking.
+
+5) Keep a “Raw Properties” collapsible section at the bottom (optional):
+- For debugging/migrations, show all key/value pairs not included in the canonical template.
+- This ensures nothing is lost even if a property key exists that isn’t in the template yet.
+
+Acceptance Criteria:
+- AssetDetailPanel Details tab shows the same ordered fields every time for a given asset type.
+- Required fields display required indicator and missing state.
+- areaSqFt always displays for polygons.
+- No existing fields are renamed or removed.
+- Raw Properties section allows viewing any extra keys without changing the canonical layout.

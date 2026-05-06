@@ -1,0 +1,40 @@
+# This `.xcode.env` file is versioned and is used to source the environment
+# used when running script phases inside Xcode.
+# To customize your local environment, you can create an `.xcode.env.local`
+# file that is not versioned.
+
+# NODE_BINARY variable contains the PATH to the node executable.
+#
+# Customize the NODE_BINARY variable here.
+# For example, to use nvm with brew, add the following line
+# . "$(brew --prefix nvm)/nvm.sh" --no-use
+export NODE_BINARY=$(command -v node)
+randymangel@mac ios % PROJECT_DIR=~/VRT-SYNC-REPLIT/ios/Pods \
+CONFIGURATION_BUILD_DIR=/tmp/test-build \
+BUNDLE_FORMAT=shallow \
+PODS_ROOT=~/VRT-SYNC-REPLIT/ios/Pods \
+PODS_TARGET_SRCROOT=~/VRT-SYNC-REPLIT/node_modules/expo-constants/ios \
+bash ~/VRT-SYNC-REPLIT/node_modules/expo-constants/scripts/get-app-config-ios.sh
+Node found at: /usr/local/bin/node
+The NODE_ENV environment variable is required but was not specified. Ensure the project is bundled with Expo CLI or NODE_ENV is set. Using only .env.local and .env
+/Users/randymangel/VRT-SYNC-REPLIT/node_modules/@expo/config/build/getConfig.js:50
+    throw error;
+    ^
+
+Error: Error reading Expo config at /Users/randymangel/VRT-SYNC-REPLIT/app.config.js:
+
+EXPO_PUBLIC_DOMAIN is required for non-development builds. Set it in your eas.json env block or as an EAS secret.
+    at Object.<anonymous> (/Users/randymangel/VRT-SYNC-REPLIT/app.config.js:8:11)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at requireFromString (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/require-from-string/index.js:28:4)
+    at evalConfig (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/@expo/config/build/evalConfig.js:68:47)
+    at readConfigFile (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/@expo/config/build/getConfig.js:45:41)
+    at getDynamicConfig (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/@expo/config/build/getConfig.js:54:18)
+    at getConfig (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/@expo/config/build/Config.js:280:43)
+    at Object.<anonymous> (/Users/randymangel/VRT-SYNC-REPLIT/node_modules/expo-constants/scripts/build/getAppConfig.js:25:40)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10) {
+  isConfigError: true
+}
+
+Node.js v24.14.0

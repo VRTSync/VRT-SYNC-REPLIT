@@ -1,0 +1,137 @@
+SLICE 3.5 — Admin Web Hub Import: Contract Task List → Service Schedule + Windowed Tasks
+
+Goal:
+In the admin web hub, add an import tool that takes a contract task list spreadsheet (xlsx or CSV) and generates:
+1) Service schedule(s): mowing day (service_schedules)
+2) Windowed tasks: all other contract items as tasks with windowStart/windowEnd
+
+This slice must be safe (preview-first), idempotent (no accidental duplicates), and flexible (supports differing spreadsheet column names via a column-mapper UI).
+
+Important:
+Some previously uploaded files in this chat can expire. If you want the importer to hard-map to your exact “Contract Task List - VRT.xlsx” columns, re-upload that file so we can match column headers precisely. This slice will still implement the importer generically with a mapping step so it works regardless.
+
+---------------------------------------
+UI: /web/admin/imports/contract-tasks
+---------------------------------------
+
+Page layout:
+- Community selector (required)
+- File upload (xlsx or csv)
+- Stepper UI:
+  Step 1: Upload
+  Step 2: Map Columns
+  Step 3: Preview
+  Step 4: Import
+
+Step 1 — Upload
+- Accept .xlsx and .csv
+- Parse server-side for consistency (recommended) OR client-side if already using a library.
+- Show detected sheet names (xlsx) and let admin pick which sheet to import.
+
+Step 2 — Map Columns (Column Mapper)
+Show a panel that lists required fields and allows mapping to uploaded columns (dropdowns).
+
+Required mappings (Tasks):
+- Task Name / Title (required)
+- Window Start (required for windowed tasks)
+- Window End (required for windowed tasks)
+Optional mappings:
+- Description / Notes
+- Priority (low/medium/high/urgent) OR a “Default Priority” selector
+- Category / Section (to help grouping, optional)
+- Asset Type / Layer (optional future; do NOT require now)
+
+Required mappings (Service Schedule: mowing day)
+- Identify the mowing line item using one of:
+  A) A “Row Matcher” configuration in UI:
+     - Admin picks which row represents “Weekly Landscape Visit / Mowing”
+     - OR chooses a keyword match (default keywords: “mow”, “mowing”, “weekly maintenance”, “weekly service”)
+  B) A manual selection table where admin checks “This row is Mowing Schedule”
+
+Mowing schedule input:
+- Day of week picker (required, since spreadsheet won’t reliably specify day)
+- Optional seasonStart/seasonEnd (if present in sheet, map it; otherwise admin enters in UI)
+
+Validation rules:
+- Window Start + Window End must both be provided for task rows (cannot set one).
+- Window Start <= Window End
+- Rows that fail validation show errors and are excluded unless admin fixes mapping or edits.
+
+Step 3 — Preview (Dry Run)
+Show summary cards:
+- Mowing schedule to create/update:
+  - dayOfWeek, season bounds
+- Tasks to create:
+  - count
+  - breakdown by category/priority
+- Rows skipped:
+  - missing dates
+  - invalid date ranges
+  - detected mowing row(s) excluded from tasks
+
+Also show a preview table:
+- Title | Window | Priority | Action (Create/Skip/Error)
+
+Idempotency / Duplicate handling:
+- Add an “Import Run ID” concept:
+  - Create a new table: import_runs (optional but recommended) OR store a hash in template_runs if you already have a pattern.
+  - Compute a deterministic row fingerprint for each task:
+    fingerprint = hash(communityId + normalizedTitle + windowStart + windowEnd)
+- Before creating tasks, query for existing tasks with matching fingerprint:
+  - If found: mark as “Already exists” and skip OR update (admin chooses mode)
+Mode toggle in UI:
+- “Create only (skip existing)” (default)
+- “Upsert (update window/description/priority if existing)”
+
+Step 4 — Import
+On confirm:
+- Create/update mowing service schedule:
+  - If community already has mowing_visit schedule:
+     - PATCH it with selected day/season/notes
+  - Else:
+     - POST create schedule
+- Create tasks:
+  - For each valid row:
+     - Create (or upsert if mode enabled)
+     - Set:
+       title
+       description (optional)
+       priority (mapped or default)
+       windowStart/windowEnd
+       communityId
+       createdBy = current admin user
+
+Backend endpoints to add (admin-only):
+- POST /api/admin/import/contract-tasks/parse
+  body: multipart file upload (+ optional sheetName)
+  returns: { columns, rowsPreview (first N), inferredMappings (best effort) }
+
+- POST /api/admin/import/contract-tasks/preview
+  body: { communityId, mappings, mowingConfig, defaultPriority, mode }
+  returns: { mowingSchedulePreview, tasksPreview[], errors[], skipped[], counts, fingerprintConflicts[] }
+
+- POST /api/admin/import/contract-tasks/commit
+  body: { communityId, mappings, mowingConfig, defaultPriority, mode }
+  returns: { scheduleResult, createdCount, updatedCount, skippedCount, errorCount, runId }
+
+Implementation notes:
+- Parsing XLSX: use a stable library (e.g., xlsx) on server.
+- Date parsing: support:
+  - Excel serial dates
+  - MM/DD/YYYY
+  - “May 15” style (assume current year or chosen year in UI)
+- Normalize priority mapping:
+  - Accept “Low/Med/High/Urgent” or numeric codes; map to enum.
+- Do NOT create weekly mowing tasks. Mowing is ALWAYS a service schedule + visits.
+
+Acceptance Criteria:
+1) Admin uploads spreadsheet, maps columns, sees a clear preview with errors/skips.
+2) Import creates/updates mowing_visit schedule for the community.
+3) Import creates windowed tasks with windowStart/windowEnd.
+4) Running the same import twice does not create duplicate tasks (fingerprint-based idempotency).
+5) No regressions to task list/calendar; imported tasks appear correctly as windows.
+6) Import is admin-only and community-scoped.
+
+Out of scope:
+- Linking tasks to assets during import
+- Generating monthly/recurring tasks automatically (that’s Slice 3.6 helpers)

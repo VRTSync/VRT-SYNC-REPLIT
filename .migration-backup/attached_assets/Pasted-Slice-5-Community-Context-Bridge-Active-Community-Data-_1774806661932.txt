@@ -1,0 +1,397 @@
+Slice 5 — Community Context Bridge + Active Community Data Loading
+What & Why
+
+Build the architectural bridge that makes the Xeriscape Planner truly compatible with VRTSync’s community-based model. Slices 1–4 proved the planner workflow: polygon selection, scenario grouping, summaries, saved planning records, and proposal-prep handoff. But the tool now needs to stop thinking in terms of a generic test dataset and start thinking in terms of an active community context. This slice should introduce a top-level admin community selector, wire the planner to load only the active community’s bluegrass polygons from the Community layer, and ensure all planner data shown on screen is filtered to that active community. This is the key slice that prepares the planner for eventual portal deployment, where community selection will be automatic based on the logged-in customer’s assigned community.
+
+Done Looks Like
+
+Admin users can now:
+
+open the Xeriscape Planner in the admin web portal
+
+choose a community from a selector at the top of the page
+
+load only that community’s bluegrass_area polygons into the planner
+
+see the map, current selection, saved groups, summaries, and planning records update to reflect only that active community
+
+switch to another community and have the planner reset and reload cleanly
+
+view saved planning records only for the currently selected community
+
+create new planner scenarios that are automatically tied to that community
+
+continue using all existing Slice 1–4 functionality, but now in the correct community context
+
+This slice remains admin-only for access, but it creates the data and UX pattern needed for future community-facing rollout.
+
+Core Product Rule
+
+The Xeriscape Planner must always run in the context of one active community.
+
+For admins, the active community is chosen using a selector at the top of the planner page.
+
+For the future community/customer portal version, the active community will come automatically from the logged-in user’s assigned community context.
+
+The planner must never load all communities’ bluegrass polygons together.
+
+All planner operations must be scoped to the active community only.
+
+Functional Requirements
+1. Add Admin Community Selector
+
+At the top of the Xeriscape Planner page, add a community selector dropdown.
+
+Requirements:
+
+visible only in admin portal context
+
+required before planner data loads
+
+shows available communities the admin can access
+
+supports search if community count is large
+
+displays community name clearly
+
+optionally shows community status or management company if already standard in your admin patterns
+
+Behavior:
+
+if no community is selected, show an empty state
+
+once selected, planner loads that community’s data
+
+changing the community resets the current working planner state and reloads the page data for the new selection
+
+Recommended empty state text:
+
+Select a community to load mapped bluegrass areas for xeriscape planning.
+
+2. Load Active Community’s Bluegrass Sublayer
+
+When a community is selected, the planner should load polygon data from:
+
+Community layer → bluegrass_area sublayer
+
+The planner should use only those polygons as its working geometry source.
+
+Requirements:
+
+do not use a global planner dataset anymore
+
+do not load polygons from unrelated communities
+
+each polygon loaded should carry the active communityId
+
+preserve labels/names if they already exist on the assets/features
+
+continue computing square footage from geometry if not already stored
+
+If your current system distinguishes between:
+
+layer definitions
+
+source features
+
+synced assets
+
+Replit should use the source that is most stable and already trusted in your map architecture, but the planner should still conceptually behave as though it is reading from the active community’s mapped bluegrass sublayer.
+
+3. Filter Existing Planner Data by Active Community
+
+All existing planner data from Slices 2–4 must now be filtered by active community.
+
+That includes:
+
+current selection context
+
+saved groups
+
+comparison scenarios
+
+summary outputs
+
+saved planning records
+
+proposal-prep handoff records
+
+Rules:
+
+when Community A is selected, show only Community A planner data
+
+when Community B is selected, show only Community B planner data
+
+do not mix planning history across communities
+
+new groups and saved records must automatically inherit the active communityId
+
+4. Reset Rules on Community Change
+
+Switching the selected community should safely reset transient planner state.
+
+On community change:
+
+clear current polygon selection
+
+clear active map highlights
+
+load new bluegrass polygons
+
+load saved groups for the selected community
+
+load saved planning records for the selected community
+
+clear stale totals from previous community
+
+reset any temporary comparison state unless intentionally preserved per community
+
+Important:
+Do not accidentally carry selected polygons or group references from one community into another.
+
+5. Community-Aware Saved Record Model
+
+Make sure the planner persistence structure now explicitly supports community scoping.
+
+Saved groups should include:
+
+communityId
+
+Saved planning records should include:
+
+communityId
+
+optional communityLayerId
+
+optional sublayerKey = bluegrass_area
+
+This should already exist conceptually after your earlier slices, but this slice should ensure it is fully enforced in loading, querying, and UI filtering.
+
+6. Active Community Header Context
+
+Once a community is selected, show clear context in the planner header.
+
+Recommended display:
+
+Community Name
+
+maybe small secondary text like:
+
+“Bluegrass Sublayer Planning”
+
+or “Community Layer → Bluegrass”
+
+This helps users stay oriented and prevents confusion when flipping between properties.
+
+Example header pattern:
+
+Xeriscape Planner
+Huntington Trails · Community Layer / Bluegrass Areas
+
+7. Planner Data Source Fallback for Missing Bluegrass Layer
+
+Handle missing community data cleanly.
+
+If a selected community does not yet have a bluegrass sublayer or no bluegrass polygons are mapped:
+
+do not error out
+
+show an empty state
+
+Suggested message:
+
+No mapped bluegrass areas were found for this community. Add or sync bluegrass polygons in the Community layer to use the Xeriscape Planner.
+
+Optional action:
+
+“Open Community Layer”
+
+“Manage Map Data”
+
+Only include those if that navigation already exists cleanly.
+
+8. Preserve Existing Planner Workflow Inside Community Context
+
+All existing functionality from Slices 1–4 should continue to work unchanged once a community is selected:
+
+polygon selection
+
+multi-select
+
+grouping
+
+scenario comparison
+
+summary generation
+
+saved planning records
+
+proposal-prep handoff
+
+This slice should not redesign the workflow. It should wrap it in the correct community data context.
+
+9. Future Portal Readiness
+
+Architect this slice so the planner can later run without a selector in customer-facing contexts.
+
+That means:
+
+community selector logic should be abstracted into an “active community provider” or equivalent state pattern
+
+admin uses dropdown-selected active community
+
+future HOA/PM/community user mode uses authenticated user’s assigned community
+
+the rest of the planner should consume an activeCommunityId rather than caring where it came from
+
+This is very important. It prevents rebuilding the planner later.
+
+UX / Design Constraints
+
+Keep this fully aligned with the existing VRTSync Admin Portal.
+
+Layout recommendation:
+
+top row: planner title + community selector
+
+below that: existing planner interface
+
+map
+
+assumptions
+
+current selection
+
+saved groups
+
+summaries
+
+records
+
+Design goals:
+
+selecting a community should feel like selecting context for any other admin tool
+
+planner should feel stable and intentional, not like a test harness
+
+empty states should be polished
+
+community switching should feel safe and obvious
+
+Technical Notes
+
+Replace the static KML-backed planner boot logic with community-scoped loading
+
+The Huntington Trails KML can remain useful for one community’s test data, but it should now live through the same community loading path as real community data
+
+If bluegrass geometry currently exists as synced map assets rather than raw KML, use the synced asset path if that is the more durable system-of-record
+
+Abstract the planner boot process around:
+
+resolve active community
+
+fetch bluegrass polygons for that community
+
+fetch planner records/groups for that community
+
+initialize planner state
+
+Avoid hard-coding bluegrass geometry into the planner itself
+
+Avoid any architecture that assumes admin is planning across multiple communities simultaneously
+
+Suggested State Model Direction
+
+Replit should structure the planner around something like:
+
+activeCommunityId
+
+activeCommunityName
+
+plannerPolygonSource
+
+communityBluegrassPolygons
+
+communitySavedGroups
+
+communityPlanningRecords
+
+This will make the later customer-facing version much easier.
+
+Acceptance Tests
+
+Admin can open the Xeriscape Planner and see a community selector at the top
+
+If no community is selected, planner shows a clean empty state
+
+Selecting a community loads only that community’s bluegrass polygons
+
+Planner map does not load polygons from any other community
+
+Existing polygon selection logic still works after community load
+
+Saved groups shown belong only to the selected community
+
+Saved planning records shown belong only to the selected community
+
+New groups created are automatically tied to the active community
+
+New planning records created are automatically tied to the active community
+
+Switching communities clears transient selection state and reloads cleanly
+
+Switching communities does not carry old polygon totals or highlights forward
+
+If a community has no bluegrass polygons, planner shows a clear empty-data state
+
+Summary views identify the active community correctly
+
+Proposal-prep handoff payload includes the correct community reference
+
+Non-admin users still cannot access this admin planner route
+
+Architecture supports later replacement of selector-based context with logged-in community context
+
+Out of Scope for Slice 6+
+
+Do not build yet:
+
+customer-facing planner access
+
+automatic community resolution for HOA/PM users
+
+paid add-on visibility controls
+
+proposal PDF generation
+
+board packet generator
+
+maintenance savings expansion
+
+utility / AMI integration
+
+cross-community comparison tools
+
+Push the Original Slice 5 Back To Slice 6
+
+Your original Slice 5 — proposal builder integration / board-ready packet generation — should now become Slice 6.
+
+That is the right order because:
+
+first the planner must know which community it belongs to
+
+then it can generate trustworthy outputs for proposal workflows
+
+So the updated roadmap becomes:
+
+Slice 5
+
+Community Context Bridge + Active Community Data Loading
+
+Slice 6
+
+Proposal Builder Integration / Board-Ready Packet Generation
+
+Short Replit Direction Note
+
+The purpose of this slice is not to change what the planner does. The purpose is to change how it is scoped. The Xeriscape Planner must now behave like a true VRTSync community-bound planning module. In admin, that means selecting a community and loading only that community’s bluegrass sublayer. Later, in customer-facing mode, the planner will use the logged-in user’s assigned community automatically. Build the context layer now so the planner does not need to be rebuilt later.

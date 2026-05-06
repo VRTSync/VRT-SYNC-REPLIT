@@ -1,0 +1,130 @@
+EPLIT PASTE — Irrigation Map UX Upgrade: Controller-First Design
+
+Purpose
+
+Shift irrigation rendering from zone-centric to controller-centric so the map communicates system structure clearly at all zoom levels.
+
+⸻
+
+1) Controllers must ALWAYS render (if layer enabled)
+
+Controllers are infrastructure anchors and should never disappear due to clustering, zoom gates, or hard caps.
+
+Rules:
+	•	If showControllerLayer === true, render all controllers regardless of zoom
+	•	Controllers never cluster
+	•	Controllers never hide at far zoom
+	•	Controllers render above zones/clusters (higher zIndex)
+
+Acceptance:
+	•	Even at city-wide zoom, controllers remain visible
+
+⸻
+
+2) Zones are children of controllers (visual + logical)
+
+Zones should visually indicate which controller they belong to.
+
+Marker rules
+
+Controller markers
+	•	Large
+	•	Solid fill in controller color
+	•	White stroke + shadow
+	•	Optional label (Clock A, B, etc.)
+	•	zIndex highest
+
+Zone markers
+	•	Small ring
+	•	Stroke = controller color
+	•	Transparent or white fill
+	•	zIndex below controllers
+
+Cluster markers
+	•	Medium size
+	•	Derived color:
+	•	Single-controller cluster → that controller color
+	•	Multi-controller cluster → neutral gray
+
+⸻
+
+3) Cluster behavior must respect controller grouping
+
+Clusters should not mix zones from distant controllers if avoidable.
+
+Preferred behavior:
+	•	Spatial clustering still allowed
+	•	But cluster metadata must include controller breakdown
+
+Cluster popup should show:
+
+12 zones
+Clock A: 5
+Clock B: 7
+
+⸻
+
+4) Add “Show Zones for Controller” interaction
+
+Tapping a controller marker should offer a quick way to inspect its zones.
+
+Controller popup actions:
+	•	View Details
+	•	Work History
+	•	Show Zones (NEW)
+	•	Create Task (admin)
+
+Show Zones behavior:
+
+Option A (recommended):
+	•	Filter map to only zones belonging to that controller
+	•	Highlight those zones
+	•	Optionally dim others
+
+Option B:
+	•	Zoom camera to bounds of controller’s zones
+
+⸻
+
+5) Zone popup must include parent controller info
+
+When tapping a zone marker, popup must show:
+	•	Zone number
+	•	Zone type (drip, rotor, etc.)
+	•	Parent controller label
+	•	Parent controller color dot
+	•	Action: “Show Controller”
+
+“Show Controller” centers map on controller marker.
+
+⸻
+
+6) Far-zoom behavior refinement
+
+Current implementation hides zones at very far zoom (good).
+
+Enhance it:
+
+When zones are hidden due to far zoom:
+	•	Controllers remain visible
+	•	Floating message updates to:
+
+“Zoom in to see zones for each controller”
+
+⸻
+
+7) Performance guardrail — controller count is small
+
+Because controllers are few (<100), rendering all is safe.
+
+Ensure controller rendering path is independent from zone count logic.
+
+⸻
+
+Deliverables
+	1.	Controllers always visible and visually dominant
+	2.	Zones clearly tied to controllers via color and hierarchy
+	3.	Cluster popups show controller composition
+	4.	Controller → Show Zones interaction implemented
+	5.	Zone popup includes parent controller + “Show Controller”
+	6.	No regressions in performance or stability

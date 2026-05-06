@@ -1,0 +1,118 @@
+SLICE S3 — HOA Requests Tab + Request History + 60-Day Archive
+
+Goal
+Provide a unified Request History experience in HOA Mode. HOA Requests are tasks (origin="HOA"). Both HOA_ADMIN and HOA_MEMBER can view the Requests tab (read-only). Only HOA_ADMIN can create requests (already implemented). Completed requests auto-archive after 60 days but remain searchable and accessible via filters.
+
+Locked Rules (must follow)
+- Requests are tasks with origin="HOA"
+- Requests statuses: Submitted | Acknowledged | Completed
+- Priority: Normal | Urgent (only HOA requests can be Urgent)
+- Requests tab is visible to BOTH HOA roles
+- HOA_MEMBER is read-only (no create buttons in Requests tab)
+- Archive rule: Completed requests archive after 60 days
+- Archived requests are hidden from default active views but remain searchable/history
+
+------------------------------------------------------------
+
+Scope (IN)
+
+A) Backend: Request History Querying
+1) Add/confirm an endpoint to list HOA requests for a community:
+GET /api/hoa/requests
+
+Server rules:
+- If user role is HOA_ADMIN or HOA_MEMBER:
+  - scope strictly to user's hoaCommunityId (ignore any communityId query param)
+- If contractor/admin access is needed, keep it separate (not required for this slice).
+
+Response includes for each request:
+- id
+- title
+- status
+- priority
+- createdAt
+- completedAt (if exists)
+- archivedAt (if exists)
+- assetId (nullable)
+- pinLocation (lat/lng)
+- hasPhotos / attachmentCount (optional)
+
+2) Implement archive logic (60 days after completion)
+Option A (recommended): computed archive (no extra cron needed)
+- Treat a request as Archived if:
+  status == "Completed" AND completedAt <= now - 60 days
+- Return an `isArchived` flag in the API response.
+
+Option B (acceptable): persist archivedAt
+- Set archivedAt via a daily job or during reads.
+Pick whichever matches your current system approach; avoid heavy jobs if possible.
+
+B) Mobile: Requests Tab (HOA Mode)
+Create a Requests tab screen for HOA roles with:
+
+1) Filters (top)
+- All
+- Submitted
+- Acknowledged
+- Completed
+- Archived
+
+Default filter:
+- Submitted
+
+2) List view card/row design
+Each request row shows:
+- REQUEST label
+- Title
+- Priority (Normal/Urgent)
+- Status chip
+- Submitted date/time (createdAt)
+- Location ref:
+  - If assetId exists: show asset displayName (if available) or "Attached asset"
+  - Else: "Pinned location"
+- Photo indicator (if photos exist)
+
+3) Tap a request row opens Request Detail
+- Use existing task/request detail screen (already used in S6 entry)
+- Must work for both HOA_ADMIN and HOA_MEMBER
+
+C) Read-only Behavior in Requests Tab
+- HOA_MEMBER: no Create Request button anywhere in Requests tab
+- HOA_ADMIN: may optionally show Create Request button (not required; already on dashboard/map)
+
+D) Archived behavior
+- Archived requests should:
+  - appear only when filter=Archived or filter=All
+  - be visually labeled “Archived”
+  - still openable in detail view
+
+Scope (OUT)
+- Dashboard sections and counts (later slice)
+- Notifications (later slice)
+- Any contractor task list changes (already done in S5)
+- Any map changes beyond S6
+
+------------------------------------------------------------
+
+Acceptance Criteria
+
+1) HOA_ADMIN and HOA_MEMBER can open the Requests tab and see requests for their community only.
+2) Default filter shows Submitted requests.
+3) Filters work correctly:
+- Submitted: status=Submitted and not archived
+- Acknowledged: status=Acknowledged and not archived
+- Completed: status=Completed and not archived
+- Archived: status=Completed and archived by 60-day rule (computed or persisted)
+- All: shows everything (including archived), clearly labeled
+4) Tapping a request opens its detail screen.
+5) No cross-community leakage for HOA users.
+
+------------------------------------------------------------
+
+Testing Checklist
+
+- Create several requests (Normal/Urgent) and move through statuses
+- Simulate older completed requests (set completedAt in DB) to verify archive behavior
+- Verify each filter returns correct sets
+- Verify HOA_MEMBER cannot see create controls in Requests tab
+- Verify HOA user cannot see other communities’ requests

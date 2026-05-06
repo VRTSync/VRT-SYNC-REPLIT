@@ -1,0 +1,166 @@
+SLICE 1.0.1 (PASTE INTO REPLIT): Map Layer → Asset Auto-Sync + Asset Type Required Field Templates
+
+Objective
+Make map layers the source of truth for asset existence:
+	•	Importing/updating a map layer automatically creates/updates assets for every feature in that layer
+	•	Removed features are archived, not deleted
+	•	Admin Assets page becomes a “completion + coverage” tool (fill required details), not manual asset creation
+
+Scope
+	•	Add archived handling on assets
+	•	Add asset “origin” linking to map layer
+	•	Add an auto-sync routine for each map layer update
+	•	Add required-field templates by assetType
+	•	Update Admin Assets UI to emphasize “Missing Required Fields” and “Sync Coverage”
+
+⸻
+
+Data Model Changes
+
+1) Update assets table
+
+Add fields:
+	•	mapLayerId (FK → map_layers.id, nullable but recommended)
+	•	archivedAt (timestamp nullable)
+	•	isArchived (boolean default false) OR infer archivedAt != null
+	•	sourceUpdatedAt (timestamp nullable) — last time asset was refreshed from layer geometry/properties
+
+Constraints/Indexes:
+	•	Unique: (communityId, mapLayerId, featureRef) where featureRef is not null
+	•	Index: (communityId, assetType, isArchived)
+
+2) Optional: asset_type_templates (can start as code constants)
+
+For MVP you can implement templates as a server-side constant object keyed by assetType.
+
+Template includes:
+	•	requiredKeys: string[]
+	•	optionalKeys: string[]
+	•	labelRule (optional): derive label from feature properties or fallback numbering
+
+Examples (start minimal):
+	•	backflow required: brand, serialNumber, size
+	•	controller required: brand, installDate (optional), seasonalAdjustment (optional)
+	•	zone required: controllerRef (optional), zoneNumber, runTime
+	•	tree required: species, plantedDate (optional)
+	•	pet_station required: serviceFrequency (optional)
+	•	landscape_bed/bluegrass_area/native_area/snow_area: name/label (optional), sqFt (optional)
+
+⸻
+
+Backend Behavior Changes
+
+1) Auto-sync on map layer create/update
+
+When admin creates or updates a map layer’s GeoJSON:
+	•	Parse GeoJSON features
+	•	For each feature:
+	•	Determine featureId (feature.id OR feature.properties.featureId OR derive stable id)
+	•	Determine geometryType (point/polygon/line)
+	•	Determine centroid/latLng for points (for polygons store centroid for convenience)
+	•	Determine assetType from map layer (mapping rule below)
+	•	Upsert asset by (communityId, mapLayerId, featureRef=featureId):
+	•	set label from feature properties if present (e.g., name/label/id)
+	•	set geometryType, lat/lng, sourceUpdatedAt = now
+	•	ensure isArchived=false and archivedAt=null
+
+2) Archiving assets for removed features
+
+After processing all features:
+	•	Find all assets for that (communityId, mapLayerId) whose featureRef is NOT in the incoming featureId set
+	•	Mark them:
+	•	isArchived=true
+	•	archivedAt=now
+Do NOT delete. Keep work history intact.
+
+3) Asset type mapping rule (from layer)
+
+Map each map layer subLayerKey to assetType:
+	•	irrigation/backflow → backflow
+	•	irrigation/controller → controller
+	•	irrigation/zone → zone
+	•	trees/tree → tree
+	•	community/pet_station → pet_station
+	•	community/landscape_bed → landscape_bed
+	•	community/bluegrass_area → bluegrass_area
+	•	community/native_area → native_area
+	•	snow/snow_area → snow_area
+
+(Implement this mapping in one central place; do not scatter logic.)
+
+4) Required fields completeness endpoint
+
+Add:
+	•	GET /api/communities/:communityId/assets/completeness?type=...
+Returns summary counts:
+	•	total assets
+	•	active (not archived)
+	•	archived
+	•	missingRequired (count)
+	•	list of missingRequired assets (id, label, missingKeys[])
+
+Permissions:
+	•	admin only (contractors don’t need this)
+
+5) Asset detail response enhancement
+
+In GET /api/assets/:id, include:
+	•	isArchived
+	•	missingRequiredKeys: string[] (computed from templates vs properties)
+
+⸻
+
+Admin UI Changes (Assets Tab becomes Completion Tool)
+
+1) Remove “Create Asset” as primary workflow (keep optional hidden if needed)
+
+Primary actions should be:
+	•	Select community + asset type
+	•	View assets list with completeness status:
+	•	✅ Complete
+	•	⚠️ Missing required fields (shows count of missing keys)
+	•	🗄️ Archived (optional filter toggle)
+
+2) Add “Sync from Map Layer” button
+
+In Assets tab (or Map Layers tab), add:
+	•	“Sync assets from this layer”
+This triggers the backend sync routine for selected map layer.
+
+Also show coverage:
+	•	Features in layer: X
+	•	Active assets: Y
+	•	Archived assets: Z
+	•	Missing required: N
+
+3) Asset detail view shows required checklist
+
+Top of asset detail:
+	•	“Required Fields” list with checkmarks
+	•	Clicking a missing field jumps to add/edit property
+
+⸻
+
+Acceptance Tests
+	1.	Upload/update GeoJSON for backflows layer containing 3 points:
+
+	•	System creates 3 backflow assets automatically with featureRef set
+
+	2.	Update the layer to 4 points:
+
+	•	1 new asset is created; existing updated; none duplicated
+
+	3.	Update the layer down to 2 points:
+
+	•	the removed 2 assets become archived; history remains accessible
+
+	4.	Assets tab shows missing required fields counts correctly (e.g., brand/serial/size missing)
+	5.	Contractors do NOT see archived assets by default in map popups (unless feature exists)
+
+⸻
+
+Out of Scope
+	•	Full KML ingestion pipeline inside app (you can still convert to GeoJSON externally for now)
+	•	Auto-generation of properties from feature attributes (optional later)
+	•	Bulk edit of properties
+	•	Re-linking assets between layers

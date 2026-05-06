@@ -1,0 +1,364 @@
+Slice 8 — Contracts System (Community–Contractor Relationship Engine)
+
+Objective
+
+Implement the Contracts page for the VRTSync web portal.
+The contract system connects communities, contractors, and service obligations, and also determines which contractors are allowed to access which communities.
+
+This slice establishes the contract record system, the contract-to-community relationship, and the service obligations structure that future slices will use to generate scheduled work.
+
+The Contracts page is primarily used by Super Admin but must be visible in limited form for other roles if necessary.
+
+⸻
+
+Critical Design Rule
+
+All Contracts UI must reuse the existing admin design system.
+
+Use styling from:
+
+server/public/admin/admin.css
+
+Use the same:
+
+buttons
+form styles
+cards
+modals
+spacing
+typography
+
+The Contracts page must visually match the admin portal and the rest of the new web portals.
+
+Do not introduce a new UI language.
+
+⸻
+
+Contract System Purpose
+
+The contract system connects:
+
+Community
+Contractor
+Service Obligations
+Contract Document
+
+This system determines:
+
+• which contractor is responsible for a community
+• what services are included in the contract
+• what work should be generated in the task system
+• which contractor users are allowed to view that community
+
+⸻
+
+Contract Model (Conceptual)
+
+Each contract record must include:
+
+communityId
+contractorId
+contractType
+startDate
+endDate
+servicesIncluded
+documentRef (PDF)
+
+The contract system should support future expansion, but V1 focuses on landscape maintenance contracts.
+
+⸻
+
+Roles Included in This Slice
+
+Primary role:
+
+Super Admin
+
+Secondary visibility:
+
+Property Manager (read-only if necessary)
+
+HOA Admin and HOA Member do not need a Contracts page in V1.
+
+Contractors also do not need a Contracts page.
+
+⸻
+
+Routes
+
+Add route:
+
+/web/admin/contracts
+
+Optional later:
+
+/web/pm/contracts (read-only)
+
+Use the existing SPA router pattern.
+
+⸻
+
+Page Header
+
+Admin portal:
+
+Contracts
+All Communities
+
+This page is global, not community-scoped.
+
+⸻
+
+Page Layout
+
+Recommended layout:
+
+Page Header
+Action Bar
+Contract List
+Contract Detail View or Modal
+
+Follow existing admin page layout patterns.
+
+⸻
+
+Contract List View
+
+The Contracts page should display a list of contracts.
+
+Suggested columns:
+
+Community
+Contractor
+Contract Type
+Start Date
+End Date
+Status
+Services Included
+Document
+
+Status should be computed automatically:
+
+Upcoming — start date in future
+Active — current date between start and end
+Expired — current date past end
+
+⸻
+
+Filtering
+
+Allow basic filtering by:
+
+Community
+Contractor
+Contract Status
+
+Keep filtering simple for this slice.
+
+⸻
+
+Contract Detail View
+
+Clicking a contract should open contract details.
+
+Detail view should display:
+
+Community
+Contractor
+Contract Type
+Start Date
+End Date
+Contract Status
+Services Included
+Contract Document
+
+Services included should be clearly visible.
+
+Example:
+
+Mowing
+Aeration
+Fertilizer
+Round-up Spot Spray
+Irrigation Inspection
+
+⸻
+
+Contract Document
+
+Contracts must support a PDF attachment.
+
+Acceptable behavior:
+
+View PDF
+Download PDF
+
+Inline preview optional but not required.
+
+⸻
+
+Create Contract Flow
+
+Super Admin must be able to create a contract.
+
+Creation form must include:
+
+Community selection
+Contractor selection
+Contract type (default: landscape maintenance)
+Start date
+End date
+Services included list
+Contract PDF upload
+
+Use modal or side panel consistent with the admin portal.
+
+⸻
+
+Service Obligations
+
+The contract must include a list of services.
+
+Examples:
+
+Mowing
+Aeration
+Fertilizer
+Weed Control (Round-up spot spray)
+Irrigation Inspection
+
+These services will later connect to:
+
+Task Templates
+Task Schedules
+
+Do not build automatic task generation in this slice.
+
+Just store the obligations.
+
+⸻
+
+Contractor Access Relationship
+
+The contract system determines which contractors can view which communities.
+
+Flow:
+
+Contract
+→ Contractor
+→ Contractor Users
+→ Community Access
+
+This means contractor users only see communities where their contractor has an active contract.
+
+This relationship already exists conceptually and should remain intact.
+
+⸻
+
+Editing Contracts
+
+Super Admin must be able to edit contract details.
+
+Editable fields:
+
+Contractor
+Start Date
+End Date
+Services Included
+Contract Document
+
+Community should not be easily changed after creation.
+
+⸻
+
+Deleting Contracts
+
+Deletion should be supported only if safe.
+
+If contract history or task relationships make deletion risky, allow:
+
+Deactivate contract
+or
+Archive contract
+
+Either is acceptable.
+
+⸻
+
+Styling Requirements
+
+Continue using the admin design system.
+
+Use:
+
+.btn
+.form-group
+.form-input
+.modal
+.stat-card
+.badge
+
+Do not create custom contract-specific UI components.
+
+⸻
+
+Out of Scope for This Slice
+
+Do not implement:
+
+Automatic task generation from contracts
+Contract performance tracking
+Contract pricing breakdowns
+Multiple contract types (snow, irrigation, etc.)
+Contractor invoice reconciliation
+Advanced contract analytics
+
+These will come in later slices.
+
+⸻
+
+Deliverables
+
+By the end of Slice 8 the system must support:
+
+Contracts page in the admin portal
+Contract list view
+Contract detail view
+Contract creation flow
+Contract editing
+Contract PDF upload
+Service obligations list
+Contract status calculation
+
+The contract must clearly connect community and contractor.
+
+⸻
+
+Success Criteria
+
+The system should be able to:
+
+Open the Contracts page
+View contracts across communities
+Create a new contract
+Upload a contract PDF
+Define included services
+Edit contract details
+Display contract status
+Maintain admin portal styling throughout
+
+⸻
+
+Important Reminder to Replit
+
+The Contracts system is the relationship engine of VRTSync.
+
+It connects:
+
+Community
+Contractor
+Service Obligations
+
+Later slices will use contracts to generate work automatically.
+
+Build the contract record structure carefully so future automation can plug into it cleanly.

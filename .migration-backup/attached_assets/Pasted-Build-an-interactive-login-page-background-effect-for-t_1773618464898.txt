@@ -1,0 +1,58 @@
+Build an interactive login page background effect for the VRTSync web login screen.
+
+Concept:
+The background should have a subtle, premium, map-inspired feel. A topographic line pattern exists underneath a semi-opaque overlay layer. The user should not fully see the topo pattern at first. As the cursor moves across the screen, it should behave like a “flashlight” or “search light” that temporarily reveals the topo lines beneath the overlay in a soft circular area around the cursor. As the cursor moves away, the revealed area should disappear and return to being covered. Nothing should remain permanently revealed.
+
+Effect goals:
+- The topography pattern should feel hidden beneath the surface.
+- The cursor reveal should feel smooth, elegant, and slightly cinematic.
+- Revealed area should have soft feathered edges, not a hard circle.
+- The effect should feel high-end, subtle, and responsive — not gimmicky.
+- The page should remain performant and smooth on desktop.
+- On mobile/tablet, disable the cursor effect gracefully and show a static premium background.
+
+Visual structure:
+- Base layer: deep dark background in VRTSync-style tones.
+- Middle layer: thin contour / topography lines, subtle but visible when revealed.
+- Top layer: darker semi-opaque mask covering the topo lines.
+- Cursor interaction: a radial reveal mask follows the cursor and punches through the top layer to expose the topo lines beneath.
+- When cursor leaves or moves away, the overlay fully returns.
+
+Technical direction:
+- Use HTML/CSS/JS only, or React if the page is already React-based.
+- Preferred implementation: layered divs with CSS masks, blend modes, or clip-path / radial-gradient masking.
+- The reveal should track the cursor using requestAnimationFrame for smoothness.
+- Add a slight easing/lag so the reveal feels refined instead of rigidly attached to the pointer.
+- The reveal radius should be moderate, like a flashlight beam, and customizable.
+- Use soft radial gradient falloff so the reveal fades naturally.
+- No harsh neon glow, no gaming aesthetic.
+- Keep it clean and brand-forward.
+
+Important behavior:
+- The topo pattern should not move; only the reveal area moves.
+- Areas already “searched” should re-cover automatically as the cursor moves away.
+- The login form must remain fully readable and visually prioritized above the background.
+- The effect should stay behind the auth card and never interfere with inputs/buttons.
+- Respect reduced motion preferences:
+  - If prefers-reduced-motion is enabled, disable the animated reveal and use a static topo background.
+- Mobile fallback:
+  - no cursor tracking
+  - static layered background only
+
+Design tone:
+Think “premium GIS / modern SaaS / dark map interface.”
+Subtle, elegant, immersive.
+This should feel like discovering data hidden beneath the surface.
+
+Deliverables:
+- Implement the background effect directly in the login page.
+- Keep code organized and easy to tune.
+- Expose variables for:
+  - reveal radius
+  - overlay opacity
+  - topo line opacity
+  - easing amount
+  - background colors
+
+Stretch goal:
+Add a very subtle ambient motion or parallax to the background layers, but only if it does not distract from the login form.

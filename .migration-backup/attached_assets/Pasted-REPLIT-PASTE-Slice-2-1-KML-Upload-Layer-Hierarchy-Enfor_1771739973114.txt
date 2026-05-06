@@ -1,0 +1,127 @@
+REPLIT PASTE: Slice 2.1 — KML Upload + Layer Hierarchy Enforcement + Sync
+
+Implement KML support in the Admin Web Hub while keeping GeoJSON as the normalized internal format used by the map renderer and asset auto-sync.
+
+Goals
+	1.	Admins can upload .kml OR .geojson/.json when creating/updating a map layer.
+	2.	The system converts KML → GeoJSON automatically on upload.
+	3.	The system stores:
+	•	original source file reference (KML or GeoJSON)
+	•	normalized GeoJSON used for map display + syncing
+	4.	Layer hierarchy is enforced via canonical layerKey and subLayerKey values.
+	5.	After upload/update, the layer automatically triggers Map Layer → Asset Auto-Sync.
+	6.	Web UI displays a clear Layer Tree: Main Layer → Sublayer, with feature count + asset count + incomplete count.
+
+⸻
+
+Backend Changes
+
+A) Database: extend map_layers
+Add columns:
+	•	sourceFormat TEXT NOT NULL DEFAULT ‘geojson’  // ‘kml’ | ‘geojson’
+	•	sourceFileRef TEXT NULL                       // original uploaded file (kml or geojson)
+	•	geojsonRef TEXT NULL                          // normalized geojson stored in object storage
+	•	OR if you store geojson directly in DB, add geojson JSONB and still keep sourceFileRef
+
+(Use whatever storage pattern your current map layers implementation uses, but preserve both “source” and “normalized”.)
+
+B) Canonical layer keys (enforce)
+Create a single canonical dictionary in server code and validate on create/update:
+
+Allowed layerKey values:
+	•	community
+	•	irrigation
+	•	snow
+	•	trees
+
+Allowed subLayerKey values per layerKey:
+	•	community: bluegrass_area, native_area, landscape_bed, pet_station
+	•	irrigation: backflow, controller, zone, master_valve, flow_meter, qc_iso_valve
+	•	snow: plow, atv, hand_shovel, ice_melt, slicer, storage_area
+	•	trees: tree
+
+Reject invalid keys with 400 + helpful error.
+
+C) KML → GeoJSON conversion
+Add a conversion utility that accepts raw KML text and returns GeoJSON FeatureCollection.
+	•	Ensure every feature gets a stable ID:
+	•	prefer KML ExtendedData fields like featureId / id / name
+	•	set GeoJSON feature.id and also feature.properties.featureId
+	•	If no stable identifier exists, derive from KML Placemark name + coordinates hash (deterministic), and store it as featureId.
+
+D) Map layer create/update endpoint supports file upload
+Update the admin map layer create/update API to accept:
+	•	multipart file upload OR raw text paste
+	•	If uploaded file ends with .kml:
+	•	convert to GeoJSON
+	•	set sourceFormat=‘kml’
+	•	If .geojson/.json:
+	•	validate as GeoJSON
+	•	set sourceFormat=‘geojson’
+
+Store:
+	•	sourceFileRef (upload to object storage)
+	•	geojsonRef (upload normalized geojson to object storage)
+	•	Save minimal metadata in DB (refs + keys + version)
+
+Then trigger existing asset auto-sync routine for that map layer.
+
+Return a response that includes:
+	•	featureCount
+	•	syncReport: createdCount, updatedCount, archivedCount, skippedCount
+
+E) New endpoint (optional but recommended)
+GET /api/map-layers/:id/summary
+Returns:
+	•	featureCount
+	•	activeAssetCount
+	•	archivedAssetCount
+	•	incompleteAssetCount
+	•	lastSyncedAt
+	•	lastSyncReport (optional)
+
+⸻
+
+Admin Web UI Changes (Map Layers page)
+
+A) Upload UX
+On Map Layers page for selected community:
+	•	Create/Update layer modal supports:
+	•	file upload (accept .kml, .geojson, .json)
+	•	OR textarea paste
+	•	Show detected format and featureCount after parsing.
+	•	On save, show sync report counts.
+
+B) Layer Tree display
+Render a tree grouped by:
+	•	layerKey (Community / Irrigation / Snow / Trees)
+	•	subLayerKey rows
+Each row shows:
+	•	Features: X
+	•	Assets: Y
+	•	Incomplete: N
+Buttons:
+	•	View layer
+	•	Re-sync assets
+	•	Edit (re-upload)
+	•	Delete
+
+C) Explain “sub-sublayer”
+Add helper text:
+“Individual items inside a sublayer (e.g., each backflow point) are represented as Assets created from the uploaded layer features.”
+
+⸻
+
+Acceptance Criteria
+	1.	Admin uploads a Backflows .kml with 3 points → layer saved → 3 backflow assets created.
+	2.	Admin uploads updated .kml with 4 points → 1 created, 3 updated, 0 duplicated.
+	3.	Admin removes 1 point and uploads → corresponding asset becomes archived.
+	4.	Invalid layerKey/subLayerKey rejected with clear message.
+	5.	Map view still uses GeoJSON and renders normally.
+
+⸻
+
+Out of Scope
+	•	Full KML styling support
+	•	On-device KML conversion in mobile app
+	•	Auto-generated MBTiles from KML

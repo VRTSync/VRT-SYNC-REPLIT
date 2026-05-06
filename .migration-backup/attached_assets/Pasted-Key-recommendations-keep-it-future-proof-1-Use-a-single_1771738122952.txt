@@ -1,0 +1,89 @@
+Key recommendations (keep it future-proof)
+
+1) Use a single HTML shell + static assets folder
+
+Do:
+	•	server/templates/admin-shell.html
+	•	server/public/admin/ for JS + CSS
+
+Serve:
+	•	/web/admin and /web/admin/* → same HTML shell
+	•	JS handles routing
+
+This makes refresh/back/forward work reliably without 404s.
+
+Server rule: any /web/admin/* should return the shell (except static assets).
+
+⸻
+
+2) Keep client routing tiny and deterministic
+
+Avoid a framework, but implement just:
+	•	pushState routing
+	•	route() that renders page modules
+
+Keep page modules separate:
+	•	admin/pages/dashboard.js
+	•	admin/pages/communities.js
+	•	etc.
+
+⸻
+
+3) Add a single API wrapper in admin JS
+
+One apiFetch() that handles:
+	•	401 → redirect to login or show “Session expired”
+	•	403 → show “Not authorized”
+	•	JSON parsing + error messages
+
+You’ll thank yourself later.
+
+⸻
+
+4) Community selector drives everything
+
+This should set a global activeCommunityId in localStorage and re-render current page.
+
+Most pages should require activeCommunityId, except Communities page.
+
+⸻
+
+5) Don’t duplicate business logic in the hub UI
+
+The hub should call APIs for:
+	•	coverage stats
+	•	sync preview
+	•	completeness
+
+Not compute them in JS.
+
+You’re already planning /api/admin/summary — great. Also consider (later slice) a /api/map-layers/:id/sync-preview.
+
+⸻
+
+Suggested file layout (fits your current project)
+
+Add:
+	•	server/public/admin/admin.css
+	•	server/public/admin/admin.js
+	•	server/public/admin/api.js
+	•	server/public/admin/router.js
+	•	server/public/admin/pages/*.js
+	•	server/templates/admin-shell.html
+
+And in Express:
+	•	app.use("/admin-static", express.static("server/public/admin"))
+	•	app.get("/web/admin*", requireAdmin, serveShell)
+
+⸻
+
+Minimum endpoints you’ll need for this slice
+	•	GET /api/admin/summary?communityId=...
+	•	Communities CRUD (if not existing yet):
+	•	GET /api/communities
+	•	POST /api/communities
+	•	PATCH /api/communities/:id
+	•	Map layers endpoints (already exist)
+	•	Manual layer sync endpoint (already exists)
+	•	Assets + incomplete + bulk properties endpoints (already exist)
+	•	Tasks CRUD + link endpoints (already exist)
