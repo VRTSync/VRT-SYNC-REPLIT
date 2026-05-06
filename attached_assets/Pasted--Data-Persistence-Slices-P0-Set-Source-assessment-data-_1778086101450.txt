@@ -1,0 +1,363 @@
+# Data Persistence Slices — P0 Set
+
+**Source assessment:** `data-handling-assessment-2026-05-06.md`  
+**Branch baseline:** `main` @ `8c1ac3b`  
+**Sequencing:** Slice 1 first (unblocks DB-touching slices 2 & 5). Slices 2, 3, 4 can run in parallel after Slice 1. Slice 5 last (depends on schema additions in Slice 1).  
+**Total rough effort:** 8–13 engineering days
+
+---
+
+## Slice 1 — Versioned migrations alongside additive boot (Slice X — Persistence)
+
+**Task #:** TBD  
+**Severity:** P0  
+**Estimated effort:** 1.5–2 days
+
+### Goal
+Restore versioned, auditable schema migrations in `lib/db` without breaking the existing additive `ALTER TABLE … IF NOT EXISTS` boot path documented in `replit.md`. Treat the boot ALTERs as the legacy on-ramp and require all *new* schema changes to ship as a Drizzle migration.
+
+### Why now
+- Schema is the foundation for Slices 2 & 5 (pack storage shape, ACL groups). Both need new columns/tables and we don't want them threaded into more boot ALTERs.
+- The current `.migration-backup/migrations` is the last preserved set; if we don't reanchor now, every future schema change widens the gap.
+- Rollback and audit: there is currently no record of when columns were added or by whom.
+
+### Scope
+**In:**
+- Configure `drizzle-kit` to emit migrations into `lib/db/migrations/`.
+- Generate a baseline migration that captures the schema as it exists at this commit.
+- Wire `drizzle-orm/node-postgres/migrator` into `artifacts/api-server/src/index.ts` so the server runs pending migrations on boot, *before* the existing additive ALTER block.
+- Add a pnpm script `pnpm --filter @workspace/db run migrate:generate` and `…run migrate:up`.
+- Document the new flow in `replit.md`.
+
+**Out:**
+- Removing the additive ALTER block — keep it in place as a safety net for environments that lag.
+- Backfilling migrations for every historical column (the baseline captures the current state; historical archaeology is not in scope).
+- Switching CI/CD to gate on migrations — separate slice.
+
+### Files to touch
+- `lib/db/drizzle.config.ts` — add `out: path.join(__dirname, "./migrations")`, set `migrations.schema: "drizzle"` for a dedicated tracking schema.
+- `lib/db/package.json` — add `migrate:generate`, `migrate:up`, `migrate:check` scripts.
+- `lib/db/src/migrate.ts` *(new)* — exports `runMigrations(pool)` using `drizzle-orm/node-postgres/migrator`.
+- `lib/db/migrations/0000_baseline.sql` *(generated)* — baseline, committed to git.
+- `artifacts/api-server/src/index.ts` — call `await runMigrations(pool)` *before* the additive ALTER block; log version + duration.
+- `replit.md` — update the "Architecture decisions" → "Startup migrations" entry.
+
+### Implementation outline
+1. Add `out` to `drizzle.config.ts`, run `pnpm --filter @workspace/db run migrate:generate` to emit `0000_baseline.sql`.
+2. Hand-review the baseline — diff it against a fresh DB created via the additive ALTERs to make sure they match. Reconcile any drift before committing.
+3. Add `migrate.ts` that uses `migrate(drizzle(pool), { migrationsFolder: "..." })`.
+4. In `index.ts`, run migrations first, log "applied N migrations in Mms", then run the existing ALTERs.
+5. Update `replit.md`.
+
+### Acceptance criteria
+- [ ] `pnpm --filter @workspace/db run migrate:generate` produces a migration file in `lib/db/migrations/`.
+- [ ] On a clean Postgres, server boot creates schema purely from migrations (no ALTER block runs).
+- [ ] On the existing dev DB, server boot is a no-op (migration tracking table picks up baseline as already applied; ALTERs no-op as before).
+- [ ] `replit.md` documents the new "generate then commit" flow and clearly says: *all new columns must ship as a migration*.
+- [ ] CI typecheck passes.
+
+### Test plan
+- Manually: drop a scratch Postgres, run server, verify schema matches `\d` on a known-good DB.
+- Apply a trivial migration (e.g. `ALTER TABLE users ADD COLUMN test_col text`) and confirm `migrate:up` applies it and `__drizzle_migrations` records it.
+
+### Risk & rollback
+- **Risk:** baseline drifts from the dev DB and `migrate:up` tries to re-apply something that already exists.  
+  **Mitigation:** the migrator uses `__drizzle_migrations` as a fact table; if the baseline is wrong we can manually insert a row marking it applied. Keep the additive ALTER block as a backstop.
+- **Rollback:** revert the commit; the boot ALTER block remains and the DB is unchanged.
+
+### Open questions
+- Do we want `drizzle-kit push` to be removed from `lib/db/package.json` to prevent accidental schema drift? Recommend yes.
+
+---
+
+## Slice 2 — Offline pack on durable storage (MMKV + file-system bundle) (Slice X — Persistence)
+
+**Task #:** TBD  
+**Severity:** P0  
+**Estimated effort:** 3–5 days  
+**Depends on:** Slice 1 (uses a new column for storage manifest schema).
+
+### Goal
+Stop persisting the entire offline pack (manifest + asset index + every layer's GeoJSON + work history + search index) as one `JSON.stringify` into AsyncStorage. Replace with MMKV for small/hot keys and `expo-file-system` for the large GeoJSON / work-history blobs, so packs don't silently drop on iOS once they exceed AsyncStorage's per-app cap.
+
+### Why now
+- Real communities exceed AsyncStorage's effective ceiling (~6MB per app on iOS); pack persistence is currently silently failing for medium-sized HOAs.
+- Map offline behavior is a marketing feature; without this, every cold start with no network shows an empty map.
+- The work history and search index, both downloaded inside the pack, are similarly large.
+
+### Scope
+**In:**
+- Introduce `react-native-mmkv` as the new fast-KV backend for the mobile app.
+- Add a `packStorage` helper module: `savePack(communityId, pack)`, `loadPack(communityId)`, `deletePack(communityId)`, `listPacks()`. Internally:
+  - manifest, packId, packVersion, downloadedAt, checksum → MMKV
+  - assetIndex, geojsonBundle (per-layer), workHistorySnapshot, searchIndex → JSON files at `${FileSystem.documentDirectory}offline-packs/<communityId>/<resource>.json`
+- Migrate `OfflinePackContext.tsx` to use `packStorage` instead of `AsyncStorage`.
+- One-time migration: on first launch after upgrade, attempt `AsyncStorage.getItem('offline_pack_meta')`; if found, write through `packStorage.savePack` for each community then `removeItem`.
+- Add a per-resource checksum verification on load — if any file is missing/corrupt, mark pack invalid and prompt re-download.
+
+**Out:**
+- Server-side pack streaming endpoint changes (covered separately as P1 #X if the single-blob download is too slow).
+- MBTiles / offline tile caching (P2).
+
+### Files to touch
+- `artifacts/vrtsync-mobile/package.json` — add `react-native-mmkv`. Note: requires a config plugin and a native rebuild (EAS Build).
+- `artifacts/vrtsync-mobile/lib/packStorage.ts` *(new)* — the storage helper described above.
+- `artifacts/vrtsync-mobile/client/contexts/OfflinePackContext.tsx` — replace `AsyncStorage.getItem/setItem` calls; rework `loadPacksFromStorage`, `persistPacks`, `downloadPack`, `deletePack` to use `packStorage`. Keep the in-memory `allPacks` shape so the rest of the app is unchanged.
+- `artifacts/vrtsync-mobile/client/contexts/OfflinePackContext.tsx` — add a `packIntegrityVersion` MMKV key; bump on each successful load to detect partial writes.
+- `app.config.js` (if it returns) or `app.json` — add the MMKV config plugin (`react-native-mmkv` is autolinked but expo prebuild needs the plugin entry).
+- `replit.md` — add an "Offline pack storage" section documenting the file layout.
+
+### Implementation outline
+1. Add MMKV; bump app version, generate dev-client build (EAS) so MMKV is in the binary.
+2. Implement `packStorage` with the resource split above. Use `JSON.stringify` per file; reads return parsed objects.
+3. Add `verifyPack(communityId)` that walks the expected files and returns `{ valid: boolean, missing: string[] }`.
+4. Refactor `OfflinePackProvider`:
+   - `loadPacksFromStorage` → enumerate communities via MMKV index, hydrate each via `packStorage.loadPack`.
+   - `downloadPack` → after the JSON response, write each piece via `packStorage.savePack(communityId, packMeta)`.
+   - `deletePack` → `packStorage.deletePack(communityId)` (MMKV delete + recursive directory delete).
+5. Add the AsyncStorage→MMKV one-shot migrator in `OfflineProvider` boot.
+6. Update `clearCache` in `OfflineContext` to also clear pack files (the assessment flagged this as inconsistent today; decide explicitly).
+
+### Acceptance criteria
+- [ ] Cold-start with no network and a previously-downloaded pack shows the map populated.
+- [ ] A pack containing 5,000+ assets and 5+ KML layers persists across app restarts on a real iPhone.
+- [ ] Force-quitting mid-download leaves either a fully valid pack or no pack (no half-state). Verify via `verifyPack`.
+- [ ] Existing users with `offline_pack_meta` in AsyncStorage automatically migrate on first launch (logged once).
+- [ ] `clearCache` removes both the offline pack files and the pending-completions queue (or, if we choose otherwise, the docs reflect that).
+
+### Test plan
+- Unit: `packStorage` round-trip for each resource, including missing-file recovery.
+- Integration: simulate force-quit by toggling airplane mode mid-download; verify `verifyPack` reports invalid.
+- Device: install build over a previous one with AsyncStorage data and confirm migration.
+
+### Risk & rollback
+- **Risk:** MMKV requires a native rebuild; web target (if used in dev) doesn't have MMKV. Wrap with a small compatibility shim that falls back to AsyncStorage when `Platform.OS === 'web'`.
+- **Risk:** the file-system path differs across iOS sandboxed locations on app reinstall — pack will need re-download, which is expected behavior.
+- **Rollback:** keep the AsyncStorage code path under a feature flag (`USE_MMKV_PACK`) for the first release and flip it on for staged rollouts.
+
+### Open questions
+- Should we hash-check each file against `pack.checksum` from the server, or generate per-resource hashes and embed them in the manifest? Recommend the latter — server returns a manifest of resource hashes, client verifies on save.
+
+---
+
+## Slice 3 — Per-photo durable upload state (Slice X — Persistence)
+
+**Task #:** TBD  
+**Severity:** P0  
+**Estimated effort:** 1 day
+
+### Goal
+Eliminate the orphan-blob class of bug where the mobile client uploads a photo to GCS, fails to persist the resulting URL before the app is killed, and on resume re-uploads → producing two GCS objects for one logical photo.
+
+### Why now
+- This is the most common cause of "I see a photo on the contractor's phone but admin can't find it" reports.
+- Storage costs grow linearly with retries on flaky networks.
+- The fix is small and self-contained; doesn't depend on Slice 1.
+
+### Scope
+**In:**
+- After every successful PUT to GCS, persist the queue *immediately* (not at end-of-completion).
+- After every successful `createAttachmentRecord`, mark the photo `uploaded` and persist again.
+- Stable photo URIs: at the moment a photo enters the queue, copy it from the cache directory to `${FileSystem.documentDirectory}pending-photos/<completionId>/<index>.jpg` so iOS cache eviction can't strand the upload.
+- Replace the index-based idempotency key (`${completionId}-photo-${p}`) with a stable per-photo key generated when the photo is queued.
+
+**Out:**
+- Storage-side orphan reaper (P1 #13 — separate slice).
+- Migrating existing queued items in production; document that pending uploads on old builds drain naturally and the new code only governs newly-queued photos.
+
+### Files to touch
+- `artifacts/vrtsync-mobile/client/contexts/OfflineContext.tsx` —
+  - Update `PhotoState` to add `photoKey: string` and `localUri: string` (the durable-copy path).
+  - In `addPendingCompletion`, copy each `photoUri` to `documentDirectory/pending-photos/<completionId>/<index>.jpg` via `FileSystem.copyAsync`; generate `photoKey = randomUUID()`.
+  - In `syncPendingCompletions`, `await persistQueue(updatedList)` after the PUT step *and* after the attachment-record step, not only at the end.
+  - Use `photo.photoKey` (not `${completion.id}-photo-${p}`) as the idempotency key.
+  - On `dismissCompletion` and the "synced and removed" path, delete the durable photo files.
+- `artifacts/vrtsync-mobile/client/utils/objectStorageExpo.ts` — accept the durable URI; no change needed if the caller passes it in.
+
+### Implementation outline
+1. Add the `photoKey` + `localUri` fields, regenerate types, fix all consumers.
+2. In `addPendingCompletion`: for each input URI, `randomUUID()` for photoKey, `FileSystem.copyAsync({ from: uri, to: <documentDir>/... })`, store `localUri`.
+3. In the upload loop:
+   - Step A: call `uploadFileToStorage(photo.localUri)` → on success, `updatedPhotos[p] = { ..., uploadURL, uploadState: 'uploaded' (intermediate)}` → `persistQueue` immediately.
+   - Step B: call `createAttachmentRecord(taskId, completionId, uploadURL, photoKey)` → on success, mark photo done → `persistQueue` immediately.
+4. On terminal success (completion synced), delete `<documentDir>/pending-photos/<completionId>/`.
+5. On `dismissCompletion`, also delete the durable directory.
+
+### Acceptance criteria
+- [ ] Force-quitting the app between PUT and create-attachment, then reopening, results in *no* re-upload of that photo (the server sees the same idempotency key + already-normalized URL and dedupes).
+- [ ] iOS clearing app cache during pending-upload state does not break the upload (because we copied the photo to documentDirectory).
+- [ ] Storage bucket inspection after a 10-photo task on a flapping network shows ≤10 objects, not >10.
+- [ ] Existing queued items from old builds are processed without crash (graceful fallback: if `localUri` missing, fall back to original `uri` and log).
+
+### Test plan
+- Unit: mock `FileSystem` and `expo-fetch`; verify queue is persisted between PUT and attachment-record.
+- Manual: enable airplane mode mid-upload; reopen; verify only one GCS object per photo.
+
+### Risk & rollback
+- **Risk:** documentDirectory fills up if dismiss/cleanup is missed. Add a boot-time sweep that removes `pending-photos/<completionId>/` directories with no matching pending completion in the queue.
+- **Rollback:** straight revert; old behavior returns. No data migration.
+
+### Open questions
+- Photo compression: should we resize/recompress before persisting to documentDirectory? Probably yes (~2K longest edge, JPEG 0.85). Track as a follow-up if not in this slice.
+
+---
+
+## Slice 4 — Server-side upload-URL validation on attachment create (Slice X — Persistence)
+
+**Task #:** TBD  
+**Severity:** P0  
+**Estimated effort:** 1 day
+
+### Goal
+Refuse `uploadURL` values on `POST /api/tasks/:id/attachments` and `POST /api/task-completions/:id/attachments` that don't correspond to a presigned URL we issued under `PRIVATE_OBJECT_DIR/uploads/`. This closes a class of bugs where a malformed or expired URL is accepted, normalized to garbage, and stored in `attachments.fileRef`.
+
+### Why now
+- Today, anything that starts with `https://storage.googleapis.com/` and matches the `PRIVATE_OBJECT_DIR` prefix is accepted; anything else is stored verbatim. A client mistake or a stale URL becomes permanent DB cruft.
+- Slice 3 changes the timing of attachment creation; we want server-side defenses tightened *first* so partial-state retries fail safely.
+- Cheap and self-contained.
+
+### Scope
+**In:**
+- New helper `objectStorageService.parseUploadURL(rawUrl)` that returns `{ valid: true, entityId } | { valid: false, reason }` after verifying:
+  - URL parses, host is `storage.googleapis.com`,
+  - pathname starts with `${PRIVATE_OBJECT_DIR}/uploads/`,
+  - the trailing segment matches a UUIDv4.
+- Replace inline `normalizeObjectEntityPath` calls in the two attachment routes with this validator. On invalid, return 400 with a structured error.
+- Add a `404` path: after validation, `HEAD` the object via `objectFile.exists()`; if it doesn't exist (i.e. the PUT never landed), return 422 ("upload not received"), so the client can re-upload instead of silently storing a dangling row.
+
+**Out:**
+- Verifying ACL was set successfully (already covered by `trySetObjectEntityAclPolicy`).
+- Public objects path validation — separate cleanup.
+
+### Files to touch
+- `artifacts/api-server/src/objectStorage.ts` — add `parseUploadURL`, export.
+- `artifacts/api-server/src/routes/routes.ts` — update `POST /api/tasks/:id/attachments` (lines ~756–800) and `POST /api/task-completions/:id/attachments` (lines ~802–840) to call `parseUploadURL` first; return 400 on invalid; return 422 on missing object.
+- `artifacts/vrtsync-mobile/client/contexts/OfflineContext.tsx` — distinguish 422 (re-upload) from 400 (dismiss): on 422 set photo back to `pendingUpload`, on 400 mark `failed` with `_dismissUnrecoverable`.
+
+### Implementation outline
+1. Implement `parseUploadURL`.
+2. Wire into both routes; on invalid return `{ error: 'Invalid uploadURL', code: 'INVALID_UPLOAD_URL' }`.
+3. After validation, call `bucket.file(objectName).exists()`; if false, return `{ error: 'Upload not received', code: 'UPLOAD_NOT_RECEIVED' }` with status 422.
+4. Update the mobile error-handling branch in `syncPendingCompletions` to map these codes to the right photo state.
+
+### Acceptance criteria
+- [ ] `POST /api/tasks/:id/attachments` with `uploadURL: "https://evil.example.com/foo"` returns 400.
+- [ ] `POST /api/tasks/:id/attachments` with a syntactically valid but never-uploaded URL returns 422 with code `UPLOAD_NOT_RECEIVED`.
+- [ ] On 422, the mobile client puts the photo back into `pendingUpload` and re-uploads next pass.
+- [ ] On 400, the mobile client surfaces the unrecoverable error to the user.
+
+### Test plan
+- Unit: `parseUploadURL` cases — wrong host, wrong prefix, missing UUID, valid.
+- Integration: manually craft each error scenario via curl with a logged-in cookie and verify behavior.
+
+### Risk & rollback
+- **Risk:** legacy URLs from older clients use a slightly different shape (e.g. extra path segments). Pre-flight: query existing `attachments.fileRef` values for outliers. If found, widen the allowlist or fix in a one-off.
+- **Rollback:** revert the route changes; the helper can stay.
+
+### Open questions
+- Do we want a feature flag (`STRICT_UPLOAD_URL_VALIDATION`) so we can flip strict on/off in prod without a redeploy? Recommend yes.
+
+---
+
+## Slice 5 — Implement community-member ACL group (or remove the dead branch) (Slice X — Persistence)
+
+**Task #:** TBD  
+**Severity:** P0  
+**Estimated effort:** 1.5–2 days  
+**Depends on:** Slice 1 (no schema changes here, but want migration plumbing in place before touching ACL semantics).
+
+### Goal
+The current `objectAcl.ts` defines `enum ObjectAccessGroupType {}` (empty) and a `createObjectAccessGroup` that always throws. Anyone reading the code thinks ACL groups work; in practice only owner-based access functions, and every cross-user photo view depends on `visibility: "public"`. Make a decision and ship it: either implement at least one real group (community-member) or delete the dead branch and document owner-only as the explicit policy.
+
+### Why now
+- Future features ("share photo only with this community") are blocked.
+- The dead code is a footgun — a future contributor will write `aclRules: [{ group: { type: 'community', id: cId }, ... }]` and it will silently throw at runtime.
+- Public-by-default uploads is a quiet privacy concern for HOAs that share sensitive maintenance photos.
+
+### Scope
+**In (Option A — recommended: implement community-member group):**
+- Add `ObjectAccessGroupType.COMMUNITY_MEMBER = "community_member"`.
+- Implement `CommunityMemberAccessGroup extends BaseObjectAccessGroup`:
+  - `id` is the communityId.
+  - `hasMember(userId)` queries `community_members` (and admins / hoaCommunityId) to determine membership.
+- Update `createObjectAccessGroup` to switch on the new type.
+- New attachment routes set ACL to `{ owner, visibility: "private", aclRules: [{ group: { type: COMMUNITY_MEMBER, id: communityId }, permission: READ }] }` instead of `visibility: "public"`.
+- Default permission for `/objects/<id>` reads becomes "owner OR community member"; the current public-by-default behavior is removed.
+- One-time backfill: a script that walks `attachments` for the last N days and re-runs `setObjectAclPolicy` with the new rules. (Older attachments stay public; document this.)
+
+**Alternative scope (Option B — if implementation is deferred):**
+- Delete `ObjectAccessGroupType`, `ObjectAccessGroup`, `aclRules`, `BaseObjectAccessGroup`, `createObjectAccessGroup`.
+- `ObjectAclPolicy` shrinks to `{ owner, visibility }`.
+- `replit.md` adds an explicit "Object ACL: owner-or-public only" decision.
+
+**Out (both options):**
+- Per-task ACLs (e.g. "only this contractor + admins can see").
+- Audit logging on ACL changes.
+
+### Files to touch (Option A)
+- `artifacts/api-server/src/objectAcl.ts` — implement the new enum value and group class.
+- `artifacts/api-server/src/storage.ts` — add `isUserMemberOfCommunity` helper if not already present (it is, per route 2143).
+- `artifacts/api-server/src/routes/routes.ts` — update `POST /api/objects/confirm`, `POST /api/tasks/:id/attachments`, `POST /api/task-completions/:id/attachments` to set the new policy; thread `communityId` through (resolve from the task → community).
+- `artifacts/api-server/src/scripts/backfill-acl.ts` *(new)* — one-shot backfill, idempotent, logs counts.
+- `replit.md` — document the new policy.
+
+### Implementation outline (Option A)
+1. Implement `CommunityMemberAccessGroup` and wire into `createObjectAccessGroup`.
+2. Update routes to compute `communityId` from the task and set the new ACL.
+3. Verify `canAccessObject` reads correctly: owner OR (community member AND READ permission).
+4. Backfill script: for each attachment created in the last 90 days, fetch the task → community, call `setObjectAclPolicy`. Skip if the policy already has a community group.
+5. Spot-check: log into the app as a non-owner community member, verify `/objects/<id>` reads succeed; log in as a non-member, verify 401.
+
+### Acceptance criteria (Option A)
+- [ ] A photo uploaded by user A is readable by user B (same community), but not by user C (different community).
+- [ ] An admin can read any photo (existing path: `requireAdmin` skips ACL — keep).
+- [ ] No code path constructs an ACL group that throws at runtime.
+- [ ] Backfill script reports how many attachments were re-stamped and finishes in <5 minutes for current data volume.
+- [ ] `replit.md` describes the policy and the public-by-default exception is gone.
+
+### Test plan
+- Unit: `canAccessObject` truth table (owner / member / non-member / public visibility / no policy).
+- Integration: hit `/objects/<id>` with three different sessions and verify status codes.
+- Backfill: run on a copy of prod data, diff counts before/after.
+
+### Risk & rollback
+- **Risk:** flipping to private breaks any existing surface that hot-links a photo URL outside an authenticated session (e.g. email reports). Audit `exportGenerator.ts` and PDF generation for direct URL embeds. If they exist, either generate signed URLs at export time or keep visibility=public for those code paths.
+- **Risk:** community membership changes (a user is removed from a community) — re-reads will instantly 401. This is correct, but document it.
+- **Rollback:** routes can be reverted to set `visibility: "public"` again; backfill changes can be rolled back by another script that strips the aclRules.
+
+### Open questions
+- Do we want a "task-level ACL" (e.g. only the assigned contractor + community admins) instead of "community-wide"? Recommend NO for v1; revisit if leaks become a real complaint.
+- Public-link sharing (e.g. emailing a photo to a vendor) — out of scope here; would need a signed-URL endpoint.
+
+---
+
+## Sequencing summary
+
+```
+Day 0   ────►  Slice 1 (Migrations)      ── 1.5–2 days
+                    │
+                    ├───►  Slice 2 (Pack storage MMKV)  ── 3–5 days  ───┐
+                    ├───►  Slice 3 (Per-photo state)     ── 1 day       │
+                    ├───►  Slice 4 (Server URL validate) ── 1 day       │
+                    │                                                   │
+                    └───►  Slice 5 (ACL groups)          ── 1.5–2 days  │
+                                                                        ▼
+                                                           All P0s green
+```
+
+Slices 2, 3, 4 are independent and parallelizable on three engineers. Slice 5 should land after 1 (so any new column it needs goes through migrations) but doesn't block 2/3/4.
+
+**Estimated calendar time with one engineer:** 2 weeks.  
+**Estimated calendar time with three:** 1 week.
+
+---
+
+## What this set deliberately does *not* solve
+
+- **Server-side N+1 in `assetSync.ts`** (P1) — significant work, separate slice. Listed in the assessment as P1 #6.
+- **Service-visit idempotency** (P1) — separate slice, low effort but schema change.
+- **Query-client retry policy & connectivity detection** (P1) — separate slice, mobile-only.
+- **Storage orphan reaper** (P1) — separate slice; until then, the assessment's orphan risk is mitigated but not eliminated by Slices 3 + 4.
+- **OpenAPI buildout** (P2) — bigger conversation about whether to push hard on the orval-generated client.
+
+These are tracked in `data-handling-assessment-2026-05-06.md` §8 and can become Slices once the P0 set is green.
