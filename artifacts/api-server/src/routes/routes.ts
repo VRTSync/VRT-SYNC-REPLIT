@@ -3861,7 +3861,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/notification-preferences", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { taskAssigned, dueReminders, syncFailure, taskCompleted, requestSubmitted, requestCompleted } = req.body;
+      const { taskAssigned, dueReminders, syncFailure, taskCompleted, requestSubmitted, requestCompleted, requestStatusUpdates } = req.body;
       const prefs = {
         taskAssigned: typeof taskAssigned === 'boolean' ? taskAssigned : true,
         dueReminders: typeof dueReminders === 'boolean' ? dueReminders : true,
@@ -3869,6 +3869,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         taskCompleted: typeof taskCompleted === 'boolean' ? taskCompleted : true,
         requestSubmitted: typeof requestSubmitted === 'boolean' ? requestSubmitted : true,
         requestCompleted: typeof requestCompleted === 'boolean' ? requestCompleted : true,
+        requestStatusUpdates: typeof requestStatusUpdates === 'boolean' ? requestStatusUpdates : true,
       };
       await storage.setUserNotificationPreferences(req.session.userId!, prefs);
       res.json(prefs);

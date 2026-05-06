@@ -107,7 +107,7 @@ PortalRouter.register('account', async function (container) {
       </div>
 
       <!-- Change Password Card -->
-      <div class="portal-module">
+      <div class="portal-module" style="margin-bottom:20px;">
         <div class="pm-header">
           <span class="pm-title">Change Password</span>
         </div>
@@ -147,6 +147,27 @@ PortalRouter.register('account', async function (container) {
           </div>
           <div id="acct-pw-msg" style="margin-bottom:12px;display:none;"></div>
           <button class="btn btn-primary" id="acct-save-pw">Update Password</button>
+        </div>
+      </div>
+
+      <!-- Notifications Card -->
+      <div class="portal-module">
+        <div class="pm-header">
+          <span class="pm-title">Notifications</span>
+        </div>
+        <div class="pm-body" style="padding:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;max-width:480px;">
+            <div>
+              <div style="font-size:14px;font-weight:500;color:var(--gray-800,#1f2937);">Request status updates</div>
+              <div style="font-size:12px;color:var(--gray-500,#6b7280);margin-top:2px;">Receive notifications when your submitted request is acknowledged or completed.</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;" aria-label="Request status updates">
+              <input type="checkbox" id="acct-notif-request-status" style="opacity:0;width:0;height:0;position:absolute;" />
+              <span id="acct-notif-slider" style="position:absolute;inset:0;border-radius:24px;background:var(--gray-300,#d1d5db);transition:background 0.2s;"></span>
+              <span id="acct-notif-knob" style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform 0.2s;"></span>
+            </label>
+          </div>
+          <div id="acct-notif-msg" style="margin-top:12px;display:none;"></div>
         </div>
       </div>
 
@@ -350,6 +371,52 @@ PortalRouter.register('account', async function (container) {
     } finally {
       savePwBtn.disabled = false;
       savePwBtn.textContent = 'Update Password';
+    }
+  });
+
+  const notifCheckbox = container.querySelector('#acct-notif-request-status');
+  const notifSlider = container.querySelector('#acct-notif-slider');
+  const notifKnob = container.querySelector('#acct-notif-knob');
+  const notifMsg = container.querySelector('#acct-notif-msg');
+
+  function applyToggleVisual(checked) {
+    if (checked) {
+      notifSlider.style.background = 'var(--teal,#14b8a6)';
+      notifKnob.style.transform = 'translateX(20px)';
+    } else {
+      notifSlider.style.background = 'var(--gray-300,#d1d5db)';
+      notifKnob.style.transform = 'translateX(0)';
+    }
+  }
+
+  (async () => {
+    try {
+      const prefs = await apiFetch('/api/notification-preferences');
+      const val = typeof prefs.requestStatusUpdates === 'boolean' ? prefs.requestStatusUpdates : true;
+      notifCheckbox.checked = val;
+      applyToggleVisual(val);
+    } catch (err) {
+      notifCheckbox.checked = true;
+      applyToggleVisual(true);
+    }
+  })();
+
+  notifCheckbox.addEventListener('change', async () => {
+    hideMsg(notifMsg);
+    const checked = notifCheckbox.checked;
+    applyToggleVisual(checked);
+    try {
+      const current = await apiFetch('/api/notification-preferences');
+      await apiFetch('/api/notification-preferences', {
+        method: 'PUT',
+        body: { ...current, requestStatusUpdates: checked },
+      });
+      showMsg(notifMsg, 'Notification preference saved.', 'success');
+      showToast('Notification preference saved', 'success');
+    } catch (err) {
+      notifCheckbox.checked = !checked;
+      applyToggleVisual(!checked);
+      showMsg(notifMsg, err.message || 'Failed to save preference.', 'error');
     }
   });
 });
