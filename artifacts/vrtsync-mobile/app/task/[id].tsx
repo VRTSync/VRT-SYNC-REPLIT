@@ -290,7 +290,11 @@ export default function TaskDetailScreen() {
   const handleComplete = async () => {
     if (!task) return;
     if (!signOffName.trim()) {
-      Alert.alert('Required', 'Please enter your sign-off name.');
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      setToastType('error');
+      setToastMessage('Please enter your sign-off name.');
+      setToastVisible(true);
+      toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
       return;
     }
     setCompleting(true);
