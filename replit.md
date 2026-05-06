@@ -49,7 +49,15 @@ A field-operations platform for landscape and HOA community management — mobil
 - **HOA portal** (`(hoa-tabs)`): service calendar, community map, maintenance request submission, profile
 - **Web portals**: admin hub (full management) and resident portal (HOA request tracking) served as server-rendered HTML at `/admin` and `/portal`
 - **Push notifications**: Expo push ticket system with scheduler for due-reminder alerts
-- **Offline support**: React Query persistence via AsyncStorage + offline pack context
+- **Offline support**: React Query persistence via AsyncStorage + offline pack context (MMKV + file-system)
+
+## Offline pack storage
+
+- **Native (iOS/Android)**: MMKV stores hot metadata (manifest, packId, packVersion, downloadedAt) per community under key `pack_meta_<communityId>`. Large blobs (assetIndex, per-layer GeoJSON, workHistory, searchIndex) are written as individual JSON files at `documentDirectory/offline-packs/<communityId>/`.
+- **Web**: Falls back to AsyncStorage (`offline_pack_meta_v2`) storing all packs as one JSON blob (the original approach). Web users rarely need offline support and AsyncStorage size limits are less critical there.
+- **Atomicity**: The MMKV key is deleted before file writes begin and re-written only after all files are committed. A crash mid-write leaves no valid MMKV key; `verifyPack` returns `{ valid: false }` and the app prompts a re-download.
+- **Migration**: On first boot after upgrade, `migrateFromAsyncStorage()` reads the legacy `offline_pack_meta` AsyncStorage key, saves each community pack through the new storage layer, and removes the old key. Migration runs once.
+- **`clearCache` scope**: `OfflineContext.clearCache()` clears task cache, pending completions, service schedules/visits, and pending asset notes — it does NOT delete offline pack files. Pack management (download/delete) is done exclusively through `OfflinePackProvider` / the offline pack settings screen.
 
 ## User preferences
 
