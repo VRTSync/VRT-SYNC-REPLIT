@@ -42,6 +42,7 @@ A field-operations platform for landscape and HOA community management — mobil
 - **Shared code duplication**: `artifacts/api-server/src/shared/` files are manually copied to `artifacts/vrtsync-mobile/shared/` because Metro bundler can't resolve outside the artifact directory.
 - **pdfkit externalized**: `pdfkit`, `fontkit`, and `@swc/helpers` are listed as esbuild externals to avoid runtime `MODULE_NOT_FOUND` errors caused by fontkit's CJS helper imports.
 - **CORS**: API allows any `*.replit.dev` / `*.replit.app` / `*.janeway.replit.dev` origin (covers both the main dev proxy and the Expo web preview domain).
+- **Object ACL — owner OR community member**: Attachments are stored with `visibility: "private"` and a `COMMUNITY_MEMBER` ACL rule scoped to the task's `communityId`. `GET /objects/:id` grants access to the owner, any member of that community (via `community_members` OR `users.hoaCommunityId`), and admins (via `requireAdmin` middleware on export routes). The `exportGenerator.ts` bypasses the HTTP ACL layer by downloading bytes directly from GCS via service-account credentials — no signed-URL change needed there. A 90-day backfill script lives at `artifacts/api-server/src/scripts/backfill-acl.ts` to re-stamp pre-existing public attachments.
 
 ## Product
 

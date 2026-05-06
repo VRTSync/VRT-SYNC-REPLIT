@@ -4,7 +4,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
-import { ObjectPermission } from "../objectAcl";
+import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
 import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "../pushNotifications";
 import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "../assetSync";
@@ -102,16 +102,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post("/api/objects/confirm", requireAuth, async (req: Request, res: Response) => {
-    const { uploadURL } = req.body;
+    const { uploadURL, communityId } = req.body;
     if (!uploadURL) {
       return res.status(400).json({ error: "uploadURL is required" });
     }
     try {
       const objectStorageService = new ObjectStorageService();
-      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, {
-        owner: req.session.userId!,
-        visibility: "public",
-      });
+      const aclPolicy = communityId
+        ? buildCommunityAclPolicy(req.session.userId!, communityId as string)
+        : { owner: req.session.userId!, visibility: "private" as const };
+      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
       res.json({ objectPath });
     } catch (error) {
       console.error("Confirm upload error:", error);
@@ -785,13 +785,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const task = await storage.getTaskById(taskId);
       const objectStorageService = new ObjectStorageService();
+      const aclPolicy = task?.communityId
+        ? buildCommunityAclPolicy(req.session.userId!, task.communityId)
+        : { owner: req.session.userId!, visibility: "private" as const };
       let objectPath: string;
       try {
-        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, {
-          owner: req.session.userId!,
-          visibility: "public",
-        });
+        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
       } catch (error) {
         if (strictValidation && error instanceof ObjectNotFoundError) {
           return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
@@ -862,6 +863,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             throw error;
           }
         }
+      }
+
+      const task = await storage.getTaskById(completion.taskId);
+      if (task?.communityId && fileRef.startsWith("/objects/")) {
+        const objectStorageService = new ObjectStorageService();
+        await objectStorageService.trySetObjectEntityAclPolicy(
+          fileRef,
+          buildCommunityAclPolicy(req.session.userId!, task.communityId),
+        );
       }
 
       const attachment = await storage.createAttachment({

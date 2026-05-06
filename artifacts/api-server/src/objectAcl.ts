@@ -1,8 +1,13 @@
 import { File } from "@google-cloud/storage";
+import { db } from "./db";
+import { communityMembers, users } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 
 const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
 
-export enum ObjectAccessGroupType {}
+export enum ObjectAccessGroupType {
+  COMMUNITY_MEMBER = "community_member",
+}
 
 export interface ObjectAccessGroup {
   type: ObjectAccessGroupType;
@@ -43,10 +48,60 @@ abstract class BaseObjectAccessGroup implements ObjectAccessGroup {
   public abstract hasMember(userId: string): Promise<boolean>;
 }
 
+class CommunityMemberAccessGroup extends BaseObjectAccessGroup {
+  constructor(communityId: string) {
+    super(ObjectAccessGroupType.COMMUNITY_MEMBER, communityId);
+  }
+
+  async hasMember(userId: string): Promise<boolean> {
+    const communityId = this.id;
+
+    const [membership] = await db
+      .select({ id: communityMembers.id })
+      .from(communityMembers)
+      .where(
+        and(
+          eq(communityMembers.userId, userId),
+          eq(communityMembers.communityId, communityId),
+        ),
+      )
+      .limit(1);
+    if (membership) return true;
+
+    const [hoaUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, userId), eq(users.hoaCommunityId, communityId)))
+      .limit(1);
+    return !!hoaUser;
+  }
+}
+
+export function buildCommunityAclPolicy(
+  ownerId: string,
+  communityId: string,
+): ObjectAclPolicy {
+  return {
+    owner: ownerId,
+    visibility: "private",
+    aclRules: [
+      {
+        group: {
+          type: ObjectAccessGroupType.COMMUNITY_MEMBER,
+          id: communityId,
+        },
+        permission: ObjectPermission.READ,
+      },
+    ],
+  };
+}
+
 function createObjectAccessGroup(
   group: ObjectAccessGroup,
 ): BaseObjectAccessGroup {
   switch (group.type) {
+    case ObjectAccessGroupType.COMMUNITY_MEMBER:
+      return new CommunityMemberAccessGroup(group.id);
     default:
       throw new Error(`Unknown access group type: ${group.type}`);
   }
