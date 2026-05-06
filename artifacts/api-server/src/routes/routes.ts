@@ -28,7 +28,7 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exports as exportsTable, plannerRecords, xeriscapePackets } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne } from "drizzle-orm";
 

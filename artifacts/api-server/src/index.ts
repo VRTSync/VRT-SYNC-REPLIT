@@ -5,9 +5,10 @@ import { logger } from "./lib/logger";
 import { sendDueReminders, processReceiptsForPendingTickets } from "./pushNotifications";
 import { startSchedulerInterval } from "./scheduler";
 import { pool, db } from "./db";
-import { users, invoices, communities, contacts } from "@workspace/db";
+import { users, invoices, communities, contacts, runMigrations } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import path from "path";
 
 const rawPort = process.env["PORT"];
 
@@ -126,6 +127,16 @@ async function seedContacts() {
 }
 
 (async () => {
+  // Layer 1: Drizzle versioned migrations (idempotent — tracked in drizzle.__drizzle_migrations)
+  const migrationsFolder = path.join(__dirname, "./migrations");
+  const migrationsStart = Date.now();
+  const appliedCount = await runMigrations(pool, migrationsFolder);
+  logger.info(
+    { applied: appliedCount, elapsedMs: Date.now() - migrationsStart },
+    `applied ${appliedCount} migrations in ${Date.now() - migrationsStart}ms`
+  );
+
+  // Layer 2: Additive ALTER TABLE safety net for lagging environments
   try {
     await runStartupMigrations();
   } catch (err) {

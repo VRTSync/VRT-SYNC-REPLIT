@@ -321,7 +321,7 @@ export const scheduleRunItems = pgTable("schedule_run_items", {
   taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
 });
 
-export const exports = pgTable("exports", {
+export const exportJobs = pgTable("exports", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
@@ -371,9 +371,9 @@ export const serviceVisits = pgTable("service_visits", {
   uniqueIndex("service_visits_schedule_date_idx").on(table.scheduleId, table.serviceDate),
 ]);
 
-export const exportsRelations = relations(exports, ({ one }) => ({
-  community: one(communities, { fields: [exports.communityId], references: [communities.id] }),
-  creator: one(users, { fields: [exports.createdBy], references: [users.id] }),
+export const exportsRelations = relations(exportJobs, ({ one }) => ({
+  community: one(communities, { fields: [exportJobs.communityId], references: [communities.id] }),
+  creator: one(users, { fields: [exportJobs.createdBy], references: [users.id] }),
 }));
 
 export const serviceSchedulesRelations = relations(serviceSchedules, ({ one, many }) => ({
@@ -736,7 +736,7 @@ export type TemplateRun = typeof templateRuns.$inferSelect;
 export type TaskSchedule = typeof taskSchedules.$inferSelect;
 export type ScheduleRun = typeof scheduleRuns.$inferSelect;
 export type ScheduleRunItem = typeof scheduleRunItems.$inferSelect;
-export type Export = typeof exports.$inferSelect;
+export type Export = typeof exportJobs.$inferSelect;
 export type ServiceSchedule = typeof serviceSchedules.$inferSelect;
 export type ServiceVisit = typeof serviceVisits.$inferSelect;
 export type AssetNote = typeof assetNotes.$inferSelect;

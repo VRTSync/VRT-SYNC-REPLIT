@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import archiver from "archiver";
 import { db } from "./db";
-import { exports as exportsTable, taskCompletions, tasks, attachments, taskLinks, assets, assetProperties, users, communities } from "@workspace/db";
+import { exportJobs as exportsTable, taskCompletions, tasks, attachments, taskLinks, assets, assetProperties, users, communities } from "@workspace/db";
 import { eq, and, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { objectStorageClient } from "./objectStorage";
 import { Writable } from "stream";
