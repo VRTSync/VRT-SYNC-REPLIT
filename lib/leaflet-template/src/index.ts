@@ -175,6 +175,27 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       }).addTo(map);
     },
 
+    // Draws an accuracy halo circle around the user's position.
+    // color should be one of: '#4CAF50' (green), '#FFC107' (yellow), '#F44336' (red).
+    // Replaces any previous halo; does not affect the blue user-loc dot.
+    setUserLocationHalo: function(lat, lng, accuracyMetres, color) {
+      if (this._haloCircle) { map.removeLayer(this._haloCircle); this._haloCircle = null; }
+      var c = color || '#4CAF50';
+      this._haloCircle = L.circle([lat, lng], {
+        radius: accuracyMetres,
+        color: c,
+        fillColor: c,
+        fillOpacity: 0.12,
+        weight: 2,
+        opacity: 0.55,
+        interactive: false
+      }).addTo(map);
+    },
+
+    clearUserLocationHalo: function() {
+      if (this._haloCircle) { map.removeLayer(this._haloCircle); this._haloCircle = null; }
+    },
+
     setTasks: function(tasks) {
       clearGroup(taskLayer);
       tasks.forEach(function(t) {

@@ -77,6 +77,7 @@ type LeafletMapProps = {
   communityOutlineGeojson?: any | null;
   communityOutlineStyle?: { strokeColor?: string; strokeWeight?: number; fillOpacity?: number } | null;
   filteredTaskIds?: string[] | null;
+  userLocationHalo?: { lat: number; lng: number; accuracyMetres: number; color: string } | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -104,6 +105,7 @@ export default function LeafletMap({
   communityOutlineGeojson,
   communityOutlineStyle,
   filteredTaskIds,
+  userLocationHalo,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -302,6 +304,14 @@ export default function LeafletMap({
       sendCmd('clearTaskFilter');
     }
   }, [filteredTaskIds, sendCmd]);
+
+  useEffect(() => {
+    if (userLocationHalo) {
+      sendCmd('setUserLocationHalo', userLocationHalo.lat, userLocationHalo.lng, userLocationHalo.accuracyMetres, userLocationHalo.color);
+    } else {
+      sendCmd('clearUserLocationHalo');
+    }
+  }, [userLocationHalo, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 
