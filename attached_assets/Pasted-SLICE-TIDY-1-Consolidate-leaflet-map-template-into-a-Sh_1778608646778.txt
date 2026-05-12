@@ -1,0 +1,138 @@
+SLICE TIDY-1 — Consolidate leaflet-map-template into a Shared Workspace Package (No Functional Change)
+
+Goal
+The Leaflet map HTML template currently exists in three places: `artifacts/web-portal/src/leaflet-map-template.ts`, `artifacts/api-server/src/shared/leaflet-map-template.ts`, and `artifacts/vrtsync-mobile/shared/leaflet-map-template.ts`. As of this commit, the three files are **byte-identical (618 lines each, zero diff)**, but the comment header in `LeafletMap.tsx` already says "edit ONLY shared/leaflet-map-template.ts — it is the single source of truth," which has effectively been violated by the recent web-portal artifact split. This slice eliminates the drift surface by extracting the template into one shared workspace package consumed by `web-portal` and `vrtsync-mobile`. The `api-server` copy is verified to be a **dead file with zero importers** and is deleted outright.
+
+**This slice must not change any user-visible behavior of the mobile app or web portal.** Verification steps are baked into the acceptance criteria.
+
+Scope (IN)
+
+1) Create a new shared workspace package `@workspace/leaflet-template` at `lib/leaflet-template/`
+- `lib/leaflet-template/package.json` — match the shape of `lib/db/package.json`:
+  - `"name": "@workspace/leaflet-template"`
+  - `"version": "0.0.0"`
+  - `"private": true`
+  - `"type": "module"`
+  - `"exports": { ".": "./src/index.ts" }`
+  - No runtime dependencies (the file is a single string export)
+  - `devDependencies`: `@types/node`, `typescript` from the catalog
+  - `"scripts": { "typecheck": "tsc -p tsconfig.json --noEmit" }`
+- `lib/leaflet-template/tsconfig.json` — extend `../../tsconfig.base.json`, set `"include": ["src/**/*"]`.
+- `lib/leaflet-template/src/index.ts` — paste the canonical content of `artifacts/web-portal/src/leaflet-map-template.ts` here unchanged. Export `LEAFLET_MAP_HTML` (and any other named exports currently in the file).
+
+2) Add the new package to the workspace
+- Confirm `pnpm-workspace.yaml` already globs `lib/*` (it should — `lib/db` is picked up the same way). If not, add `lib/leaflet-template` explicitly.
+- Add `"@workspace/leaflet-template": "workspace:*"` to the `dependencies` of:
+  - `artifacts/web-portal/package.json`
+  - `artifacts/vrtsync-mobile/package.json`
+- Run `pnpm install` from repo root so workspace symlinks are created.
+
+3) Switch the two real importers to the shared package
+- `artifacts/web-portal/src/server.ts`:
+  - Change `import { LEAFLET_MAP_HTML } from "./leaflet-map-template";`
+  - To     `import { LEAFLET_MAP_HTML } from "@workspace/leaflet-template";`
+- `artifacts/vrtsync-mobile/components/LeafletMap.tsx`:
+  - Change `import { LEAFLET_MAP_HTML } from '@/shared/leaflet-map-template';`
+  - To     `import { LEAFLET_MAP_HTML } from '@workspace/leaflet-template';`
+  - Update the file-header comment to say: "Single source of truth: `lib/leaflet-template/src/index.ts` — edit there."
+
+4) Delete the three local copies after verification
+- Delete `artifacts/web-portal/src/leaflet-map-template.ts`
+- Delete `artifacts/vrtsync-mobile/shared/leaflet-map-template.ts`
+  - Also remove the now-empty `artifacts/vrtsync-mobile/shared/` directory if it has no other files.
+- Delete `artifacts/api-server/src/shared/leaflet-map-template.ts` — pre-verified as having zero importers (`grep -rn "leaflet-map-template" --include="*.ts" --include="*.tsx" --include="*.mjs" --include="*.js"` returns only the two real importers listed in step 3 and the file's own definitions).
+
+5) Pre-flight safety verifications
+**These run BEFORE any deletion in step 4.** If any of these fail, halt and report — do not proceed to deletion.
+
+- a. Reconfirm byte-identity of all three copies:
+  ```
+  diff artifacts/web-portal/src/leaflet-map-template.ts artifacts/api-server/src/shared/leaflet-map-template.ts
+  diff artifacts/web-portal/src/leaflet-map-template.ts artifacts/vrtsync-mobile/shared/leaflet-map-template.ts
+  ```
+  Both must produce no output (zero diff). If either has drifted, **stop**, reconcile, then proceed.
+
+- b. Reconfirm no other files import the template:
+  ```
+  grep -rn "leaflet-map-template" --include="*.ts" --include="*.tsx" --include="*.mjs" --include="*.js" artifacts/ lib/ | grep -v node_modules | grep -v ".migration-backup" | grep -v "dist/"
+  ```
+  Result must contain only the two lines from `web-portal/src/server.ts` and `vrtsync-mobile/components/LeafletMap.tsx` (already updated to the new import path in step 3) plus the comment in `LeafletMap.tsx`. No third importer should exist.
+
+- c. After step 3 import switches, run `pnpm --filter @workspace/web-portal run build` and `pnpm --filter @workspace/web-portal run typecheck`. Both must pass.
+
+- d. After step 3 import switches, run `pnpm --filter @workspace/vrtsync-mobile run typecheck` (or whichever script the mobile uses for TS check). Must pass.
+
+6) Metro readiness — verified, no config change required
+- The mobile app **already** depends on a sibling workspace package (`@workspace/api-client-react` from `lib/api-client-react/`), proving Metro is configured for monorepo resolution under the current `expo/metro-config` defaults.
+- No `metro.config.js` change should be needed. If `expo start` fails to resolve `@workspace/leaflet-template` after pnpm install, add a single `watchFolders: [path.resolve(__dirname, "../../lib")]` to `artifacts/vrtsync-mobile/metro.config.js` — but do not add this preemptively; verify first that it is required.
+
+Scope (OUT)
+- Consolidating other duplicated shared files (e.g. `layerColors.ts`, `assetFieldTemplates.ts`) — those deserve their own audit slices. Note them for follow-up but do not touch in this slice.
+- Any refactor of the template's content. The string moves as-is, byte-identical.
+- Any change to how `LeafletMap.tsx` consumes the template. Only the import statement changes.
+
+Files to touch
+- `lib/leaflet-template/package.json` *(new)*
+- `lib/leaflet-template/tsconfig.json` *(new)*
+- `lib/leaflet-template/src/index.ts` *(new — content equals the current web-portal copy)*
+- `artifacts/web-portal/package.json` — add `@workspace/leaflet-template` to `dependencies`
+- `artifacts/web-portal/src/server.ts` — switch import
+- `artifacts/vrtsync-mobile/package.json` — add `@workspace/leaflet-template` to `dependencies`
+- `artifacts/vrtsync-mobile/components/LeafletMap.tsx` — switch import, update comment
+- `artifacts/web-portal/src/leaflet-map-template.ts` *(delete)*
+- `artifacts/vrtsync-mobile/shared/leaflet-map-template.ts` *(delete)*
+- `artifacts/api-server/src/shared/leaflet-map-template.ts` *(delete — dead file)*
+- `pnpm-workspace.yaml` — only if `lib/*` glob is not already present
+- `pnpm-lock.yaml` — regenerated by `pnpm install`
+
+Implementation order (must be followed exactly to keep app functional at every step)
+
+1. Create `lib/leaflet-template/` package files (`package.json`, `tsconfig.json`, `src/index.ts` with the verbatim canonical content).
+2. Add `@workspace/leaflet-template` to `web-portal` and `vrtsync-mobile` dependencies in their respective `package.json`.
+3. Run `pnpm install` from repo root. Verify symlinks: `ls -la artifacts/web-portal/node_modules/@workspace/leaflet-template` and `ls -la artifacts/vrtsync-mobile/node_modules/@workspace/leaflet-template` should both resolve.
+4. Switch the import in `web-portal/src/server.ts`. Build web-portal (`pnpm --filter @workspace/web-portal run build`). It should succeed. Smoke-test the web portal locally — load any page that uses the Leaflet map (e.g. portal map page). Map must render identically.
+5. Switch the import in `vrtsync-mobile/components/LeafletMap.tsx`. Typecheck mobile. Start Expo dev (`expo start --clear`). Load a screen with a map. Map must render identically.
+6. Only after steps 4 and 5 succeed: delete the three old template files.
+7. Commit. Push.
+
+Acceptance Criteria
+
+A) New shared package exists and is discoverable
+- `lib/leaflet-template/src/index.ts` exists; exports `LEAFLET_MAP_HTML` (string).
+- `lib/leaflet-template/package.json` declares name `@workspace/leaflet-template`.
+- `pnpm-workspace.yaml` resolves the package (verified by `pnpm list --filter @workspace/leaflet-template` returning a hit).
+
+B) Both importers resolve via the new package
+- `artifacts/web-portal/src/server.ts` imports from `@workspace/leaflet-template`.
+- `artifacts/vrtsync-mobile/components/LeafletMap.tsx` imports from `@workspace/leaflet-template`.
+- A repo-wide grep for `leaflet-map-template` (excluding `node_modules`, `dist`, `.migration-backup`) returns no occurrences other than the new package's own files, the two import lines, and the doc comment in `LeafletMap.tsx`.
+
+C) Old files removed
+- `artifacts/web-portal/src/leaflet-map-template.ts` no longer exists.
+- `artifacts/vrtsync-mobile/shared/leaflet-map-template.ts` no longer exists.
+- `artifacts/api-server/src/shared/leaflet-map-template.ts` no longer exists.
+
+D) No behavior change — web portal
+- `pnpm --filter @workspace/web-portal run build` succeeds.
+- Web portal map page renders identically to pre-slice (same markers, same styling, same popup behavior). Visual diff or side-by-side screenshot before/after is acceptable.
+
+E) No behavior change — mobile app
+- Mobile typecheck succeeds.
+- Mobile app loads a Leaflet map screen (e.g. the Map tab) and renders identically to pre-slice. Asset markers, controller colors, popup HTML, and zoom controls all behave the same.
+
+F) No behavior change — API server
+- `pnpm --filter @workspace/api-server run build` succeeds (despite deleting a dead file).
+- No API endpoint regresses (`pnpm --filter @workspace/api-server run test` if such a script exists, otherwise a manual smoke test of a few key endpoints).
+
+G) Lockfile committed
+- `pnpm-lock.yaml` updates are committed.
+
+Test plan
+- Step-by-step manual verification described in the implementation order above. Each step is its own go/no-go gate; the slice cannot proceed past step 5 without the smoke tests passing.
+
+Risk & rollback
+- Risk: **low**. Three files are byte-identical pre-flight; only the api-server copy has zero importers; web-portal and mobile each have exactly one import site each.
+- Rollback (any time before push): `git restore .` and `pnpm install` to undo. If the slice has been pushed but a regression is found: revert the commit, then run `pnpm install` to restore prior symlinks. No data, no schema, no API contracts are touched, so rollback is trivial.
+
+Open questions
+- Should `layerColors.ts` and `assetFieldTemplates.ts` (also currently duplicated between artifacts) be folded into the same shared package, or kept in their own slice? Recommend: separate slice — keep TIDY-1 focused and reviewable.

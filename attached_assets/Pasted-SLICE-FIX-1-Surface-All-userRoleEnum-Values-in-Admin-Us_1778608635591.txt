@@ -1,0 +1,88 @@
+SLICE FIX-1 — Surface All userRoleEnum Values in Admin User Form (Web Portal)
+
+Goal
+The admin user-management page in the web portal does not fully expose all five values of `userRoleEnum` defined in the database. As a result, admins cannot create `property_manager` users from the UI, cannot change an existing user to anything other than the binary admin/contractor toggle, and badge labels show the raw enum string for `admin` and `property_manager`. This slice closes those three gaps so the admin UI is consistent with the schema. No API or schema changes are needed — the back end already accepts every enum value.
+
+Scope (IN)
+
+1) Create User modal — Role select completeness
+- Add `<option value="property_manager">Property Manager</option>` to the Role select in the Create User modal so admins can create property managers from the UI.
+- Keep the existing HOA-community-required behavior unchanged: HOA Community group should only appear when role is `hoa_admin` or `hoa_member`. Property Manager does not require an HOA community.
+
+2) Role badge label + color consistency
+- Update the `roleLabel` resolver in `loadUsers()` so every enum value renders a human-readable label:
+  - `admin` → "Admin"
+  - `contractor` → "Contractor"
+  - `hoa_admin` → "HOA Admin"
+  - `hoa_member` → "HOA Member"
+  - `property_manager` → "Property Manager"
+- Update the `roleBadgeClass` resolver so each role has a distinct badge color:
+  - `admin` → `badge-blue` (unchanged)
+  - `hoa_admin` / `hoa_member` → `badge-purple` (unchanged)
+  - `contractor` → `badge-teal` (unchanged)
+  - `property_manager` → new class `badge-amber` (or any unused badge color in the existing admin CSS palette)
+- If `badge-amber` does not exist in the shared admin CSS, add it next to the existing badge classes, reusing a palette token already in the stylesheet (background + text color), with the same shape as `badge-blue` etc.
+
+3) Replace binary role toggle with a Change Role dropdown
+- Today the per-row action button toggles strictly between `admin` and `contractor` and is hidden for HOA users. Replace it for **all non-HOA users** with a "Change role…" dropdown action that:
+  - Renders a `<select>` with all non-HOA enum values: `contractor`, `admin`, `property_manager`. Prepend an empty disabled selected option labelled "Change role…" so the select is a one-step action.
+  - On change, prompts a `confirm(`Change this user's role to ${prettyLabel}?`)`.
+  - Calls the existing `PUT /api/users/:id/role` endpoint with `{ role: newRole }`.
+  - Reloads the user list on success; shows `showToast(err.message, 'error')` on failure.
+- For HOA users (`hoa_admin` / `hoa_member`), keep the current behavior — no role-change action is shown for HOA users in this slice. Switching a user into or out of HOA is a separate, more involved flow (requires choosing an `hoaCommunityId`) and is explicitly out of scope here.
+
+4) Keep code stylistically consistent
+- Use the same `apiFetch`, `showToast`, `esc()`, and confirm-then-act pattern that the rest of `users.js` already uses. No new dependencies, no refactor of unrelated code.
+
+Scope (OUT)
+- Adding `map_creator` to the role select — that lands in SLICE MC1 alongside the schema migration.
+- Adding role-change support for HOA users (would require picking a new community).
+- Any API or schema changes (`PUT /api/users/:id/role` already accepts all enum values).
+- Removing the deprecated copy at `artifacts/api-server/src/public/admin/pages/users.js` — leave it alone; the web-portal restructure already made it dead code, and clearing dead copies is its own tidy slice.
+
+Files to touch
+- `artifacts/web-portal/public/admin/pages/users.js` — all four IN-scope changes land here.
+- `artifacts/web-portal/public/admin/css/*` — only if the chosen new badge color class does not exist; add it next to the existing badge classes.
+
+Acceptance Criteria
+
+A) Create User modal
+- The Role select shows five options in this order: Contractor, Admin, HOA Admin, HOA Member, Property Manager.
+- Selecting Property Manager does **not** show the HOA Community group.
+- Selecting HOA Admin or HOA Member **does** show the HOA Community group (existing behavior unchanged).
+- Submitting with Property Manager successfully creates a user with `role: "property_manager"`.
+
+B) Role badges
+- A row whose user has role `admin` shows the badge label "Admin" (not "admin") with the `badge-blue` class.
+- A row whose user has role `property_manager` shows the badge label "Property Manager" with the new badge class.
+- A row whose user has role `contractor` shows "Contractor" with `badge-teal`.
+- A row whose user has role `hoa_admin` shows "HOA Admin" with `badge-purple` (unchanged).
+- A row whose user has role `hoa_member` shows "HOA Member" with `badge-purple` (unchanged).
+
+C) Role-change action (non-HOA users)
+- Non-HOA rows show a "Change role…" dropdown in place of the previous binary toggle.
+- Selecting an option opens a `confirm()` dialog with the target role's pretty label.
+- Confirming calls `PUT /api/users/:id/role` and the row reloads with the new role visible.
+- Cancelling reverts the dropdown to "Change role…" with no API call made.
+
+D) Role-change action (HOA users)
+- HOA rows do **not** show the "Change role…" dropdown (unchanged behavior).
+
+E) No regressions
+- Existing Edit Profile, Deactivate/Reactivate, and Delete actions behave identically to before.
+- Lint, typecheck, and `pnpm --filter @workspace/web-portal run build` pass.
+
+Test plan
+- Manual:
+  1. Create a Property Manager user — verify it appears in the list with the new badge and label.
+  2. Pick a contractor row, use the dropdown to change them to Admin, then back to Contractor. Confirm both transitions persist on reload.
+  3. Pick a contractor row, change them to Property Manager. Confirm.
+  4. Confirm an HOA row still has no role-change dropdown.
+  5. Confirm Edit Profile, Deactivate, and Delete still work.
+
+Risk & rollback
+- Risk: very low. UI-only change in one file (plus possibly one CSS rule). API contract unchanged.
+- Rollback: revert the commit.
+
+Open questions
+- Should an HOA-aware role change (e.g. "convert HOA Member → Property Manager") be added in a follow-up slice? Recommended yes, but explicitly out of scope here.
