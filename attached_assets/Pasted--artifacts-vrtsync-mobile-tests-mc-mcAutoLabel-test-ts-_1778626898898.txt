@@ -1,0 +1,66 @@
+// artifacts/vrtsync-mobile/__tests__/mc/mcAutoLabel.test.ts
+// Run with: pnpm --filter @workspace/vrtsync-mobile run test -- __tests__/mc/mcAutoLabel.test.ts
+// Covers: generateAutoLabel rules for Tree, Controller, and generic types.
+
+import { generateAutoLabel } from '@/lib/mcAutoLabel';
+
+describe('generateAutoLabel', () => {
+  describe('tree', () => {
+    it('first tree → "Tree 1"', () => {
+      expect(generateAutoLabel({ assetType: 'tree', existingLabels: [] })).toBe('Tree 1');
+    });
+
+    it('47th tree → "Tree 47"', () => {
+      const existing = Array.from({ length: 46 }, (_, i) => `Tree ${i + 1}`);
+      expect(generateAutoLabel({ assetType: 'tree', existingLabels: existing })).toBe('Tree 47');
+    });
+
+    it('ignores non-Tree labels in count', () => {
+      const existing = ['Controller A', 'Pet Station 1', 'Backflow 1', 'Tree 1', 'Tree 2'];
+      expect(generateAutoLabel({ assetType: 'tree', existingLabels: existing })).toBe('Tree 3');
+    });
+  });
+
+  describe('controller', () => {
+    it('first controller → "Controller A"', () => {
+      expect(generateAutoLabel({ assetType: 'controller', existingLabels: [] })).toBe('Controller A');
+    });
+
+    it('second controller → "Controller B"', () => {
+      expect(generateAutoLabel({ assetType: 'controller', existingLabels: ['Controller A'] })).toBe('Controller B');
+    });
+
+    it('26th controller → "Controller Z"', () => {
+      const existing = Array.from({ length: 25 }, (_, i) => `Controller ${String.fromCharCode(65 + i)}`);
+      expect(generateAutoLabel({ assetType: 'controller', existingLabels: existing })).toBe('Controller Z');
+    });
+
+    it('27th controller → "Controller AA"', () => {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => `Controller ${c}`);
+      expect(generateAutoLabel({ assetType: 'controller', existingLabels: letters })).toBe('Controller AA');
+    });
+
+    it('28th controller → "Controller AB"', () => {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((c) => `Controller ${c}`);
+      expect(generateAutoLabel({ assetType: 'controller', existingLabels: [...letters, 'Controller AA'] })).toBe('Controller AB');
+    });
+  });
+
+  describe('generic types', () => {
+    it('first backflow → "Backflow 1"', () => {
+      expect(generateAutoLabel({ assetType: 'backflow', existingLabels: [] })).toBe('Backflow 1');
+    });
+
+    it('first pet_station → "Pet Station 1"', () => {
+      expect(generateAutoLabel({ assetType: 'pet_station', existingLabels: [] })).toBe('Pet Station 1');
+    });
+
+    it('first quick_connect → "Quick Connect 1"', () => {
+      expect(generateAutoLabel({ assetType: 'quick_connect', existingLabels: [] })).toBe('Quick Connect 1');
+    });
+
+    it('first isolation_valve → "Isolation Valve 1"', () => {
+      expect(generateAutoLabel({ assetType: 'isolation_valve', existingLabels: [] })).toBe('Isolation Valve 1');
+    });
+  });
+});

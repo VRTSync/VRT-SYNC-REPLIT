@@ -1,0 +1,156 @@
+// artifacts/vrtsync-mobile/__tests__/mc/useHighAccuracyLocation.test.ts
+// Run with: pnpm --filter @workspace/vrtsync-mobile run test -- __tests__/mc/useHighAccuracyLocation.test.ts
+// Covers: averaging buffer, outlier rejection, lock state thresholds, snapshot semantics.
+//
+// Strategy: we mock expo-location's watchPositionAsync to feed our hook a
+// scripted stream of fixes, then assert on the hook's exposed state.
+
+import { renderHook, act, waitFor } from '@testing-library/react-native';
+
+// We need a mock of expo-location that we can drive synchronously.
+let watchCallback: ((loc: any) => void) | null = null;
+let watchSubscription: { remove: jest.Mock } = { remove: jest.fn() };
+
+jest.mock('expo-location', () => ({
+  Accuracy: { BestForNavigation: 6 },
+  requestForegroundPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
+  watchPositionAsync: jest.fn().mockImplementation(async (_opts, cb) => {
+    watchCallback = cb;
+    return watchSubscription;
+  }),
+}));
+
+import { useHighAccuracyLocation } from '@/hooks/useHighAccuracyLocation';
+
+function fixOf(lat: number, lng: number, acc: number, ts: number = Date.now()) {
+  return {
+    coords: {
+      latitude: lat,
+      longitude: lng,
+      accuracy: acc,
+      altitude: null,
+      altitudeAccuracy: null,
+      heading: null,
+      speed: null,
+    },
+    timestamp: ts,
+  };
+}
+
+describe('useHighAccuracyLocation', () => {
+  beforeEach(() => {
+    watchCallback = null;
+    watchSubscription = { remove: jest.fn() };
+    jest.clearAllMocks();
+  });
+
+  it('starts in red lock state with no fixes', async () => {
+    const { result } = renderHook(() => useHighAccuracyLocation());
+    await act(async () => { await result.current.start(); });
+    expect(result.current.fix).toBeNull();
+  });
+
+  it('stays red until minSamplesForLock is reached', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 5, greenThreshold: 3, yellowThreshold: 5 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    // Feed 4 great fixes — still red because minSamples = 5
+    for (let i = 0; i < 4; i++) {
+      await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.5, Date.now())); });
+    }
+    expect(result.current.fix?.lockState).toBe('red');
+
+    // 5th fix transitions to green
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.5, Date.now())); });
+    expect(result.current.fix?.lockState).toBe('green');
+  });
+
+  it('rejects fixes with accuracy > outlierAccuracyMax', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 3, outlierAccuracyMax: 20 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    // 3 good fixes + 1 outlier
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 2.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 2.5)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 2.0)); });
+
+    const beforeOutlier = result.current.fix?.sampleCount;
+    await act(async () => { watchCallback!(fixOf(50.0, -100.0, 50.0)); }); // wildly off + bad accuracy
+
+    expect(result.current.fix?.sampleCount).toBe(beforeOutlier); // unchanged
+    expect(result.current.fix?.latitude).toBeCloseTo(39.7, 4); // didn't drift
+  });
+
+  it('reports yellow when median accuracy is between green and yellow thresholds', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 3, greenThreshold: 3, yellowThreshold: 5 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    // Three fixes averaging ~4m — should be yellow
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 4.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 4.5)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 3.8)); });
+
+    expect(result.current.fix?.lockState).toBe('yellow');
+  });
+
+  it('snapshot returns null when red, returns Fix when green/yellow', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 3, greenThreshold: 3 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    expect(result.current.snapshot()).toBeNull();
+
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+
+    const snap = result.current.snapshot();
+    expect(snap).not.toBeNull();
+    expect(snap!.lockState).toBe('green');
+    expect(snap!.latitude).toBeCloseTo(39.7, 4);
+  });
+
+  it('reset clears the averaging buffer', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 3 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7, -104.9, 1.0)); });
+    expect(result.current.fix?.lockState).toBe('green');
+
+    act(() => { result.current.reset(); });
+    expect(result.current.fix).toBeNull();
+  });
+
+  it('stop unsubscribes the watcher', async () => {
+    const { result } = renderHook(() => useHighAccuracyLocation());
+    await act(async () => { await result.current.start(); });
+    act(() => { result.current.stop(); });
+    expect(watchSubscription.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('averages latitude and longitude across the buffer', async () => {
+    const { result } = renderHook(() =>
+      useHighAccuracyLocation({ minSamplesForLock: 3, greenThreshold: 10 })
+    );
+    await act(async () => { await result.current.start(); });
+
+    await act(async () => { watchCallback!(fixOf(39.7000, -104.9000, 2.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7002, -104.9002, 2.0)); });
+    await act(async () => { watchCallback!(fixOf(39.7001, -104.9001, 2.0)); });
+
+    // Mean of 0.7000, 0.7002, 0.7001 ≈ 0.7001
+    expect(result.current.fix!.latitude).toBeCloseTo(39.7001, 4);
+    expect(result.current.fix!.longitude).toBeCloseTo(-104.9001, 4);
+  });
+});

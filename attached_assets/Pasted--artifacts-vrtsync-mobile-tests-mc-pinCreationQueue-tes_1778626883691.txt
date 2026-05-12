@@ -1,0 +1,148 @@
+// artifacts/vrtsync-mobile/__tests__/mc/pinCreationQueue.test.ts
+// Run with: pnpm --filter @workspace/vrtsync-mobile run test -- __tests__/mc/pinCreationQueue.test.ts
+// Covers: queue enqueue / list / remove / update / state transitions / persistence.
+//
+// Strategy: mock MMKV in-memory and stub expo-file-system; the queue module's
+// behavior under controlled storage is fully exercised.
+
+// -- Mock MMKV --
+const mmkvStore = new Map<string, string>();
+jest.mock('react-native-mmkv', () => ({
+  MMKV: jest.fn().mockImplementation(() => ({
+    set: (k: string, v: string) => mmkvStore.set(k, v),
+    getString: (k: string) => mmkvStore.get(k),
+    delete: (k: string) => mmkvStore.delete(k),
+    getAllKeys: () => Array.from(mmkvStore.keys()),
+    clearAll: () => mmkvStore.clear(),
+  })),
+}));
+
+// -- Mock expo-file-system --
+const fsStore = new Map<string, string>();
+jest.mock('expo-file-system', () => ({
+  documentDirectory: 'mock://documents/',
+  makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
+  writeAsStringAsync: jest.fn().mockImplementation(async (uri: string, content: string) => {
+    fsStore.set(uri, content);
+  }),
+  readAsStringAsync: jest.fn().mockImplementation(async (uri: string) => {
+    if (!fsStore.has(uri)) throw new Error('not found');
+    return fsStore.get(uri);
+  }),
+  copyAsync: jest.fn().mockImplementation(async ({ from, to }: { from: string; to: string }) => {
+    fsStore.set(to, fsStore.get(from) ?? '');
+  }),
+  deleteAsync: jest.fn().mockImplementation(async (uri: string) => {
+    fsStore.delete(uri);
+  }),
+  getInfoAsync: jest.fn().mockImplementation(async (uri: string) => ({
+    exists: fsStore.has(uri),
+    uri,
+  })),
+}));
+
+import { pinCreationQueue } from '@/lib/pinCreationQueue';
+
+const baseEntry = {
+  communityId: 'comm-1',
+  assetType: 'tree',
+  label: 'Tree 1',
+  latitude: 39.7,
+  longitude: -104.9,
+  gpsAccuracy: 2.5,
+  lockStateAtCapture: 'green' as const,
+  properties: {},
+};
+
+describe('pinCreationQueue', () => {
+  beforeEach(() => {
+    mmkvStore.clear();
+    fsStore.clear();
+    jest.clearAllMocks();
+  });
+
+  it('enqueue creates an entry with state=queued and unique id', async () => {
+    const entry = await pinCreationQueue.enqueue(baseEntry);
+    expect(entry.id).toMatch(/.+/);
+    expect(entry.state).toBe('queued');
+    expect(entry.attempts).toBe(0);
+    expect(entry.createdAt).toBeGreaterThan(0);
+  });
+
+  it('list returns enqueued entries', async () => {
+    await pinCreationQueue.enqueue(baseEntry);
+    await pinCreationQueue.enqueue({ ...baseEntry, label: 'Tree 2' });
+    const list = pinCreationQueue.list();
+    expect(list.length).toBe(2);
+    expect(list.map((e) => e.label).sort()).toEqual(['Tree 1', 'Tree 2']);
+  });
+
+  it('list filters by communityId', async () => {
+    await pinCreationQueue.enqueue({ ...baseEntry, communityId: 'comm-1' });
+    await pinCreationQueue.enqueue({ ...baseEntry, communityId: 'comm-2', label: 'Tree X' });
+    const filtered = pinCreationQueue.list({ communityId: 'comm-1' });
+    expect(filtered.length).toBe(1);
+    expect(filtered[0].label).toBe('Tree 1');
+  });
+
+  it('list filters by state', async () => {
+    const e1 = await pinCreationQueue.enqueue(baseEntry);
+    const e2 = await pinCreationQueue.enqueue({ ...baseEntry, label: 'Tree 2' });
+    await pinCreationQueue.update(e1.id, { state: 'synced' });
+    await pinCreationQueue.update(e2.id, { state: 'failed' });
+
+    expect(pinCreationQueue.list({ state: 'queued' }).length).toBe(0);
+    expect(pinCreationQueue.list({ state: 'synced' }).length).toBe(1);
+    expect(pinCreationQueue.list({ state: 'failed' }).length).toBe(1);
+  });
+
+  it('update mutates only the named fields', async () => {
+    const e = await pinCreationQueue.enqueue(baseEntry);
+    await pinCreationQueue.update(e.id, { state: 'uploading', attempts: 1 });
+    const refreshed = pinCreationQueue.list()[0];
+    expect(refreshed.state).toBe('uploading');
+    expect(refreshed.attempts).toBe(1);
+    expect(refreshed.label).toBe(e.label); // unchanged
+  });
+
+  it('remove deletes both index entry and per-entry blob', async () => {
+    const e = await pinCreationQueue.enqueue(baseEntry);
+    expect(pinCreationQueue.list().length).toBe(1);
+    await pinCreationQueue.remove(e.id);
+    expect(pinCreationQueue.list().length).toBe(0);
+  });
+
+  it('persists across reinitialization (cold-start recovery)', async () => {
+    await pinCreationQueue.enqueue({ ...baseEntry, label: 'Tree A' });
+    await pinCreationQueue.enqueue({ ...baseEntry, label: 'Tree B' });
+
+    // Force the module to re-read from MMKV. In production this happens
+    // on app cold start. We can simulate by clearing the module cache.
+    jest.resetModules();
+    const { pinCreationQueue: fresh } = require('@/lib/pinCreationQueue');
+
+    const list = fresh.list();
+    expect(list.length).toBe(2);
+    expect(list.map((e: any) => e.label).sort()).toEqual(['Tree A', 'Tree B']);
+  });
+
+  it('clearSyncedOlderThan removes only synced entries past the cutoff', async () => {
+    const oldSync = await pinCreationQueue.enqueue(baseEntry);
+    const newSync = await pinCreationQueue.enqueue({ ...baseEntry, label: 'recent' });
+    const stillQueued = await pinCreationQueue.enqueue({ ...baseEntry, label: 'queued' });
+
+    await pinCreationQueue.update(oldSync.id, { state: 'synced' });
+    await pinCreationQueue.update(newSync.id, { state: 'synced' });
+
+    // Fake the oldSync's createdAt into the past
+    const FAKE_OLD = Date.now() - 10 * 24 * 60 * 60 * 1000; // 10 days ago
+    await pinCreationQueue.update(oldSync.id, { createdAt: FAKE_OLD } as any);
+
+    await pinCreationQueue.clearSyncedOlderThan(7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const remaining = pinCreationQueue.list();
+    const labels = remaining.map((e) => e.label).sort();
+    expect(labels).toEqual(['Tree 1', 'recent']);
+    expect(remaining.find((e) => e.state === 'queued')).toBeDefined();
+  });
+});

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# tests/mc/SLICE-MC4-test.sh
+# Run after SLICE MC4 lands. MC4 is mostly UI; this script does the small
+# automatable parts and prints a manual checklist for the rest.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_setup.sh"
+
+require_env API_BASE_URL ADMIN_USERNAME ADMIN_PASSWORD
+
+echo "SLICE MC4 — Workspace Map + Layer Tile Picker tests"
+
+section "API smoke: existing map-data endpoints still work"
+
+if login_as "$ADMIN_USERNAME" "$ADMIN_PASSWORD"; then
+  pass "admin login"
+else
+  fail "admin login failed — aborting"
+  summarize
+fi
+
+# Find any community with at least one map layer
+COMM_WITH_LAYERS=$(psql_value "SELECT community_id FROM map_layers GROUP BY community_id ORDER BY count(*) DESC LIMIT 1" 2>/dev/null)
+if [ -z "$COMM_WITH_LAYERS" ]; then
+  note "no communities with map layers — skipping API smoke. (this is OK on a fresh DB)"
+else
+  BOUNDS_STATUS=$(api_status GET "/api/communities/$COMM_WITH_LAYERS/bounds")
+  if [ "$BOUNDS_STATUS" = "200" ] || [ "$BOUNDS_STATUS" = "404" ]; then
+    pass "GET /api/communities/:id/bounds returns $BOUNDS_STATUS (200 or 404 acceptable)"
+  else
+    fail "GET /api/communities/:id/bounds returned $BOUNDS_STATUS"
+  fi
+
+  CONTROLLERS_STATUS=$(api_status GET "/api/communities/$COMM_WITH_LAYERS/controllers")
+  if [ "$CONTROLLERS_STATUS" = "200" ]; then
+    pass "GET /api/communities/:id/controllers returns 200"
+  else
+    fail "GET /api/communities/:id/controllers returned $CONTROLLERS_STATUS"
+  fi
+fi
+
+logout
+
+section "Jest: asset type catalog structure"
+
+# If the slice created the catalog Jest test, run it
+if [ -f "artifacts/vrtsync-mobile/__tests__/mc/mcAssetTypeCatalog.test.ts" ]; then
+  if pnpm --filter @workspace/vrtsync-mobile run test -- __tests__/mc/mcAssetTypeCatalog.test.ts 2>&1 | tail -20 | grep -q "Tests:.*passed"; then
+    pass "mcAssetTypeCatalog.test.ts passed"
+  else
+    fail "mcAssetTypeCatalog.test.ts failed — see Jest output"
+  fi
+else
+  note "no Jest test for asset type catalog at __tests__/mc/mcAssetTypeCatalog.test.ts (optional)"
+fi
+
+section "MANUAL CHECKLIST (UI — cannot automate)"
+
+cat <<'EOF'
+Run through these on the mobile dev client with a map_creator login:
+
+  [ ] Open a customer that has KML-imported data. The map renders all features
+      with the same visuals you see in the contractor map tab.
+  [ ] Open a brand-new customer with no features. Empty map renders, centered
+      on a reasonable default.
+  [ ] Three layer pills visible: Trees / Community / Irrigation.
+  [ ] Tapping a pill changes the tile grid below to that layer's asset types.
+  [ ] Each tile shows count badges for any existing assets of that type.
+  [ ] Tap a tile to arm it; a Cancel pill appears; the tile is visually
+      highlighted as armed.
+  [ ] When armed: a halo appears around the user's location, colored green/
+      yellow/red based on GPS lock state.
+  [ ] When armed: a sticky bottom card appears with "Drop a {type} when GPS
+      is green. Coming in MC5..." copy.
+  [ ] "Lock Pin Here" button is RENDERED but DISABLED. Helper text references MC5.
+  [ ] Disarm by tapping the tile again or tapping Cancel. Halo and card hide.
+  [ ] Header strip shows per-type counts ("2 controllers · 14 zones · 47 trees")
+      sourced from the same data the map uses.
+  [ ] Leaving the workspace (tap a tab) stops the GPS watcher (verifiable by
+      console.log in the high-accuracy hook).
+  [ ] No regression: contractor login still shows the existing map tab unchanged.
+EOF
+
+summarize
