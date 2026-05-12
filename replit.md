@@ -27,7 +27,7 @@ A field-operations platform for landscape and HOA community management — mobil
 - `artifacts/api-server/src/routes/routes.ts` — all API routes (`registerRoutes`)
 - `artifacts/api-server/src/app.ts` — Express app setup (CORS, sessions)
 - `artifacts/api-server/src/index.ts` — startup migrations, seeds, scheduler
-- `artifacts/api-server/src/shared/` — code shared between server and mobile (layerColors, assetFieldTemplates, leaflet-map-template)
+- `artifacts/api-server/src/shared/` — code shared between server and mobile (layerColors, assetFieldTemplates)
 - `artifacts/web-portal/src/server.ts` — lightweight Express server for all web portal routes
 - `artifacts/web-portal/public/` + `artifacts/web-portal/templates/` — static HTML/CSS/JS for web portals
 - `artifacts/vrtsync-mobile/app/` — expo-router screens (`(auth)`, `(tabs)` crew, `(hoa-tabs)` HOA)

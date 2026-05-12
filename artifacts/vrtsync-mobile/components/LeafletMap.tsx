@@ -5,10 +5,10 @@ import { getApiUrl } from '@/lib/query-client';
 /**
  * The Leaflet map HTML is imported from the canonical shared template.
  * To change map styling, marker shapes, popup layout, or any map CSS,
- * edit ONLY shared/leaflet-map-template.ts — it is the single source of truth
+ * edit ONLY lib/leaflet-template/src/index.ts — it is the single source of truth
  * used by both this mobile component and the web portal iframe.
  */
-import { LEAFLET_MAP_HTML } from '@/shared/leaflet-map-template';
+import { LEAFLET_MAP_HTML } from '@workspace/leaflet-template';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {

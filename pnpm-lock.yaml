@@ -481,6 +481,10 @@ importers:
         version: 3.25.76
 
   artifacts/vrtsync-mobile:
+    dependencies:
+      '@workspace/leaflet-template':
+        specifier: workspace:*
+        version: link:../../lib/leaflet-template
     devDependencies:
       '@babel/core':
         specifier: ^7.25.2
@@ -656,6 +660,9 @@ importers:
 
   artifacts/web-portal:
     dependencies:
+      '@workspace/leaflet-template':
+        specifier: workspace:*
+        version: link:../../lib/leaflet-template
       connect-pg-simple:
         specifier: ^10.0.0
         version: 10.0.0
@@ -748,6 +755,15 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.21.0
+
+  lib/leaflet-template:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
 
   scripts:
     devDependencies:

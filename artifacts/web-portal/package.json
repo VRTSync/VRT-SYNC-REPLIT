@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@workspace/leaflet-template": "workspace:*",
     "connect-pg-simple": "^10.0.0",
     "express": "^5",
     "express-session": "^1.19.0",

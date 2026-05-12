@@ -8,7 +8,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pg from "pg";
 import pino from "pino";
-import { LEAFLET_MAP_HTML } from "./leaflet-map-template";
+import { LEAFLET_MAP_HTML } from "@workspace/leaflet-template";
 
 const logger = pino({ name: "web-portal" });
 const app: Express = express();
