@@ -1,0 +1,147 @@
+SLICE MC3 — High-Accuracy GPS Capture Service (Mobile)
+
+Goal
+Build a reusable, high-accuracy GPS capture hook for the Map Creator workflow. The current app uses `Location.getCurrentPositionAsync({})` with default accuracy (~10–30m horizontal error on most phones), which is fine for "where is the user roughly?" but useless for placing a sprinkler head or a tree pin. MC3 introduces `useHighAccuracyLocation()`, a hook that streams `BestForNavigation`-accuracy fixes, maintains an averaging window with outlier rejection, exposes a lock state (green ≤ 3m, yellow 3–5m, red > 5m), and lets the consumer snapshot a final averaged position. This slice is a **service slice** — no production UI is added beyond a debug screen in the Map Creator portal for testing. MC5 and MC6 will consume the hook for actual pin drops.
+
+After MC3, a Map Creator can navigate to a "GPS Debug" screen in Settings, request location permission, watch the lock state update live in the field, and verify the hook gives them an accurate fix on real properties.
+
+Pre-requisites
+- SLICE MC1 + FIX-2 + MC2 merged (Map Creator users can log in, see Customers, enter a workspace placeholder).
+
+Scope (IN)
+
+1) New hook — `artifacts/vrtsync-mobile/hooks/useHighAccuracyLocation.ts`
+- Public API:
+  ```ts
+  type LockState = 'red' | 'yellow' | 'green';
+
+  type Fix = {
+    latitude: number;
+    longitude: number;
+    accuracy: number;          // metres, horizontal HDOP-derived
+    timestamp: number;         // ms since epoch
+    sampleCount: number;       // how many fixes contributed to the averaged position
+    lockState: LockState;
+    age: number;               // ms since most recent raw fix
+  };
+
+  type UseHighAccuracyLocationResult = {
+    permission: 'undetermined' | 'granted' | 'denied';
+    requestPermission: () => Promise<boolean>;
+    isWatching: boolean;
+    start: () => Promise<void>;
+    stop: () => void;
+    reset: () => void;          // clears averaging buffer
+    snapshot: () => Fix | null; // captures current averaged fix; null if not green/yellow
+    fix: Fix | null;            // live, re-emits as new samples arrive
+  };
+
+  export function useHighAccuracyLocation(options?: {
+    sampleWindow?: number;      // default 10 (last N raw fixes considered)
+    minSamplesForLock?: number; // default 5 (must have ≥N samples before any non-red lock)
+    outlierAccuracyMax?: number;// default 20 (drop raw fixes with accuracy > N metres)
+    greenThreshold?: number;    // default 3 (averaged accuracy ≤ N metres)
+    yellowThreshold?: number;   // default 5 (averaged accuracy ≤ N metres)
+    pollIntervalMs?: number;    // default 500
+  }): UseHighAccuracyLocationResult;
+  ```
+- Behaviour:
+  - On `start()`, request foreground location permission if not already granted. If denied, throw a typed error and emit a console warning; consumer's responsibility to surface to UI.
+  - Start `Location.watchPositionAsync` with `accuracy: Location.Accuracy.BestForNavigation`, `distanceInterval: 0`, `timeInterval: options.pollIntervalMs`.
+  - Maintain a ring buffer of the last N raw fixes (`sampleWindow`). Reject any raw fix whose `accuracy > outlierAccuracyMax`.
+  - The averaged position is the mean of the buffer's lat/lng. The reported `accuracy` is the **median** of the raw accuracies in the buffer (more robust than the mean for noisy field reads).
+  - `lockState`:
+    - `'red'` until `buffer.length >= minSamplesForLock`, then based on averaged accuracy:
+    - `'green'` if `medianAccuracy <= greenThreshold`
+    - `'yellow'` if `medianAccuracy <= yellowThreshold`
+    - `'red'` otherwise
+  - `snapshot()`:
+    - Returns `null` if `lockState === 'red'`.
+    - Otherwise returns the current `Fix`. Does **not** stop the watcher; consumer can keep accumulating after snapshot.
+  - On `stop()`, the watcher is unsubscribed; the buffer is preserved (so a quick re-`start()` doesn't have to re-acquire).
+  - On `reset()`, the buffer is cleared. `fix` becomes `null` until new raw fixes arrive.
+- Internal correctness:
+  - Latitude/longitude averaging uses simple arithmetic mean. This is correct for any reasonable property-scale span (< 1 km). For wider spans (which Map Creators never have for one property) the cosine correction would matter; out of scope.
+  - The hook must clean up its subscription on unmount.
+  - The hook must survive backgrounding: when the app foregrounds, if `isWatching` was true, automatically resume the watcher.
+
+2) Debug screen — `artifacts/vrtsync-mobile/app/(mc-tabs)/settings.tsx`
+- Replace the MC1 placeholder with a Settings screen that contains a **GPS Debug** card. The rest of Settings remains empty for now; we'll populate over time.
+- GPS Debug card:
+  - Title: "GPS Debug"
+  - Body when watcher is **off**: a single primary button "Start GPS test". Tapping it calls `requestPermission()` then `start()`. If permission is denied, surface a friendly inline error with a "Open Settings" deep-link button (use `Linking.openSettings()`).
+  - Body when watcher is **on**:
+    - Big lock-state pill: red / yellow / green with the current state.
+    - Live numeric readout: `lat`, `lng`, `accuracy` (metres, to 1 decimal), `samples` (`buffer.length / sampleWindow`), and `age` (seconds since last raw fix).
+    - "Snapshot" button (disabled when red): logs the snapshotted fix to the console and shows it briefly on screen for visual confirmation.
+    - "Reset buffer" button.
+    - "Stop GPS test" button.
+- This screen is the **only** consumer of the hook in MC3. Map screens and pin-drop UIs do not exist yet — MC4 and MC5 will add them.
+- Visual style: match the existing app's card pattern from `(tabs)/profile.tsx` or `(hoa-tabs)/profile.tsx`.
+
+3) Permission strings — `artifacts/vrtsync-mobile/app.json`
+- Verify `expo.ios.infoPlist.NSLocationWhenInUseUsageDescription` exists and explains the use clearly. If not, add:
+  ```json
+  "NSLocationWhenInUseUsageDescription": "VRT Sync uses your location to capture accurate map pins while you build out a property."
+  ```
+- Same for Android — verify `expo.android.permissions` includes `ACCESS_FINE_LOCATION` (typically already present because the existing map tab uses location).
+
+4) Re-export the hook
+- `artifacts/vrtsync-mobile/hooks/index.ts` *(create if it doesn't exist)*: `export { useHighAccuracyLocation } from './useHighAccuracyLocation';`. Convenience only.
+
+Scope (OUT)
+- Any map rendering or drop-pin UI. The hook is consumed by MC5/MC6; no map work here.
+- Background location. The watcher only runs in foreground; we don't need background tracking for the Map Creator use case.
+- Configurable thresholds in the database. Defaults are baked into the hook for MC3. If field experience shows we need per-community overrides, a follow-up slice can add them.
+- Cellular triangulation or any non-GPS fallback. We're explicitly opting into the most accurate source available; if the user is indoors, `lockState` will sit red and that's correct behavior.
+- Photo/EXIF GPS tagging. Out of scope here; MC5 handles photo capture.
+- Battery-impact monitoring or auto-pause. We trust the hook user to stop the watcher when they're not actively placing pins (the workspace screen in MC4 will start/stop based on focus).
+
+Files to touch
+- `artifacts/vrtsync-mobile/hooks/useHighAccuracyLocation.ts` *(new)*.
+- `artifacts/vrtsync-mobile/hooks/index.ts` *(new — convenience re-export)*.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/settings.tsx` — replace MC1 placeholder with the Settings + GPS Debug screen.
+- `artifacts/vrtsync-mobile/app.json` — permission-string sanity check, add if missing.
+
+Acceptance Criteria
+
+A) Hook contract
+- `useHighAccuracyLocation()` returns the object described above.
+- Calling `start()` without permission first triggers the OS permission prompt; once granted, the watcher begins emitting fixes within ~1–2s outdoors.
+- The buffer's outlier rejection drops any raw fix with `accuracy > outlierAccuracyMax`; this is visible because the rejected fix never appears in the running average.
+- `lockState` is `'red'` for the first few samples even with good GPS — proves the `minSamplesForLock` gate works.
+- `snapshot()` returns the current averaged Fix when state is green or yellow; returns `null` when state is red.
+
+B) Debug screen
+- Settings tab on a map_creator login shows the GPS Debug card.
+- Tapping "Start GPS test" prompts for permission on first run.
+- After grant, live readouts update at roughly the configured `pollIntervalMs`.
+- Lock pill changes color in real time as the buffer fills and averaged accuracy improves.
+- The "Snapshot" button is disabled while red; enabled when yellow/green.
+
+C) No regression
+- Other login roles still see their existing tabs and behaviors.
+- The Customers tab and workspace placeholder from MC2 are unchanged.
+
+D) Permissions
+- iOS Info.plist string is present and reads naturally.
+- Android `ACCESS_FINE_LOCATION` is present.
+
+E) Build & typecheck
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors introduced.
+
+Test plan
+- Unit-style sanity: run the dev client on a real device (simulator GPS is fake and won't exercise outlier rejection meaningfully). Take the phone outdoors, start the watcher, observe lock transitions over ~30 seconds. State should reach green within roughly 10–20 seconds in open sky.
+- Indoor / underground test: state should remain red or fluctuate at yellow. `snapshot()` should refuse to return a fix while red.
+- Permission test: deny permission once; UI should show the friendly error + Open Settings link. Re-grant and verify the watcher starts.
+- Backgrounding test: start the watcher, background the app for 30s, foreground; watcher should auto-resume.
+
+Risk & rollback
+- Risk: **low**. New code path; no existing screens modified. The hook is opt-in.
+- Real-world risk: phones with bad GPS chipsets, or weather/canopy conditions, may keep state at yellow for extended periods. This is correct behavior, not a defect; MC5 will let the user override to save even on yellow.
+- Rollback: revert the commit. No persistent state on the device beyond the granted permission, which is OS-level and not specific to this slice.
+
+Open questions
+- Should averaged-lat-lng use cosine correction? Recommended: not in MC3. The improvement is below ~0.5m at all reasonable property-scale spans; not worth the code.
+- Should the thresholds be per-property or per-asset-type (e.g. a tree can be sloppier than a sprinkler head)? Recommended: not yet. Field test with one threshold; revisit if pin re-shoots are frequent.
+- Should the hook auto-stop after N seconds of inactivity to save battery? Recommended: leave to the consumer (the workspace screen in MC4 will stop on blur).

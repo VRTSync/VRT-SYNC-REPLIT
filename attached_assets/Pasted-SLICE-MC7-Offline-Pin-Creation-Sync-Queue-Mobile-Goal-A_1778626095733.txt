@@ -1,0 +1,169 @@
+SLICE MC7 — Offline Pin Creation + Sync Queue (Mobile)
+
+Goal
+A Map Creator standing in the middle of a property without cell signal must be able to keep working. This slice makes everything from MC5 and MC6 (pin drops, photos, controller and zone creation) fully offline-capable: pins land in a local queue, photos save to file storage, the queue flushes automatically when the network returns, and the workspace UI tells the user how many pins are pending sync. The architecture follows the same MMKV + file-system durable pattern introduced in P0 Slice 3 — no new persistence machinery; just a new queue table on top of the existing storage primitives. After MC7, the field workflow is robust to dead zones, airplane mode, and dropped wi-fi.
+
+Pre-requisites
+- SLICE MC1, FIX-2, MC2, MC3, MC4, MC5, MC6 merged.
+- P0 Slice 2 (durable offline pack storage) and P0 Slice 3 (durable per-photo upload state) already in place.
+
+Scope (IN)
+
+1) Mobile — local pin-creation queue
+- New file: `artifacts/vrtsync-mobile/lib/pinCreationQueue.ts`.
+- Persistence:
+  - MMKV (single instance, id `vrtsync-pin-queue`) stores the queue index — a JSON array of pin entry IDs, plus a per-entry metadata blob.
+  - File-system (`expo-file-system`) stores per-pin photo blobs at `${FileSystem.documentDirectory}pin-queue/<entryId>/photo.jpg` so the queue can survive cold start without bloating MMKV.
+- Public API:
+  ```ts
+  type PendingPinEntry = {
+    id: string;                  // local UUID
+    communityId: string;
+    assetType: string;
+    label: string;
+    customName?: string;
+    description?: string;
+    latitude: number;
+    longitude: number;
+    gpsAccuracy: number;
+    lockStateAtCapture: 'green' | 'yellow';
+    properties: Record<string, string>;       // includes controller* fields for zones
+    photoPath?: string;          // file-system path; absent if no photo
+    createdAt: number;           // ms epoch — local time the pin was captured
+    state: 'queued' | 'uploading' | 'failed' | 'synced';
+    attempts: number;
+    lastErrorMessage?: string;
+    serverAssetId?: string;      // populated on successful sync
+  };
+
+  export const pinCreationQueue = {
+    enqueue(entry: Omit<PendingPinEntry, 'id' | 'state' | 'attempts' | 'createdAt'>): Promise<PendingPinEntry>;
+    list(filter?: { communityId?: string; state?: PendingPinEntry['state'] }): PendingPinEntry[];
+    remove(id: string): Promise<void>;
+    update(id: string, patch: Partial<PendingPinEntry>): Promise<void>;
+    clearSyncedOlderThan(ms: number): Promise<void>;
+  };
+  ```
+- Atomicity: each `enqueue`/`update` writes the index *after* the per-entry blob is saved, so a crash mid-write leaves either the old state or a complete new state — never a half-write.
+
+2) Mobile — sync orchestrator
+- New file: `artifacts/vrtsync-mobile/lib/pinSyncOrchestrator.ts`.
+- Responsibilities:
+  - Walk the queue and POST each `queued` or `failed` (with backoff window respected) entry to `/api/assets`, then upload its photo if present.
+  - On success: mark the entry `synced` with the `serverAssetId`. Optimistically inject the new asset into the React Query cache so the workspace map updates without waiting for a server fetch.
+  - On failure: bump `attempts`, set `state = 'failed'`, store the error message. Exponential backoff: 5s, 30s, 2m, 10m, then daily.
+  - On photo upload failure but successful asset insert: the entry's `state` stays `'failed'` until both succeed. The asset row exists on the server with no attachment; this is fine — the user can retry to attach the photo, or it'll happen on the next orchestrator pass.
+- Trigger points:
+  - App foreground (`AppState` change to `active`).
+  - Network reconnect (`@react-native-community/netinfo` `addEventListener` for `isConnected: true`). NetInfo is already in the dep graph for the existing OfflineContext; reuse.
+  - Manual "Sync now" button from the workspace UI (step 4).
+  - On a 30-minute idle timer while the app is foreground and online — catches the case where the user is online but no other trigger fires.
+- The orchestrator must be a singleton; multiple concurrent passes would double-create assets. Use a simple `isRunning` boolean guard.
+
+3) Mobile — PinDropSheet integration
+- When the user taps "Save Pin" in `<PinDropSheet>`:
+  - If `useOffline().isOnline === true` and the previous queue is empty: do the existing online flow (direct POST). On success, no queue interaction.
+  - If `isOnline === false` *or* the queue already has pending entries: enqueue the entry instead of POSTing directly. The sheet dismisses, the toast says "Pin saved offline — will sync when you're back online" with a count of pending pins.
+  - In both cases: optimistically render the pin on the map using the captured fix (via React Query optimistic update). The orchestrator reconciles with the real server ID after sync.
+- Photo path: if a photo was captured, copy it from the temp camera/library URI into the queue's per-entry directory before enqueueing (so a `cleanup` of the camera roll doesn't break the photo).
+
+4) Mobile — Sync UI in the workspace
+- Add a small sync chip in the header strip of `app/mc-workspace/[id].tsx`:
+  - When `pinCreationQueue.list({ communityId, state: 'queued' or 'failed' }).length > 0`:
+    - Chip color: amber for queued, red for failed.
+    - Label: "N pending" (or "N failed").
+  - Tap the chip: opens a small bottom sheet listing pending entries with `label`, `assetType`, `createdAt`, current `state`, and (for failed) the last error message. Each entry has a "Retry now" button. A header "Sync all" button kicks the orchestrator.
+- When the queue is empty: no chip; the header strip looks like MC4.
+
+5) Mobile — Workspace map shows pending pins
+- Optimistic markers for `state === 'queued'` or `'failed'` entries appear on the map with a slightly distinct style (e.g. dashed outline, or a small "pending" badge). The marker pops to a normal style as soon as the entry reaches `'synced'`.
+- This requires extending the LeafletMap template's marker rendering with a `pending: true` flag. Reuse the existing marker shape — just change the stroke or add a small clock icon.
+
+6) Mobile — Queue retention policy
+- On orchestrator success for an entry: keep it in MMKV with `state: 'synced'` for **7 days**, then prune via `clearSyncedOlderThan(7 * 24 * 60 * 60 * 1000)` on app foreground. Reason: lets the user see "yes, my morning's work synced" for a reasonable window even after they're back online.
+- Photos for `synced` entries are deleted from the file-system as soon as the upload succeeds — no need to keep the local copy once it's safely on the server.
+
+Scope (OUT)
+- Offline reads of pins another user created. This slice handles offline writes from the local Map Creator; reading other people's data offline is covered by the existing offline-pack feature (P0 Slices 2/3).
+- Conflict resolution. The architecture deliberately avoids conflicts by using server-generated asset IDs and unique client-generated featureRefs. There is no "merge" path.
+- Background sync (true background fetch via iOS BGTask / Android WorkManager). Not needed for the field workflow — the user opens the app when they're back at the truck and the foreground trigger fires.
+- Editing a pending pin's content (label/description/photo) before sync. Recommend a follow-up slice if field demand surfaces; out for now to keep the queue model simple.
+- Bulk import of an entire day's work from a separate device. Out of scope.
+
+Files to touch
+- `artifacts/vrtsync-mobile/lib/pinCreationQueue.ts` *(new)*.
+- `artifacts/vrtsync-mobile/lib/pinSyncOrchestrator.ts` *(new)*.
+- `artifacts/vrtsync-mobile/components/PinDropSheet.tsx` — branch save logic between direct POST and enqueue.
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` — sync chip, pending sheet, optimistic markers.
+- `artifacts/vrtsync-mobile/client/contexts/OfflineContext.tsx` — only if the existing context doesn't already expose the NetInfo subscription the orchestrator needs. Reuse if possible.
+- `lib/leaflet-template/src/index.ts` — extend marker rendering to handle a `pending: true` flag.
+- No backend changes.
+
+Implementation order
+
+1. **Build `pinCreationQueue.ts` in isolation.** Cover enqueue / list / update / remove / clearSynced behavior with quick console-driven tests. Verify cold-start recovery.
+2. **Build `pinSyncOrchestrator.ts`.** Mock the API call first; verify the state machine (queued → uploading → synced or failed → retry).
+3. **Wire orchestrator triggers.** Foreground, NetInfo, idle timer, manual button. Verify each via dev tools.
+4. **Branch the PinDropSheet save flow.** Add the offline / queue-not-empty enqueue path. Optimistic marker update.
+5. **LeafletMap template extension** for the `pending` marker style.
+6. **Sync chip + pending sheet** in the workspace header.
+7. **Retention policy.** Wire `clearSyncedOlderThan` to fire on foreground.
+8. **End-to-end offline test:**
+   - Enable airplane mode. Place 5 pins (mix of types and a Zone with parent). All five enqueue. Optimistic markers appear.
+   - Disable airplane mode. Watch the orchestrator burn down the queue. All five become `synced` and the chip disappears.
+   - Force-kill the app mid-sync. Reopen. The remaining queue resumes from where it left off.
+
+Acceptance Criteria
+
+A) Queue persistence
+- Pins enqueued during offline mode survive an app force-kill and a device reboot.
+- Photos captured during offline mode survive the same conditions.
+
+B) Sync triggers
+- The orchestrator runs on app foreground if any `queued` or eligible-for-retry `failed` entries exist.
+- The orchestrator runs within ~3s of NetInfo reporting reconnect.
+- Manual "Sync now" runs the orchestrator immediately.
+- Two simultaneous triggers do not cause double-creates (verified by counting `assets` rows after the dust settles).
+
+C) Backoff
+- A failed entry retries on the 5s / 30s / 2m / 10m / daily schedule.
+- A failed entry can be force-retried via the Retry button regardless of backoff.
+
+D) UI
+- Sync chip appears when there are pending entries; disappears when zero.
+- Pending sheet shows the right counts and per-entry details, including error messages for failed entries.
+- Optimistic pending markers render on the map and transition to normal style on successful sync.
+
+E) Photo handling
+- Photo blobs deleted from local file system after successful attachment upload.
+- Asset successfully created but photo upload still pending leaves the entry in `failed` state with a useful error message; subsequent sync attempts only retry the photo upload, not the asset insert.
+
+F) Retention
+- `synced` entries older than 7 days are pruned automatically on app foreground.
+- `synced` entries newer than 7 days remain visible (e.g. in a "recently synced" tab if we add it; out of scope here but the data supports it).
+
+G) No regression
+- Online pin creation in MC5/MC6 still works without queue involvement when the queue is empty and the network is up.
+- Other roles' map experiences and the offline pack download flow are unchanged.
+
+H) Build & typecheck
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors.
+- If the leaflet template was touched, `pnpm --filter @workspace/leaflet-template run typecheck` passes.
+- All consumers of the leaflet template (web-portal, mobile) build and render correctly with the new `pending` flag default-false.
+
+Test plan
+- Manual end-to-end: described in step 8 above.
+- Edge: place a pin offline; before regaining network, force-quit; reopen and rejoin network; verify pin lands.
+- Edge: place a pin offline; the server later rejects it (artificially induce a 4xx); verify the entry goes to `failed` with the error and stays in the queue for retry.
+- Edge: place 50 pins offline in rapid succession; observe orchestrator behavior — should serialize cleanly without doubles.
+
+Risk & rollback
+- Risk: **medium-high**. This is the most complex slice in the MC series because of the multi-actor state machine (UI, queue, orchestrator, server, photo pipeline).
+- Mitigation: every state transition is observable in the queue's `state` field; the pending sheet UI surfaces failures clearly; the orchestrator is idempotent on every retry (client-generated featureRef makes server-side dupe-detection a no-op).
+- Rollback: revert the commit. Any pins still in the queue at rollback time can be drained by reverting to a build that has the orchestrator; if rollback persists, the user can manually re-place those pins (data isn't lost; it just doesn't auto-sync without the orchestrator code).
+- Photo loss risk: very low. Photos copy from the temp URI into the queue directory before enqueue; the temp URI is irrelevant after.
+
+Open questions
+- Should the pending-sheet allow editing a queued entry's metadata before sync? Recommended: not in MC7; defer.
+- Should the orchestrator try to deduplicate against the server if the user manually re-placed a pin that was already in the queue (paranoia)? Recommended: no; client-generated featureRef + server unique index already prevents true duplicates; the worst case is two visually-coincident pins with different featureRefs, which is the user's intent if they re-placed it.
+- Should the sync state be visible system-wide (e.g. a global pending count on the Customers tab) so the user knows they have un-synced work in other customers? Recommended: yes — small badge on the Customers tab counting un-synced entries across all customers. Easy add; include in this slice.

@@ -1,0 +1,158 @@
+SLICE MC8 — Review Mode + Lock Community (Mobile + Backend)
+
+Goal
+Close the field loop. After a Map Creator has placed all their pins for a property, they need a way to (a) see a per-type tally so they know they got everything, (b) find any pins they saved on yellow lock or with high accuracy so they can re-shoot them, and (c) "lock" the customer to signal "this property is done" — which puts the community in a read-only state for the Map Creator role (admins remain unaffected). After MC8, the Google Earth replacement is feature-complete: walk in, build the map, review, lock, walk out.
+
+Pre-requisites
+- All previous MC slices merged (MC1 through MC7).
+
+Scope (IN)
+
+1) Schema — add a lock state to communities
+- New columns on `communities` table:
+  - `is_map_creator_locked` boolean NOT NULL DEFAULT false
+  - `map_creator_locked_at` timestamp NULL
+  - `map_creator_locked_by` varchar NULL → references `users.id` (ON DELETE SET NULL)
+- Drizzle migration: generate via `pnpm --filter @workspace/db run migrate:generate`. Three additive columns; safe on existing data.
+
+2) Backend — endpoints + scope guards
+- New endpoint: `PATCH /api/communities/:id/map-creator-lock` (uses `requireAdminOrMapCreator`):
+  - Body: `{ "locked": true }` or `{ "locked": false }`.
+  - On `true`: sets the three lock columns. Caller must be a member of the community (already enforced).
+  - On `false`: clears the three lock columns. **Only admins can unlock.** A map_creator attempting to unlock returns 403. Rationale: once a Map Creator says they're done, only an admin should re-open it (prevents accidental "I'm done, oh wait I'll just keep going" mode drift; also gives admins control over project scope).
+- Modify `POST /api/assets`, `PATCH /api/assets/:id`, `PUT /api/assets/:id/properties`, and `POST /api/assets/:id/attachments` (all touched in MC5): when the caller is a map_creator AND the target community has `is_map_creator_locked = true`, reject with 423 (Locked) and a clear error message: "This customer is marked complete by the map creator. Ask an admin to unlock."
+- Admins are exempt from the lock at the API level. They can keep editing.
+
+3) Mobile — Review Mode toggle in the workspace
+- New header pill in `app/mc-workspace/[id].tsx` next to the per-type counts: **Review** (toggle). When on, the workspace enters review mode.
+- Review mode behavior:
+  - The tile-picker overlay and "Lock Pin Here" UI hide (no creation in this mode).
+  - A new bottom panel appears with two tabs:
+    - **Tally**: per-type counts, broken down where it matters. For Irrigation, group by Controller letter and show its zone count (e.g. "Controller A — 14 zones · Controller B — 9 zones"). For Trees, just the total. The display matches the design language already in the header strip but more roomy.
+    - **Re-shoot list**: every Asset created by this user (or, if we want to be community-wide, every Asset in the community — pick one and document) whose `properties.gps_accuracy > 3` (yellow at capture) or, if `gps_accuracy` is missing, every asset with no recorded accuracy. Each row: pin label, type, recorded accuracy, "Show on map" (centers and highlights the pin), "Re-shoot now" (centers, arms the corresponding type, opens the GPS halo so the user can drop a replacement). When the replacement is saved, the old pin is archived (`assets.is_archived = true`).
+- Tapping "Show on map" centers the map on that pin and flashes a highlight ring around it for ~2 seconds.
+
+4) Mobile — Lock action
+- A primary button at the bottom of Review Mode: **Mark customer complete & lock**. Confirm dialog: "Lock this customer? You won't be able to add or edit pins after this — an admin will need to unlock."
+- On confirm: `PATCH /api/communities/:id/map-creator-lock` with `{ locked: true }`. On 200: show toast "Customer locked", set the workspace to locked state (see step 5), bounce back to the Customers tab after a moment.
+- A small secondary "Cancel review" button reverts Review Mode → Edit Mode.
+
+5) Mobile — Locked-customer rendering
+- When a Map Creator opens a locked customer:
+  - The workspace map renders normally (read-only).
+  - The tile-picker and pin-drop UI are hidden.
+  - A banner across the top reads: "Locked by you on {date}. Ask an admin to unlock if changes are needed."
+  - The Customers list shows a small lock icon next to locked customer cards.
+- If a Map Creator hits the API directly for a locked community, they get the 423 documented in step 2. The mobile client should also display the 423 message inline if the user attempts an edit they shouldn't have access to (shouldn't happen with the UI hidden, but belt-and-suspenders).
+
+6) Backend — Admin unlock UI hint (no UI changes in MC8)
+- Out of scope for new UI in the admin web portal in MC8 — admins can hit the PATCH endpoint via curl or a tiny CLI for now. Worth a one-line note in `replit.md` saying "to unlock a Map Creator-locked community, PATCH /api/communities/:id/map-creator-lock with `{ locked: false }` as an admin."
+- A follow-up TIDY slice can add a proper admin button in the web portal.
+
+7) Mobile — Re-shoot flow detail
+- When the user taps "Re-shoot now" on a low-accuracy pin:
+  - The workspace map centers on the original pin and zooms in.
+  - The tile-picker auto-selects the pin's `assetType` and arms it.
+  - For zones, auto-select the pin's parent Controller via the picker logic from MC6 (no extra tap).
+  - The `<PinDropSheet>` pre-fills the original `label`, `customName`, `description`, and uses a fresh GPS snapshot.
+  - On Save: a new asset is created (via the same MC5/MC6 + MC7 path), then the old asset is archived (`PATCH /api/assets/:id` with `{ is_archived: true }`). Archived assets fall out of the map by default but remain in the DB for audit.
+  - The Re-shoot list refreshes; the re-shot pin no longer appears (its replacement has good accuracy).
+
+Scope (OUT)
+- Bulk re-shoot (e.g. "re-shoot every yellow-lock zone in Controller A"). Out for MC8; field experience will say whether this is worth building.
+- Admin UI for locking / unlocking from the web portal. Mentioned above as a follow-up TIDY slice.
+- A "needs review" notification to admins when a Map Creator locks a customer. Notification system exists but wiring it here adds scope; can be a small follow-up.
+- A diff view ("here's what changed since last lock") for re-opened customers. Out — wait for demand.
+- Hard-deletion of replaced (low-accuracy) pins. Archive-only here. Hard deletion is an admin operation if ever wanted.
+
+Files to touch
+- `lib/db/src/schema/schema.ts` — add three columns to `communities`.
+- `lib/db/migrations/000X_<auto>.sql` *(new)*.
+- `artifacts/api-server/src/routes/routes.ts` — new lock endpoint; lock-aware rejection in the four asset-writing endpoints; surface the new community columns in the existing `GET /api/communities` response so the mobile client can render the lock state.
+- `artifacts/api-server/src/storage.ts` — helpers if needed (`setCommunityLockState`, `getCommunityLockState`).
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` — Review Mode toggle, Tally / Re-shoot tabs, Lock button, locked-state rendering.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/index.tsx` — lock icon on locked customer cards.
+- `artifacts/vrtsync-mobile/components/ReshootList.tsx` *(new)*.
+- `artifacts/vrtsync-mobile/components/TallyPanel.tsx` *(new)*.
+- `replit.md` — one-line note about the admin unlock CLI flow.
+
+Implementation order
+
+1. **Schema migration.** Generate, review (three additive columns), apply locally, verify in psql.
+2. **Backend lock endpoint.** Implement + curl-test the happy paths and the admin-only unlock rule.
+3. **Backend lock-aware rejection.** Modify the four asset-writing endpoints. Curl-test: lock a community, attempt to POST an asset as map_creator → 423; admin POST still works.
+4. **Surface `is_map_creator_locked` etc. in the `GET /api/communities` response.** The mobile client needs it for the lock icon and the workspace banner.
+5. **Mobile locked-state rendering.** Render the banner, hide creation UI, show the lock icon on the Customers list. Build incrementally and verify on a hand-locked community.
+6. **TallyPanel + ReshootList components.** Build in isolation with mock data.
+7. **Review Mode wiring.** Toggle the workspace into Review Mode; show both panels.
+8. **Lock button + confirmation.** End-to-end.
+9. **Re-shoot flow.** End-to-end on a yellow-lock pin: re-shoot, verify the new pin shows on the map, the old one is archived.
+10. **`replit.md` note.**
+
+Acceptance Criteria
+
+A) Schema & migration
+- Three new columns exist on `communities` with the right types and defaults.
+- Existing data is unaffected (all rows default `is_map_creator_locked = false`).
+
+B) Backend lock semantics
+- A map_creator can PATCH `{ locked: true }` on a community they're a member of. 200.
+- A map_creator cannot PATCH `{ locked: false }` (admin-only). 403.
+- A contractor / HOA user cannot PATCH at all. 403.
+- An admin can PATCH either direction. 200.
+
+C) Backend lock-aware rejection
+- After locking, a map_creator's `POST /api/assets` to that community returns 423 with the friendly error.
+- After locking, an admin's `POST /api/assets` to that community still works.
+- Unlocking restores normal behavior for map_creator.
+
+D) Mobile Review Mode
+- The Review toggle in the workspace shows Tally and Re-shoot tabs.
+- Tally shows per-type counts; Irrigation breaks down by Controller letter with zone counts.
+- Re-shoot list lists every pin with `gps_accuracy > 3` (or missing accuracy) for the current customer.
+- "Show on map" centers and flashes the pin.
+
+E) Mobile Lock flow
+- Tapping the Lock button shows the confirm dialog; confirming hits the API; on success, the workspace switches to locked rendering and the user is bounced to the Customers tab.
+
+F) Mobile Locked rendering
+- Customers list shows a lock icon on locked customers.
+- Opening a locked customer hides all creation UI and shows the lock banner with the lock date and a "needs admin to unlock" hint.
+
+G) Re-shoot flow
+- Tapping "Re-shoot now" arms the right type (with parent Controller for zones), pre-fills the metadata, and after save archives the original pin.
+- The Re-shoot list no longer lists the replaced pin after refresh.
+
+H) No regression
+- Other roles' map experiences and the existing offline-pack feature are unaffected.
+- Online pin drops (MC5/MC6) and offline queue (MC7) continue to function on unlocked communities.
+
+I) Build & typecheck
+- `pnpm --filter @workspace/db run migrate:check` passes.
+- `pnpm --filter @workspace/api-server run build` passes.
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors.
+
+Test plan
+- Manual: build a small property end-to-end (1 controller, 2 zones, 3 trees), Review, see Tally and any low-accuracy pins, Lock, verify the customer is now read-only, hit the API as admin to unlock, verify the workspace becomes editable again.
+- Permission matrix: try lock/unlock as each role; only the expected combinations succeed.
+
+Risk & rollback
+- Risk: **low–medium**. The schema change is additive. The hardest piece is the lock-aware rejection in four endpoints — verify by smoke-test rather than trusting code review alone.
+- Rollback: revert the commit. Locked communities at the moment of rollback simply lose their lock state (the column drops; existing rows preserved); admins can re-lock if needed once a fixed build ships.
+
+Open questions
+- Should we add a "Last modified" stamp to the Customers list so a map_creator can see which customers are stale and might need re-walking? Recommended: yes, small polish — out of MC8 scope if it complicates the slice; flag as TIDY.
+- Should locking auto-trigger an offline-pack regeneration so other users have the latest data? Recommended: not in MC8. The existing offline-pack feature regenerates on its own schedule; piggy-backing here adds coupling. Revisit if field demand surfaces.
+- Should we expose a public "Map Creator handed off this customer on YYYY-MM-DD" indicator to HOA / Contractor views as well? Recommended: not yet. Lock is currently a Map Creator-internal signal; broaden later if useful.
+
+Final note
+After MC8, the field workflow is:
+1. Map Creator logs in (MC1, FIX-2).
+2. Picks or creates a customer (MC2).
+3. Opens the workspace, sees the existing map (MC4) and current GPS lock (MC3).
+4. Arms a type, drops pins, with photos and descriptions, online or offline (MC5, MC7).
+5. For zones, picks parent controller — auto color, auto zone number (MC6).
+6. Switches to Review mode, sees tally, re-shoots any yellow pins (MC8).
+7. Locks the customer. Done.
+
+That is the Google Earth replacement.

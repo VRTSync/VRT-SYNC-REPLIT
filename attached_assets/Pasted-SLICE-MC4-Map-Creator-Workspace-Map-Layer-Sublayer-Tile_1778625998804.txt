@@ -1,0 +1,129 @@
+SLICE MC4 — Map Creator Workspace Map + Layer/Sublayer Tile Picker (Mobile)
+
+Goal
+Turn the MC2 workspace placeholder into a real, interactive map view of the selected customer. The map renders all of that customer's existing features (controllers, zones, trees, pet stations, etc.) using the same Leaflet-in-WebView component the rest of the app uses, so visual parity is automatic. On top of the map, this slice adds a Map Creator overlay: a layer selector (Trees / Community / Irrigation) and within the chosen layer, a tile grid of asset types you can drop. Tapping a tile **arms** drop-pin mode (visual halo around the user's location), but the actual drop-and-save flow doesn't land until MC5. After MC4, a Map Creator can enter a customer, see what's already mapped, and pick the type they intend to add next — they just can't save the pin yet.
+
+Pre-requisites
+- SLICE MC1, FIX-2, MC2, MC3 merged. The workspace placeholder exists, the GPS hook is available, the role system works end-to-end.
+
+Scope (IN)
+
+1) Replace the workspace placeholder body — `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx`
+- Keep the existing logic that reads `id` from `useLocalSearchParams()` and calls `setActiveCommunity(c)` on mount.
+- Replace the "Map workspace coming in MC4" body with the layout described in steps 2–4.
+- Header: customer name + small subtitle showing per-type counts (e.g. "2 controllers · 14 zones · 47 trees · 3 pet stations"). Source the counts from the same query that feeds the map (step 2). Empty counts read "no features yet."
+
+2) Render the customer's existing features on a LeafletMap
+- Reuse the existing `<LeafletMap>` component from `artifacts/vrtsync-mobile/components/LeafletMap.tsx`. It already accepts layer data via `setLayers`, controller markers via `setControllerMarkers`, zone markers via `setZoneMarkers`, and user location via `setUserLocation`.
+- Load layer GeoJSON the same way `(tabs)/map.tsx` does today:
+  - `useQuery(['map-layers', communityId], () => apiRequest(`/api/communities/${communityId}/map-layers-meta`))` for the layer metadata (or whatever endpoint `(tabs)/map.tsx` uses — match exactly, don't re-invent).
+  - For each layer, fetch the GeoJSON on demand.
+  - Reuse the controller/zone marker loading the existing tab does.
+- Center the map on the customer's bounds (`/api/communities/:id/bounds`); fall back to a reasonable default (US center, zoom 4) if bounds are unavailable (brand-new customer with no features).
+- The map is **read-only** in this slice. No tap-to-create yet. Feature taps can show the existing asset detail panel if it's easy to wire up, or do nothing (defer to MC8 review mode for that).
+
+3) Layer / sublayer tile picker — overlay UI
+- A top overlay bar with three layer pills, in this order: **Trees**, **Community**, **Irrigation**. The pill matches the layer's existing color from `shared/layerColors` (or the bundled stylesheet — match the existing map UX).
+- Below the pills, an expandable tile grid showing the asset types for the selected layer:
+  - **Trees** layer: `tree`
+  - **Community** layer: `pet_station`
+  - **Irrigation** layer: `controller`, `backflow`, `pump`, `master_valve`, `flow_meter`, `quick_connect`, `isolation_valve`, `zone`
+- Each tile is a square button with an icon, the type label, and (if any exist already for this customer) a small badge with the existing count. Tap → set the *armed type*.
+- The active layer pill is highlighted. The armed tile is highlighted within the grid. Only one tile is armed at a time.
+- A "Cancel" pill appears next to the armed tile so the user can disarm without picking a different type.
+
+4) Drop-mode visual feedback (no save yet)
+- When a tile is armed:
+  - Bring up the user-location halo on the map (a translucent circle whose radius equals the current GPS accuracy in metres from the MC3 hook). The halo is green/yellow/red depending on `lockState`.
+  - Bring up a sticky bottom hint card: "Drop a {type label} when GPS is green. Coming in MC5: tap Lock Pin to save."
+  - The "Lock Pin Here" button is **rendered but disabled** with the helper text "Save flow lands in MC5." This makes the UI shape obvious without enabling it.
+- When no tile is armed, the halo is hidden and the sticky card is hidden.
+
+5) GPS lifecycle
+- The workspace screen calls `useHighAccuracyLocation().start()` on mount and `.stop()` on blur / unmount. This keeps the battery cost scoped to when the user is actively building a map.
+- The lock state is shown in two places: the halo color around the user's location, and a small pill in the header (so the user knows lock state even before arming a type).
+
+6) Layer color and icon parity
+- The tile picker re-uses the existing `getDefaultLayerColor()` from `shared/layerColors` for layer colors so the picker matches the map.
+- Asset type icons use the existing Ionicons set already in the codebase (`leaf-outline` for tree, `business-outline` for pet station, etc. — match `CATEGORY_TABS` in `(tabs)/map.tsx`).
+- For the new types added in MC1 (`pump`, `quick_connect`, `isolation_valve`, `master_valve`, `flow_meter`), pick icons from Ionicons that read sensibly:
+  - `pump` → `flash-outline` (or `cog-outline`)
+  - `quick_connect` → `link-outline`
+  - `isolation_valve` → `git-pull-request-outline` (or `swap-vertical-outline`)
+  - `master_valve` → `lock-closed-outline`
+  - `flow_meter` → `analytics-outline`
+- These are fine to revisit; document the picks inline so future tweaks are easy.
+
+Scope (OUT)
+- Any pin save flow — that's MC5.
+- Zone parent-controller picker — that's MC6.
+- Photo capture — that's MC5.
+- Offline support for the workspace map — that's MC7.
+- Review mode / per-pin accuracy flagging — that's MC8.
+- Editing or moving an existing pin. MC4 is purely viewing existing data + arming a new type.
+- Layer toggle visibility controls. For MC, all three layers are always visible; we're not introducing the layer-panel UI here (the existing map tab already has one for other roles).
+
+Files to touch
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` — full body replacement.
+- `artifacts/vrtsync-mobile/components/MapCreatorOverlay.tsx` *(new)* — extracted overlay UI (layer pills, tile grid, armed-state hint card). Keeps the workspace screen readable.
+- `artifacts/vrtsync-mobile/lib/mcAssetTypeCatalog.ts` *(new)* — exports the per-layer asset type list, icons, and labels in one place. Both MC4 and MC5/MC6 will consume it.
+- No backend changes. The existing endpoints serve everything we need.
+- `lib/leaflet-template/src/index.ts` — only if a new map command is required for the accuracy halo. If the existing `setUserLocation` already renders a halo whose radius matches `accuracy`, no template change is needed. Verify before editing.
+
+Implementation order
+
+1. Create `lib/mcAssetTypeCatalog.ts` with the per-layer asset type structure. Single source of truth for MC4–MC6.
+2. Create `components/MapCreatorOverlay.tsx`. Stub it with pills + tile grid; wire it to props `(activeLayer, onLayerChange, armedType, onArmType)`. No map interaction yet — just the UI shell.
+3. Replace the workspace body. Mount the LeafletMap + the overlay. Plumb queries for layer GeoJSON and counts using the existing `(tabs)/map.tsx` pattern as the template (copy-and-prune; do not refactor the existing file).
+4. Wire `useHighAccuracyLocation()` into the workspace. Pipe `fix.latitude/longitude/accuracy/lockState` into `<LeafletMap setUserLocation={…}>` (the existing prop should accept lat/lng; extend the WebView template to draw an accuracy halo if it doesn't already).
+5. When a tile is armed: show the bottom hint card + the "Lock Pin Here" button (disabled with the MC5 helper text). When unarmed: hide them.
+6. Add the header counts strip. Bind to the same query result used for layer rendering.
+7. Manual end-to-end: log in as map_creator with a customer that has KML-imported data; tap into the customer; verify all existing features render; tap pills, tap tiles, observe armed state and halo.
+
+Acceptance Criteria
+
+A) Map renders for existing customers
+- A customer with existing KML data renders all controllers, zones, trees, pet stations on the LeafletMap with the same visuals the contractor map tab shows them.
+- A brand-new customer (no features yet) renders an empty map centered at a reasonable default with the halo still visible.
+
+B) Header counts
+- Header shows per-type counts derived from the same data feeding the map. Counts of zero are hidden, not shown as " 0 zones · …".
+
+C) Layer & tile picker
+- Three layer pills always visible. Trees / Community / Irrigation, in that order.
+- Active pill is visually distinct.
+- Tile grid changes based on the active pill.
+- Tapping a tile arms the type; tapping again or tapping Cancel disarms.
+- Tiles show small badges for any existing per-type count > 0.
+
+D) Drop-mode feedback (no save)
+- With an armed tile, the user-location halo appears and is colored green/yellow/red based on `lockState`.
+- Bottom hint card appears with the MC5 placeholder copy.
+- "Lock Pin Here" button is rendered but disabled.
+
+E) GPS lifecycle
+- The workspace starts the high-accuracy watcher on mount and stops it on blur / unmount. Verifiable via a `console.log` in the hook's start/stop functions during dev.
+- Switching to another tab (Customers / Settings / Profile) stops the watcher; returning resumes it.
+
+F) No regression
+- Other roles' map tabs (`(tabs)/map.tsx`, `(hoa-tabs)/map.tsx`) behave identically.
+- The Customers tab still works.
+
+G) Build & typecheck
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors.
+- If `lib/leaflet-template/src/index.ts` was touched, `pnpm --filter @workspace/leaflet-template run typecheck` passes.
+
+Test plan
+- Manual: described in step 7 above.
+- Visual parity: compare the customer's map in MC4 against the same customer's map in the existing `(tabs)/map.tsx` for a contractor login — both should look identical for feature rendering.
+- GPS halo: outdoors, the halo should be ~3m green within ~15s and follow the user as they walk.
+
+Risk & rollback
+- Risk: **medium**. Most of the risk is in correctly reusing the existing map-data-loading pattern. Mitigated by treating `(tabs)/map.tsx` as a template and copying its query shape.
+- The other risk is the LeafletMap template change for an accuracy halo. If we have to modify the template, also update the two consumers (web-portal/server.ts and LeafletMap.tsx) and re-test their maps. Mitigated by only touching the template if the halo isn't already supported.
+- Rollback: revert the workspace file's body change. MC2's placeholder returns. Other files added in this slice (overlay component, catalog, template change) are inert if the workspace doesn't consume them.
+
+Open questions
+- Should the tile grid scroll horizontally inside its layer (especially Irrigation, which has 9 types) or wrap to two rows? Recommended: 4-column wrap with vertical scroll. Easy to revisit.
+- Should the layer pills auto-default to the layer that's most represented in the customer (e.g. if 47 trees exist, start on Trees)? Recommended: not in MC4. Default to Trees alphabetically; the user picks. Predictable beats clever.
+- Should feature taps open the existing asset detail panel? Recommended: out of scope for MC4. View-only behavior is enough.

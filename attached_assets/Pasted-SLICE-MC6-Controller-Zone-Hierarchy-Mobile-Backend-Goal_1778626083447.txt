@@ -1,0 +1,141 @@
+SLICE MC6 — Controller → Zone Hierarchy (Mobile + Backend)
+
+Goal
+Zones are the only asset type that has structural hierarchy in VRT Sync — every Zone belongs to exactly one Controller, inherits that Controller's color and label, and carries an auto-incremented `zoneNumber` within its Controller. This slice teaches the Map Creator workflow that rule. When the user arms the **Zone** tile (which MC5 deliberately left out), they're first shown a Controller picker; once they choose, the pin-drop sheet pre-fills `controllerFeatureRef`, `controllerLabel`, `controllerColor`, and the next-available `zoneNumber` for that Controller. The user also gets an "+ Add Controller" affordance inside the picker so they can build incrementally — exactly the field flow you described ("add another controller as they go rather than needing to know how many controllers at the start"). After MC6, the entire Google Earth round-trip — controllers *and* zones — is replaceable for a brand-new property.
+
+Pre-requisites
+- SLICE MC1, FIX-2, MC2, MC3, MC4, MC5 merged. Pin drops work for everything except Zone; the workspace map renders existing Controllers with their assigned colors.
+
+Scope (IN)
+
+1) Backend — Controller listing for the workspace
+- The existing `/api/communities/:id/controllers` endpoint (~line 226 of `routes.ts`) already returns controllers + their zones. Reuse it. Map Creator clients call this when the Zone tile is armed.
+- Verify the response includes per-controller `controllerKey`, `controllerColor`, `label`, `featureRef`, and a `zones` array (with at least `zoneNumber`) so the client can compute the next-available zone number locally.
+- If any of these fields is missing, augment the endpoint to include them. Match the shape already consumed by `(tabs)/map.tsx`.
+
+2) Backend — auto-assign `controllerColor` on Controller creation by map_creator
+- MC5 created Controllers without color assignment (a known open question in MC5). In MC6, finalize this: on `POST /api/assets` where `assetType === 'controller'` and the request comes from a map_creator (admin-created KML imports already handle this themselves), if `properties.controllerColor` is not set:
+  - Read the community's existing Controller count.
+  - Pick the next color from the DEFAULT_COLORS palette (the same 15-color rotation already in `kmlIrrigationParser.ts`).
+  - Insert it as `controllerColor` in `asset_properties`.
+- Move the color palette to a shared package so both `kmlIrrigationParser.ts` (server) and the Map Creator client can reference the same source. Suggested location: `lib/leaflet-template/src/index.ts` already adjacent to map shared code, or a new tiny `lib/map-shared/src/colors.ts` if that's cleaner. Pick the path consistent with TIDY-1's direction.
+- Also auto-assign `controllerKey` if not set: alphabetical incremented (A, B, …, Z, AA, AB, …) based on existing count.
+
+3) Mobile — Controller picker UI (`artifacts/vrtsync-mobile/components/ControllerPicker.tsx`)
+- Triggered when the user arms the **Zone** tile in the workspace.
+- Bottom sheet with:
+  - Title: "Which controller does this zone belong to?"
+  - List of existing Controllers (data from `/api/communities/:id/controllers`):
+    - Each row: a colored circle showing the Controller's color, the `controllerKey` (letter), the Controller's `label`, and a small chip "{N} zones" (zone count). Tap to select.
+  - At the bottom of the list: a sticky row "+ Add a new Controller" — tap to switch the armed tile to **Controller** and dismiss the picker; the user can then drop the Controller normally per MC5; when the save completes, automatically re-open the Controller picker with the just-created Controller pre-highlighted so the user can immediately add zones to it.
+- The picker is dismissible without choosing (returns to disarmed state).
+
+4) Mobile — Zone-specific PinDropSheet behavior
+- Extend `PinDropSheet` (from MC5) to accept an optional `parentController` prop:
+  ```ts
+  type PinDropSheetProps = {
+    assetType: string;
+    capturedFix: Fix;
+    parentController?: { id: string; featureRef: string; label: string; controllerKey: string; controllerColor: string };
+    // ...existing props
+  };
+  ```
+- When `parentController` is set (i.e. type is Zone):
+  - Render a non-editable header chip showing the parent: colored circle + `Controller A — “Front Yard 14a Tap-Off”`.
+  - Auto-label uses `zoneNumber` logic: `Zone {N}` where N is `max(existing zoneNumbers for this controller) + 1`. Editable label as usual.
+  - `properties.controllerFeatureRef = parentController.featureRef`.
+  - `properties.controllerLabel = parentController.label`.
+  - `properties.controllerColor = parentController.controllerColor`.
+  - `properties.zoneNumber = computed N`.
+  - The map should render this new Zone immediately in the parent Controller's color (since the existing map renderer already keys zone color off `controllerFeatureRef`).
+
+5) Mobile — auto-label for Zones
+- Extend `mcAutoLabel.ts` (from MC5):
+  ```ts
+  export function generateZoneLabel(opts: {
+    parentControllerKey: string;
+    existingZoneNumbers: number[];
+  }): { label: string; zoneNumber: number };
+  ```
+- Returns `{ label: "Zone 1", zoneNumber: 1 }`, etc., with the number being `Math.max(0, ...existingZoneNumbers) + 1`.
+- The label format uses `"Zone N"` not `"A-1"` because the existing model carries `zoneNumber` as its own integer property; the controller-prefix display is rendered at view time.
+
+6) Mobile — workspace wiring for the Zone path
+- In `app/mc-workspace/[id].tsx`, when the user taps the Zone tile in MC4's grid:
+  - Instead of immediately arming the type, open `<ControllerPicker>`.
+  - On pick: arm Zone with the chosen `parentController`. The map's drop-mode halo and "Lock Pin Here" behave as MC5 already does, except the sheet receives `parentController` as a prop.
+  - The header counts strip should now show zone counts broken down by Controller letter (e.g. "Controller A · 14 zones") when Zone is the armed type — useful situational awareness while building. Optional polish; keep simple if it complicates the slice.
+
+Scope (OUT)
+- Bulk-creating zones (e.g. "drop 12 zones around this controller in a circle"). Field reality is one-at-a-time; bulk is over-engineering.
+- Reassigning a Zone to a different Controller after creation. Out of MC1–MC8 scope; if it happens, do it via admin edit.
+- Splitting the existing `qc_iso_valve` column in legacy KML imports into the new `quick_connect` / `isolation_valve` types. MC1 already deprecated `qc_iso_valve` at the enum level (rows can't exist); KML imports continuing to send `qc_iso_valve` will simply skip, which is correct.
+- Zone polygons. Confirmed in the design phase: zones are Points only in this system.
+
+Files to touch
+- `artifacts/api-server/src/routes/routes.ts` — verify `/api/communities/:id/controllers` shape; possibly augment; add the auto-color/auto-key behavior to the `POST /api/assets` controller branch.
+- `lib/leaflet-template/src/index.ts` (or new `lib/map-shared/src/colors.ts`) — single source for the DEFAULT_COLORS palette.
+- `artifacts/api-server/src/kmlIrrigationParser.ts` — switch to importing DEFAULT_COLORS from the shared package, so the same palette is used by KML import and Map Creator native creation.
+- `artifacts/vrtsync-mobile/components/ControllerPicker.tsx` *(new)*.
+- `artifacts/vrtsync-mobile/components/PinDropSheet.tsx` — add the optional `parentController` prop and Zone-specific rendering.
+- `artifacts/vrtsync-mobile/lib/mcAutoLabel.ts` — add `generateZoneLabel`.
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` — wire the Zone-tile-tap to the picker; thread `parentController` into the sheet.
+
+Implementation order
+
+1. **Move DEFAULT_COLORS to the shared package.** Verify both the existing parser and the (new) Map Creator client read from the same source. Run `pnpm --filter @workspace/api-server run build`.
+2. **Backend Controller auto-color/auto-key.** Update the `POST /api/assets` handler. Curl-test a Controller create as a map_creator: confirm the response includes `controllerKey` "A" for the first Controller, "B" for the second, etc.
+3. **ControllerPicker (mobile).** Build it in isolation with mock data. Verify list + colors + "Add new" affordance render.
+4. **Wire the picker into the workspace.** Test the Zone-tile-tap flow up to the picker.
+5. **Extend PinDropSheet with `parentController` prop.** Plumb the four `properties.controller*` and `properties.zoneNumber` fields.
+6. **Extend `mcAutoLabel`** and verify auto-zoneNumber against an existing Controller.
+7. **Add the "Add new Controller" detour.** Verify the picker re-opens after a Controller save with the new Controller pre-highlighted.
+8. **End-to-end:** brand-new customer → add 2 Controllers → add 3 Zones to each → save each → verify they render with the right colors and the right `zoneNumber` per Controller.
+
+Acceptance Criteria
+
+A) Controller listing
+- `/api/communities/:id/controllers` returns the four required fields per controller (`controllerKey`, `controllerColor`, `label`, `featureRef`) plus `zones` array with at least `zoneNumber`.
+- Map Creator client renders all of this customer's existing Controllers in the picker.
+
+B) Auto color and key for Controllers
+- First Controller created by a map_creator in a new community comes back from the server with `controllerKey = "A"` and `controllerColor = DEFAULT_COLORS[0]`.
+- Second is `"B"` / `DEFAULT_COLORS[1]`; 16th wraps to `DEFAULT_COLORS[0]` (palette has 15) — the key continues alphabetically past Z to AA.
+- The same palette is used by KML import (confirmed by both code paths reading from the shared package).
+
+C) Zone picker
+- Tapping the Zone tile opens the picker, not the pin-drop sheet.
+- Each Controller row shows its color, key, label, and zone count.
+- Picking a Controller dismisses the picker and arms the Zone tile with that Controller as the parent.
+- "+ Add a new Controller" switches to Controller mode, saves a Controller normally, then auto-reopens the Zone picker with the new Controller pre-highlighted.
+
+D) Zone pin drop
+- The PinDropSheet for a Zone shows the parent Controller chip prominently.
+- The auto-label is `Zone N` where N is the next-available `zoneNumber` for that Controller.
+- After save, the new Zone renders on the map in the parent Controller's color.
+- `assets` row has `assetType = 'zone'` and the four controller-* properties + `zoneNumber` are written to `asset_properties`.
+
+E) No regression
+- Other asset types from MC5 still drop without going through the Controller picker.
+- KML import behavior unchanged (just sources colors from the shared package now).
+- Other roles' map experience unchanged.
+
+F) Build & typecheck
+- `pnpm --filter @workspace/api-server run build` passes.
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors.
+- If a new package was added (`lib/map-shared`), it builds and is wired into the workspace.
+
+Test plan
+- Manual end-to-end described in step 8 above.
+- Mixed flow: on a customer that already has KML-imported Controllers (say A, B, C with palette colors 0, 1, 2), have a map_creator add a new Controller. It should get key D and palette color 3. Then add a Zone to Controller B. Verify the Zone renders in palette color 1, has zoneNumber = (max of B's existing zones + 1), and is queryable via `/api/communities/:id/controllers` under B's `zones` array.
+- Race-condition sanity: two map_creators in the same community both add a Controller within a few seconds. Each should get a distinct key (A then B). The server-side count must read the freshly-inserted row, not a stale cache.
+
+Risk & rollback
+- Risk: **medium**. The auto-key generation has a small race window if two map_creators create Controllers simultaneously on the same community. Mitigated by reading the count inside a single transaction with the insert, or by accepting a brief retry on `uniqueIndex` violation.
+- Color palette change risk: when KML imports start using the shared palette, any *cached* color in `asset_properties` from old imports stays unchanged (no migration). New imports use the shared palette. This is correct, but worth a one-line note when reviewing.
+- Rollback: revert the commit. Zones created during the rollback window persist and remain correctly colored (the `controller*` properties are stored, not computed at render time).
+
+Open questions
+- Should the picker offer Controllers sorted by key (A, B, C, …) or by recency (most-recently-touched first)? Recommended: sorted by key. Predictable beats clever, and field workflow tends to follow the alphabetical order anyway.
+- Should the picker show on the map (as a callout next to each Controller) instead of as a sheet? Recommended: not in MC6. The sheet is mobile-friendly and decouples picking from spatial navigation. Map callouts can be a polish slice later.
+- Should the Map Creator be allowed to *rename* a Controller from the picker (e.g. "Controller A" → "Front Garage Wall Controller")? Recommended: not in MC6. Asset detail screen handles renames; keep MC6 focused.

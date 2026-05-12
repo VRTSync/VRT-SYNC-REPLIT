@@ -1,0 +1,167 @@
+SLICE MC5 — Flat-Type Pin Drop (Backend + Mobile)
+
+Goal
+Let a Map Creator actually save a pin. This slice wires the armed-tile UX from MC4 into a real save path: when the user is on green or yellow GPS lock, they tap "Lock Pin Here", a confirmation sheet slides up with auto-label / editable custom name / optional description / optional photo, hitting Save inserts an `assets` row (and attachment if a photo was captured), and the new pin appears on the map immediately. After MC5, every asset type the user might place is creatable **except Zone** — zones need parent-controller hierarchy, which lands in MC6. The Google Earth round-trip is effectively dead for everything that isn't a zone.
+
+Pre-requisites
+- SLICE MC1, FIX-2, MC2, MC3, MC4 merged. The workspace map renders, GPS lock works, type tile-picker is armable.
+
+Scope (IN)
+
+1) Backend — open asset creation to map_creator
+- `artifacts/api-server/src/routes/routes.ts` at `POST /api/assets` (~line 2091): replace the `requireAdmin` middleware with the `requireAdminOrMapCreator` helper introduced in MC2. Apply the same pattern at `PATCH /api/assets/:id` and `PUT /api/assets/:id/properties` (~lines 2109, 2136) so map_creators can amend their own creations.
+- Add a scope check inside each handler: a non-admin user must be a member of the community their target asset belongs to. Reject with 403 otherwise. Use `storage.getUserCommunities(req.session.userId!)` for the lookup.
+- The existing `POST /api/assets` body shape is fine. Map Creator clients will send:
+  ```json
+  {
+    "communityId": "...",
+    "assetType": "tree",
+    "label": "Tree 47",
+    "latitude": 39.7392, "longitude": -104.9903,
+    "geometryType": "Point",
+    "mapLayerId": "...",            // resolved client-side via SUB_LAYER_TO_ASSET_TYPE reverse
+    "featureRef": "<uuid generated client-side>",
+    "tags": [],
+    "properties": {                  // optional, written to asset_properties
+      "species": "Ponderosa Pine",
+      "description": "Field-placed by map_creator",
+      "gps_accuracy": "2.3"
+    }
+  }
+  ```
+- The server-side handler should validate `assetType` is in the enum and `featureRef` is unique per `(communityId, mapLayerId, featureRef)` (existing unique index already enforces this; surface a friendly 409 on collision rather than a Postgres error).
+- After insert, the handler also writes a row into `asset_properties` for each key in `properties`.
+
+2) Backend — new attachment endpoint for assets
+- New route: `POST /api/assets/:id/attachments` in `routes.ts`. Pattern after the existing `POST /api/tasks/:id/attachments` (around line 757) — same upload-URL validation, same ACL group ("COMMUNITY_MEMBER" from the recent ACL slice).
+- The attachment record (table-name TBD — match the existing task attachments table or extend the same table with a `target_kind` column if it doesn't exist already) stores: assetId, photo URL, captured-at timestamp, captured-by user id.
+- Reuse the durable upload-state pattern from P0 Slice 3 (per-photo upload state). Photos uploaded by Map Creators flow through the exact same MMKV + file-system pipeline; no new offline machinery here.
+- `GET /api/assets/:id/attachments` — same role-scoped read pattern as the task attachment GET.
+
+3) Mobile — pin drop confirmation sheet
+- New file: `artifacts/vrtsync-mobile/components/PinDropSheet.tsx`.
+- Triggered from the workspace when:
+  - A tile is armed (from MC4),
+  - GPS `lockState` is `'green'` or `'yellow'`,
+  - The user taps "Lock Pin Here" (which was disabled in MC4 — now enabled).
+- Sheet content:
+  - **Type pill** at the top: the armed type with its layer color and Ionicon, read-only.
+  - **Auto-label** input: pre-filled with the next sequential label (see step 4). Editable. Max 80 chars.
+  - **Custom name** input: optional, separate from label. Max 120 chars. (You said pins must accept a custom name — this is that field.)
+  - **Description** input: optional, multiline, max 500 chars.
+  - **Photo** action: "Take Photo" (camera) and "Pick from Library". On capture, show a thumbnail with a "Replace" / "Remove" affordance. Single photo per pin in this slice (multi-photo is a future enhancement).
+  - **Captured fix** readout (read-only): `lat`, `lng`, `accuracy ±Nm`, `lockState` pill. The fix shown is the **snapshotted** averaged fix at the moment "Lock Pin Here" was tapped — the sheet does not keep re-averaging while open (that would be confusing).
+  - **Buttons**: Cancel (closes sheet, type stays armed for retry) and **Save Pin** (primary).
+- "Save Pin" disabled until: label is non-empty AND captured fix exists.
+- On Save:
+  - POST `/api/assets` with the body shape from step 1. `properties.gps_accuracy` is the snapshotted accuracy as a string. `properties.description` is the description if non-empty. `properties.custom_name` is the custom name if non-empty.
+  - If a photo is attached, after the asset POST returns 201, queue the photo to `/api/assets/:id/attachments` via the existing durable upload pipeline.
+  - On success: dismiss the sheet, show a toast ("Tree 47 saved"), and **disarm** the tile (so the user can pick the next type intentionally — this prevents accidental double-pins). Refresh the map data (React Query invalidate).
+  - On 409 (label/featureRef collision): show the error inline and let the user retry.
+  - On any other failure: show a toast with the message, keep the sheet open so the user can retry.
+
+4) Mobile — auto-label generation
+- New helper in `artifacts/vrtsync-mobile/lib/mcAutoLabel.ts`:
+  ```ts
+  export function generateAutoLabel(opts: {
+    assetType: string;
+    existingLabels: string[];          // labels already present in the customer
+  }): string;
+  ```
+- Rules:
+  - `tree` → `"Tree 47"` where 47 is `existingLabels.filter(starts-with 'Tree ').length + 1`.
+  - `controller` → `"Controller A"`, `"Controller B"`, …, then `"Controller AA"` after Z. (Lettered; matches the existing `controllerKey` convention.)
+  - All other types → `"<Pretty Label> 1"` incrementing.
+- Source of `existingLabels`: the same query that feeds the workspace map's per-type counts.
+- The user can always edit the auto-label in the sheet before saving.
+
+5) Mobile — "Lock Pin Here" wiring in the workspace
+- In `app/mc-workspace/[id].tsx`, replace the MC4-disabled-state of the "Lock Pin Here" button with the real one:
+  - Enabled when `lockState` is `'green'` or `'yellow'` and a tile is armed.
+  - On press: call `snapshot()` on the high-accuracy hook; if it returns a Fix, open `<PinDropSheet>` with that fix.
+
+6) Mobile — UX safety nets
+- Yellow-lock override: when the user taps "Lock Pin Here" while yellow, the sheet's captured-fix readout shows a small warning pill: "Accuracy 4.2m — consider waiting for green. Save anyway?" The save button still works; no hard block.
+- Red lock: the "Lock Pin Here" button is disabled with helper text "Wait for green or yellow GPS lock." (As designed in MC4.)
+- After save, the next pin starts with the tile-picker un-armed so the user always re-confirms the type. This is the field-safety behavior you described in our earlier discussion.
+
+Scope (OUT)
+- **Zone creation**. Zones need a parent Controller picker; MC6 handles them.
+- Edit a previously-saved pin's location (move on map). MC8 will add a "re-shoot" affordance for low-accuracy pins; until then, edits are limited to label / name / description / photo via the asset detail screen.
+- Delete a pin. Not in this slice; admin-only for now.
+- Multi-photo per pin. Single photo is sufficient for field work.
+- Audio notes. Not requested; out.
+- Offline pin creation. Online-only here; MC7 adds the offline queue.
+
+Files to touch
+- `artifacts/api-server/src/routes/routes.ts` — middleware swap on three asset routes, scope check, new `/api/assets/:id/attachments` endpoints (POST and GET).
+- `artifacts/api-server/src/storage.ts` — new helpers if needed (`addAssetAttachment`, `getAssetAttachments`) following the task-attachment helpers as the template.
+- `lib/db/src/schema/schema.ts` — possibly extend the existing attachment table with a `target_kind` discriminator + `asset_id` column, if the current schema only supports task attachments. If a separate `asset_attachments` table is cleaner, prefer that. **Decide based on the actual current schema shape — inspect first**, do not assume.
+- `lib/db/migrations/000X_<auto>.sql` *(new — if a schema change is needed)*.
+- `artifacts/vrtsync-mobile/components/PinDropSheet.tsx` *(new)*.
+- `artifacts/vrtsync-mobile/lib/mcAutoLabel.ts` *(new)*.
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` — enable "Lock Pin Here", mount `<PinDropSheet>`.
+
+Implementation order
+
+1. **Inspect attachment schema first.** Look at `lib/db/src/schema/schema.ts` to see if attachments are task-only today or already polymorphic. Decide between extending the existing table or adding `asset_attachments`. Generate the migration accordingly.
+2. **Backend asset endpoints.** Swap middleware on the three asset routes. Add the scope check. Smoke-test from curl with a map_creator session: insert a Tree under a customer they're a member of (200); insert under a customer they're NOT a member of (403); insert with a missing `featureRef` (400).
+3. **Backend attachment endpoints.** Mirror the task pattern. Smoke-test the upload-URL flow.
+4. **PinDropSheet (mobile)** in isolation: stub the save handler, verify all inputs and validation render.
+5. **mcAutoLabel helper** with unit-style sanity assertions.
+6. **Wire into workspace.** Replace the disabled button; mount the sheet; wire React Query invalidation on success.
+7. **End-to-end on dev client.** Place a Tree, a Controller, a Pet Station — verify each appears on the map immediately and persists across a logout / login.
+
+Acceptance Criteria
+
+A) Backend
+- `POST /api/assets` as map_creator who is a member of the target community returns 201 with the new asset row. Inserts a row in `assets` and one row per property key into `asset_properties`.
+- Same call as a map_creator who is NOT a member returns 403.
+- Same call as a contractor returns 403.
+- `POST /api/assets/:id/attachments` as map_creator who owns/is a member of the asset's community returns 201 with the attachment record.
+- The unique-featureRef constraint surfaces a 409 (not a 500) when violated.
+
+B) Sheet UX
+- Sheet opens only on green/yellow lock and only with a tile armed.
+- Label, name, description fields enforce their max lengths.
+- Photo capture preview renders, can be replaced or removed.
+- Yellow-lock warning pill renders when applicable.
+- Save Pin disabled until label is non-empty and a captured fix is present.
+
+C) Pin lands on the map
+- After successful save, the new pin appears on the map within ~1s (React Query refetch).
+- The tile picker is disarmed and the sheet is dismissed.
+
+D) Auto-labels
+- First Tree saved is auto-labeled `Tree 1`; the 47th is `Tree 47`.
+- First Controller is `Controller A`; the 26th is `Controller Z`; the 27th is `Controller AA`.
+- Editing the auto-label before save is honored.
+
+E) Failure paths
+- 409 on duplicate featureRef shows a friendly inline error and keeps the sheet open for retry.
+- Network failure shows a toast and keeps the sheet open.
+- Photo upload failure does not erase the asset insert; the user can retry the photo from the asset detail screen.
+
+F) No regression
+- Admin-created assets still work the same way (admin still hits the same endpoint; the new scope check passes for admin because admins are exempt).
+- Other roles' map tabs unchanged.
+
+G) Build & typecheck
+- `pnpm --filter @workspace/api-server run build` passes.
+- `pnpm --filter @workspace/db run migrate:check` passes (any migration generated is reviewable).
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no new errors.
+
+Test plan
+- Manual: place one of each in-scope type at a real property (or a simulator with mocked location). Confirm map refresh and persistence.
+- Permission matrix: try the same POST as each role; only admin and map_creator-with-membership succeed.
+- DB sanity: after placing a Controller, check `assets` row exists with `latitude`/`longitude` set and `properties` row(s) exist. Re-import the customer's KML afterward — the Map Creator-placed Controller should still be there (`featureRef` won't collide because client-generated UUIDs).
+
+Risk & rollback
+- Risk: **medium**. The permission swap on the asset endpoints is the most consequential change in the whole MC series — verify the scope check is airtight before deploy.
+- Rollback: revert the commit. Any pins saved during the brief deploy window persist correctly; the API just stops accepting new ones from map_creators.
+- Data risk: a client-generated `featureRef` collision could only happen with deliberate duplicate UUIDs from a bad client — the unique index prevents bad data from landing.
+
+Open questions
+- Should the auto-label be smart about "next available" vs "highest + 1"? Today's behavior of "count + 1" means if you delete Tree 7 the next save becomes Tree 8 and 7 is permanently skipped. Recommended: leave as count+1. Trees don't get deleted often.
+- Should Controllers auto-assign a `controllerColor` immediately on creation (so subsequent Zone creation in MC6 inherits it)? Recommended: yes, and the client picks the next color from the existing DEFAULT_COLORS palette by rotating through the count. Worth a tiny note in this slice's controller-creation path — implement here so MC6 doesn't have to.
+- Should photo capture be required for Controllers (so we have a visual record of the brand / model)? Recommended: optional even for Controllers in MC5. If field experience says "always required" we can add a per-type required-photo flag in a follow-up.
