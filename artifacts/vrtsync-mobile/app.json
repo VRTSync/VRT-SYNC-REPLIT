@@ -55,7 +55,6 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "react-native-mmkv",
       [
         "expo-notifications",
         {
