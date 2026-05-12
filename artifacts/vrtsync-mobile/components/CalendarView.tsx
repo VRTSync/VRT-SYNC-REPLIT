@@ -33,7 +33,7 @@ type Task = {
   origin?: string | null;
 };
 
-type UserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin';
+type UserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin' | 'map_creator';
 
 export type CalendarActiveFilter = 'all' | 'overdue' | 'requests' | 'completed';
 

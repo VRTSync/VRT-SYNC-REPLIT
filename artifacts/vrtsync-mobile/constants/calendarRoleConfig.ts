@@ -1,4 +1,4 @@
-export type CalendarUserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin';
+export type CalendarUserRole = 'contractor' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'admin' | 'map_creator';
 
 export type CalendarEventCategory = 'requests' | 'scheduled' | 'completed' | 'overdue';
 
@@ -68,6 +68,7 @@ const CALENDAR_ROLE_CONFIGS: Record<CalendarUserRole, CalendarRoleConfig> = {
   hoa_member: HOA_MEMBER_CALENDAR_CONFIG,
   property_manager: PROPERTY_MANAGER_CALENDAR_CONFIG,
   admin: ADMIN_CALENDAR_CONFIG,
+  map_creator: CONTRACTOR_CALENDAR_CONFIG,
 };
 
 export function getCalendarRoleConfig(role: string | undefined | null): CalendarRoleConfig {
