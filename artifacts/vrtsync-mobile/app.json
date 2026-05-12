@@ -28,7 +28,7 @@
         "NSCameraUsageDescription": "VRTSync uses your camera to take photos of site conditions and attach them to maintenance requests.",
         "NSPhotoLibraryUsageDescription": "VRTSync accesses your photo library so you can attach existing photos to maintenance requests.",
         "NSPhotoLibraryAddUsageDescription": "VRTSync may save photos to your library when you capture site images.",
-        "NSLocationWhenInUseUsageDescription": "VRTSync uses your location to show your position on the community map and help you navigate to assets."
+        "NSLocationWhenInUseUsageDescription": "VRTSync uses your precise location to place accurate map pins for assets such as sprinkler heads and trees during map creation, and to show your position on the community map."
       },
       "entitlements": {
         "aps-environment": "production"
@@ -36,6 +36,9 @@
     },
     "android": {
       "package": "com.vrtsyncmobile.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
