@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole } from "../auth";
+import { requireAuth, requireAdmin, requireAdminOrMapCreator, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
@@ -139,7 +139,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/communities", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/communities", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const parsed = insertCommunitySchema.safeParse(req.body);
       if (!parsed.success) {
@@ -149,9 +149,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         name: parsed.data.name,
         description: parsed.data.description ?? undefined,
       });
+      const currentUser = (req as any).currentUser;
+      if (currentUser && isMapCreatorRole(currentUser.role)) {
+        await storage.addCommunityMember(community.id, currentUser.id);
+      }
       res.status(201).json(community);
     } catch (error) {
-      console.error("Create community error:", error);
+      req.log.error({ error }, "Create community error");
       res.status(500).json({ error: "Failed to create community" });
     }
   });

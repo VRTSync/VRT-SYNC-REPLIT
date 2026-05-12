@@ -85,6 +85,21 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   });
 }
 
+export function requireAdminOrMapCreator(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  storage.getUserById(req.session.userId).then((user) => {
+    if (!user || (user.role !== "admin" && !isMapCreatorRole(user.role))) {
+      return res.status(403).json({ message: "Admin or map creator access required" });
+    }
+    (req as any).currentUser = user;
+    next();
+  }).catch(() => {
+    res.status(500).json({ message: "Internal error" });
+  });
+}
+
 export function registerAuthRoutes(app: any) {
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {

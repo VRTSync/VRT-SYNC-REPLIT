@@ -193,6 +193,7 @@ function AuthNavigator() {
       <Stack.Screen name="(hoa-tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(mc-tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="task" options={{ headerShown: false }} />
+      <Stack.Screen name="mc-workspace" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: false }} />
       <Stack.Screen name="request-map" options={{ headerShown: false }} />
     </Stack>
