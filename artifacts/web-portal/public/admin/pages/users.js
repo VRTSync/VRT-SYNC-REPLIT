@@ -84,6 +84,7 @@ AdminRouter.register('users', async function(container) {
               <option value="admin">Admin</option>
               <option value="hoa_admin">HOA Admin</option>
               <option value="hoa_member">HOA Member</option>
+              <option value="property_manager">Property Manager</option>
             </select>
           </div>
           <div class="form-group" id="community-select-group" style="display:none">
@@ -216,10 +217,16 @@ AdminRouter.register('users', async function(container) {
         }
 
         const roleBadgeClass = u.role === 'admin' ? 'badge-blue'
-          : isHoa ? 'badge-purple'
+          : u.role === 'contractor' ? 'badge-teal'
+          : u.role === 'hoa_admin' ? 'badge-purple'
+          : u.role === 'hoa_member' ? 'badge-purple'
+          : u.role === 'property_manager' ? 'badge-amber'
           : 'badge-teal';
-        const roleLabel = u.role === 'hoa_admin' ? 'HOA Admin'
+        const roleLabel = u.role === 'admin' ? 'Admin'
+          : u.role === 'contractor' ? 'Contractor'
+          : u.role === 'hoa_admin' ? 'HOA Admin'
           : u.role === 'hoa_member' ? 'HOA Member'
+          : u.role === 'property_manager' ? 'Property Manager'
           : u.role;
 
         const isActive = u.isActive !== false;
@@ -234,9 +241,12 @@ AdminRouter.register('users', async function(container) {
         if (!isHoa) {
           actions = `
             ${editBtn}
-            <button class="btn btn-secondary btn-xs role-btn" data-id="${u.id}" data-role="${u.role}">
-              ${u.role === 'admin' ? 'Make Contractor' : 'Make Admin'}
-            </button>
+            <select class="form-select role-select" data-id="${u.id}" data-current="${u.role}" style="display:inline-block;width:auto;padding:3px 8px;font-size:12px;margin-right:4px">
+              <option value="" disabled selected>Change role…</option>
+              <option value="contractor">Contractor</option>
+              <option value="admin">Admin</option>
+              <option value="property_manager">Property Manager</option>
+            </select>
             <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-left:4px">
               ${toggleLabel}
             </button>
@@ -277,12 +287,22 @@ AdminRouter.register('users', async function(container) {
         });
       });
 
-      tbody.querySelectorAll('.role-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const newRole = btn.dataset.role === 'admin' ? 'contractor' : 'admin';
-          if (!confirm(`Change this user's role to ${newRole}?`)) return;
+      const rolePrettyLabel = {
+        contractor: 'Contractor',
+        admin: 'Admin',
+        property_manager: 'Property Manager',
+      };
+
+      tbody.querySelectorAll('.role-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const newRole = sel.value;
+          const label = rolePrettyLabel[newRole] || newRole;
+          if (!confirm(`Change this user's role to ${label}?`)) {
+            sel.value = '';
+            return;
+          }
           try {
-            await apiFetch(`/api/users/${btn.dataset.id}/role`, {
+            await apiFetch(`/api/users/${sel.dataset.id}/role`, {
               method: 'PUT',
               body: { role: newRole },
             });
@@ -290,6 +310,7 @@ AdminRouter.register('users', async function(container) {
             await loadUsers();
           } catch (err) {
             showToast(err.message, 'error');
+            sel.value = '';
           }
         });
       });
