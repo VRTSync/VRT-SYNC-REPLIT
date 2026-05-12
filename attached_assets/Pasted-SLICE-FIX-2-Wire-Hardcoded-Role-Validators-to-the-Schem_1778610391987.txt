@@ -1,0 +1,90 @@
+SLICE FIX-2 — Wire Hardcoded Role Validators to the Schema Enum (API Server)
+
+Goal
+Three places in the api-server validate incoming role strings against hardcoded literal arrays that drifted from `userRoleEnum`. After SLICE MC1 landed, requests to create or change a user with role `map_creator` are rejected with **400 Invalid role**, even though the schema, mobile shell, and admin form all accept it. The same arrays are also missing `property_manager` (a pre-existing gap). This slice removes the drift surface entirely by replacing the literal arrays with `userRoleEnum.enumValues` imported from `@workspace/db`, so the validator is automatically correct whenever the enum changes. No schema, no mobile, no admin-web changes are needed — backend only.
+
+Scope (IN)
+
+1) Replace the literal arrays in three locations with the schema's enum values
+- `artifacts/api-server/src/routes/routes.ts` at the `PUT /api/users/:id/role` handler (~line 1470):
+  - Current: `const validRoles = ["admin", "contractor", "hoa_admin", "hoa_member"];`
+  - Replace with: `const validRoles = userRoleEnum.enumValues;`
+- `artifacts/api-server/src/routes/routes.ts` at the `POST /api/admin/users` handler (~line 1504):
+  - Current: `const validRoles = ["contractor", "admin", "hoa_admin", "hoa_member"];`
+  - Replace with: `const validRoles = userRoleEnum.enumValues;`
+- `artifacts/api-server/src/storage.ts` at `getTaskPageDataForRole` (~line 1749):
+  - Current: `const VALID_ROLES = new Set(["contractor", "hoa_admin", "hoa_member", "property_manager", "admin"]);`
+  - Replace with: `const VALID_ROLES = new Set(userRoleEnum.enumValues);`
+
+2) Add the import in both files
+- Top of `artifacts/api-server/src/routes/routes.ts`:
+  ```ts
+  import { userRoleEnum } from "@workspace/db";
+  ```
+  Match the import style already used elsewhere in this file (the file already imports `assetsTable`, `assetPropertiesTable` etc. from `@workspace/db` dynamically; a top-level static import is fine and preferred).
+- Top of `artifacts/api-server/src/storage.ts`:
+  ```ts
+  import { userRoleEnum } from "@workspace/db";
+  ```
+
+3) Defensive type narrowing
+- The `enumValues` property returns `readonly string[]` (a tuple type with each enum literal). If TypeScript complains about narrowing on `.includes(role)` because `role` is typed as `string`, use the standard pattern:
+  ```ts
+  if (!validRoles.includes(role as (typeof validRoles)[number])) { ... }
+  ```
+  Or — preferred — keep the existing `.includes(role)` and let TS widen, since the runtime check is correct regardless.
+
+4) Error message consistency
+- `POST /api/admin/users` currently emits `role must be one of: ${validRoles.join(', ')}` — this stays correct after the change (just the array source is different).
+- `PUT /api/users/:id/role` currently returns the generic `"Invalid role"` — leave as-is; cosmetic.
+
+Scope (OUT)
+- Other role-related allowlists in the codebase that are intentionally narrow (e.g. `invoiceReadRoles = ['admin', 'property_manager', 'hoa_admin', 'hoa_member']` at `routes.ts:3985`, `reportReadRoles`, `driveReadRoles`, the contractor/admin task-assignment filter at `routes.ts:3848`, the HOA-only allowlists at `routes.ts:1714`/`:1725`/`:1787`). Those are explicit feature gates — not drift bugs. Whether `map_creator` should be added to any of them is a separate product decision and tracked per feature, not in this slice.
+- Mobile or admin-web changes. The frontends already accept the new role values.
+- Any logic change beyond the validator source. Permission semantics are unchanged.
+
+Files to touch
+- `artifacts/api-server/src/routes/routes.ts` — add `userRoleEnum` import, two validator replacements.
+- `artifacts/api-server/src/storage.ts` — add `userRoleEnum` import, one validator replacement.
+
+Implementation order
+1. Add the `userRoleEnum` import at the top of `routes.ts`.
+2. Replace both `validRoles` arrays in `routes.ts`.
+3. Add the import + replace the `VALID_ROLES` set in `storage.ts`.
+4. Run `pnpm --filter @workspace/api-server run typecheck`. If TS complains about `.includes(role)` narrowing, apply the `as (typeof validRoles)[number]` cast.
+5. Run `pnpm --filter @workspace/api-server run build`.
+6. Manual smoke (locally, with server running):
+   - From psql or a curl: try the create-user endpoint with role `map_creator` — should succeed (200).
+   - Try with role `property_manager` — should succeed (200).
+   - Try with role `garbage_role` — should still fail (400) with the "must be one of" message including the new values.
+   - Hit `PUT /api/users/:id/role` against a real user, target role `map_creator`, then `contractor`, then `property_manager` — each should succeed.
+7. Commit and push.
+
+Acceptance Criteria
+
+A) Imports correct
+- `artifacts/api-server/src/routes/routes.ts` has a top-level `import { userRoleEnum } from "@workspace/db";`.
+- `artifacts/api-server/src/storage.ts` has the same import.
+
+B) All three validators use the enum
+- A repo grep for `validRoles = \[` and `VALID_ROLES = new Set\(\[` inside `artifacts/api-server/src/` returns no matches with hardcoded role string arrays. (Other unrelated allowlists like `invoiceReadRoles` are out of scope; they are explicit feature gates, not enum validators.)
+
+C) Functional verification
+- `POST /api/admin/users` with `{ "role": "map_creator", ... }` returns 200 (user created).
+- `POST /api/admin/users` with `{ "role": "property_manager", ... }` returns 200.
+- `PUT /api/users/:id/role` with `{ "role": "map_creator" }` returns 200 against a non-self target user.
+- `POST /api/admin/users` with `{ "role": "not_a_real_role" }` returns 400; the error message lists all six current enum values.
+
+D) Build & typecheck
+- `pnpm --filter @workspace/api-server run typecheck` passes.
+- `pnpm --filter @workspace/api-server run build` passes.
+
+Test plan
+- Manual smoke described in Implementation order step 6 is sufficient. An admin user creating a Map Creator via the existing admin web form should now persist to the DB — that single end-to-end path proves the fix.
+
+Risk & rollback
+- Risk: **very low**. The change is narrower than it looks: every role that was previously allowed is still allowed (the enum is a strict superset), and the new values being allowed correspond to enum values the DB will already accept. The only behavior change is "we now accept the values we already accept in the schema."
+- Rollback: revert the commit. Zero data implications.
+
+Open questions
+- Should the explicit-feature-gate allowlists (`invoiceReadRoles`, `reportReadRoles`, `driveReadRoles`, the task-assignment contractor/admin filter) include `map_creator` for any feature? Recommended: **no for MC1–MC8**. Map Creators are field-only role; invoice/report/drive access is product-side. Revisit only if user feedback says otherwise.
