@@ -24,6 +24,7 @@ import {
   insertInvoiceSchema, updateInvoiceSchema,
   insertContractSchema, updateContractSchema,
   insertContactSchema, updateContactSchema,
+  userRoleEnum,
 } from "@workspace/db";
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
@@ -1467,8 +1468,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/users/:id/role", requireAdmin, async (req: Request, res: Response) => {
     try {
       const { role, hoaCommunityId } = req.body;
-      const validRoles = ["admin", "contractor", "hoa_admin", "hoa_member"];
-      if (!validRoles.includes(role)) {
+      const validRoles = userRoleEnum.enumValues;
+      if (!validRoles.includes(role as (typeof validRoles)[number])) {
         return res.status(400).json({ error: "Invalid role" });
       }
       if (req.params.id === req.session.userId) {
@@ -1501,8 +1502,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!username || !password) {
         return res.status(400).json({ error: "username and password are required" });
       }
-      const validRoles = ["contractor", "admin", "hoa_admin", "hoa_member"];
-      if (role && !validRoles.includes(role)) {
+      const validRoles = userRoleEnum.enumValues;
+      if (role && !validRoles.includes(role as (typeof validRoles)[number])) {
         return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
       }
       if (isHoaRole(role) && !hoaCommunityId) {

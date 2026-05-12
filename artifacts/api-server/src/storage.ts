@@ -14,6 +14,7 @@ import {
   type DriveFolder, type DriveFile, type Invoice, type Contract,
   type Contact, type InsertContact, type PushTicket,
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
+  userRoleEnum,
 } from "@workspace/db";
 
 export async function createUser(data: InsertUser): Promise<User> {
@@ -1746,8 +1747,8 @@ export async function getTaskPageDataForRole(
     },
   };
 
-  const VALID_ROLES = new Set(["contractor", "hoa_admin", "hoa_member", "property_manager", "admin"]);
-  if (!VALID_ROLES.has(role)) {
+  const VALID_ROLES = new Set(userRoleEnum.enumValues);
+  if (!VALID_ROLES.has(role as (typeof userRoleEnum.enumValues)[number])) {
     throw new Error(`getTaskPageDataForRole: unrecognised role "${role}"`);
   }
 
