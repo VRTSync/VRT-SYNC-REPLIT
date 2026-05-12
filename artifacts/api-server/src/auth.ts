@@ -42,6 +42,10 @@ export function isHoaRole(role: string): boolean {
   return role === 'hoa_admin' || role === 'hoa_member';
 }
 
+export function isMapCreatorRole(role: string): boolean {
+  return role === 'map_creator';
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ message: "Not authenticated" });

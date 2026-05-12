@@ -74,7 +74,7 @@ type User = {
   id: string;
   username: string;
   displayName: string;
-  role: 'contractor' | 'admin' | 'hoa_admin' | 'hoa_member';
+  role: 'contractor' | 'admin' | 'hoa_admin' | 'hoa_member' | 'property_manager' | 'map_creator';
   hoaCommunityId?: string | null;
 };
 

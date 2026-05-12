@@ -8,6 +8,13 @@
       "when": 1746576000000,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778609190818,
+      "tag": "0001_add_map_creator_and_asset_types",
+      "breakpoints": true
     }
   ]
 }

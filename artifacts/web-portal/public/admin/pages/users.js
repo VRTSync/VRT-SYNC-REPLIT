@@ -85,6 +85,7 @@ AdminRouter.register('users', async function(container) {
               <option value="hoa_admin">HOA Admin</option>
               <option value="hoa_member">HOA Member</option>
               <option value="property_manager">Property Manager</option>
+              <option value="map_creator">Map Creator</option>
             </select>
           </div>
           <div class="form-group" id="community-select-group" style="display:none">
@@ -221,12 +222,14 @@ AdminRouter.register('users', async function(container) {
           : u.role === 'hoa_admin' ? 'badge-purple'
           : u.role === 'hoa_member' ? 'badge-purple'
           : u.role === 'property_manager' ? 'badge-amber'
+          : u.role === 'map_creator' ? 'badge-green'
           : 'badge-teal';
         const roleLabel = u.role === 'admin' ? 'Admin'
           : u.role === 'contractor' ? 'Contractor'
           : u.role === 'hoa_admin' ? 'HOA Admin'
           : u.role === 'hoa_member' ? 'HOA Member'
           : u.role === 'property_manager' ? 'Property Manager'
+          : u.role === 'map_creator' ? 'Map Creator'
           : u.role;
 
         const isActive = u.isActive !== false;
@@ -246,6 +249,7 @@ AdminRouter.register('users', async function(container) {
               <option value="contractor">Contractor</option>
               <option value="admin">Admin</option>
               <option value="property_manager">Property Manager</option>
+              <option value="map_creator">Map Creator</option>
             </select>
             <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-left:4px">
               ${toggleLabel}
@@ -291,6 +295,7 @@ AdminRouter.register('users', async function(container) {
         contractor: 'Contractor',
         admin: 'Admin',
         property_manager: 'Property Manager',
+        map_creator: 'Map Creator',
       };
 
       tbody.querySelectorAll('.role-select').forEach(sel => {

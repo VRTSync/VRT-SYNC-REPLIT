@@ -55,6 +55,26 @@ export const ASSET_TYPE_TEMPLATES: Record<string, {
     requiredKeys: [],
     optionalKeys: ["name", "sqFt"],
   },
+  master_valve: {
+    requiredKeys: [],
+    optionalKeys: ["brand", "size"],
+  },
+  flow_meter: {
+    requiredKeys: [],
+    optionalKeys: ["brand", "size"],
+  },
+  pump: {
+    requiredKeys: [],
+    optionalKeys: ["brand", "model"],
+  },
+  quick_connect: {
+    requiredKeys: [],
+    optionalKeys: ["size"],
+  },
+  isolation_valve: {
+    requiredKeys: [],
+    optionalKeys: ["size"],
+  },
 };
 
 export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
@@ -63,7 +83,9 @@ export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
   "irrigation/zone": "zone",
   "irrigation/master_valve": "master_valve",
   "irrigation/flow_meter": "flow_meter",
-  "irrigation/qc_iso_valve": "qc_iso_valve",
+  "irrigation/pump": "pump",
+  "irrigation/quick_connect": "quick_connect",
+  "irrigation/isolation_valve": "isolation_valve",
   "trees/tree": "tree",
   "community/pet_station": "pet_station",
   "community/landscape_bed": "landscape_bed",

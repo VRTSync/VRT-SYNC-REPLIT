@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
-import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole } from "../auth";
+import { requireAuth, requireAdmin, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";

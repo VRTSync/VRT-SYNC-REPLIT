@@ -103,17 +103,21 @@ function AuthNavigator() {
 
     const inAuthGroup = segments[0] === "(auth)";
     const isHoa = user?.role === 'hoa_admin' || user?.role === 'hoa_member';
-    const correctStack = isHoa ? "(hoa-tabs)" : "(tabs)";
-    const wrongStack = isHoa ? "(tabs)" : "(hoa-tabs)";
+    const isMapCreator = user?.role === 'map_creator';
+    const correctStack = isHoa ? "(hoa-tabs)" : isMapCreator ? "(mc-tabs)" : "(tabs)";
+    const inWrongStack =
+      (segments[0] === "(tabs)" && correctStack !== "(tabs)") ||
+      (segments[0] === "(hoa-tabs)" && correctStack !== "(hoa-tabs)") ||
+      (segments[0] === "(mc-tabs)" && correctStack !== "(mc-tabs)");
     let didRedirect = false;
 
     if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
       didRedirect = true;
     } else if (user && inAuthGroup) {
-      router.replace(isHoa ? "/(hoa-tabs)" : "/(tabs)");
+      router.replace(`/${correctStack}` as any);
       didRedirect = true;
-    } else if (user && segments[0] === wrongStack) {
+    } else if (user && inWrongStack) {
       router.replace(`/${correctStack}` as any);
       didRedirect = true;
     }
@@ -187,6 +191,7 @@ function AuthNavigator() {
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="(hoa-tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(mc-tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="task" options={{ headerShown: false }} />
       <Stack.Screen name="notifications" options={{ headerShown: false }} />
       <Stack.Screen name="request-map" options={{ headerShown: false }} />

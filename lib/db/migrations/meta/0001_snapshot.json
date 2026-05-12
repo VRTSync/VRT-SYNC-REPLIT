@@ -1,6 +1,6 @@
 {
-  "id": "181eeb6f-acdb-497a-a37e-e574f59ba7e4",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "faf59423-be09-420e-b1fb-09145e6d79a7",
+  "prevId": "181eeb6f-acdb-497a-a37e-e574f59ba7e4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3788,7 +3788,12 @@
         "landscape_bed",
         "bluegrass_area",
         "native_area",
-        "snow_area"
+        "snow_area",
+        "master_valve",
+        "flow_meter",
+        "pump",
+        "quick_connect",
+        "isolation_valve"
       ]
     },
     "public.export_status": {
@@ -3891,7 +3896,8 @@
         "admin",
         "hoa_admin",
         "hoa_member",
-        "property_manager"
+        "property_manager",
+        "map_creator"
       ]
     },
     "public.xeriscape_packet_status": {

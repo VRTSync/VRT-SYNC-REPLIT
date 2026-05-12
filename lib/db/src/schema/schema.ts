@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEn
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member", "property_manager"]);
+export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member", "property_manager", "map_creator"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed", "submitted", "acknowledged"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
@@ -127,6 +127,7 @@ export const pushTokens = pgTable("push_tokens", {
 export const assetTypeEnum = pgEnum("asset_type", [
   "controller", "backflow", "zone", "tree", "pet_station",
   "landscape_bed", "bluegrass_area", "native_area", "snow_area",
+  "master_valve", "flow_meter", "pump", "quick_connect", "isolation_valve",
 ]);
 
 export const assetNotes = pgTable("asset_notes", {
