@@ -1,0 +1,200 @@
+SLICE MC1 — Map Creator Foundation: Role, Schema, Portal Shell (Mobile + DB + API + Admin)
+
+Goal
+Lay the structural foundation for the new Map Creator user type and its mobile portal, without building any map-creation UI yet. This slice (a) adds `map_creator` to `userRoleEnum`, (b) reconciles the `assetTypeEnum` with the types already referenced in `layerValidation.ts` and `assetSync.ts` by adding `master_valve`, `flow_meter`, `pump`, `quick_connect`, `isolation_valve` (and deliberately not adding the deprecated `qc_iso_valve`), (c) fixes the validation rule for `zone` to allow Point geometry (which is how zones are actually stored today), (d) creates an empty mobile route group `(mc-tabs)` parallel to `(tabs)` and `(hoa-tabs)` with placeholder Customers / Settings / Profile tabs, (e) updates the role-routing logic in `app/_layout.tsx` so `map_creator` users land in the new portal, (f) adds an `isMapCreatorRole()` server-side helper for permission checks, and (g) exposes `map_creator` in the admin user-edit form.
+
+After this slice ships, an admin can promote any contractor to `map_creator`, that user can log in and lands in an empty Map Creator portal with three placeholder tabs, and the schema is ready for MC2 (Customer Selection) and beyond. No map UI, no GPS capture, no pin creation in this slice.
+
+Scope (IN)
+
+1) Database schema — enum updates and validation fixes
+- Add `"map_creator"` to `userRoleEnum` in `lib/db/src/schema/schema.ts`.
+- Add five values to `assetTypeEnum` in `lib/db/src/schema/schema.ts`:
+  - `"master_valve"` — closes existing reference gap.
+  - `"flow_meter"` — closes existing reference gap.
+  - `"pump"` — new.
+  - `"quick_connect"` — new, replaces half of `qc_iso_valve`.
+  - `"isolation_valve"` — new, replaces other half of `qc_iso_valve`.
+- Do **not** add `"qc_iso_valve"` to the enum. It is referenced in code today but never could insert because it was missing from the enum, so there is no production data to migrate.
+- Generate the Drizzle migration: `pnpm --filter @workspace/db run migrate:generate`. Expect Drizzle to emit a migration like `0001_<auto-named>.sql` containing one `ALTER TYPE "user_role" ADD VALUE 'map_creator'` and five `ALTER TYPE "asset_type" ADD VALUE '...'` statements.
+- **Important Postgres caveat**: `ALTER TYPE ... ADD VALUE` must run outside an explicit transaction. Drizzle's generated migration with `breakpoints: true` (already set in `lib/db/drizzle.config.ts`) handles this by separating each statement. Verify each `ALTER TYPE ... ADD VALUE` is on its own breakpoint (preceded by `--> statement-breakpoint`) before committing.
+
+2) Validation reconciliation — `artifacts/api-server/src/layerValidation.ts`
+- Change `zone: ["Polygon", "MultiPolygon"]` to `zone: ["Point"]`. Zones are stored as Points today (the KML parser extracts `extractPointCoords` for zones and the `assets` table stores `latitude`/`longitude`); the existing rule is stale and would reject valid current data on re-import.
+- Add new entries:
+  - `pump: ["Point"]`
+  - `quick_connect: ["Point"]`
+  - `isolation_valve: ["Point"]`
+- Remove the `qc_iso_valve` entry from `EXPECTED_GEOMETRY` (no enum value, no rows possible).
+
+3) Sync mapping updates — `artifacts/api-server/src/assetSync.ts`
+- In `SUB_LAYER_TO_ASSET_TYPE`:
+  - Remove `"irrigation/qc_iso_valve": "qc_iso_valve"`.
+  - Add `"irrigation/pump": "pump"`.
+  - Add `"irrigation/quick_connect": "quick_connect"`.
+  - Add `"irrigation/isolation_valve": "isolation_valve"`.
+- In `ASSET_TYPE_TEMPLATES`, add entries for the five newly-incorporated types so KML import and asset detail rendering know what fields to expect:
+  ```ts
+  master_valve: { requiredKeys: [], optionalKeys: ["brand", "size"] },
+  flow_meter:   { requiredKeys: [], optionalKeys: ["brand", "size"] },
+  pump:         { requiredKeys: [], optionalKeys: ["brand", "horsepower"] },
+  quick_connect:    { requiredKeys: [], optionalKeys: ["size"] },
+  isolation_valve:  { requiredKeys: [], optionalKeys: ["size"] },
+  ```
+- Match the existing pattern — keep `requiredKeys` minimal so KML imports don't suddenly start failing.
+
+4) API server role helper — `artifacts/api-server/src/auth.ts`
+- Add a new exported helper next to `isHoaRole`:
+  ```ts
+  export function isMapCreatorRole(role: string): boolean {
+    return role === 'map_creator';
+  }
+  ```
+- Re-export it from `artifacts/api-server/src/routes/routes.ts` import list (`import { ..., isMapCreatorRole } from "../auth"`).
+- Do not add any per-route gating in this slice — gating lands in MC2+ when actual map-creator-only endpoints exist.
+
+5) Mobile — new route group `(mc-tabs)`
+- Create `artifacts/vrtsync-mobile/app/(mc-tabs)/` with these files:
+  - `_layout.tsx` — mirror the structure of `artifacts/vrtsync-mobile/app/(hoa-tabs)/_layout.tsx` (NativeTabs + ClassicTabs fallback). Three triggers: `index` (Customers), `settings`, `profile`. Use distinct SF Symbols and icon tokens:
+    - `index` → `Icon sf={{ default: "person.crop.rectangle.stack", selected: "person.crop.rectangle.stack.fill" }}` + Label "Customers"
+    - `settings` → `Icon sf={{ default: "gearshape", selected: "gearshape.fill" }}` + Label "Settings"
+    - `profile` → `Icon sf={{ default: "person", selected: "person.fill" }}` + Label "Profile"
+  - `index.tsx` — placeholder screen titled "Customers" with a centered empty-state ("Customer list coming soon — MC2"). No real data fetch yet.
+  - `settings.tsx` — placeholder titled "Settings". Empty content.
+  - `profile.tsx` — placeholder titled "Profile". Can reuse the same content scaffolding as `(tabs)/profile.tsx` if trivial, or be a minimal "Signed in as {displayName}" + Logout button. Logout must call the existing `useAuth().logout()` so the flow works end-to-end.
+
+6) Mobile — role-routing update in `artifacts/vrtsync-mobile/app/_layout.tsx`
+- Inside `AuthNavigator`, replace the binary HOA/non-HOA logic with a three-way switch:
+  ```ts
+  const role = user?.role || '';
+  const isHoa = role === 'hoa_admin' || role === 'hoa_member';
+  const isMapCreator = role === 'map_creator';
+  const correctStack: '(tabs)' | '(hoa-tabs)' | '(mc-tabs)' =
+    isHoa ? '(hoa-tabs)' :
+    isMapCreator ? '(mc-tabs)' :
+    '(tabs)';
+  const currentStack = segments[0];
+  const inAuthGroup = currentStack === '(auth)';
+
+  let didRedirect = false;
+
+  if (!user && !inAuthGroup) {
+    router.replace('/(auth)/login');
+    didRedirect = true;
+  } else if (user && inAuthGroup) {
+    router.replace(`/${correctStack}` as any);
+    didRedirect = true;
+  } else if (user && currentStack && currentStack !== correctStack && !inAuthGroup) {
+    router.replace(`/${correctStack}` as any);
+    didRedirect = true;
+  }
+  ```
+- Register the new stack alongside the others:
+  ```tsx
+  <Stack.Screen name="(mc-tabs)" options={{ headerShown: false }} />
+  ```
+- Behavior must be: any user with `role === 'map_creator'` who lands in `(tabs)` or `(hoa-tabs)` is redirected to `(mc-tabs)`; any non-map-creator who lands in `(mc-tabs)` is redirected to their correct stack.
+
+7) Admin user-edit form — `artifacts/web-portal/public/admin/pages/users.js`
+- Add `<option value="map_creator">Map Creator</option>` to the Create User modal's Role select. Place it after Property Manager.
+- Add `map_creator` to the role-change dropdown introduced in SLICE FIX-1 (or, if FIX-1 has not yet shipped, add it inline to whatever role-change action exists at the time MC1 lands).
+- Add the role-label and badge-class branches:
+  - `roleLabel` for `map_creator` → "Map Creator".
+  - `roleBadgeClass` for `map_creator` → new class `badge-green` (or any unused palette token — confirm it exists in the admin CSS; add if missing, same pattern as FIX-1's `badge-amber`).
+- Map Creator must **not** trigger the HOA Community group in the create modal.
+
+Scope (OUT)
+- Any actual Map Creator portal UI beyond the empty shells (customer list, map view, pin capture). Those land in MC2–MC6.
+- Any new permissions for community creation by map_creator (MC2).
+- Any high-accuracy GPS work (MC3).
+- Any KML / GeoJSON ingestion changes beyond the validation/sync table updates above.
+- Removing or migrating any `qc_iso_valve` data — no rows can exist (enum value was never present), so there is nothing to migrate.
+- Adding `plow`, `atv`, `hand_shovel`, `ice_melt`, `slicer`, `storage_area` to the enum even though they are referenced in `layerValidation.ts`. Those are out of MC scope; track separately.
+
+Files to touch
+- `lib/db/src/schema/schema.ts` — enum additions.
+- `lib/db/migrations/0001_<auto-named>.sql` *(new — generated)*.
+- `lib/db/migrations/meta/_journal.json` *(updated by drizzle-kit generate)*.
+- `artifacts/api-server/src/auth.ts` — new `isMapCreatorRole()` helper.
+- `artifacts/api-server/src/routes/routes.ts` — import the new helper (no usage yet).
+- `artifacts/api-server/src/layerValidation.ts` — fix zone Point, add three new Point types, remove qc_iso_valve.
+- `artifacts/api-server/src/assetSync.ts` — update `SUB_LAYER_TO_ASSET_TYPE` and `ASSET_TYPE_TEMPLATES`.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/_layout.tsx` *(new)*.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/index.tsx` *(new — placeholder)*.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/settings.tsx` *(new — placeholder)*.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/profile.tsx` *(new — placeholder)*.
+- `artifacts/vrtsync-mobile/app/_layout.tsx` — three-way role routing + Stack.Screen registration.
+- `artifacts/web-portal/public/admin/pages/users.js` — role select option, label, badge.
+- `artifacts/web-portal/public/admin/css/*` — only if `badge-green` (or chosen color class) does not exist.
+
+Implementation order (follow exactly to keep the app functional at every step)
+
+1. **Schema edit.** Update `lib/db/src/schema/schema.ts`: add `"map_creator"` to `userRoleEnum`, and `"master_valve"`, `"flow_meter"`, `"pump"`, `"quick_connect"`, `"isolation_valve"` to `assetTypeEnum`. Save.
+2. **Generate migration.** From repo root: `pnpm --filter @workspace/db run migrate:generate`. Drizzle will create `lib/db/migrations/0001_<some_words>.sql`. Open it and verify it contains six `ALTER TYPE ... ADD VALUE ...` statements, each separated by `--> statement-breakpoint`. If any are missing breakpoints, hand-edit to add them.
+3. **Apply migration locally.** Run `pnpm --filter @workspace/db run migrate:up`. Verify `\dT+ user_role` and `\dT+ asset_type` in psql now show the new values.
+4. **Server-side wiring.** Add `isMapCreatorRole` to `auth.ts`. Update `layerValidation.ts` (zone Point fix, three new Point entries, remove qc_iso_valve). Update `assetSync.ts` (SUB_LAYER_TO_ASSET_TYPE and ASSET_TYPE_TEMPLATES). Run `pnpm --filter @workspace/api-server run typecheck` (or build) — must pass.
+5. **Mobile route group.** Create the four new files under `app/(mc-tabs)/`. Mirror `(hoa-tabs)/_layout.tsx` structure for the layout file.
+6. **Mobile role routing.** Apply the three-way redirect in `app/_layout.tsx` and register `<Stack.Screen name="(mc-tabs)" ...>`. Run `pnpm --filter @workspace/vrtsync-mobile run typecheck`.
+7. **Admin web form.** Add the `map_creator` option, label, and badge to `users.js` (and CSS if needed).
+8. **Manual end-to-end test.**
+   - In the admin web portal, create a test user with role `map_creator` (or change an existing contractor to `map_creator`).
+   - On a built mobile dev client, log in as that user. Expected: redirected to `(mc-tabs)`, three tabs visible (Customers / Settings / Profile), Customers tab shows "Customer list coming soon — MC2", Profile tab Logout works and returns to the login screen.
+   - Log in as a contractor — must land in `(tabs)` as before.
+   - Log in as an HOA admin/member — must land in `(hoa-tabs)` as before.
+9. **Commit and push.**
+
+Acceptance Criteria
+
+A) Schema & migration
+- `userRoleEnum` and `assetTypeEnum` in `schema.ts` include the new values.
+- A new migration file `lib/db/migrations/0001_*.sql` exists with six `ALTER TYPE ... ADD VALUE ...` statements, each on its own breakpoint.
+- `pnpm --filter @workspace/db run migrate:up` applies cleanly on a DB previously at baseline.
+- `\dT+ user_role` shows `map_creator` as a value; `\dT+ asset_type` shows the five new values.
+
+B) Validation & sync code consistent with enum
+- `EXPECTED_GEOMETRY` in `layerValidation.ts` no longer references `qc_iso_valve`; includes Point entries for `pump`, `quick_connect`, `isolation_valve`; `zone` is `["Point"]`.
+- `SUB_LAYER_TO_ASSET_TYPE` in `assetSync.ts` no longer references `qc_iso_valve`; includes the three new irrigation sub-layer mappings.
+- `ASSET_TYPE_TEMPLATES` includes entries for the five newly-incorporated types.
+- `pnpm --filter @workspace/api-server run typecheck` and build both pass.
+
+C) API server
+- `isMapCreatorRole(role)` is exported from `auth.ts` and returns `true` only for `'map_creator'`.
+- No existing route behavior changes.
+
+D) Mobile route group
+- `(mc-tabs)` exists with `_layout.tsx`, `index.tsx`, `settings.tsx`, `profile.tsx`.
+- The Customers tab renders the placeholder copy "Customer list coming soon — MC2".
+- The Profile tab Logout calls `useAuth().logout()` and returns the user to the auth flow.
+
+E) Role routing
+- A user with `role === 'map_creator'` who completes login lands in `(mc-tabs)`.
+- A user with that role who deep-links into `(tabs)` or `(hoa-tabs)` is redirected to `(mc-tabs)`.
+- A contractor / admin / property_manager who completes login lands in `(tabs)` (no regression).
+- An hoa_admin / hoa_member who completes login lands in `(hoa-tabs)` (no regression).
+- A signed-out user is redirected to `(auth)/login` (no regression).
+
+F) Admin web form
+- Create User Role select includes a "Map Creator" option that does **not** trigger the HOA Community group.
+- The user list shows a "Map Creator" badge with the chosen color class for any map_creator user.
+- The role-change dropdown (from FIX-1, or whatever role-change action exists) can target `map_creator`.
+
+G) Build & typecheck
+- `pnpm --filter @workspace/db run migrate:check` passes.
+- `pnpm --filter @workspace/api-server run build` passes.
+- `pnpm --filter @workspace/web-portal run build` passes.
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` passes.
+
+Test plan
+- Migration: applied on a copy of the dev DB; enum values present in psql; rolling back via `BEGIN; … ROLLBACK;` test against a scratch DB is acceptable since `ALTER TYPE ... ADD VALUE` cannot be rolled back within a transaction in Postgres.
+- Manual end-to-end: covered in step 8 of Implementation order.
+- Regression spot-check: a contractor and an HOA member each log in on the dev client and verify they land in their existing tab groups and see no UI changes.
+
+Risk & rollback
+- Risk: **low–medium**. Schema additions are additive (no column drops, no data migrations). The enum values cannot be removed once added in Postgres, so a true rollback of the migration would require recreating the enum — keep the values even on revert. Code rollback is straightforward (`git revert`).
+- The riskiest piece is the role-routing rewrite in `app/_layout.tsx`; mitigated by manual login tests for all five existing roles plus map_creator in step 8.
+- If the routing rewrite breaks an existing role, immediate fix is to revert just `app/_layout.tsx`; the schema and `(mc-tabs)` files can stay untouched and a follow-up fix can land.
+
+Open questions
+- Should the placeholder Customers screen include a header "Hello, {displayName}" similar to other portals' home screens? Recommended yes for polish, but trivial — omit if it complicates the slice.
+- Should map_creator be granted `community_members` rows for every community they will work on (mirroring contractor permissions), or do they have global community-list access like admins do? Decision lands in MC2. For MC1, no community-scoping enforcement is added; map_creator users see whatever the (currently placeholder) Customers screen shows.
+- Should the `(mc-tabs)` tab bar use a distinctive accent color so the user instantly knows they're in Map Creator mode? Recommend yes — pick a token from the existing palette (e.g. green to match outdoor/mapping branding) and apply via `tabBarActiveTintColor`. Cosmetic; can land here or in MC2.
