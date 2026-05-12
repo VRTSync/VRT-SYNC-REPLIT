@@ -1,0 +1,30 @@
+kind = "web"
+previewPath = "/web"
+title = "Web Portal"
+version = "1.0.0"
+
+[[services]]
+localPort = 3100
+name = "Web Portal"
+paths = ["/web", "/admin-static", "/portal-static", "/leaflet-map.html", "/pin-picker.html"]
+
+[services.development]
+run = "pnpm --filter @workspace/web-portal run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/web-portal", "run", "build"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["node", "--enable-source-maps", "artifacts/web-portal/dist/server.mjs"]
+
+[services.production.run.env]
+PORT = "3100"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/web/login"

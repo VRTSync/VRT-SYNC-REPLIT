@@ -25,10 +25,11 @@ A field-operations platform for landscape and HOA community management — mobil
 
 - `lib/db/src/schema/schema.ts` — DB schema (source of truth)
 - `artifacts/api-server/src/routes/routes.ts` — all API routes (`registerRoutes`)
-- `artifacts/api-server/src/app.ts` — Express app setup (CORS, sessions, static pages)
+- `artifacts/api-server/src/app.ts` — Express app setup (CORS, sessions)
 - `artifacts/api-server/src/index.ts` — startup migrations, seeds, scheduler
 - `artifacts/api-server/src/shared/` — code shared between server and mobile (layerColors, assetFieldTemplates, leaflet-map-template)
-- `artifacts/api-server/public/` + `artifacts/api-server/templates/` — static HTML/CSS/JS for web portals
+- `artifacts/web-portal/src/server.ts` — lightweight Express server for all web portal routes
+- `artifacts/web-portal/public/` + `artifacts/web-portal/templates/` — static HTML/CSS/JS for web portals
 - `artifacts/vrtsync-mobile/app/` — expo-router screens (`(auth)`, `(tabs)` crew, `(hoa-tabs)` HOA)
 - `artifacts/vrtsync-mobile/client/` — contexts (Auth, Community, Offline, MapFilter) + utils
 - `artifacts/vrtsync-mobile/shared/` — copies of server shared files for Metro bundler
@@ -48,7 +49,7 @@ A field-operations platform for landscape and HOA community management — mobil
 
 - **Crew portal** (`(tabs)`): task list, community map with GIS layers, admin tools, profile
 - **HOA portal** (`(hoa-tabs)`): service calendar, community map, maintenance request submission, profile
-- **Web portals**: admin hub (full management) and resident portal (HOA request tracking) served as server-rendered HTML at `/admin` and `/portal`
+- **Web portals**: admin hub (full management) and resident portal (HOA request tracking) served by the dedicated `web-portal` artifact at `/web/*`, `/admin-static`, `/portal-static`
 - **Push notifications**: Expo push ticket system with scheduler for due-reminder alerts
 - **Offline support**: React Query persistence via AsyncStorage + offline pack context (MMKV + file-system)
 
