@@ -1,0 +1,192 @@
+SLICE MC2 — Customer Selection + Creation (Map Creator Portal)
+
+Goal
+A Map Creator opens the mobile app and lands in the empty `(mc-tabs)` portal from MC1. This slice fills in the Customers tab so they can (a) see the list of customers (communities) they have access to, (b) create a new customer when the property isn't in the list yet, and (c) tap a customer to enter that customer's Map Creator workspace — which for this slice is a placeholder screen that subsequent slices (MC3+) will populate with the map, GPS capture, and pin tools. No map UI, no pin creation, no GPS work lands here; MC2 is purely the customer-selection layer of the workflow you described ("they need to select the customer they will work on — if the customer is not in the list they can create the customer").
+
+After MC2, a Map Creator user can: log in, see their customer list, hit "+", type a customer name, and immediately enter that new customer's workspace placeholder. Admins are unaffected.
+
+Pre-requisites
+- SLICE MC1 merged (role + portal shell + schema additions).
+- SLICE FIX-2 merged (role validators wired to enum — required because creating a Map Creator user goes through `POST /api/admin/users`).
+- Recommended but not strictly required: SLICE MC1-TEST signed off so we know the foundation is solid.
+
+Scope (IN)
+
+1) Backend permission expansion — `artifacts/api-server/src/routes/routes.ts`
+- `POST /api/communities` is currently gated by `requireAdmin`. Replace the middleware with a new helper that allows `admin` OR `map_creator`:
+  - Add to `artifacts/api-server/src/auth.ts`:
+    ```ts
+    export function requireAdminOrMapCreator(req: Request, res: Response, next: NextFunction) {
+      if (!req.session.userId) return res.status(401).json({ error: "Unauthorized" });
+      storage.getUserById(req.session.userId).then((user) => {
+        if (!user) return res.status(401).json({ error: "Unauthorized" });
+        if (user.role !== "admin" && !isMapCreatorRole(user.role)) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+        (req as any).currentUser = user;
+        next();
+      }).catch((err) => {
+        console.error("requireAdminOrMapCreator error:", err);
+        res.status(500).json({ error: "Auth check failed" });
+      });
+    }
+    ```
+  - Import this helper in `routes.ts` and apply it to `POST /api/communities`.
+- After the community is created, if the creator is a `map_creator`, automatically add a `community_members` row for them so subsequent `GET /api/communities` calls return the new community in their list. Admins are *not* auto-added (they have global access; auto-adding would create useless rows).
+  - Pseudocode for the handler body (replace the existing create flow):
+    ```ts
+    const community = await storage.createCommunity({ ... });
+    const user = (req as any).currentUser;
+    if (isMapCreatorRole(user.role)) {
+      await storage.addCommunityMember(community.id, user.id);
+    }
+    res.status(201).json(community);
+    ```
+
+2) Mobile — CommunityContext extension for live data
+- The existing `CommunityProvider` sources its list from `bootstrapCommunities` returned by `useAuth()`. This is fine for HOA users (single community, never changes) and acceptable for contractors (memberships rarely change at runtime), but map_creators create new customers at runtime and need the new community to appear immediately.
+- File: `artifacts/vrtsync-mobile/client/contexts/CommunityContext.tsx`.
+- Add an opt-in live-fetch mode keyed off the user's role:
+  ```ts
+  const { user } = useAuth();
+  const isMapCreator = user?.role === 'map_creator';
+
+  const liveQuery = useQuery({
+    queryKey: ['communities', 'live'],
+    queryFn: () => apiRequest('/api/communities') as Promise<Community[]>,
+    enabled: isMapCreator,
+    staleTime: 30_000,
+  });
+
+  const communities = isMapCreator ? (liveQuery.data ?? bootstrapCommunities) : bootstrapCommunities;
+  ```
+- Expose two new methods on the context value:
+  - `refresh(): Promise<void>` — invalidates the `['communities', 'live']` query if `isMapCreator`, else no-op.
+  - `addCommunityOptimistic(c: Community): void` — pushes onto the live cache so a just-created customer is immediately tappable, even before the network re-fetch completes.
+- Keep `activeCommunity` computed against `communities` (the role-aware merged list) instead of `bootstrapCommunities` directly.
+- Behavior unchanged for any non-map_creator role.
+
+3) Mobile — Customers tab (`artifacts/vrtsync-mobile/app/(mc-tabs)/index.tsx`)
+- Replace the MC1 placeholder content. Implement a Customers list screen:
+  - Header: title "Customers", right-side button "+ New Customer" (use Ionicons `add-circle-outline` + label, or just `+` if space is tight).
+  - Body:
+    - **Loading state**: centered `ActivityIndicator` while the query is in flight.
+    - **Empty state**: friendly message ("No customers yet — tap + to add the property you'll be working on") and a primary "+ New Customer" button as the call-to-action.
+    - **Populated state**: scrollable list of customer cards. Each card shows: customer name (bold), description (one-line, truncated), and a chevron-right tap affordance. Tapping the card navigates to `/mc-workspace/[id]` (see step 5).
+- Use the role-aware `communities` from `useCommunity()` as the data source.
+- The "+ New Customer" button opens the modal in step 4.
+
+4) Mobile — New Customer modal
+- New component file: `artifacts/vrtsync-mobile/components/NewCustomerModal.tsx`.
+- Standard React Native `Modal` with the existing app's modal styling pattern (mirror the pattern used in `app/(tabs)/...` modals; reuse `components/ErrorBoundary.tsx` if relevant).
+- Inputs:
+  - Name (required, min 1 char, max 100 chars).
+  - Description (optional, max 500 chars).
+- Buttons: Cancel (closes modal, no API call) and Create (disabled until name is non-empty; shows spinner during submit).
+- On submit:
+  - `POST /api/communities` with `{ name, description }`.
+  - On success:
+    - Call `useCommunity().addCommunityOptimistic(newCommunity)` so the list updates immediately.
+    - Call `useCommunity().refresh()` to reconcile with server (cheap).
+    - Close the modal.
+    - Call `useCommunity().setActiveCommunity(newCommunity)`.
+    - Navigate to `/mc-workspace/[id]` for the new community (step 5).
+  - On failure: show a toast with the error message; keep the modal open so the user can retry.
+
+5) Mobile — Workspace placeholder screen
+- New file: `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` (lives outside `(mc-tabs)` so it stacks above the tab bar, matching the pattern of `app/task/[id].tsx`).
+- On mount:
+  - Read `id` from `useLocalSearchParams()`.
+  - Find the community in `useCommunity().communities` by `id`. If found, render header with the customer name. If not found (e.g. revoked access, stale link), show a "Customer not found" empty state with a Back button.
+  - Call `useCommunity().setActiveCommunity(c)` on mount so downstream slices (MC3+) read it consistently.
+- Body for this slice: a simple placeholder:
+  - Title: customer name
+  - Subtitle: customer description (if present)
+  - Centered block: "Map workspace coming in MC4 — you'll build the irrigation, trees, and points for **{customer name}** here." with a small "Back to Customers" button that routes back to `(mc-tabs)/index`.
+- Register the route by ensuring the file is picked up by Expo Router. No additional `Stack.Screen` declaration is needed in `app/_layout.tsx` because Expo Router auto-registers top-level routes; verify after creating that navigating to `/mc-workspace/<some-id>` works.
+
+6) Mobile — wire the navigation
+- In `(mc-tabs)/index.tsx`, the row tap handler is `router.push(`/mc-workspace/${community.id}`)` (using `useRouter()` from `expo-router`).
+- The placeholder workspace's "Back to Customers" handler is `router.replace('/(mc-tabs)')` (replace, not push, so the back stack stays clean).
+
+Scope (OUT)
+- Any map rendering (MC4) or pin creation (MC5+).
+- High-accuracy GPS capture (MC3).
+- Edit-customer or delete-customer flows. Edit/delete remain `requireAdmin`-only and out of MC creators' reach in this slice. We can revisit if field demand surfaces.
+- Photo / logo upload for a customer. Not needed yet.
+- Member management for a customer (inviting other map creators or admins to a customer they created). Admins still manage memberships via the web portal; map creators see only their own auto-membership.
+- Customer search/filtering. The list is expected to be small (single-digit count per map creator in the near term); revisit if it grows.
+- Offline support for the Customers tab. The list is a small JSON payload; React Query's default cache covers offline reads for short windows. Full offline pack creation lands in MC7.
+
+Files to touch
+- `artifacts/api-server/src/auth.ts` — new `requireAdminOrMapCreator` helper.
+- `artifacts/api-server/src/routes/routes.ts` — apply new middleware to `POST /api/communities`; add auto-add-as-member logic.
+- `artifacts/vrtsync-mobile/client/contexts/CommunityContext.tsx` — role-aware live-fetch + `refresh()` + `addCommunityOptimistic()`.
+- `artifacts/vrtsync-mobile/app/(mc-tabs)/index.tsx` — replace MC1 placeholder with Customers list.
+- `artifacts/vrtsync-mobile/components/NewCustomerModal.tsx` *(new)*.
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` *(new — placeholder)*.
+
+Implementation order
+
+1. **Backend first** — add `requireAdminOrMapCreator` to `auth.ts`, update `POST /api/communities`. Build the api-server (`pnpm --filter @workspace/api-server run build`). Smoke-test by curl-ing the endpoint as a map_creator user (use a session cookie from logging in via the web portal as a test map_creator).
+2. **Context extension** — add the role-aware live-fetch + `refresh` + `addCommunityOptimistic` to `CommunityContext.tsx`. Keep the diff minimal; do not touch the HOA / contractor code paths. Typecheck mobile.
+3. **NewCustomerModal component** — implement it in isolation with mock callbacks. Verify it renders, validates name length, and shows spinner state.
+4. **Customers tab** — replace the placeholder with the real list + integrate the modal + wire the row tap to `/mc-workspace/[id]`.
+5. **Workspace placeholder screen** — create `app/mc-workspace/[id].tsx`. Verify navigation works in both directions.
+6. **End-to-end manual test**:
+   - Log in as a map_creator on the dev client. Customers tab shows empty state.
+   - Tap "+ New Customer". Type a name. Hit Create. Modal closes, list updates, app navigates into the new customer's workspace placeholder.
+   - Hit "Back to Customers". The new customer appears in the list.
+   - Tap the customer card again. Workspace placeholder loads correctly with the right name.
+   - Force-kill the app, reopen. Log in. The customer is still in the list (proves the DB write happened and `community_members` was added).
+   - Log in as an admin. Confirm admin can still create communities via the existing admin form and that admins are NOT auto-added as members (this is a regression check on the auto-add logic — admins should be unaffected).
+
+Acceptance Criteria
+
+A) Backend permissions
+- `POST /api/communities` accepts a logged-in `map_creator`'s request and returns 201 with the new community JSON.
+- After creation by a map_creator, a row exists in `community_members` linking that user to the new community (verifiable via `SELECT * FROM community_members WHERE user_id = '<map_creator_id>' AND community_id = '<new_id>'`).
+- A community created by an `admin` does NOT auto-add the admin to `community_members`.
+- A logged-in `contractor` calling `POST /api/communities` returns 403 (unchanged behavior).
+- Existing `requireAdmin` routes (PATCH/DELETE community, member admin endpoints) are untouched.
+
+B) Mobile context
+- For a `map_creator` user, the Customers tab data updates within ~1s of a successful create (optimistic update plus React Query refetch).
+- For non-map_creator users, `CommunityContext` behavior is bit-for-bit identical to MC1 (no extra network calls, no behavior change).
+
+C) Customers tab UI
+- Empty state renders when the map_creator has no community memberships (e.g. immediately after first login).
+- Populated state renders one card per accessible customer; tapping a card navigates to `/mc-workspace/[id]`.
+- "+ New Customer" header button opens the modal; modal validates name length; Cancel returns to list without API call; Create disables until name is present.
+
+D) Workspace placeholder
+- `/mc-workspace/<known-id>` renders the placeholder with the correct customer name.
+- `/mc-workspace/<unknown-id>` renders the "Customer not found" state with a Back button.
+- "Back to Customers" returns the user to the Customers tab without leaving an orphaned route in the back stack.
+
+E) Build & typecheck
+- `pnpm --filter @workspace/api-server run build` passes.
+- `pnpm --filter @workspace/vrtsync-mobile run typecheck` — no NEW errors introduced (pre-existing typecheck failures noted in MC1's commit report are still acceptable).
+- `pnpm --filter @workspace/db run migrate:check` passes (no migration added; sanity).
+
+F) No regression for other roles
+- Contractor login → `(tabs)` (no change).
+- Admin login → `(tabs)` with admin functions intact (no change). Admin can still create communities via the existing admin web flow.
+- HOA admin / member login → `(hoa-tabs)` (no change).
+- Property manager login → `(tabs)` (no change).
+
+Test plan
+- Manual end-to-end described in Implementation order step 6.
+- API smoke: from a curl shell, log in as a map_creator and a contractor; the map_creator's POST succeeds, the contractor's returns 403.
+- DB inspection: confirm `community_members` row exists for map_creator-created customers; absent for admin-created customers.
+- Cosmetic: verify the Customers empty state copy is friendly and matches the app's voice; verify the workspace placeholder copy says "coming in MC4".
+
+Risk & rollback
+- Risk: **low**. The only public-API change is opening one POST endpoint to a new role that the schema already accepts. The middleware swap is local. Mobile changes are additive — no existing screens are modified.
+- The riskiest piece is the `CommunityContext` extension. Mitigated by guarding the new live-fetch behavior behind `isMapCreator`; non-map_creator code paths execute the exact same code as before.
+- Rollback: revert the commit. The `community_members` rows created in production by map_creator self-adds are harmless to leave behind (they represent real, intentional memberships) — no data cleanup needed.
+
+Open questions
+- Should map_creators be allowed to *edit* their own customers' name/description? Recommended: not in this slice. Add a small slice MC2.1 if the field reports that customer names get typed wrong frequently and a re-do is annoying.
+- Should the workspace placeholder show *any* useful info pre-MC4 (e.g. customer creation date, member count, asset count)? Recommended: keep it minimal — adding stats now creates code that MC4 will replace anyway.
+- Should the customers list be sorted alphabetically, most-recently-used, or most-recently-created? Recommended: most-recently-created first (so a brand-new customer is at the top after creation). Easy to revisit.

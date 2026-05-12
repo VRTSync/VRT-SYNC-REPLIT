@@ -1,0 +1,217 @@
+SLICE MC1-TEST — Acceptance Testing Checklist for Map Creator Foundation
+
+Goal
+SLICE MC1 added foundational schema, role-routing, and a placeholder mobile portal. Bugs at this layer cascade into every subsequent slice (MC2–MC8) and are expensive to find later, so this slice is a manual acceptance test pass to be executed **after** MC1 and FIX-2 have both landed and **before** any MC2 work begins. The deliverable of this slice is not new code — it is a signed-off checklist confirming MC1 actually works end-to-end on a real device against a real database. Treat any failed step as a bug to fix in a follow-up; do not start MC2 until all blocking steps pass.
+
+**Pre-requisites** (must be true before starting this checklist)
+- SLICE MC1 has been merged and deployed to the dev environment.
+- SLICE FIX-2 has been merged and deployed to the dev environment (without it, steps C1, C2, and C4 below will fail).
+- A mobile dev client build that includes the MC1 changes has been built and installed on a test device (iOS preferred; Android is OK).
+- An admin user account exists for logging into the web portal.
+- The dev database is reachable via psql for direct verification.
+
+Scope (IN)
+
+This slice is a series of test steps grouped by category. Each step has a clear pass/fail criterion. Execute every step. Record pass/fail with notes for any failure.
+
+Category A — Database & migration
+
+A1. Fresh-DB migration applies cleanly.
+- Provision an empty Postgres database (a throwaway is fine).
+- Set `DATABASE_URL` to point at it.
+- Run `pnpm --filter @workspace/db run migrate:up`.
+- **Pass**: command exits 0; psql shows tables created from both `0000_baseline.sql` and `0001_add_map_creator_and_asset_types.sql`.
+- **Fail**: any error from drizzle migrator; or only baseline ran but `0001` did not apply.
+
+A2. Existing-DB migration is a no-op for data, applies new enum values.
+- Set `DATABASE_URL` to the dev database (which was already at baseline before MC1).
+- Run `pnpm --filter @workspace/db run migrate:up`.
+- **Pass**: no row-data changes, `__drizzle_migrations` now lists `0001_add_map_creator_and_asset_types`, and enum values from step A3 are present.
+- **Fail**: any data change reported; or migration runs but enum values are not present.
+
+A3. New enum values are present in psql.
+- Run in psql against the dev DB:
+  ```sql
+  SELECT enum_range(NULL::user_role);
+  SELECT enum_range(NULL::asset_type);
+  ```
+- **Pass**: `user_role` includes `map_creator`. `asset_type` includes `master_valve`, `flow_meter`, `pump`, `quick_connect`, `isolation_valve`.
+- **Fail**: any value missing.
+
+A4. Insert-smoke for each new asset_type.
+- Pick any existing community ID. Run for each new type:
+  ```sql
+  INSERT INTO assets (community_id, asset_type, label) VALUES ('<community_id>', 'pump', 'TEST pump') RETURNING id;
+  ```
+  Repeat with `master_valve`, `flow_meter`, `quick_connect`, `isolation_valve`. Then `DELETE FROM assets WHERE label LIKE 'TEST %';` to clean up.
+- **Pass**: every insert returns a UUID; no `invalid input value for enum` errors.
+- **Fail**: any insert errors.
+
+A5. Insert-smoke for the new user_role value.
+- Run:
+  ```sql
+  INSERT INTO users (username, password, display_name, role) VALUES ('test_mc_smoke', 'temp', 'TEST MC', 'map_creator') RETURNING id;
+  DELETE FROM users WHERE username = 'test_mc_smoke';
+  ```
+- **Pass**: insert returns a UUID.
+- **Fail**: `invalid input value for enum`.
+
+A6. Old `qc_iso_valve` is rejected by the enum (proves the deprecation took).
+- Run:
+  ```sql
+  INSERT INTO assets (community_id, asset_type, label) VALUES ('<community_id>', 'qc_iso_valve', 'should fail') RETURNING id;
+  ```
+- **Pass**: error like `invalid input value for enum asset_type: "qc_iso_valve"`.
+- **Fail**: insert succeeds (would indicate the enum was misconfigured).
+
+Category B — API server
+
+B1. `api-server` typecheck and build pass after MC1 + FIX-2.
+- Run `pnpm --filter @workspace/api-server run typecheck && pnpm --filter @workspace/api-server run build`.
+- **Pass**: both exit 0.
+- **Fail**: any error.
+
+B2. `isMapCreatorRole` returns the right value (quick sanity).
+- Open a `node` REPL or write a one-off script:
+  ```ts
+  import { isMapCreatorRole } from "./artifacts/api-server/src/auth";
+  console.log(isMapCreatorRole("map_creator")); // expect true
+  console.log(isMapCreatorRole("contractor"));  // expect false
+  ```
+- **Pass**: `true` then `false`.
+- **Fail**: anything else.
+
+Category C — Admin user form (round-trip)
+
+C1. Create a Map Creator user via admin form.
+- Log into the admin web portal as an admin.
+- Open the Users page, click "Create User", fill in:
+  - Username: `mc_test_<your_initials>`
+  - Display name: `Map Creator Test`
+  - Password: any 6+ chars
+  - Role: Map Creator
+- Submit.
+- **Pass**: toast says "User created"; the new user appears in the list with the **green "Map Creator" badge**; no HOA community field was shown during creation.
+- **Fail**: 400 response (means FIX-2 has not landed), any other error, or wrong badge/label.
+
+C2. Promote an existing contractor to Map Creator via the role-change dropdown.
+- Pick any existing contractor row.
+- Use the "Change role…" dropdown to select Map Creator.
+- Confirm the dialog.
+- **Pass**: toast says "Role updated"; the row reloads with the Map Creator badge.
+- **Fail**: 400/500 error or row still shows Contractor after reload.
+
+C3. Demote the same user back to Contractor.
+- Same row, use the dropdown to set Contractor.
+- **Pass**: row reloads with Contractor badge.
+- **Fail**: anything else.
+
+C4. Property Manager round-trip (regression check that FIX-2 closed both gaps).
+- Pick any non-HOA, non-admin row. Set role to Property Manager via the dropdown.
+- **Pass**: row reloads with the new Property Manager badge.
+- **Fail**: 400 "Invalid role" (means FIX-2 was incomplete).
+
+Category D — Mobile role routing (six-role login matrix)
+
+For each of the six existing roles, log in to the dev client as a user of that role and observe the landing screen. If you do not have a user of every role, create test users via the admin form first (steps C1 covers map_creator; the others can be created normally).
+
+D1. **contractor** → lands in `(tabs)`. **Pass**: contractor tab bar visible (Home / Tasks / Map / Admin / Profile or similar — whatever exists today). **Fail**: lands in any other stack.
+
+D2. **admin** → lands in `(tabs)` with Admin tab visible. **Pass**: same.
+
+D3. **hoa_admin** → lands in `(hoa-tabs)`. **Pass**: HOA tab bar visible (Dashboard / Calendar / Map / Requests / Profile). **Fail**: any other stack.
+
+D4. **hoa_member** → lands in `(hoa-tabs)`. **Pass**: same.
+
+D5. **property_manager** → lands in `(tabs)`. **Pass**: contractor-style tab bar. **Fail**: anywhere else (especially `(hoa-tabs)` or `(mc-tabs)`).
+
+D6. **map_creator** → lands in `(mc-tabs)`. **Pass**: tab bar shows Customers / Settings / Profile; Customers screen shows the placeholder copy "Customer list coming soon — MC2"; no other tabs visible. **Fail**: lands in `(tabs)` or `(hoa-tabs)`, or tabs missing/extra.
+
+Category E — Mobile deep-link redirect
+
+E1. Map Creator deep-link to `(tabs)` is redirected to `(mc-tabs)`.
+- Logged in as map_creator on the dev client, manually navigate to `/(tabs)/index` (via dev menu, deep link, or temporary in-app `router.push`).
+- **Pass**: app immediately replaces to `(mc-tabs)/index`. No flicker beyond one frame; no infinite loop.
+- **Fail**: stays in `(tabs)` or loops.
+
+E2. Map Creator deep-link to `(hoa-tabs)` is redirected to `(mc-tabs)`.
+- Same as E1 but target `(hoa-tabs)/index`.
+- **Pass**: redirects to `(mc-tabs)/index`.
+- **Fail**: stays in `(hoa-tabs)`.
+
+E3. Contractor deep-link to `(mc-tabs)` is redirected to `(tabs)`.
+- Logged in as a contractor, navigate to `(mc-tabs)/index`.
+- **Pass**: redirects to `(tabs)/index`.
+- **Fail**: stays in `(mc-tabs)`.
+
+E4. HOA member deep-link to `(mc-tabs)` is redirected to `(hoa-tabs)`.
+- Logged in as hoa_member, navigate to `(mc-tabs)/index`.
+- **Pass**: redirects to `(hoa-tabs)/index`.
+- **Fail**: stays in `(mc-tabs)`.
+
+Category F — Mobile portal sanity (map_creator user)
+
+F1. Profile tab logout works.
+- Logged in as map_creator. Tap Profile tab. Tap Logout.
+- **Pass**: returns to `(auth)/login` screen. Session cleared.
+- **Fail**: error, stranded, or still shows map_creator portal.
+
+F2. Re-login persists role correctly.
+- After F1, log back in as the same map_creator user.
+- **Pass**: lands in `(mc-tabs)` again with the placeholder content.
+- **Fail**: lands anywhere else.
+
+F3. App restart preserves role routing.
+- Force-quit the app while logged in as map_creator. Reopen.
+- **Pass**: comes back to `(mc-tabs)` after the loading splash.
+- **Fail**: lands in another stack or auth screen unexpectedly.
+
+Category G — Validation regression (zone Point fix)
+
+G1. KML re-import with zone Points succeeds without warnings.
+- Pick a community with an existing irrigation map layer. Re-upload the same KML (the existing irrigation layer's stored KML, or the one in `attached_assets/Miramonte_-_Irrigation_-_Controllers_&_Zones_*.kml`).
+- **Pass**: import completes; no validation warnings about "geometry Point is unexpected for zone".
+- **Fail**: warnings about zone geometry appear, or import errors.
+
+Category H — Regression spot-checks for existing roles
+
+H1. Contractor's existing flows unchanged.
+- Logged in as a contractor: open Tasks tab, open one task, complete or comment on it. Open Map tab. Open Admin tab if visible.
+- **Pass**: each works as it did before MC1.
+- **Fail**: any regression.
+
+H2. HOA admin's existing flows unchanged.
+- Logged in as hoa_admin: open Dashboard, Calendar, Map, Requests.
+- **Pass**: each works as before.
+- **Fail**: any regression.
+
+Category I — Build & lint hygiene (one-shot)
+
+I1. Top-level builds and typechecks pass.
+- From repo root, run:
+  ```
+  pnpm --filter @workspace/db run migrate:check
+  pnpm --filter @workspace/api-server run build
+  pnpm --filter @workspace/web-portal run build
+  pnpm --filter @workspace/vrtsync-mobile run typecheck
+  ```
+- **Pass**: `migrate:check`, `api-server build`, `web-portal build` all exit 0. `vrtsync-mobile typecheck` has only the **pre-existing** failures noted in MC1's commit report (expo-file-system API mismatch, `task/[id].tsx` null-safety, `useColors.ts` missing property) — no new errors introduced by MC1.
+- **Fail**: any new typecheck error in mobile, or any failure in the three server-side commands.
+
+Scope (OUT)
+- Performance, load, or stress testing. MC1 is not a hot path.
+- Automated test code (Jest, Detox, etc.). A small set of unit tests was noted in MC1 as "nice to have"; not required for MC1-TEST to sign off.
+- Any MC2 functionality (customer selection, community creation). If the Customers tab shows the placeholder copy, that is success for MC1.
+- Any UI polish (tab bar accent color for `(mc-tabs)`, etc.) — cosmetic, not gating.
+
+Pass criteria for this slice
+- **Every step in categories A, B, C1, D, E, F passes.** These are the foundation; failures here block MC2.
+- **Steps in categories G and H pass.** These prove no regression for existing users.
+- **Step I1 passes** (mobile typecheck regression-only; no new errors).
+- Any failures in C2–C4, F2, F3 indicate FIX-2 was not deployed or has a bug — go fix it first, then re-run.
+
+Risk & rollback
+- This slice is a test pass; nothing to roll back. Failures generate follow-up bug-fix work, not rollbacks.
+
+Open questions
+- Should an automated subset of this checklist live in CI (e.g. the migration apply test, the enum-value smoke, the build matrix)? Recommended yes — fold the cheap ones into CI in a separate slice after MC2 ships. Out of scope here.
