@@ -32,6 +32,9 @@ export const communities = pgTable("communities", {
     .default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   description: text("description"),
+  isMapCreatorLocked: boolean("is_map_creator_locked").notNull().default(false),
+  mapCreatorLockedAt: timestamp("map_creator_locked_at"),
+  mapCreatorLockedBy: varchar("map_creator_locked_by").references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -101,6 +104,7 @@ export const attachments = pgTable("attachments", {
     .default(sql`gen_random_uuid()`),
   taskCompletionId: varchar("task_completion_id").references(() => taskCompletions.id, { onDelete: 'cascade' }),
   taskId: varchar("task_id").references(() => tasks.id, { onDelete: 'cascade' }),
+  assetId: varchar("asset_id").references(() => assets.id, { onDelete: 'cascade' }),
   fileRef: text("file_ref").notNull(),
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
@@ -595,7 +599,10 @@ export const insertAssetSchema = z.object({
   label: z.string().min(1),
   featureRef: z.string().optional(),
   mapLayerId: z.string().optional(),
-  geometryType: z.enum(["point", "polygon", "line"]).optional(),
+  geometryType: z.preprocess(
+    v => (typeof v === 'string' ? v.toLowerCase() : v),
+    z.enum(["point", "polygon", "line"]).optional()
+  ),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   tags: z.array(z.string()).optional(),
@@ -608,6 +615,7 @@ export const updateAssetSchema = z.object({
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
   tags: z.array(z.string()).optional(),
+  isArchived: z.boolean().optional(),
   version: z.number(),
 });
 

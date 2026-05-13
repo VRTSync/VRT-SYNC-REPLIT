@@ -1,0 +1,1 @@
+ALTER TABLE attachments ADD COLUMN IF NOT EXISTS asset_id varchar REFERENCES assets(id) ON DELETE CASCADE;

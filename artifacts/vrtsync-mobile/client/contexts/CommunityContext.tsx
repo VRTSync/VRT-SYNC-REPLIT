@@ -9,6 +9,9 @@ export type Community = {
   name: string;
   description: string | null;
   createdAt: string;
+  isMapCreatorLocked?: boolean;
+  mapCreatorLockedAt?: string | null;
+  mapCreatorLockedBy?: string | null;
 };
 
 type CommunityContextType = {

@@ -55,6 +55,22 @@ export async function updateCommunity(id: string, data: { name?: string; descrip
   return updated;
 }
 
+export async function lockCommunityForMapCreator(id: string, lockedBy: string): Promise<Community | undefined> {
+  const [updated] = await db.update(communities)
+    .set({ isMapCreatorLocked: true, mapCreatorLockedAt: new Date(), mapCreatorLockedBy: lockedBy })
+    .where(eq(communities.id, id))
+    .returning();
+  return updated;
+}
+
+export async function unlockCommunityForMapCreator(id: string): Promise<Community | undefined> {
+  const [updated] = await db.update(communities)
+    .set({ isMapCreatorLocked: false, mapCreatorLockedAt: null, mapCreatorLockedBy: null })
+    .where(eq(communities.id, id))
+    .returning();
+  return updated;
+}
+
 export async function addCommunityMember(communityId: string, userId: string): Promise<CommunityMember> {
   const [member] = await db.insert(communityMembers).values({ communityId, userId }).returning();
   return member;
@@ -208,6 +224,7 @@ export async function getTaskCompletions(taskId: string): Promise<TaskCompletion
 export async function createAttachment(data: {
   taskCompletionId?: string | null;
   taskId?: string | null;
+  assetId?: string | null;
   fileRef: string;
   url: string;
   uploadedBy: string;
@@ -215,6 +232,19 @@ export async function createAttachment(data: {
 }): Promise<Attachment> {
   const [attachment] = await db.insert(attachments).values(data).returning();
   return attachment;
+}
+
+export async function getAttachmentsByAssetId(assetId: string): Promise<Attachment[]> {
+  return db.select().from(attachments)
+    .where(eq(attachments.assetId, assetId))
+    .orderBy(desc(attachments.createdAt));
+}
+
+export async function getAttachmentByAssetIdAndIdempotencyKey(assetId: string, idempotencyKey: string): Promise<Attachment | null> {
+  const [row] = await db.select().from(attachments).where(
+    and(eq(attachments.assetId, assetId), eq(attachments.idempotencyKey, idempotencyKey))
+  );
+  return row ?? null;
 }
 
 export async function getAttachmentsByTaskId(taskId: string): Promise<Attachment[]> {
@@ -661,6 +691,7 @@ export async function updateAsset(id: string, expectedVersion: number, data: Par
   latitude: number | null;
   longitude: number | null;
   tags: string[];
+  isArchived: boolean;
   updatedBy: string;
 }>): Promise<Asset | null> {
   const [updated] = await db.update(assets)

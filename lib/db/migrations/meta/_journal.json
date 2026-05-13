@@ -15,6 +15,20 @@
       "when": 1778609190818,
       "tag": "0001_add_map_creator_and_asset_types",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778640000000,
+      "tag": "0002_add_map_creator_lock",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778726400000,
+      "tag": "0003_asset_attachment_column",
+      "breakpoints": true
     }
   ]
 }

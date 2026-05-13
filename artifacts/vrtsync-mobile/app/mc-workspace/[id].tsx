@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Modal, ScrollView, ActivityIndicator,
+  Modal, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,8 @@ import { apiRequest } from '@/lib/query-client';
 import { getDefaultLayerColor, CONTROLLER_COLORS } from '@/shared/layerColors';
 import StatusBarFill from '@/components/StatusBarFill';
 import Toast from '@/components/Toast';
+import TallyPanel from '@/components/TallyPanel';
+import ReshootList from '@/components/ReshootList';
 import LeafletMap, { type PendingPinMarker } from '@/components/LeafletMap';
 import MapCreatorOverlay from '@/components/MapCreatorOverlay';
 import ControllerPicker, { type ControllerRow } from '@/components/ControllerPicker';
@@ -20,6 +22,8 @@ import PinDropSheet from '@/components/PinDropSheet';
 import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
 import { usePinQueue } from '@/client/contexts/PinQueueContext';
 import { type PendingPinEntry } from '@/lib/pinCreationQueue';
+
+// --- Types ---
 
 type MapLayerMeta = {
   id: string;
@@ -30,6 +34,26 @@ type MapLayerMeta = {
   version: number;
   color?: string;
 };
+
+type Asset = {
+  id: string;
+  assetType: string;
+  label: string;
+  latitude: number | null;
+  longitude: number | null;
+  isArchived: boolean;
+  version: number;
+  properties?: Record<string, string>;
+  gpsAccuracy?: number | null;
+};
+
+type SimpleController = {
+  id: string;
+  label: string;
+  controllerKey: string;
+  zoneCount: number;
+};
+
 
 const LOCK_COLORS: Record<string, string> = {
   red: '#F44336',
@@ -42,6 +66,10 @@ const LOCK_LABELS: Record<string, string> = {
   yellow: 'Acquiring',
   green: 'Locked',
 };
+
+const RESHOOT_ACCURACY_THRESHOLD = 3;
+
+// --- MC7: PendingSheet helpers ---
 
 function getRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -161,10 +189,13 @@ function PendingSheet({
   );
 }
 
+// --- Component ---
+
 export default function McWorkspaceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { communities, setActiveCommunity } = useCommunity();
+  const queryClient = useQueryClient();
+  const { communities, setActiveCommunity, refresh: refreshCommunities } = useCommunity();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
@@ -176,6 +207,28 @@ export default function McWorkspaceScreen() {
   const [pinDropCoords, setPinDropCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   const community = communities.find((c) => c.id === id) ?? null;
+
+  // --- Review mode state (MC8) ---
+  const [reviewMode, setReviewMode] = useState(false);
+  const [reviewTab, setReviewTab] = useState<'tally' | 'reshoot'>('tally');
+  const [locking, setLocking] = useState(false);
+  const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
+
+  // --- Toast state ---
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastKey, setToastKey] = useState(0);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(message);
+    setToastType(type);
+    setToastKey((k) => k + 1);
+    setToastVisible(true);
+    toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 4000);
+  }, []);
 
   useEffect(() => {
     if (community) {
@@ -190,7 +243,8 @@ export default function McWorkspaceScreen() {
   // MC4: map state
   const communityId = id ?? '';
 
-  // ─── MC4: map / GPS state ────────────────────────────────────────────────
+  // ─── MC4: map / GPS state + MC6: Controller→Zone creation state ──────────
+
   const [activeLayer, setActiveLayer] = useState<McLayerKey>('trees');
   const [armedType, setArmedType] = useState<string | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
@@ -198,6 +252,8 @@ export default function McWorkspaceScreen() {
   loadedGeoJSONRef.current = loadedGeoJSON;
   const loadingGeoJSONRef = useRef<Set<string>>(new Set());
 
+
+  // --- GPS (MC4) ---
   const gps = useHighAccuracyLocation();
 
   useFocusEffect(
@@ -215,13 +271,9 @@ export default function McWorkspaceScreen() {
   const [pinLat, setPinLat] = useState<number | null>(null);
   const [pinLng, setPinLng] = useState<number | null>(null);
   const [pinDropVisible, setPinDropVisible] = useState(false);
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState<'success' | 'error'>('success');
-  const [toastKey, setToastKey] = useState(0);
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Data fetching ────────────────────────────────────────────────────────
+
   const { data: boundsData } = useQuery<{
     bounds: [[number, number], [number, number]];
     center: [number, number];
@@ -437,15 +489,6 @@ export default function McWorkspaceScreen() {
 
   // ─── Creation flow handlers ────────────────────────────────────────────────
 
-  const showToast = useCallback((message: string, type: 'success' | 'error') => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToastMessage(message);
-    setToastType(type);
-    setToastKey((k) => k + 1);
-    setToastVisible(true);
-    toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 3500);
-  }, []);
-
   const disarm = () => {
     setArmedType(null);
     setSelectedController(null);
@@ -624,6 +667,86 @@ export default function McWorkspaceScreen() {
     </TouchableOpacity>
   ) : null;
 
+  // MC8: review handlers
+  const handleShowOnMap = useCallback((asset: { id: string; latitude: number | null; longitude: number | null; label: string }) => {
+    if (!asset.latitude || !asset.longitude) {
+      showToast(`No coordinates recorded for "${asset.label}"`, 'error');
+      return;
+    }
+    setTargetRegion({ latitude: asset.latitude, longitude: asset.longitude, label: asset.label });
+    setReviewMode(false);
+  }, [showToast]);
+
+  const handleReshoot = useCallback((asset: { id: string; label: string; assetType: string; version: number; latitude: number | null; longitude: number | null }) => {
+    Alert.alert(
+      'Archive and re-shoot?',
+      `Archive "${asset.label}" and fly to its location so you can drop a replacement pin.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive & go to pin',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await apiRequest('PATCH', `/api/assets/${asset.id}`, {
+                isArchived: true,
+                version: asset.version,
+              });
+              if (!res.ok) {
+                const body: { error?: string } = await res.json().catch(() => ({}));
+                showToast(body.error ?? 'Failed to archive pin', 'error');
+                return;
+              }
+              await queryClient.invalidateQueries({ queryKey: ['mc-assets', id] });
+              if (asset.latitude && asset.longitude) {
+                setTargetRegion({ latitude: asset.latitude, longitude: asset.longitude, label: `Re-shoot: ${asset.label}` });
+              }
+              setReviewMode(false);
+              showToast(`"${asset.label}" archived — drop a new pin at this location`, 'success');
+            } catch {
+              showToast('Failed to archive pin', 'error');
+            }
+          },
+        },
+      ]
+    );
+  }, [id, queryClient, showToast]);
+
+  const handleLockCommunity = useCallback(() => {
+    Alert.alert(
+      'Mark customer complete & lock?',
+      `This will lock ${community?.name} for map editing. Admins can unlock it later if changes are needed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Lock',
+          style: 'destructive',
+          onPress: async () => {
+            setLocking(true);
+            try {
+              const res = await apiRequest('PATCH', `/api/communities/${id}/map-creator-lock`, { locked: true });
+              if (!res.ok) {
+                const body: { error?: string } = await res.json().catch(() => ({}));
+                showToast(body.error ?? 'Failed to lock community', 'error');
+                return;
+              }
+              showToast('Customer locked', 'success');
+              await refreshCommunities();
+              setTimeout(() => {
+                router.replace('/(mc-tabs)' as any);
+              }, 1200);
+            } catch {
+              showToast('Failed to lock community', 'error');
+            } finally {
+              setLocking(false);
+            }
+          },
+        },
+      ]
+    );
+  }, [id, community?.name, showToast, refreshCommunities, router]);
+
+  // --- Not found guard ---
   if (!community) {
     return (
       <View style={styles.container}>
@@ -647,10 +770,16 @@ export default function McWorkspaceScreen() {
     );
   }
 
+  const isLocked = community.isMapCreatorLocked === true;
+  const lockedDate = community.mapCreatorLockedAt
+    ? new Date(community.mapCreatorLockedAt).toLocaleDateString()
+    : null;
+
   return (
     <View style={styles.container}>
       <StatusBarFill />
 
+      {/* Header: back | center | GPS pill + SyncChip (MC7) + Review toggle (MC8) */}
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => router.replace('/(mc-tabs)' as any)} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#0C1D31" />
@@ -661,17 +790,39 @@ export default function McWorkspaceScreen() {
             <Text style={styles.headerSubtitle} numberOfLines={1}>{countSubtitle}</Text>
           ) : null}
         </View>
-        <View style={styles.headerRight}>
-          <View style={[styles.lockPill, { backgroundColor: haloColor + '22' }]}>
-            <View style={[styles.lockDot, { backgroundColor: haloColor }]} />
-            <Text style={[styles.lockLabel, { color: haloColor }]}>
-              {LOCK_LABELS[gps.lockState]}
-            </Text>
+        {!isLocked && (
+          <View style={styles.headerRight}>
+            <View style={[styles.lockPill, { backgroundColor: haloColor + '22' }]}>
+              <View style={[styles.lockDot, { backgroundColor: haloColor }]} />
+              <Text style={[styles.lockLabel, { color: haloColor }]}>
+                {LOCK_LABELS[gps.lockState]}
+              </Text>
+            </View>
+            {SyncChip}
+            <TouchableOpacity
+              style={[styles.reviewToggle, reviewMode && styles.reviewToggleActive]}
+              onPress={() => setReviewMode(v => !v)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name={reviewMode ? 'eye' : 'eye-outline'} size={16} color={reviewMode ? '#fff' : '#25C1AC'} />
+              <Text style={[styles.reviewToggleText, reviewMode && styles.reviewToggleTextActive]}>Review</Text>
+            </TouchableOpacity>
           </View>
-          {SyncChip}
-        </View>
+        )}
+        {isLocked && <View style={styles.headerSpacer} />}
       </View>
 
+      {/* Locked banner (MC8) */}
+      {isLocked && (
+        <View style={styles.lockedBanner}>
+          <Ionicons name="lock-closed" size={16} color="#b45309" />
+          <Text style={styles.lockedBannerText}>
+            {lockedDate ? `Locked on ${lockedDate}.` : 'Locked.'} Ask an admin to unlock if changes are needed.
+          </Text>
+        </View>
+      )}
+
+      {/* Map — always mounted so flyTo (MC8) works even when review panel is open */}
       <View style={styles.mapContainer}>
         <LeafletMap
           tasks={[]}
@@ -687,47 +838,120 @@ export default function McWorkspaceScreen() {
           pendingPins={pendingPinMarkers}
           mapTapEnabled={mapTapEnabled}
           onMapTap={handleMapTap}
+          targetRegion={targetRegion}
         />
 
-        <MapCreatorOverlay
-          activeLayer={activeLayer}
-          onLayerChange={(layer) => {
-            setActiveLayer(layer);
-            setArmedType(null);
-            setSelectedController(null);
-          }}
-          armedType={armedType}
-          onArmType={handleArmType}
-          typeCounts={typeCounts}
-          lockState={gps.lockState}
-        />
+        {/* MC4/MC6/MC7 overlays — hidden when review mode is active */}
+        {!reviewMode && (
+          <>
+            <MapCreatorOverlay
+              activeLayer={activeLayer}
+              onLayerChange={(layer) => {
+                setActiveLayer(layer);
+                setArmedType(null);
+                setSelectedController(null);
+              }}
+              armedType={armedType}
+              onArmType={handleArmType}
+              typeCounts={typeCounts}
+              lockState={gps.lockState}
+            />
 
-        {mapTapEnabled && (
-          <View style={styles.tapOverlay} pointerEvents="none">
-            <View style={styles.tapHint}>
-              <Ionicons name="locate-outline" size={15} color="#fff" />
-              <Text style={styles.tapHintText}>Tap the map to place a pin</Text>
+            {mapTapEnabled && (
+              <View style={styles.tapOverlay} pointerEvents="none">
+                <View style={styles.tapHint}>
+                  <Ionicons name="locate-outline" size={15} color="#fff" />
+                  <Text style={styles.tapHintText}>Tap the map to place a pin</Text>
+                </View>
+              </View>
+            )}
+
+            {!isLocked && (
+              <TouchableOpacity
+                style={[styles.dropPinFab, mapTapEnabled && styles.dropPinFabCancel]}
+                onPress={mapTapEnabled ? handleCancelTapMode : handleDropPinPress}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name={mapTapEnabled ? 'close' : 'add'}
+                  size={18}
+                  color="#fff"
+                />
+                <Text style={styles.dropPinFabText}>
+                  {mapTapEnabled ? 'Cancel' : 'Drop Pin'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        {/* MC8: Review panel overlays map so LeafletMap stays mounted for flyTo */}
+        {reviewMode && (
+          <View style={styles.reviewOverlay}>
+            <View style={styles.tabBar}>
+              <TouchableOpacity
+                style={[styles.tab, reviewTab === 'tally' && styles.tabActive]}
+                onPress={() => setReviewTab('tally')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="bar-chart-outline" size={16} color={reviewTab === 'tally' ? '#25C1AC' : '#9ca3af'} />
+                <Text style={[styles.tabText, reviewTab === 'tally' && styles.tabTextActive]}>Tally</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.tab, reviewTab === 'reshoot' && styles.tabActive]}
+                onPress={() => setReviewTab('reshoot')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="camera-outline" size={16} color={reviewTab === 'reshoot' ? '#25C1AC' : '#9ca3af'} />
+                <Text style={[styles.tabText, reviewTab === 'reshoot' && styles.tabTextActive]}>
+                  Re-shoot
+                  {reshootAssets.length > 0 && (
+                    <Text style={styles.reshootBadge}> {reshootAssets.length}</Text>
+                  )}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.panelContent}>
+              {assetsQuery.isLoading ? (
+                <View style={styles.centeredState}>
+                  <ActivityIndicator size="large" color="#25C1AC" />
+                </View>
+              ) : reviewTab === 'tally' ? (
+                <TallyPanel
+                  assets={activeAssets}
+                  controllers={reviewControllersQuery.data ?? []}
+                />
+              ) : (
+                <ReshootList
+                  assets={reshootAssets}
+                  onShowOnMap={handleShowOnMap}
+                  onReshoot={handleReshoot}
+                />
+              )}
+            </View>
+
+            <View style={styles.lockBtnContainer}>
+              <TouchableOpacity
+                style={[styles.lockBtn, locking && styles.lockBtnDisabled]}
+                onPress={handleLockCommunity}
+                disabled={locking}
+                activeOpacity={0.8}
+              >
+                {locking ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="lock-closed" size={18} color="#fff" />
+                )}
+                <Text style={styles.lockBtnText}>Mark customer complete & lock</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
-
-        <TouchableOpacity
-          style={[styles.dropPinFab, mapTapEnabled && styles.dropPinFabCancel]}
-          onPress={mapTapEnabled ? handleCancelTapMode : handleDropPinPress}
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name={mapTapEnabled ? 'close' : 'add'}
-            size={18}
-            color="#fff"
-          />
-          <Text style={styles.dropPinFabText}>
-            {mapTapEnabled ? 'Cancel' : 'Drop Pin'}
-          </Text>
-        </TouchableOpacity>
       </View>
 
-      {armedType && armedTypeDef && !mapTapEnabled && (
+      {/* Pin hint card — only shown when armed and not in review mode */}
+      {armedType && armedTypeDef && !reviewMode && !mapTapEnabled && (
         <View style={[styles.hintCard, { paddingBottom: insets.bottom + 12 }]}>
           {armedType === 'zone' && !selectedController ? (
             <Text style={styles.hintText}>
@@ -817,6 +1041,7 @@ export default function McWorkspaceScreen() {
         toastKey={toastKey}
       />
 
+      {/* MC7: Pending pins sheet */}
       <PendingSheet
         visible={sheetVisible}
         onClose={() => setSheetVisible(false)}
@@ -826,6 +1051,7 @@ export default function McWorkspaceScreen() {
         isSyncing={isSyncing}
       />
 
+      {/* MC7: Pin drop sheet */}
       {pinDropCoords && (
         <PinDropSheet
           visible={pinDropCoords !== null}
@@ -857,10 +1083,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     zIndex: 10,
+    gap: 8,
   },
   backBtn: {
     padding: 4,
-    marginRight: 8,
   },
   headerCenter: {
     flex: 1,
@@ -927,6 +1153,44 @@ const styles = StyleSheet.create({
   syncChipTextFailed: {
     color: '#7f1d1d',
   },
+  reviewToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: '#25C1AC',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  reviewToggleActive: {
+    backgroundColor: '#25C1AC',
+    borderColor: '#25C1AC',
+  },
+  reviewToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#25C1AC',
+  },
+  reviewToggleTextActive: {
+    color: '#fff',
+  },
+  lockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fde68a',
+  },
+  lockedBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400e',
+    lineHeight: 18,
+  },
   mapContainer: {
     flex: 1,
     position: 'relative',
@@ -976,6 +1240,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  reviewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#f5f7fa',
+    flexDirection: 'column',
   },
   hintCard: {
     backgroundColor: '#fff',
@@ -1053,6 +1322,62 @@ const styles = StyleSheet.create({
   },
   ctaBtnText: {
     fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: '#25C1AC',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9ca3af',
+  },
+  tabTextActive: {
+    color: '#25C1AC',
+  },
+  reshootBadge: {
+    color: '#ea580c',
+  },
+  panelContent: {
+    flex: 1,
+  },
+  lockBtnContainer: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  lockBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#0C1D31',
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  lockBtnDisabled: {
+    opacity: 0.6,
+  },
+  lockBtnText: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#fff',
   },

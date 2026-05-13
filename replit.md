@@ -75,6 +75,10 @@ _Populate as encountered._
 - Do **not** use `drizzle-kit push` in production — it bypasses the migration history.
 - After adding a new migration file, rebuild the server (`pnpm --filter @workspace/api-server run build`) so it gets copied to `dist/migrations/`.
 
+## Admin operations
+
+- To unlock a Map Creator-locked community: `PATCH /api/communities/:id/map-creator-lock` with `{ "locked": false }` as an admin.
+
 ## Pointers
 
 - See `pnpm-workspace` skill for workspace structure and TypeScript setup

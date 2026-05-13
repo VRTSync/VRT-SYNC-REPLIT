@@ -2104,6 +2104,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/communities/:id/map-creator-lock", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const { locked } = req.body;
+      if (typeof locked !== "boolean") {
+        return res.status(400).json({ error: "locked (boolean) is required" });
+      }
+      const currentUser = (req as any).currentUser;
+      const communityId = req.params.id as string;
+
+      if (!locked && isMapCreatorRole(currentUser.role)) {
+        return res.status(403).json({ error: "Only admins can unlock a community." });
+      }
+
+      if (isMapCreatorRole(currentUser.role)) {
+        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+
+      const community = await storage.getCommunityById(communityId);
+      if (!community) return res.status(404).json({ error: "Community not found" });
+
+      const updated = locked
+        ? await storage.lockCommunityForMapCreator(communityId, currentUser.id)
+        : await storage.unlockCommunityForMapCreator(communityId);
+
+      if (!updated) return res.status(404).json({ error: "Community not found" });
+      res.json({
+        id: updated.id,
+        name: updated.name,
+        description: updated.description,
+        isMapCreatorLocked: updated.isMapCreatorLocked,
+        mapCreatorLockedAt: updated.mapCreatorLockedAt,
+        mapCreatorLockedBy: updated.mapCreatorLockedBy,
+        createdAt: updated.createdAt,
+      });
+    } catch (error) {
+      req.log.error({ error }, "Map creator lock error");
+      res.status(500).json({ error: "Failed to update lock state" });
+    }
+  });
+
   app.post("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const reqUser = await storage.getUserById(req.session.userId!);
@@ -2117,7 +2158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ] as const;
         type McAssetType = typeof MC_ASSET_TYPES[number];
 
-        const MC_LAYER_MAP: Record<McAssetType, { layerKey: string; subLayerKey: string; displayName: string }> = {
+        const MC_LAYER_MAP_LOCAL: Record<McAssetType, { layerKey: string; subLayerKey: string; displayName: string }> = {
           tree:            { layerKey: "trees",      subLayerKey: "tree",            displayName: "Trees" },
           pet_station:     { layerKey: "community",  subLayerKey: "pet_station",     displayName: "Pet Stations" },
           controller:      { layerKey: "irrigation", subLayerKey: "controller",      displayName: "Controllers" },
@@ -2129,6 +2170,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isolation_valve: { layerKey: "irrigation", subLayerKey: "isolation_valve", displayName: "Isolation Valves" },
           zone:            { layerKey: "irrigation", subLayerKey: "zone",            displayName: "Zones" },
         };
+
+        // Authz: communityId required → membership → lock check
+        const communityIdForPin = req.body?.communityId as string | undefined;
+        if (!communityIdForPin) return res.status(400).json({ error: "communityId is required" });
+        const isMemberForPin = await storage.isUserMemberOfCommunity(reqUser.id, communityIdForPin);
+        if (!isMemberForPin) return res.status(403).json({ error: "You are not a member of this community" });
+        const communityForPin = await storage.getCommunityById(communityIdForPin);
+        if (communityForPin?.isMapCreatorLocked) {
+          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+        }
 
         const pinSchema = z.object({
           communityId: z.string().min(1),
@@ -2148,7 +2199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, communityId);
         if (!isMember) return res.status(403).json({ error: "You are not authorized to create assets in this community" });
 
-        const layerDef = MC_LAYER_MAP[assetType];
+        const layerDef = MC_LAYER_MAP_LOCAL[assetType];
         const featureRef = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const pinLabel = label || `${layerDef.displayName.replace(/s$/, "")} ${featureRef.slice(-4).toUpperCase()}`;
 
@@ -2283,7 +2334,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!asset) return res.status(404).json({ error: "Asset not found" });
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
         if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (isMapCreatorRole(currentUser.role)) {
+          const community = await storage.getCommunityById(asset.communityId);
+          if (community?.isMapCreatorLocked) {
+            return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+          }
+        }
       }
+
 
       const { version, ...data } = parsed.data;
       const updated = await storage.updateAsset(req.params.id as string, version, {
@@ -2320,12 +2378,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
         if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
       }
+      if (isMapCreatorRole(currentUser.role)) {
+        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        const community = await storage.getCommunityById(asset.communityId);
+        if (community?.isMapCreatorLocked) {
+          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+        }
+      }
+
 
       const properties = await storage.upsertAssetProperties(asset.id, parsed.data.properties);
       res.json(properties);
     } catch (error) {
       req.log.error({ error }, "Upsert properties error");
       res.status(500).json({ error: "Failed to update properties" });
+    }
+  });
+
+  app.post("/api/assets/:id/attachments", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const assetId = req.params.id as string;
+      const asset = await storage.getAssetById(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const currentUser = (req as any).currentUser;
+      if (isMapCreatorRole(currentUser.role)) {
+        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        const community = await storage.getCommunityById(asset.communityId);
+        if (community?.isMapCreatorLocked) {
+          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+        }
+      }
+
+      const { uploadURL, idempotencyKey } = req.body;
+      if (!uploadURL || !idempotencyKey) {
+        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
+      }
+
+      const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
+      if (strictValidation) {
+        const parsed = parseUploadURL(uploadURL);
+        if (!parsed.valid) {
+          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+        }
+      }
+
+      const existing = await storage.getAttachmentByAssetIdAndIdempotencyKey(assetId, idempotencyKey);
+      if (existing) return res.status(200).json(existing);
+
+      const objectStorageService = new ObjectStorageService();
+      const aclPolicy = buildCommunityAclPolicy(req.session.userId!, asset.communityId);
+      let objectPath: string;
+      try {
+        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
+      } catch (error) {
+        if (strictValidation && error instanceof ObjectNotFoundError) {
+          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+        }
+        throw error;
+      }
+
+      const attachment = await storage.createAttachment({
+        assetId,
+        fileRef: objectPath,
+        url: objectPath,
+        uploadedBy: req.session.userId!,
+        idempotencyKey,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      console.error("Create asset attachment error:", error);
+      res.status(500).json({ error: "Failed to create attachment" });
     }
   });
 

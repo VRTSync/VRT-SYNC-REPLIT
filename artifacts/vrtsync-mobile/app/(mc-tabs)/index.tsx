@@ -41,7 +41,12 @@ export default function McCustomersScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.cardContent}>
-        <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+        <View style={styles.cardNameRow}>
+          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+          {item.isMapCreatorLocked && (
+            <Ionicons name="lock-closed" size={14} color="#b45309" style={styles.lockIcon} />
+          )}
+        </View>
         {item.description ? (
           <Text style={styles.cardDescription} numberOfLines={1}>{item.description}</Text>
         ) : null}
@@ -190,10 +195,19 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
+  cardNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   cardName: {
     fontSize: 16,
     fontWeight: "700",
     color: "#0C1D31",
+    flexShrink: 1,
+  },
+  lockIcon: {
+    marginTop: 1,
   },
   cardDescription: {
     fontSize: 13,
