@@ -130,15 +130,27 @@ async function seedContacts() {
   }
 }
 
+process.on("uncaughtException", (err) => {
+  logger.error({ err }, "Uncaught exception — process will continue");
+});
+process.on("unhandledRejection", (reason) => {
+  logger.error({ reason }, "Unhandled rejection — process will continue");
+});
+
 (async () => {
   // Layer 1: Drizzle versioned migrations (idempotent — tracked in drizzle.__drizzle_migrations)
   const migrationsFolder = path.join(__dirname, "./migrations");
   const migrationsStart = Date.now();
-  const appliedCount = await runMigrations(pool, migrationsFolder);
-  logger.info(
-    { applied: appliedCount, elapsedMs: Date.now() - migrationsStart },
-    `applied ${appliedCount} migrations in ${Date.now() - migrationsStart}ms`
-  );
+  let appliedCount = 0;
+  try {
+    appliedCount = await runMigrations(pool, migrationsFolder);
+    logger.info(
+      { applied: appliedCount, elapsedMs: Date.now() - migrationsStart },
+      `applied ${appliedCount} migrations in ${Date.now() - migrationsStart}ms`
+    );
+  } catch (err) {
+    logger.error({ err, elapsedMs: Date.now() - migrationsStart }, "Drizzle migrations failed — continuing without schema update");
+  }
 
   // Layer 2: Additive ALTER TABLE safety net for lagging environments
   try {
@@ -187,4 +199,6 @@ async function seedContacts() {
 
     startSchedulerInterval(3600000);
   });
-})();
+})().catch((err) => {
+  logger.error({ err }, "Fatal startup error — process may not be serving requests");
+});
