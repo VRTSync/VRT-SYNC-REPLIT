@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# tests/mc/SLICE-MC5-test.sh
+# Run after SLICE MC5 lands. Verifies:
+#   - map_creator (member of community) can POST /api/assets (201)
+#   - map_creator (NOT a member) cannot POST /api/assets (403)
+#   - contractor cannot POST /api/assets (403)
+#   - admin can POST /api/assets (no regression)
+#   - duplicate featureRef returns 409 (not 500)
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_setup.sh"
+
+require_env API_BASE_URL DATABASE_URL ADMIN_USERNAME ADMIN_PASSWORD
+
+echo "SLICE MC5 — Flat-Type Pin Drop tests"
+
+section "setup"
+
+if login_as "$ADMIN_USERNAME" "$ADMIN_PASSWORD"; then
+  pass "admin login"
+else
+  fail "admin login failed — aborting"
+  summarize
+fi
+
+# Create test users
+MC_MEMBER_USERNAME="__mc5_mcmem_$RUN_SUFFIX"
+MC_NONMEMBER_USERNAME="__mc5_mcnon_$RUN_SUFFIX"
+CON_USERNAME="__mc5_con_$RUN_SUFFIX"
+TEST_PASS="testpass123"
+
+api_status POST /api/admin/users "{\"username\":\"$MC_MEMBER_USERNAME\",\"password\":\"$TEST_PASS\",\"displayName\":\"x\",\"role\":\"map_creator\"}" >/dev/null
+api_status POST /api/admin/users "{\"username\":\"$MC_NONMEMBER_USERNAME\",\"password\":\"$TEST_PASS\",\"displayName\":\"x\",\"role\":\"map_creator\"}" >/dev/null
+api_status POST /api/admin/users "{\"username\":\"$CON_USERNAME\",\"password\":\"$TEST_PASS\",\"displayName\":\"x\",\"role\":\"contractor\"}" >/dev/null
+
+MC_MEMBER_ID=$(psql_value "SELECT id FROM users WHERE username = '$MC_MEMBER_USERNAME'")
+MC_NONMEMBER_ID=$(psql_value "SELECT id FROM users WHERE username = '$MC_NONMEMBER_USERNAME'")
+CON_ID=$(psql_value "SELECT id FROM users WHERE username = '$CON_USERNAME'")
+
+# Create a test community
+TEST_COMM_NAME="__mc5_comm_$RUN_SUFFIX"
+COMM_BODY=$(api_body POST /api/communities "{\"name\":\"$TEST_COMM_NAME\"}")
+TEST_COMM_ID=$(echo "$COMM_BODY" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+
+if [ -z "$TEST_COMM_ID" ]; then
+  fail "could not create test community: $COMM_BODY"
+  summarize
+fi
+pass "test community created: $TEST_COMM_ID"
+
+# Add the "member" map_creator
+psql "$DATABASE_URL" -c "INSERT INTO community_members (community_id, user_id) VALUES ('$TEST_COMM_ID', '$MC_MEMBER_ID')" >/dev/null
+pass "MC_MEMBER added to test community"
+
+logout
+
+# Helper: build an asset payload
+asset_payload() {
+  local label="$1"
+  local feat="$2"
+  echo "{\"communityId\":\"$TEST_COMM_ID\",\"assetType\":\"tree\",\"label\":\"$label\",\"latitude\":39.7,\"longitude\":-104.9,\"geometryType\":\"Point\",\"featureRef\":\"$feat\"}"
+}
+
+# --- Test 1: map_creator member can POST ---
+
+section "map_creator (member): POST /api/assets succeeds"
+
+login_as "$MC_MEMBER_USERNAME" "$TEST_PASS" >/dev/null
+FEAT1="mc5-test-1-$RUN_SUFFIX"
+CREATE_MEM=$(api_status POST /api/assets "$(asset_payload "MC5 Tree 1" "$FEAT1")")
+if [ "$CREATE_MEM" = "200" ] || [ "$CREATE_MEM" = "201" ]; then
+  pass "MC member POST /api/assets returned $CREATE_MEM"
+else
+  fail "MC member POST /api/assets returned $CREATE_MEM (expected 201)"
+fi
+logout
+
+# --- Test 2: map_creator NOT a member is rejected ---
+
+section "map_creator (non-member): POST /api/assets is forbidden"
+
+login_as "$MC_NONMEMBER_USERNAME" "$TEST_PASS" >/dev/null
+FEAT2="mc5-test-2-$RUN_SUFFIX"
+CREATE_NON=$(api_status POST /api/assets "$(asset_payload "MC5 Tree 2" "$FEAT2")")
+if [ "$CREATE_NON" = "403" ]; then
+  pass "MC non-member POST /api/assets returned 403"
+else
+  fail "MC non-member POST /api/assets returned $CREATE_NON (expected 403)"
+fi
+logout
+
+# --- Test 3: contractor cannot POST assets ---
+
+section "contractor: POST /api/assets is forbidden"
+
+login_as "$CON_USERNAME" "$TEST_PASS" >/dev/null
+FEAT3="mc5-test-3-$RUN_SUFFIX"
+CREATE_CON=$(api_status POST /api/assets "$(asset_payload "MC5 Tree 3" "$FEAT3")")
+if [ "$CREATE_CON" = "403" ]; then
+  pass "contractor POST /api/assets returned 403"
+else
+  fail "contractor POST /api/assets returned $CREATE_CON (expected 403)"
+fi
+logout
+
+# --- Test 4: admin can still POST (regression) ---
+
+section "admin: POST /api/assets still works (regression)"
+
+login_as "$ADMIN_USERNAME" "$ADMIN_PASSWORD" >/dev/null
+FEAT4="mc5-test-4-$RUN_SUFFIX"
+CREATE_ADMIN=$(api_status POST /api/assets "$(asset_payload "MC5 Tree 4" "$FEAT4")")
+if [ "$CREATE_ADMIN" = "200" ] || [ "$CREATE_ADMIN" = "201" ]; then
+  pass "admin POST /api/assets returned $CREATE_ADMIN"
+else
+  fail "admin POST /api/assets returned $CREATE_ADMIN (expected 201)"
+fi
+
+# --- Test 5: duplicate featureRef returns 409 not 500 ---
+
+section "duplicate featureRef: returns 409"
+
+DUP_STATUS=$(api_status POST /api/assets "$(asset_payload "MC5 Dup" "$FEAT1")")
+if [ "$DUP_STATUS" = "409" ]; then
+  pass "duplicate featureRef returned 409"
+elif [ "$DUP_STATUS" = "500" ]; then
+  fail "duplicate featureRef returned 500 — should be 409 with friendly error"
+else
+  fail "duplicate featureRef returned $DUP_STATUS (expected 409)"
+fi
+
+logout
+
+section "Jest: mcAutoLabel logic"
+
+if [ -f "artifacts/vrtsync-mobile/__tests__/mc/mcAutoLabel.test.ts" ]; then
+  pnpm --filter @workspace/vrtsync-mobile run test -- __tests__/mc/mcAutoLabel.test.ts > /tmp/mc5-jest.log 2>&1
+  if grep -q "Tests:.*passed" /tmp/mc5-jest.log; then
+    pass "mcAutoLabel.test.ts passed"
+  else
+    fail "mcAutoLabel.test.ts failed — see /tmp/mc5-jest.log"
+    tail -10 /tmp/mc5-jest.log
+  fi
+else
+  note "no Jest test at __tests__/mc/mcAutoLabel.test.ts — copy it from the bundle"
+fi
+
+section "cleanup"
+
+psql "$DATABASE_URL" -c "DELETE FROM asset_properties WHERE asset_id IN (SELECT id FROM assets WHERE community_id = '$TEST_COMM_ID')" >/dev/null 2>&1
+psql "$DATABASE_URL" -c "DELETE FROM assets WHERE community_id = '$TEST_COMM_ID'" >/dev/null 2>&1
+psql "$DATABASE_URL" -c "DELETE FROM community_members WHERE community_id = '$TEST_COMM_ID'" >/dev/null 2>&1
+psql "$DATABASE_URL" -c "DELETE FROM communities WHERE id = '$TEST_COMM_ID'" >/dev/null 2>&1
+psql "$DATABASE_URL" -c "DELETE FROM users WHERE username IN ('$MC_MEMBER_USERNAME','$MC_NONMEMBER_USERNAME','$CON_USERNAME')" >/dev/null 2>&1
+pass "cleanup complete"
+
+summarize

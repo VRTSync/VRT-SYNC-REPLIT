@@ -463,6 +463,33 @@ export const assetNotesRelations = relations(assetNotes, ({ one }) => ({
   creator: one(users, { fields: [assetNotes.createdBy], references: [users.id] }),
 }));
 
+export const assetAttachments = pgTable("asset_attachments", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  assetId: varchar("asset_id").notNull().references(() => assets.id, { onDelete: 'cascade' }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  fileRef: text("file_ref").notNull(),
+  url: text("url").notNull(),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  idempotencyKey: varchar("idempotency_key").notNull(),
+  capturedAt: timestamp("captured_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("asset_attachments_asset_idempotency_idx").on(table.assetId, table.idempotencyKey),
+  index("asset_attachments_asset_idx").on(table.assetId),
+  index("asset_attachments_community_idx").on(table.communityId),
+]);
+
+export const assetAttachmentsRelations = relations(assetAttachments, ({ one }) => ({
+  asset: one(assets, { fields: [assetAttachments.assetId], references: [assets.id] }),
+  community: one(communities, { fields: [assetAttachments.communityId], references: [communities.id] }),
+  uploader: one(users, { fields: [assetAttachments.uploadedBy], references: [users.id] }),
+}));
+
+export type AssetAttachment = typeof assetAttachments.$inferSelect;
+export type InsertAssetAttachment = typeof assetAttachments.$inferInsert;
+
 export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
   task: one(tasks, { fields: [taskLinks.taskId], references: [tasks.id] }),
   asset: one(assets, { fields: [taskLinks.assetId], references: [assets.id] }),

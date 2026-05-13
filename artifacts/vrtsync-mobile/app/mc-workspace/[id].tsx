@@ -22,6 +22,8 @@ import PinDropSheet from '@/components/PinDropSheet';
 import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
 import { usePinQueue } from '@/client/contexts/PinQueueContext';
 import { type PendingPinEntry } from '@/lib/pinCreationQueue';
+import LockPinSheet from '@/components/LockPinSheet';
+import type { Fix } from '@/hooks/useHighAccuracyLocation';
 
 // --- Types ---
 
@@ -247,6 +249,7 @@ export default function McWorkspaceScreen() {
 
   const [activeLayer, setActiveLayer] = useState<McLayerKey>('trees');
   const [armedType, setArmedType] = useState<string | null>(null);
+  const [lockPinFix, setLockPinFix] = useState<Fix | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const loadedGeoJSONRef = useRef(loadedGeoJSON);
   loadedGeoJSONRef.current = loadedGeoJSON;
@@ -300,10 +303,25 @@ export default function McWorkspaceScreen() {
     enabled: !!communityId,
   });
 
-  const { data: assetsData } = useQuery<any[]>({
-    queryKey: [`/api/communities/${communityId}/assets`],
+  const { data: communityAssets = [] } = useQuery<{ id: string; label: string; assetType: string }[]>({
+    queryKey: ['/api/assets', { communityId }],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/assets?communityId=${communityId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!communityId,
   });
+
+  const existingLabelsByType = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const a of communityAssets) {
+      if (!map[a.assetType]) map[a.assetType] = [];
+      map[a.assetType].push(a.label);
+    }
+    return map;
+  }, [communityAssets]);
+
 
   const allLayers = useMemo(
     () => onlineLayers.filter((l) => l.layerKey !== 'outline'),
@@ -473,10 +491,10 @@ export default function McWorkspaceScreen() {
     return null;
   }, [armedType]);
 
-  const existingLabels = useMemo(() => {
-    if (!assetsData) return [];
-    return assetsData.map((a: any) => a.label ?? '').filter(Boolean);
-  }, [assetsData]);
+  const existingLabels = useMemo(
+    () => communityAssets.map((a) => a.label).filter(Boolean),
+    [communityAssets],
+  );
 
   const existingZoneNumbers = useMemo(() => {
     if (!controllers.length || !selectedController) return [];
@@ -496,6 +514,7 @@ export default function McWorkspaceScreen() {
     setPinLat(null);
     setPinLng(null);
     setPinDropVisible(false);
+    setLockPinFix(null);
   };
 
   /** Called by MapCreatorOverlay's arm-type tap. */
@@ -531,18 +550,27 @@ export default function McWorkspaceScreen() {
     }
   };
 
-  /** "Lock Pin Here" — captures current GPS position and opens PinDropSheet. */
-  const handleLockPin = () => {
-    if (gps.latitude == null || gps.longitude == null) return;
+  /**
+   * "Lock Pin Here" — zone type opens PinDropSheet (needs parentController);
+   * all other types snapshot GPS and open LockPinSheet.
+   */
+  const handleLockPin = useCallback(() => {
     if (!armedType) return;
     if (armedType === 'zone' && !selectedController) {
       setPickerVisible(true);
       return;
     }
-    setPinLat(gps.latitude);
-    setPinLng(gps.longitude);
-    setPinDropVisible(true);
-  };
+    if (armedType === 'zone') {
+      if (gps.latitude == null || gps.longitude == null) return;
+      setPinLat(gps.latitude);
+      setPinLng(gps.longitude);
+      setPinDropVisible(true);
+      return;
+    }
+    const fix = gps.snapshot();
+    if (!fix) return;
+    setLockPinFix(fix);
+  }, [armedType, selectedController, gps]);
 
   const handlePinSave = (assetId: string, label: string) => {
     setPinDropVisible(false);
@@ -573,7 +601,7 @@ export default function McWorkspaceScreen() {
 
   const canLockPin =
     !!armedType &&
-    gps.lockState === 'green' &&
+    (gps.lockState === 'green' || gps.lockState === 'yellow') &&
     gps.latitude != null &&
     gps.longitude != null &&
     !(armedType === 'zone' && !selectedController);
@@ -963,7 +991,7 @@ export default function McWorkspaceScreen() {
               {armedType === 'zone' && selectedController
                 ? `in Controller ${selectedController.controllerKey}. `
                 : ''}
-              {gps.lockState !== 'green' ? 'Waiting for GPS lock…' : 'GPS locked — ready to place.'}
+              {gps.lockState === 'red' ? 'No GPS signal — move outdoors.' : gps.lockState === 'yellow' ? 'Acquiring GPS lock…' : 'GPS locked — ready to place.'}
             </Text>
           )}
 
@@ -1061,6 +1089,23 @@ export default function McWorkspaceScreen() {
           longitude={pinDropCoords.longitude}
           onPinCreated={() => {
             setPinDropCoords(null);
+            refreshList();
+          }}
+        />
+      )}
+
+      {lockPinFix && armedType && (
+        <LockPinSheet
+          visible={lockPinFix !== null}
+          fix={lockPinFix}
+          armedType={armedType}
+          communityId={communityId}
+          existingLabels={existingLabelsByType[armedType] ?? []}
+          onDismiss={() => setLockPinFix(null)}
+          onSaved={(asset) => {
+            setLockPinFix(null);
+            setArmedType(null);
+            queryClient.invalidateQueries({ queryKey: ['/api/assets', { communityId }] });
             refreshList();
           }}
         />

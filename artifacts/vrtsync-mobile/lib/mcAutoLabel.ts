@@ -54,8 +54,7 @@ function extractControllerKey(label: string): string | null {
  *
  * Rules:
  *  - `controller` → "Controller A", "Controller B", … "Controller Z", "Controller AA", …
- *  - `tree`       → "Tree 1", "Tree 2", …
- *  - everything else → "<Pretty Label> 1", "<Pretty Label> 2", …
+ *  - everything else → "<Pretty Label> 1", "<Pretty Label> 2", … (gap-filling)
  */
 export function generateAutoLabel(opts: {
   assetType: string;
@@ -76,9 +75,18 @@ export function generateAutoLabel(opts: {
     return `Controller ${indexToControllerKey(idx)}`;
   }
 
-  const prefix = prettyLabel(assetType);
-  const count = existingLabels.filter((l) => l.startsWith(prefix + " ")).length;
-  return `${prefix} ${count + 1}`;
+  const prefix = prettyLabel(assetType) + " ";
+  const usedNums = new Set<number>();
+  for (const l of existingLabels) {
+    if (l.startsWith(prefix)) {
+      const rest = l.slice(prefix.length);
+      const n = parseInt(rest, 10);
+      if (!isNaN(n) && String(n) === rest) usedNums.add(n);
+    }
+  }
+  let n = 1;
+  while (usedNums.has(n)) n++;
+  return `${prefix}${n}`;
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
   notifications, driveFolders, driveFiles, invoices, contracts, contacts, pushTickets,
+  assetAttachments,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
@@ -13,6 +14,7 @@ import {
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
   type DriveFolder, type DriveFile, type Invoice, type Contract,
   type Contact, type InsertContact, type PushTicket,
+  type AssetAttachment,
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
   userRoleEnum,
 } from "@workspace/db";
@@ -532,6 +534,7 @@ export async function createAsset(data: {
   assetType: Asset["assetType"];
   label: string;
   featureRef?: string;
+  mapLayerId?: string;
   geometryType?: Asset["geometryType"];
   latitude?: number;
   longitude?: number;
@@ -3255,4 +3258,36 @@ export async function getPendingPushTicketsOlderThan(cutoff: Date): Promise<Push
 export async function deletePushTicketsByIds(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   await db.delete(pushTickets).where(inArray(pushTickets.id, ids));
+}
+
+export async function addAssetAttachment(data: {
+  assetId: string;
+  communityId: string;
+  fileRef: string;
+  url: string;
+  uploadedBy: string;
+  idempotencyKey: string;
+  capturedAt?: Date;
+}): Promise<AssetAttachment> {
+  const [attachment] = await db.insert(assetAttachments).values(data).returning();
+  return attachment;
+}
+
+export async function getAssetAttachmentByIdempotencyKey(
+  assetId: string,
+  idempotencyKey: string,
+): Promise<AssetAttachment | null> {
+  const [row] = await db
+    .select()
+    .from(assetAttachments)
+    .where(and(eq(assetAttachments.assetId, assetId), eq(assetAttachments.idempotencyKey, idempotencyKey)));
+  return row || null;
+}
+
+export async function getAssetAttachments(assetId: string): Promise<AssetAttachment[]> {
+  return db
+    .select()
+    .from(assetAttachments)
+    .where(eq(assetAttachments.assetId, assetId))
+    .orderBy(desc(assetAttachments.createdAt));
 }

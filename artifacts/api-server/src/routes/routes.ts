@@ -2235,18 +2235,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           layer = (await storage.getMapLayerById(layer.id)) ?? layer;
         }
 
-        const asset = await storage.createAsset({
-          communityId,
-          assetType,
-          label: pinLabel,
-          featureRef,
-          mapLayerId: layer.id,
-          geometryType: "point",
-          latitude,
-          longitude,
-          createdBy: reqUser.id,
-          updatedBy: reqUser.id,
-        });
+        let asset;
+        try {
+          asset = await storage.createAsset({
+            communityId,
+            assetType,
+            label: pinLabel,
+            featureRef,
+            mapLayerId: layer.id,
+            geometryType: "point",
+            latitude,
+            longitude,
+            createdBy: reqUser.id,
+            updatedBy: reqUser.id,
+          });
+        } catch (createErr: any) {
+          if (createErr?.code === '23505' || createErr?.message?.includes('duplicate') || createErr?.message?.includes('unique')) {
+            return res.status(409).json({ error: "A pin with this reference already exists in this community/layer." });
+          }
+          throw createErr;
+        }
 
         const { geojsonData: _geo, ...layerMeta } = layer;
         return res.status(201).json({ asset, layerId: layer.id, feature: newFeature, isNewLayer, layer: layerMeta });
@@ -2313,11 +2321,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
         throw err;
       }
 
-
       res.status(201).json(asset);
     } catch (error) {
       req.log.error({ error }, "Create asset error");
       res.status(500).json({ error: "Failed to create asset" });
+    }
+  });
+
+  app.post("/api/assets/:id/attachments", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const assetId = req.params.id as string;
+      const asset = await storage.getAssetById(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (reqUser.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+
+      const { uploadURL, idempotencyKey, capturedAt } = req.body;
+      if (!uploadURL || !idempotencyKey) {
+        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
+      }
+
+      const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
+      if (strictValidation) {
+        const parsed = parseUploadURL(uploadURL);
+        if (!parsed.valid) {
+          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+        }
+      }
+
+      const existing = await storage.getAssetAttachmentByIdempotencyKey(assetId, idempotencyKey);
+      if (existing) {
+        return res.status(200).json(existing);
+      }
+
+      const aclPolicy = buildCommunityAclPolicy(req.session.userId!, asset.communityId);
+      const objectStorageService = new ObjectStorageService();
+      let objectPath: string;
+      try {
+        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
+      } catch (error) {
+        if (strictValidation && error instanceof ObjectNotFoundError) {
+          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+        }
+        throw error;
+      }
+
+      const attachment = await storage.addAssetAttachment({
+        assetId,
+        communityId: asset.communityId,
+        fileRef: objectPath,
+        url: objectPath,
+        uploadedBy: req.session.userId!,
+        idempotencyKey,
+        capturedAt: capturedAt ? new Date(capturedAt) : undefined,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      req.log.error({ error }, "Create asset attachment error");
+      res.status(500).json({ error: "Failed to create asset attachment" });
+    }
+  });
+
+  app.get("/api/assets/:id/attachments", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const assetId = req.params.id as string;
+      const asset = await storage.getAssetById(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (reqUser.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+
+      const assetAttachmentsList = await storage.getAssetAttachments(assetId);
+      res.json(assetAttachmentsList);
+    } catch (error) {
+      req.log.error({ error }, "Get asset attachments error");
+      res.status(500).json({ error: "Failed to fetch asset attachments" });
     }
   });
 
