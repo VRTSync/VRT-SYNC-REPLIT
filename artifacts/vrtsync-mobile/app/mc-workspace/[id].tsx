@@ -1,16 +1,18 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useHighAccuracyLocation } from '@/hooks/useHighAccuracyLocation';
+import { useToast } from '@/hooks/useToast';
 import { apiRequest } from '@/lib/query-client';
 import { getDefaultLayerColor } from '@/shared/layerColors';
 import StatusBarFill from '@/components/StatusBarFill';
+import Toast from '@/components/Toast';
 import LeafletMap from '@/components/LeafletMap';
 import MapCreatorOverlay from '@/components/MapCreatorOverlay';
 import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
@@ -80,6 +82,10 @@ export default function McWorkspaceScreen() {
   const loadedGeoJSONRef = useRef(loadedGeoJSON);
   loadedGeoJSONRef.current = loadedGeoJSON;
   const loadingGeoJSONRef = useRef<Set<string>>(new Set());
+  const [isSavingPin, setIsSavingPin] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const { showToast, toastProps } = useToast();
+  const queryClient = useQueryClient();
 
   const gps = useHighAccuracyLocation();
 
@@ -297,6 +303,53 @@ export default function McWorkspaceScreen() {
     return null;
   }, [armedType]);
 
+  const handleLockPin = useCallback(async () => {
+    if (!armedType || gps.lockState !== 'green' || gps.latitude == null || gps.longitude == null) return;
+    setIsSavingPin(true);
+    try {
+      const res = await apiRequest('POST', '/api/assets', {
+        communityId,
+        assetType: armedType,
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+      });
+      const { layerId, feature, isNewLayer } = await res.json();
+      setLoadedGeoJSON((prev) => {
+        if (!layerId) return prev;
+        const existing = prev[layerId];
+        if (existing) {
+          return {
+            ...prev,
+            [layerId]: {
+              ...existing,
+              features: [...(existing.features || []), feature],
+            },
+          };
+        }
+        return {
+          ...prev,
+          [layerId]: { type: 'FeatureCollection', features: [feature] },
+        };
+      });
+      if (isNewLayer) {
+        queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
+      }
+      if (armedType === 'controller' || armedType === 'zone') {
+        queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
+      }
+      setToastType('success');
+      showToast('Pin saved!');
+      setArmedType(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save pin';
+      const serverMsg = msg.includes(':') ? msg.split(':').slice(1).join(':').trim() : msg;
+      setToastType('error');
+      showToast(serverMsg || 'Failed to save pin');
+    } finally {
+      setIsSavingPin(false);
+    }
+  }, [armedType, gps.lockState, gps.latitude, gps.longitude, communityId, showToast, queryClient]);
+
   if (!community) {
     return (
       <View style={styles.container}>
@@ -385,20 +438,50 @@ export default function McWorkspaceScreen() {
       {armedType && armedTypeDef && (
         <View style={[styles.hintCard, { paddingBottom: insets.bottom + 12 }]}>
           <Text style={styles.hintText}>
-            Drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text> when GPS is green.
-            Coming in MC5: tap Lock Pin to save.
+            {gps.lockState === 'green'
+              ? <>Tap to drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text> pin at your current GPS location.</>
+              : <>Move to open sky to lock GPS, then drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text> pin.</>
+            }
           </Text>
           <TouchableOpacity
-            style={styles.lockPinBtn}
-            disabled
-            activeOpacity={1}
+            style={[
+              styles.lockPinBtn,
+              gps.lockState === 'green' && !isSavingPin && styles.lockPinBtnEnabled,
+            ]}
+            disabled={gps.lockState !== 'green' || isSavingPin}
+            onPress={handleLockPin}
+            activeOpacity={0.8}
           >
-            <Ionicons name="pin-outline" size={16} color="#9ca3af" />
-            <Text style={styles.lockPinBtnText}>Lock Pin Here</Text>
+            {isSavingPin ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons
+                name="pin"
+                size={16}
+                color={gps.lockState === 'green' ? '#fff' : '#9ca3af'}
+              />
+            )}
+            <Text style={[
+              styles.lockPinBtnText,
+              gps.lockState === 'green' && !isSavingPin && styles.lockPinBtnTextEnabled,
+            ]}>
+              {isSavingPin ? 'Saving...' : 'Lock Pin Here'}
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.hintHelper}>Save flow lands in MC5.</Text>
+          {gps.lockState !== 'green' && (
+            <Text style={styles.hintHelper}>
+              {gps.lockState === 'red' ? 'No GPS signal — move outdoors.' : 'Acquiring signal…'}
+            </Text>
+          )}
         </View>
       )}
+
+      <Toast
+        visible={toastProps.visible}
+        message={toastProps.message}
+        toastKey={toastProps.toastKey}
+        type={toastType}
+      />
     </View>
   );
 }
@@ -496,10 +579,18 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     opacity: 0.7,
   },
+  lockPinBtnEnabled: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#388E3C',
+    opacity: 1,
+  },
   lockPinBtnText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#9ca3af',
+  },
+  lockPinBtnTextEnabled: {
+    color: '#fff',
   },
   hintHelper: {
     fontSize: 11,

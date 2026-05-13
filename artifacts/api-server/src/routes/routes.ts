@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { requireAuth, requireAdmin, requireAdminOrMapCreator, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
@@ -2092,16 +2093,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/assets", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (!reqUser) return res.status(401).json({ error: "User not found" });
+
+      // Map creator GPS-pin path: communityId + assetType + lat/lng (label optional)
+      if (isMapCreatorRole(reqUser.role)) {
+        const MC_ASSET_TYPES = [
+          "tree", "pet_station", "controller", "backflow", "pump",
+          "master_valve", "flow_meter", "quick_connect", "isolation_valve", "zone",
+        ] as const;
+        type McAssetType = typeof MC_ASSET_TYPES[number];
+
+        const MC_LAYER_MAP: Record<McAssetType, { layerKey: string; subLayerKey: string; displayName: string }> = {
+          tree:            { layerKey: "trees",      subLayerKey: "tree",            displayName: "Trees" },
+          pet_station:     { layerKey: "community",  subLayerKey: "pet_station",     displayName: "Pet Stations" },
+          controller:      { layerKey: "irrigation", subLayerKey: "controller",      displayName: "Controllers" },
+          backflow:        { layerKey: "irrigation", subLayerKey: "backflow",        displayName: "Backflows" },
+          pump:            { layerKey: "irrigation", subLayerKey: "pump",            displayName: "Pumps" },
+          master_valve:    { layerKey: "irrigation", subLayerKey: "master_valve",    displayName: "Master Valves" },
+          flow_meter:      { layerKey: "irrigation", subLayerKey: "flow_meter",      displayName: "Flow Meters" },
+          quick_connect:   { layerKey: "irrigation", subLayerKey: "quick_connect",   displayName: "Quick Connects" },
+          isolation_valve: { layerKey: "irrigation", subLayerKey: "isolation_valve", displayName: "Isolation Valves" },
+          zone:            { layerKey: "irrigation", subLayerKey: "zone",            displayName: "Zones" },
+        };
+
+        const pinSchema = z.object({
+          communityId: z.string().min(1),
+          assetType:   z.enum(MC_ASSET_TYPES),
+          latitude:    z.number(),
+          longitude:   z.number(),
+          label:       z.string().optional(),
+        });
+
+        const parsed = pinSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        }
+
+        const { communityId, assetType, latitude, longitude, label } = parsed.data;
+
+        const isMember = await storage.isUserMemberOfCommunity(reqUser.id, communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not authorized to create assets in this community" });
+
+        const layerDef = MC_LAYER_MAP[assetType];
+        const featureRef = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const pinLabel = label || `${layerDef.displayName.replace(/s$/, "")} ${featureRef.slice(-4).toUpperCase()}`;
+
+        const allLayers = await storage.getMapLayersByCommunity(communityId, layerDef.layerKey);
+        let layer = allLayers.find((l) => l.subLayerKey === layerDef.subLayerKey) ?? null;
+        let isNewLayer = false;
+
+        const newFeature = {
+          type: "Feature",
+          id: featureRef,
+          geometry: { type: "Point", coordinates: [longitude, latitude] },
+          properties: { id: featureRef, label: pinLabel },
+        };
+
+        if (!layer) {
+          isNewLayer = true;
+          const color = getDefaultLayerColor(layerDef.subLayerKey, allLayers.length);
+          layer = await storage.createMapLayer({
+            communityId,
+            layerKey: layerDef.layerKey,
+            subLayerKey: layerDef.subLayerKey,
+            displayName: layerDef.displayName,
+            geojsonData: JSON.stringify({ type: "FeatureCollection", features: [newFeature] }),
+            color,
+          });
+        } else {
+          let collection: { type: string; features: any[] } = { type: "FeatureCollection", features: [] };
+          if (layer.geojsonData) {
+            try { collection = JSON.parse(layer.geojsonData); } catch {}
+          }
+          collection.features = [...(collection.features || []), newFeature];
+          await storage.updateMapLayer(layer.id, layer.version, { geojsonData: JSON.stringify(collection) });
+          layer = (await storage.getMapLayerById(layer.id)) ?? layer;
+        }
+
+        const asset = await storage.createAsset({
+          communityId,
+          assetType,
+          label: pinLabel,
+          featureRef,
+          mapLayerId: layer.id,
+          geometryType: "point",
+          latitude,
+          longitude,
+          createdBy: reqUser.id,
+          updatedBy: reqUser.id,
+        });
+
+        const { geojsonData: _geo, ...layerMeta } = layer;
+        return res.status(201).json({ asset, layerId: layer.id, feature: newFeature, isNewLayer, layer: layerMeta });
+      }
+
+      // Admin path: full insertAssetSchema validation
+      if (reqUser.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
       const parsed = insertAssetSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const asset = await storage.createAsset({
         ...parsed.data,
-        createdBy: req.session.userId!,
-        updatedBy: req.session.userId!,
+        createdBy: reqUser.id,
+        updatedBy: reqUser.id,
       });
       res.status(201).json(asset);
     } catch (error) {
