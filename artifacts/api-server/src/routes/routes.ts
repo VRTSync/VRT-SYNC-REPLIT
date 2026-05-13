@@ -2484,65 +2484,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/assets/:id/attachments", requireAdminOrMapCreator, async (req: Request, res: Response) => {
-    try {
-      const assetId = req.params.id as string;
-      const asset = await storage.getAssetById(assetId);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
-
-      const currentUser = (req as any).currentUser;
-      if (isMapCreatorRole(currentUser.role)) {
-        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
-        const community = await storage.getCommunityById(asset.communityId);
-        if (community?.isMapCreatorLocked) {
-          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
-        }
-      }
-
-      const { uploadURL, idempotencyKey } = req.body;
-      if (!uploadURL || !idempotencyKey) {
-        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
-      }
-
-      const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
-      if (strictValidation) {
-        const parsed = parseUploadURL(uploadURL);
-        if (!parsed.valid) {
-          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
-        }
-      }
-
-      const existing = await storage.getAttachmentByAssetIdAndIdempotencyKey(assetId, idempotencyKey);
-      if (existing) return res.status(200).json(existing);
-
-      const objectStorageService = new ObjectStorageService();
-      const aclPolicy = buildCommunityAclPolicy(req.session.userId!, asset.communityId);
-      let objectPath: string;
-      try {
-        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
-      } catch (error) {
-        if (strictValidation && error instanceof ObjectNotFoundError) {
-          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
-        }
-        throw error;
-      }
-
-      const attachment = await storage.createAttachment({
-        assetId,
-        fileRef: objectPath,
-        url: objectPath,
-        uploadedBy: req.session.userId!,
-        idempotencyKey,
-      });
-
-      res.status(201).json(attachment);
-    } catch (error) {
-      console.error("Create asset attachment error:", error);
-      res.status(500).json({ error: "Failed to create attachment" });
-    }
-  });
-
   app.put("/api/tasks/:id/link", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = setTaskLinkSchema.safeParse(req.body);

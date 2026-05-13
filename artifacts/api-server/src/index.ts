@@ -55,6 +55,10 @@ async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS planner_records_property_idx ON planner_records(property_id);
       CREATE INDEX IF NOT EXISTS planner_records_status_idx ON planner_records(status);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_preferences jsonb;
+      CREATE TABLE IF NOT EXISTS asset_attachments (id varchar PRIMARY KEY DEFAULT gen_random_uuid(), asset_id varchar NOT NULL REFERENCES assets(id) ON DELETE CASCADE, community_id varchar NOT NULL REFERENCES communities(id) ON DELETE CASCADE, file_ref text NOT NULL, url text NOT NULL, uploaded_by varchar NOT NULL REFERENCES users(id), idempotency_key varchar NOT NULL, captured_at timestamp, created_at timestamp NOT NULL DEFAULT now());
+      CREATE UNIQUE INDEX IF NOT EXISTS asset_attachments_asset_idempotency_idx ON asset_attachments(asset_id, idempotency_key);
+      CREATE INDEX IF NOT EXISTS asset_attachments_asset_idx ON asset_attachments(asset_id);
+      CREATE INDEX IF NOT EXISTS asset_attachments_community_idx ON asset_attachments(community_id);
     `);
     logger.info("Startup migrations applied.");
   } catch (err) {
