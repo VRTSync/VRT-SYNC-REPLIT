@@ -1,5 +1,6 @@
 import { DOMParser } from "@xmldom/xmldom";
 import { createHash } from "crypto";
+import { CONTROLLER_COLORS } from "@workspace/leaflet-template";
 
 export interface ParsedController {
   name: string;
@@ -30,11 +31,6 @@ export interface IrrigationParseResult {
   warnings: string[];
 }
 
-const DEFAULT_COLORS = [
-  "#ffa726", "#42a5f5", "#66bb6a", "#ef5350", "#ab47bc",
-  "#26c6da", "#ffca28", "#8d6e63", "#78909c", "#ec407a",
-  "#7e57c2", "#26a69a", "#d4e157", "#ff7043", "#5c6bc0",
-];
 
 export function parseIrrigationKml(kmlText: string): IrrigationParseResult {
   const doc = new DOMParser().parseFromString(kmlText, "text/xml");
@@ -100,7 +96,7 @@ export function parseIrrigationKml(kmlText: string): IrrigationParseResult {
 
     let controllerColor = extractPlacemarkColor(controllerPlacemark, styleMap);
     if (!controllerColor) {
-      controllerColor = DEFAULT_COLORS[colorIndex % DEFAULT_COLORS.length];
+      controllerColor = CONTROLLER_COLORS[colorIndex % CONTROLLER_COLORS.length];
       colorIndex++;
     }
 

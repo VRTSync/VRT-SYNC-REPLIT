@@ -9,17 +9,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useHighAccuracyLocation } from '@/hooks/useHighAccuracyLocation';
-import { useToast } from '@/hooks/useToast';
 import { apiRequest } from '@/lib/query-client';
-import { getDefaultLayerColor } from '@/shared/layerColors';
+import { getDefaultLayerColor, CONTROLLER_COLORS } from '@/shared/layerColors';
 import StatusBarFill from '@/components/StatusBarFill';
 import Toast from '@/components/Toast';
 import LeafletMap, { type PendingPinMarker } from '@/components/LeafletMap';
 import MapCreatorOverlay from '@/components/MapCreatorOverlay';
+import ControllerPicker, { type ControllerRow } from '@/components/ControllerPicker';
+import PinDropSheet from '@/components/PinDropSheet';
 import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
 import { usePinQueue } from '@/client/contexts/PinQueueContext';
 import { type PendingPinEntry } from '@/lib/pinCreationQueue';
-import PinDropSheet from '@/components/PinDropSheet';
 
 type MapLayerMeta = {
   id: string;
@@ -29,27 +29,6 @@ type MapLayerMeta = {
   displayName: string;
   version: number;
   color?: string;
-};
-
-type ControllerInfo = {
-  id: string;
-  label: string;
-  featureRef: string | null;
-  controllerKey: string;
-  controllerColor: string;
-  latitude: number | null;
-  longitude: number | null;
-  zoneCount: number;
-  zones: {
-    id: string;
-    label: string;
-    featureRef: string | null;
-    zoneNumber: number | null;
-    zoneType: string | null;
-    zoneLabelShort: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  }[];
 };
 
 const LOCK_COLORS: Record<string, string> = {
@@ -187,6 +166,7 @@ export default function McWorkspaceScreen() {
   const router = useRouter();
   const { communities, setActiveCommunity } = useCommunity();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   // MC7: sync queue
   const { pendingEntries, syncNow, retryEntry, refreshList } = usePinQueue();
@@ -208,30 +188,40 @@ export default function McWorkspaceScreen() {
   }, [refreshList]);
 
   // MC4: map state
-  const communityId = id;
+  const communityId = id ?? '';
 
+  // ─── MC4: map / GPS state ────────────────────────────────────────────────
   const [activeLayer, setActiveLayer] = useState<McLayerKey>('trees');
   const [armedType, setArmedType] = useState<string | null>(null);
   const [loadedGeoJSON, setLoadedGeoJSON] = useState<Record<string, any>>({});
   const loadedGeoJSONRef = useRef(loadedGeoJSON);
   loadedGeoJSONRef.current = loadedGeoJSON;
   const loadingGeoJSONRef = useRef<Set<string>>(new Set());
-  const [isSavingPin, setIsSavingPin] = useState(false);
-  const [toastType, setToastType] = useState<'success' | 'error'>('success');
-  const { showToast, toastProps } = useToast();
-  const queryClient = useQueryClient();
 
   const gps = useHighAccuracyLocation();
 
   useFocusEffect(
     useCallback(() => {
       gps.start();
-      return () => {
-        gps.stop();
-      };
+      return () => { gps.stop(); };
     }, [])
   );
 
+  // ─── MC6: Controller→Zone creation state ─────────────────────────────────
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [addingControllerForZone, setAddingControllerForZone] = useState(false);
+  const [selectedController, setSelectedController] = useState<ControllerRow | null>(null);
+  const [newlyAddedControllerId, setNewlyAddedControllerId] = useState<string | null>(null);
+  const [pinLat, setPinLat] = useState<number | null>(null);
+  const [pinLng, setPinLng] = useState<number | null>(null);
+  const [pinDropVisible, setPinDropVisible] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
+  const [toastKey, setToastKey] = useState(0);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── Data fetching ────────────────────────────────────────────────────────
   const { data: boundsData } = useQuery<{
     bounds: [[number, number], [number, number]];
     center: [number, number];
@@ -249,12 +239,17 @@ export default function McWorkspaceScreen() {
     enabled: !!communityId,
   });
 
-  const { data: controllers = [] } = useQuery<ControllerInfo[]>({
+  const { data: controllers = [], refetch: refetchControllers } = useQuery<ControllerRow[]>({
     queryKey: ['/api/communities', communityId, 'controllers'],
     queryFn: async () => {
       const res = await apiRequest('GET', `/api/communities/${communityId}/controllers`);
       return res.json();
     },
+    enabled: !!communityId,
+  });
+
+  const { data: assetsData } = useQuery<any[]>({
+    queryKey: [`/api/communities/${communityId}/assets`],
     enabled: !!communityId,
   });
 
@@ -286,6 +281,7 @@ export default function McWorkspaceScreen() {
     });
   }, [allLayers, fetchGeoJSON]);
 
+  // ─── Derived map data ─────────────────────────────────────────────────────
   const controllerColorMap = useMemo(() => {
     const map = new Map<string, string>();
     controllers.forEach((c) => {
@@ -294,9 +290,6 @@ export default function McWorkspaceScreen() {
     return map;
   }, [controllers]);
 
-  // All layers are always visible in the MC workspace (no category filter).
-  // Controller/zone sublayer GeoJSON is suppressed when structured controller
-  // markers are available, mirroring the parity logic from (tabs)/map.tsx.
   const activeLayers = useMemo(() => {
     return allLayers
       .filter((l) => {
@@ -318,7 +311,6 @@ export default function McWorkspaceScreen() {
       }));
   }, [allLayers, loadedGeoJSON, controllers, controllerColorMap]);
 
-  // All controllers and zones are shown at all times in the MC workspace.
   const controllerMarkers = useMemo(() => {
     return controllers
       .filter((c) => c.latitude != null && c.longitude != null)
@@ -370,9 +362,6 @@ export default function McWorkspaceScreen() {
     return zones;
   }, [controllers]);
 
-  // Derive per-type counts from loaded GeoJSON (by subLayerKey) and from
-  // structured controller/zone data so badges show accurate numbers even
-  // when raw controller/zone GeoJSON sublayers are suppressed.
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     allLayers.forEach((layer) => {
@@ -415,12 +404,7 @@ export default function McWorkspaceScreen() {
     if (!armedType || gps.latitude == null || gps.longitude == null || gps.accuracy == null) {
       return null;
     }
-    return {
-      lat: gps.latitude,
-      lng: gps.longitude,
-      accuracyMetres: gps.accuracy,
-      color: haloColor,
-    };
+    return { lat: gps.latitude, lng: gps.longitude, accuracyMetres: gps.accuracy, color: haloColor };
   }, [armedType, gps.latitude, gps.longitude, gps.accuracy, haloColor]);
 
   const userLocation = useMemo(() => {
@@ -437,52 +421,128 @@ export default function McWorkspaceScreen() {
     return null;
   }, [armedType]);
 
-  const handleLockPin = useCallback(async () => {
-    if (!armedType || gps.lockState !== 'green' || gps.latitude == null || gps.longitude == null) return;
-    setIsSavingPin(true);
-    try {
-      const res = await apiRequest('POST', '/api/assets', {
-        communityId,
-        assetType: armedType,
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-      });
-      const { layerId, feature, isNewLayer } = await res.json();
-      setLoadedGeoJSON((prev) => {
-        if (!layerId) return prev;
-        const existing = prev[layerId];
-        if (existing) {
-          return {
-            ...prev,
-            [layerId]: {
-              ...existing,
-              features: [...(existing.features || []), feature],
-            },
-          };
-        }
-        return {
-          ...prev,
-          [layerId]: { type: 'FeatureCollection', features: [feature] },
-        };
-      });
-      if (isNewLayer) {
-        queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
-      }
-      if (armedType === 'controller' || armedType === 'zone') {
-        queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
-      }
-      setToastType('success');
-      showToast('Pin saved!');
-      setArmedType(null);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to save pin';
-      const serverMsg = msg.includes(':') ? msg.split(':').slice(1).join(':').trim() : msg;
-      setToastType('error');
-      showToast(serverMsg || 'Failed to save pin');
-    } finally {
-      setIsSavingPin(false);
+  const existingLabels = useMemo(() => {
+    if (!assetsData) return [];
+    return assetsData.map((a: any) => a.label ?? '').filter(Boolean);
+  }, [assetsData]);
+
+  const existingZoneNumbers = useMemo(() => {
+    if (!controllers.length || !selectedController) return [];
+    const ctrl = controllers.find((c) => c.id === selectedController.id);
+    if (!ctrl) return [];
+    return ctrl.zones
+      .map((z) => z.zoneNumber)
+      .filter((n): n is number => typeof n === 'number');
+  }, [controllers, selectedController]);
+
+  // ─── Creation flow handlers ────────────────────────────────────────────────
+
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(message);
+    setToastType(type);
+    setToastKey((k) => k + 1);
+    setToastVisible(true);
+    toastTimeoutRef.current = setTimeout(() => setToastVisible(false), 3500);
+  }, []);
+
+  const disarm = () => {
+    setArmedType(null);
+    setSelectedController(null);
+    setAddingControllerForZone(false);
+    setPinLat(null);
+    setPinLng(null);
+    setPinDropVisible(false);
+  };
+
+  /** Called by MapCreatorOverlay's arm-type tap. */
+  const handleArmType = (type: string | null) => {
+    if (type === 'zone') {
+      setArmedType('zone');
+      setSelectedController(null);
+      setAddingControllerForZone(false);
+      setPickerVisible(true);
+    } else {
+      setArmedType(type);
+      setSelectedController(null);
+      setAddingControllerForZone(false);
     }
-  }, [armedType, gps.lockState, gps.latitude, gps.longitude, communityId, showToast, queryClient]);
+  };
+
+  const handleControllerSelected = (controller: ControllerRow) => {
+    setSelectedController(controller);
+    setPickerVisible(false);
+  };
+
+  const handleAddNewController = () => {
+    setPickerVisible(false);
+    setAddingControllerForZone(true);
+    setArmedType('controller');
+    setSelectedController(null);
+  };
+
+  const handlePickerClose = () => {
+    setPickerVisible(false);
+    if (!selectedController) {
+      setArmedType(null);
+    }
+  };
+
+  /** "Lock Pin Here" — captures current GPS position and opens PinDropSheet. */
+  const handleLockPin = () => {
+    if (gps.latitude == null || gps.longitude == null) return;
+    if (!armedType) return;
+    if (armedType === 'zone' && !selectedController) {
+      setPickerVisible(true);
+      return;
+    }
+    setPinLat(gps.latitude);
+    setPinLng(gps.longitude);
+    setPinDropVisible(true);
+  };
+
+  const handlePinSave = (assetId: string, label: string) => {
+    setPinDropVisible(false);
+    const savedType = armedType;
+    const wasAddingForZone = addingControllerForZone;
+
+    disarm();
+
+    if (savedType === 'controller') {
+      queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
+      setNewlyAddedControllerId(assetId);
+      if (wasAddingForZone) {
+        setTimeout(() => {
+          setArmedType('zone');
+          setPickerVisible(true);
+        }, 600);
+      }
+    }
+
+    showToast(`${label} saved`, 'success');
+  };
+
+  const handlePinClose = () => {
+    setPinDropVisible(false);
+    setPinLat(null);
+    setPinLng(null);
+  };
+
+  const canLockPin =
+    !!armedType &&
+    gps.lockState === 'green' &&
+    gps.latitude != null &&
+    gps.longitude != null &&
+    !(armedType === 'zone' && !selectedController);
+
+  const armedColor = useMemo(() => {
+    if (!armedType) return '#25C1AC';
+    if (armedType === 'zone' && selectedController) return selectedController.controllerColor;
+    if (armedType === 'controller') return CONTROLLER_COLORS[0];
+    return '#25C1AC';
+  }, [armedType, selectedController]);
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   // MC7: sync queue derived state
   const communityPendingEntries = useMemo(
@@ -569,10 +629,7 @@ export default function McWorkspaceScreen() {
       <View style={styles.container}>
         <StatusBarFill />
         <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
-          <TouchableOpacity
-            onPress={() => router.replace('/(mc-tabs)' as any)}
-            style={styles.backBtn}
-          >
+          <TouchableOpacity onPress={() => router.replace('/(mc-tabs)' as any)} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={22} color="#0C1D31" />
           </TouchableOpacity>
           <Text style={styles.headerTitle} numberOfLines={1}>Workspace</Text>
@@ -581,16 +638,9 @@ export default function McWorkspaceScreen() {
         <View style={styles.centeredState}>
           <Ionicons name="alert-circle-outline" size={52} color="#f44336" />
           <Text style={styles.notFoundTitle}>Customer not found</Text>
-          <Text style={styles.notFoundSubtitle}>
-            This customer may have been removed or you may not have access.
-          </Text>
-          <TouchableOpacity
-            style={styles.backLinkBtn}
-            onPress={() => router.replace('/(mc-tabs)' as any)}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={styles.ctaBtn} onPress={() => router.replace('/(mc-tabs)' as any)} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={16} color="#fff" />
-            <Text style={styles.backLinkBtnText}>Back to Customers</Text>
+            <Text style={styles.ctaBtnText}>Back to Customers</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -602,10 +652,7 @@ export default function McWorkspaceScreen() {
       <StatusBarFill />
 
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity
-          onPress={() => router.replace('/(mc-tabs)' as any)}
-          style={styles.backBtn}
-        >
+        <TouchableOpacity onPress={() => router.replace('/(mc-tabs)' as any)} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color="#0C1D31" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
@@ -647,9 +694,10 @@ export default function McWorkspaceScreen() {
           onLayerChange={(layer) => {
             setActiveLayer(layer);
             setArmedType(null);
+            setSelectedController(null);
           }}
           armedType={armedType}
-          onArmType={setArmedType}
+          onArmType={handleArmType}
           typeCounts={typeCounts}
           lockState={gps.lockState}
         />
@@ -681,50 +729,92 @@ export default function McWorkspaceScreen() {
 
       {armedType && armedTypeDef && !mapTapEnabled && (
         <View style={[styles.hintCard, { paddingBottom: insets.bottom + 12 }]}>
-          <Text style={styles.hintText}>
-            {gps.lockState === 'green'
-              ? <>Tap to drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text> pin at your current GPS location.</>
-              : <>Move to open sky to lock GPS, then drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text> pin.</>
-            }
-          </Text>
-          <TouchableOpacity
-            style={[
-              styles.lockPinBtn,
-              gps.lockState === 'green' && !isSavingPin && styles.lockPinBtnEnabled,
-            ]}
-            disabled={gps.lockState !== 'green' || isSavingPin}
-            onPress={handleLockPin}
-            activeOpacity={0.8}
-          >
-            {isSavingPin ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
+          {armedType === 'zone' && !selectedController ? (
+            <Text style={styles.hintText}>
+              Select a <Text style={styles.hintTypeName}>Controller</Text> for this zone.
+            </Text>
+          ) : (
+            <Text style={styles.hintText}>
+              Drop a <Text style={styles.hintTypeName}>{armedTypeDef.label}</Text>{' '}
+              {armedType === 'zone' && selectedController
+                ? `in Controller ${selectedController.controllerKey}. `
+                : ''}
+              {gps.lockState !== 'green' ? 'Waiting for GPS lock…' : 'GPS locked — ready to place.'}
+            </Text>
+          )}
+
+          {armedType === 'zone' && !selectedController ? (
+            <TouchableOpacity
+              style={[styles.lockPinBtn, { backgroundColor: '#25C1AC10', borderColor: '#25C1AC' }]}
+              onPress={() => setPickerVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="git-network-outline" size={16} color="#25C1AC" />
+              <Text style={[styles.lockPinBtnText, { color: '#25C1AC' }]}>
+                Select Controller
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.lockPinBtn,
+                canLockPin && { backgroundColor: armedColor + '18', borderColor: armedColor },
+              ]}
+              onPress={handleLockPin}
+              disabled={!canLockPin}
+              activeOpacity={0.8}
+            >
               <Ionicons
                 name="pin"
                 size={16}
-                color={gps.lockState === 'green' ? '#fff' : '#9ca3af'}
+                color={canLockPin ? armedColor : '#9ca3af'}
               />
-            )}
-            <Text style={[
-              styles.lockPinBtnText,
-              gps.lockState === 'green' && !isSavingPin && styles.lockPinBtnTextEnabled,
-            ]}>
-              {isSavingPin ? 'Saving...' : 'Lock Pin Here'}
-            </Text>
-          </TouchableOpacity>
-          {gps.lockState !== 'green' && (
-            <Text style={styles.hintHelper}>
-              {gps.lockState === 'red' ? 'No GPS signal — move outdoors.' : 'Acquiring signal…'}
-            </Text>
+              <Text style={[styles.lockPinBtnText, canLockPin && { color: armedColor }]}>
+                Lock Pin Here
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {armedType && (
+            <TouchableOpacity onPress={disarm} style={styles.disarmLink}>
+              <Text style={styles.disarmLinkText}>Cancel</Text>
+            </TouchableOpacity>
           )}
         </View>
       )}
 
+      {/* ControllerPicker — shown when arming Zone or adding controller for zone */}
+      <ControllerPicker
+        visible={pickerVisible}
+        communityId={communityId}
+        onSelect={handleControllerSelected}
+        onAddNewController={handleAddNewController}
+        onClose={handlePickerClose}
+        highlightedControllerId={newlyAddedControllerId}
+      />
+
+      {/* PinDropSheet — opened via Lock Pin Here button */}
+      {armedType && pinLat !== null && pinLng !== null && (
+        <PinDropSheet
+          visible={pinDropVisible}
+          assetType={armedType}
+          assetColor={armedColor}
+          latitude={pinLat}
+          longitude={pinLng}
+          communityId={communityId}
+          existingLabels={existingLabels}
+          parentController={armedType === 'zone' ? selectedController : null}
+          existingZoneNumbers={existingZoneNumbers}
+          onClose={handlePinClose}
+          onSave={handlePinSave}
+        />
+      )}
+
       <Toast
-        visible={toastProps.visible}
-        message={toastProps.message}
-        toastKey={toastProps.toastKey}
+        visible={toastVisible}
+        message={toastMessage}
         type={toastType}
+        toastKey={toastKey}
       />
 
       <PendingSheet
@@ -920,7 +1010,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderColor: '#d1d5db',
-    opacity: 0.7,
   },
   lockPinBtnEnabled: {
     backgroundColor: '#4CAF50',
@@ -932,13 +1021,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#9ca3af',
   },
-  lockPinBtnTextEnabled: {
-    color: '#fff',
+  disarmLink: {
+    alignItems: 'center',
+    paddingVertical: 4,
   },
-  hintHelper: {
-    fontSize: 11,
+  disarmLinkText: {
+    fontSize: 13,
     color: '#9ca3af',
-    textAlign: 'center',
   },
   centeredState: {
     flex: 1,
@@ -952,13 +1041,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0C1D31',
   },
-  notFoundSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  backLinkBtn: {
+  ctaBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -966,9 +1049,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 22,
-    alignSelf: 'center',
+    marginTop: 4,
   },
-  backLinkBtnText: {
+  ctaBtnText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#fff',

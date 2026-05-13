@@ -12,6 +12,7 @@
   "dependencies": {
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/leaflet-template": "workspace:*",
     "@google-cloud/storage": "^7.19.0",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/area": "^7.3.4",

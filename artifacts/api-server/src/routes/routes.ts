@@ -13,7 +13,7 @@ import { parseIrrigationKml } from "../kmlIrrigationParser";
 import { validateLayerGeoJSON } from "../layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "../layerKeys";
 import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "../kmlConverter";
-import { getDefaultLayerColor } from "../shared/layerColors";
+import { getDefaultLayerColor, CONTROLLER_COLORS } from "../shared/layerColors";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
@@ -36,6 +36,17 @@ import { eq, and, desc, ne } from "drizzle-orm";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
+
+/** Convert a 0-based index to Excel-column-style letter key: 0→A, 25→Z, 26→AA, 27→AB … */
+function nextControllerKey(n: number): string {
+  let result = "";
+  let i = n;
+  do {
+    result = String.fromCharCode(65 + (i % 26)) + result;
+    i = Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return result;
+}
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -2198,24 +2209,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
-      const asset = await storage.createAsset({
-        ...parsed.data,
-        createdBy: reqUser.id,
-        updatedBy: reqUser.id,
-      });
+
+      if (reqUser.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(reqUser.id, parsed.data.communityId);
+        if (!isMember) {
+          return res.status(403).json({ error: "You are not a member of this community" });
+        }
+      }
+
+      const bodyProps: Record<string, string> = {};
+      const rawProps = req.body.properties;
+      if (rawProps && typeof rawProps === "object") {
+        for (const [k, v] of Object.entries(rawProps)) {
+          if (typeof v === "string") bodyProps[k] = v;
+        }
+      }
+
+      let asset;
+      try {
+        if (
+          parsed.data.assetType === "controller" &&
+          isMapCreatorRole(reqUser.role) &&
+          (!bodyProps.controllerKey || !bodyProps.controllerColor)
+        ) {
+          const { asset: newAsset } = await storage.createControllerAssetAtomic({
+            communityId: parsed.data.communityId,
+            label: parsed.data.label,
+            featureRef: parsed.data.featureRef,
+            mapLayerId: parsed.data.mapLayerId,
+            latitude: parsed.data.latitude,
+            longitude: parsed.data.longitude,
+            createdBy: reqUser.id,
+            bodyProps,
+            controllerColors: CONTROLLER_COLORS,
+          });
+          asset = newAsset;
+        } else {
+          asset = await storage.createAsset({
+            ...parsed.data,
+            createdBy: reqUser.id,
+            updatedBy: reqUser.id,
+          });
+          const properties = Object.entries(bodyProps).map(([key, value]) => ({ key, value }));
+          if (properties.length > 0) {
+            await storage.upsertAssetProperties(asset.id, properties);
+          }
+        }
+      } catch (err: any) {
+        if (err?.code === "23505") {
+          return res.status(409).json({ error: "A pin with this ID already exists. Please try again.", code: "DUPLICATE_FEATURE_REF" });
+        }
+        throw err;
+      }
+
+
       res.status(201).json(asset);
     } catch (error) {
-      console.error("Create asset error:", error);
+      req.log.error({ error }, "Create asset error");
       res.status(500).json({ error: "Failed to create asset" });
     }
   });
 
-  app.patch("/api/assets/:id", requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/assets/:id", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const parsed = updateAssetSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
+
+      const currentUser = (req as any).currentUser;
+      if (currentUser.role !== "admin") {
+        const asset = await storage.getAssetById(req.params.id as string);
+        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+
       const { version, ...data } = parsed.data;
       const updated = await storage.updateAsset(req.params.id as string, version, {
         ...data,
@@ -2232,12 +2301,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json(updated);
     } catch (error) {
-      console.error("Update asset error:", error);
+      req.log.error({ error }, "Update asset error");
       res.status(500).json({ error: "Failed to update asset" });
     }
   });
 
-  app.put("/api/assets/:id/properties", requireAdmin, async (req: Request, res: Response) => {
+  app.put("/api/assets/:id/properties", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const parsed = upsertAssetPropertiesSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -2245,10 +2314,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const asset = await storage.getAssetById(req.params.id as string);
       if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const currentUser = (req as any).currentUser;
+      if (currentUser.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+      }
+
       const properties = await storage.upsertAssetProperties(asset.id, parsed.data.properties);
       res.json(properties);
     } catch (error) {
-      console.error("Upsert properties error:", error);
+      req.log.error({ error }, "Upsert properties error");
       res.status(500).json({ error: "Failed to update properties" });
     }
   });

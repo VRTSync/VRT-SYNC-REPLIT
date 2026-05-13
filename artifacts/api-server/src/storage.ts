@@ -557,6 +557,90 @@ export async function createAssetFromFeature(data: {
   return asset;
 }
 
+/** Convert a 0-based index to alphabetical key: 0→A, 25→Z, 26→AA … */
+function toControllerKey(n: number): string {
+  let result = "";
+  let i = n;
+  do {
+    result = String.fromCharCode(65 + (i % 26)) + result;
+    i = Math.floor(i / 26) - 1;
+  } while (i >= 0);
+  return result;
+}
+
+/**
+ * Atomically count existing controllers, auto-assign controllerKey + controllerColor,
+ * insert the controller asset, and write its initial properties — all in one transaction.
+ * Uses SELECT … FOR UPDATE to prevent key/color duplication under concurrent creates.
+ */
+export async function createControllerAssetAtomic(data: {
+  communityId: string;
+  label: string;
+  featureRef?: string | null;
+  mapLayerId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  createdBy: string;
+  bodyProps: Record<string, string>;
+  controllerColors: string[];
+}): Promise<{ asset: Asset; resolvedKey: string; resolvedColor: string }> {
+  return db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ id: assets.id })
+      .from(assets)
+      .where(
+        and(
+          eq(assets.communityId, data.communityId),
+          eq(assets.assetType, "controller"),
+          eq(assets.isArchived, false),
+        ),
+      )
+      .for("update");
+
+    const count = existing.length;
+    const resolvedKey = data.bodyProps.controllerKey || toControllerKey(count);
+    const resolvedColor =
+      data.bodyProps.controllerColor ||
+      data.controllerColors[count % data.controllerColors.length];
+
+    const [asset] = await tx
+      .insert(assets)
+      .values({
+        communityId: data.communityId,
+        assetType: "controller",
+        label: data.label,
+        featureRef: data.featureRef,
+        mapLayerId: data.mapLayerId,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        isArchived: false,
+        sourceUpdatedAt: new Date(),
+        createdBy: data.createdBy,
+      })
+      .returning();
+
+    const propsToWrite = [
+      { assetId: asset.id, key: "controllerKey", value: resolvedKey },
+      { assetId: asset.id, key: "controllerColor", value: resolvedColor },
+      ...Object.entries(data.bodyProps)
+        .filter(([k]) => k !== "controllerKey" && k !== "controllerColor")
+        .map(([key, value]) => ({ assetId: asset.id, key, value })),
+    ];
+
+    if (propsToWrite.length > 0) {
+      await tx
+        .insert(assetProperties)
+        .values(propsToWrite)
+        .onConflictDoUpdate({
+          target: [assetProperties.assetId, assetProperties.key],
+          set: { value: sql`excluded.value` },
+        });
+    }
+
+    return { asset, resolvedKey, resolvedColor };
+  });
+}
+
 export async function getAssetsByCommunitySorted(communityId: string, assetType?: string, includeArchived?: boolean): Promise<Asset[]> {
   const conditions = [eq(assets.communityId, communityId)];
   if (assetType) {

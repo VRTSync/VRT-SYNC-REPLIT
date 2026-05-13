@@ -1,3 +1,5 @@
+import { CONTROLLER_COLORS } from "@workspace/leaflet-template";
+
 export const SUBLAYER_DEFAULT_COLORS: Record<string, string> = {
   bluegrass_area: '#2E8B57',
   native_area: '#8F9779',
@@ -16,14 +18,12 @@ export const SUBLAYER_DEFAULT_COLORS: Record<string, string> = {
   tree: '#006400',
 };
 
-export const CONTROLLER_PALETTE: string[] = [
-  '#25C1AC', '#3498db', '#e74c3c', '#f39c12', '#9b59b6',
-  '#1abc9c', '#e67e22', '#2980b9', '#c0392b', '#27ae60',
-];
+export { CONTROLLER_COLORS };
+export const CONTROLLER_PALETTE: string[] = CONTROLLER_COLORS;
 
 export function getDefaultLayerColor(subLayerKey: string, existingCount: number): string {
   if (subLayerKey in SUBLAYER_DEFAULT_COLORS) {
     return SUBLAYER_DEFAULT_COLORS[subLayerKey];
   }
-  return CONTROLLER_PALETTE[existingCount % CONTROLLER_PALETTE.length];
+  return CONTROLLER_COLORS[existingCount % CONTROLLER_COLORS.length];
 }

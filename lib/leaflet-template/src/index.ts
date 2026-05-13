@@ -14,6 +14,19 @@
  * file. Both platforms will pick up the changes automatically.
  */
 
+/**
+ * Canonical controller color palette — single source of truth for both
+ * the KML irrigation parser (auto-assignment during import) and the
+ * Map Creator workflow (auto-assignment when a new Controller is created).
+ * 15 distinct colors; palette wraps round-robin for communities with 15+
+ * controllers. Keys continue A→Z→AA→AB… regardless of the palette size.
+ */
+export const CONTROLLER_COLORS: string[] = [
+  "#ffa726", "#42a5f5", "#66bb6a", "#ef5350", "#ab47bc",
+  "#26c6da", "#ffca28", "#8d6e63", "#78909c", "#ec407a",
+  "#7e57c2", "#26a69a", "#d4e157", "#ff7043", "#5c6bc0",
+];
+
 export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 <html>
 <head>
