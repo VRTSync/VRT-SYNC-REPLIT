@@ -17,6 +17,7 @@ import { CommunityProvider } from "@/client/contexts/CommunityContext";
 import { OfflineProvider } from "@/client/contexts/OfflineContext";
 import { OfflinePackProvider } from "@/client/contexts/OfflinePackContext";
 import { MapFilterProvider } from "@/client/contexts/MapFilterContext";
+import { PinQueueProvider } from "@/client/contexts/PinQueueContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -225,11 +226,13 @@ export default function RootLayout() {
               <AuthProvider>
                 <CommunityProvider>
                   <OfflineProvider>
-                    <OfflinePackProvider>
-                      <MapFilterProvider>
-                        {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
-                      </MapFilterProvider>
-                    </OfflinePackProvider>
+                    <PinQueueProvider>
+                      <OfflinePackProvider>
+                        <MapFilterProvider>
+                          {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
+                        </MapFilterProvider>
+                      </OfflinePackProvider>
+                    </PinQueueProvider>
                   </OfflineProvider>
                 </CommunityProvider>
               </AuthProvider>

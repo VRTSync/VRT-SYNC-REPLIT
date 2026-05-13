@@ -89,6 +89,23 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     background: #25C1AC !important; color: #fff !important;
     font-weight: 700 !important;
   }
+  .pending-pin {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fbbf24;
+    border: 2px dashed #d97706;
+    box-shadow: 0 1px 4px rgba(251,191,36,0.4);
+    animation: pending-pulse 1.5s ease-in-out infinite;
+  }
+  .pending-pin-failed {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fca5a5;
+    border: 2px dashed #ef4444;
+    box-shadow: 0 1px 4px rgba(239,68,68,0.4);
+  }
+  @keyframes pending-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
+  }
 </style>
 </head>
 <body>
@@ -113,9 +130,17 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup().addTo(map);
+  var pendingPinsLayer = L.layerGroup().addTo(map);
   var controllerClusterGroups = {};
   var userLocMarker = null;
   var targetMarker = null;
+  var mapTapEnabled = false;
+
+  map.on('click', function(e) {
+    if (mapTapEnabled) {
+      post('mapTap', { latitude: e.latlng.lat, longitude: e.latlng.lng });
+    }
+  });
 
   function post(type, data) {
     try {
@@ -552,6 +577,45 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           el.style.opacity = '1';
         }
       });
+    },
+
+    setPendingPins: function(pins) {
+      clearGroup(pendingPinsLayer);
+      (pins || []).forEach(function(p) {
+        if (p.latitude == null || p.longitude == null) return;
+        var isFailed = p.state === 'failed';
+        var cls = isFailed ? 'pending-pin-failed' : 'pending-pin';
+        var color = isFailed ? '#ef4444' : '#fbbf24';
+        var m = L.marker([p.latitude, p.longitude], {
+          icon: L.divIcon({
+            html: '<div class="' + cls + '"></div>',
+            className: '',
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          }),
+          zIndex: 200
+        });
+        var stateLabel = isFailed
+          ? 'Failed \u2014 tap Retry in the sync panel'
+          : 'Pending \u2014 will sync when online';
+        var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:' + color + ';"></div><div class="popup-body">';
+        popupHtml += '<span class="popup-type" style="background:' + color + ';">' + escHtml(p.assetType || 'pin') + '</span>';
+        popupHtml += '<div class="popup-title">' + escHtml(p.label) + '</div>';
+        popupHtml += '<div class="popup-meta">' + stateLabel + '</div>';
+        popupHtml += '</div></div>';
+        m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
+        m.addTo(pendingPinsLayer);
+      });
+    },
+
+    enableMapTap: function() {
+      mapTapEnabled = true;
+      map.getContainer().style.cursor = 'crosshair';
+    },
+
+    disableMapTap: function() {
+      mapTapEnabled = false;
+      map.getContainer().style.cursor = '';
     },
 
     updateLayerColorMap: function(layerId, colorMap, fallbackColor) {

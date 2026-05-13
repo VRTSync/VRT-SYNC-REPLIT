@@ -59,6 +59,15 @@ type ZoneMarkerData = {
   longitude: number;
 };
 
+export type PendingPinMarker = {
+  id: string;
+  label: string;
+  assetType: string;
+  latitude: number;
+  longitude: number;
+  state: 'queued' | 'syncing' | 'synced' | 'failed';
+};
+
 type LeafletMapProps = {
   tasks: Task[];
   userLocation: { latitude: number; longitude: number } | null;
@@ -78,6 +87,9 @@ type LeafletMapProps = {
   communityOutlineStyle?: { strokeColor?: string; strokeWeight?: number; fillOpacity?: number } | null;
   filteredTaskIds?: string[] | null;
   userLocationHalo?: { lat: number; lng: number; accuracyMetres: number; color: string } | null;
+  pendingPins?: PendingPinMarker[];
+  mapTapEnabled?: boolean;
+  onMapTap?: (latitude: number, longitude: number) => void;
 };
 
 const priorityColors: Record<string, string> = {
@@ -106,6 +118,9 @@ export default function LeafletMap({
   communityOutlineStyle,
   filteredTaskIds,
   userLocationHalo,
+  pendingPins = [],
+  mapTapEnabled = false,
+  onMapTap,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -118,6 +133,8 @@ export default function LeafletMap({
   onTargetReachedRef.current = onTargetReached;
   const onTaskPressRef = useRef(onTaskPress);
   onTaskPressRef.current = onTaskPress;
+  const onMapTapRef = useRef(onMapTap);
+  onMapTapRef.current = onMapTap;
   const isWeb = Platform.OS === 'web';
 
   const sendCmd = useCallback((fn: string, ...args: any[]) => {
@@ -180,6 +197,9 @@ export default function LeafletMap({
         break;
       case 'targetReached':
         onTargetReachedRef.current?.();
+        break;
+      case 'mapTap':
+        onMapTapRef.current?.(msg.data.lat, msg.data.lng);
         break;
     }
   }, [flushPending]);
@@ -312,6 +332,27 @@ export default function LeafletMap({
       sendCmd('clearUserLocationHalo');
     }
   }, [userLocationHalo, sendCmd]);
+
+  const pendingPinsData = useMemo(() => {
+    return pendingPins
+      .filter((p) => p.state !== 'synced')
+      .map((p) => ({
+        id: p.id,
+        label: p.label,
+        assetType: p.assetType,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        state: p.state,
+      }));
+  }, [pendingPins]);
+
+  useEffect(() => {
+    sendCmd('setPendingPins', pendingPinsData);
+  }, [pendingPinsData, sendCmd]);
+
+  useEffect(() => {
+    sendCmd(mapTapEnabled ? 'enableMapTap' : 'disableMapTap');
+  }, [mapTapEnabled, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 
