@@ -199,7 +199,6 @@ export default function McWorkspaceScreen() {
   const queryClient = useQueryClient();
   const { communities, setActiveCommunity, refresh: refreshCommunities } = useCommunity();
   const insets = useSafeAreaInsets();
-  const queryClient = useQueryClient();
 
   // MC7: sync queue
   const { pendingEntries, syncNow, retryEntry, refreshList } = usePinQueue();
