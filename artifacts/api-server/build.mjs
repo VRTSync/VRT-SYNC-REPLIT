@@ -12,7 +12,7 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
-  await rm(distDir, { recursive: true, force: true });
+  await rm(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
