@@ -1,0 +1,46 @@
+Since EAS CLI version `12.0.0` explicitly specifying app version source is required. Please select your app version source:
+	1) With the "local" app version source and "autoIncrement" option enabled, the build number/version code is sourced from local project files and incremented automatically if possible, by editing local project files. Learn more: https://docs.expo.dev/build-reference/app-versions/#local-version-source
+	2) With the "remote" app version source and "autoIncrement" option enabled, the build number/version code is stored on EAS servers and updated every time you create a new build. Remote auto-incrementation won't edit the version in the local project files, but instead, the new version will be injected automatically during the build process. Learn more: https://docs.expo.dev/build-reference/app-versions/#remote-version-source
+Until now, this project has been using the "local" version source (which was the previous default). App version source can now be set for you automatically, or you can configure it manually by setting the "appVersionSource" value in your eas.json.
+✔ What would you like to do? › Update eas.json to use the default "remote" version source (recommended)
+✔ Updated eas.json
+Failed to resolve plugin for module "expo-router" relative to "/Users/randymangel/Library/Mobile Documents/com~apple~CloudDocs/CLAUDE/projects/vrtsync/ Mobile App/VRT-SYNC-REPLIT/artifacts/vrtsync-mobile". Do you have node modules installed?
+    Error: build command failed.
+randymangel@Randys-Mac-mini vrtsync-mobile % cd "/Users/randymangel/Library/Mobile Documents/com~apple~CloudDocs/CLAUDE/projects/vrtsync/ Mobile App/VRT-SYNC-REPLIT"
+npm install -g pnpm
+pnpm install
+cd artifacts/vrtsync-mobile
+eas build --platform ios --profile production
+
+added 1 package in 783ms
+
+1 package is looking for funding
+  run `npm fund` for details
+Scope: all 11 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +1441
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Downloading react-native@0.81.5: 24.76 MB/24.76 MB, done
+Progress: resolved 1441, reused 0, downloaded 1415, added 1441, done
+
+devDependencies:
++ prettier 3.8.1
++ typescript 5.9.3
+
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; e…
+│ Use pnpm instead
+└─ Failed in 25ms at /Users/randymangel/Library/Mobile Documents/com~apple~CloudDocs/CLAUDE/projects/vrtsync/ Mobile App/VRT-SYNC-REPLIT
+[ELIFECYCLE] Command failed with exit code 1.
+
+EAS Build is experiencing a partial outage.
+Reason: High queue times for Android and iOS builds.
+All information on service status and incidents available at https://status.expo.dev/
+
+
+⚠️ Detected that your app uses Expo Go for development, this is not recommended when building production apps.
+Learn more: https://expo.fyi/why-not-build-expo-go-for-production
+To suppress this warning, set EAS_BUILD_NO_EXPO_GO_WARNING=true.
+
+Project config: Owner of project identified by "extra.eas.projectId" (rmangel03) does not match owner specified in the "owner" field (rmangel). Learn more: https://expo.fyi/eas-project-id
+    Error: build command failed.
+randymangel@Randys-Mac-mini vrtsync-mobile % 
