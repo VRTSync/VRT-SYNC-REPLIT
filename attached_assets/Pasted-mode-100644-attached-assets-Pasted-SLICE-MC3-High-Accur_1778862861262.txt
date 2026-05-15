@@ -1,0 +1,30 @@
+mode 100644 attached_assets/Pasted-SLICE-MC3-High-Accuracy-GPS-Capture-Service-Mobile-Goal_1778625986827.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC4-Map-Creator-Workspace-Map-Layer-Sublayer-Tile_1778625998804.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC5-Flat-Type-Pin-Drop-Backend-Mobile-Goal-Let-a-_1778626012725.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC5-Flat-Type-Pin-Drop-Backend-Mobile-Goal-Let-a-_1778626072108.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC6-Controller-Zone-Hierarchy-Mobile-Backend-Goal_1778626083447.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC7-Offline-Pin-Creation-Sync-Queue-Mobile-Goal-A_1778626095733.txt
+ create mode 100644 attached_assets/Pasted-SLICE-MC8-Review-Mode-Lock-Community-Mobile-Backend-Goa_1778626107173.txt
+ create mode 100644 attached_assets/Pasted-SLICE-TIDY-1-Consolidate-leaflet-map-template-into-a-Sh_1778608646778.txt
+ create mode 100644 attached_assets/Pasted-cd-artifacts-vrtsync-mobile-npm-install-g-eas-cli-eas-l_1778700384434.txt
+ create mode 100644 attached_assets/Pasted-randymangel-Randys-Mac-mini-Mobile-App-cd-VRT-SYNC-REPL_1778862026690.txt
+ create mode 100644 attached_assets/Screenshot_2026-05-15_at_10.29.13_AM_1778862561674.png
+ create mode 100644 docs/mc1-test-acceptance-results.md
+ create mode 100644 lib/db/migrations/0000_baseline.sql
+ create mode 100644 lib/db/migrations/0001_add_map_creator_and_asset_types.sql
+ create mode 100644 lib/db/migrations/0002_add_map_creator_lock.sql
+ create mode 100644 lib/db/migrations/0003_asset_attachment_column.sql
+ create mode 100644 lib/db/migrations/meta/0001_snapshot.json
+ create mode 100644 lib/db/migrations/meta/_journal.json
+ create mode 100644 lib/db/src/migrate-runner.ts
+ create mode 100644 lib/db/src/migrate.ts
+ create mode 100644 lib/leaflet-template/package.json
+ rename artifacts/api-server/src/shared/leaflet-map-template.ts => lib/leaflet-template/src/index.ts (87%)
+ create mode 100644 lib/leaflet-template/tsconfig.json
+ create mode 100755 tests/mc/SLICE-MC5-test.sh
+ create mode 100755 tests/mc/SLICE-MC8-test.sh
+ create mode 100755 tests/mc/_setup.sh
+eas.json is not valid.
+- "submit.production.ios.ascAppId" is not allowed to be empty
+    Error: build command failed.
+randymangel@Randys-Mac-mini vrtsync-mobile % 
