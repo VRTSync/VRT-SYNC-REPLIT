@@ -8,7 +8,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "vrtsyncmobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "runtimeVersion": {
       "policy": "appVersion"
     },
