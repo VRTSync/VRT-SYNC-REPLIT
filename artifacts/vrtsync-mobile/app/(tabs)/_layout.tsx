@@ -1,4 +1,4 @@
-import { isLiquidGlassAvailable } from "expo-glass-effect";
+const isLiquidGlassAvailable = () => false;
 import { Tabs } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
