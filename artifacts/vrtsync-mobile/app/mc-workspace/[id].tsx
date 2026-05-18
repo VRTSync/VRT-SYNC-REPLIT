@@ -270,9 +270,6 @@ export default function McWorkspaceScreen() {
   const [addingControllerForZone, setAddingControllerForZone] = useState(false);
   const [selectedController, setSelectedController] = useState<ControllerRow | null>(null);
   const [newlyAddedControllerId, setNewlyAddedControllerId] = useState<string | null>(null);
-  const [pinLat, setPinLat] = useState<number | null>(null);
-  const [pinLng, setPinLng] = useState<number | null>(null);
-  const [pinDropVisible, setPinDropVisible] = useState(false);
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -490,11 +487,6 @@ export default function McWorkspaceScreen() {
     return null;
   }, [armedType]);
 
-  const existingLabels = useMemo(
-    () => communityAssets.map((a) => a.label).filter(Boolean),
-    [communityAssets],
-  );
-
   const existingZoneNumbers = useMemo(() => {
     if (!controllers.length || !selectedController) return [];
     const ctrl = controllers.find((c) => c.id === selectedController.id);
@@ -510,9 +502,6 @@ export default function McWorkspaceScreen() {
     setArmedType(null);
     setSelectedController(null);
     setAddingControllerForZone(false);
-    setPinLat(null);
-    setPinLng(null);
-    setPinDropVisible(false);
     setLockPinFix(null);
   };
 
@@ -550,8 +539,8 @@ export default function McWorkspaceScreen() {
   };
 
   /**
-   * "Lock Pin Here" — zone type opens PinDropSheet (needs parentController);
-   * all other types snapshot GPS and open LockPinSheet.
+   * "Lock Pin Here" — snapshots GPS and opens LockPinSheet for all types.
+   * Zone type requires a selectedController before reaching this point.
    */
   const handleLockPin = useCallback(() => {
     if (!armedType) return;
@@ -559,44 +548,10 @@ export default function McWorkspaceScreen() {
       setPickerVisible(true);
       return;
     }
-    if (armedType === 'zone') {
-      if (gps.latitude == null || gps.longitude == null) return;
-      setPinLat(gps.latitude);
-      setPinLng(gps.longitude);
-      setPinDropVisible(true);
-      return;
-    }
     const fix = gps.snapshot();
     if (!fix) return;
     setLockPinFix(fix);
   }, [armedType, selectedController, gps]);
-
-  const handlePinSave = (assetId: string, label: string) => {
-    setPinDropVisible(false);
-    const savedType = armedType;
-    const wasAddingForZone = addingControllerForZone;
-
-    disarm();
-
-    if (savedType === 'controller') {
-      queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
-      setNewlyAddedControllerId(assetId);
-      if (wasAddingForZone) {
-        setTimeout(() => {
-          setArmedType('zone');
-          setPickerVisible(true);
-        }, 600);
-      }
-    }
-
-    showToast(`${label} saved`, 'success');
-  };
-
-  const handlePinClose = () => {
-    setPinDropVisible(false);
-    setPinLat(null);
-    setPinLng(null);
-  };
 
   const canLockPin =
     !!armedType &&
@@ -1044,23 +999,6 @@ export default function McWorkspaceScreen() {
         highlightedControllerId={newlyAddedControllerId}
       />
 
-      {/* PinDropSheet — opened via Lock Pin Here button */}
-      {armedType && pinLat !== null && pinLng !== null && (
-        <PinDropSheet
-          visible={pinDropVisible}
-          assetType={armedType}
-          assetColor={armedColor}
-          latitude={pinLat}
-          longitude={pinLng}
-          communityId={communityId}
-          existingLabels={existingLabels}
-          parentController={armedType === 'zone' ? selectedController : null}
-          existingZoneNumbers={existingZoneNumbers}
-          onClose={handlePinClose}
-          onSave={handlePinSave}
-        />
-      )}
-
       <Toast
         visible={toastVisible}
         message={toastMessage}
@@ -1100,12 +1038,26 @@ export default function McWorkspaceScreen() {
           armedType={armedType}
           communityId={communityId}
           existingLabels={existingLabelsByType[armedType] ?? []}
+          parentController={armedType === 'zone' ? selectedController : null}
+          existingZoneNumbers={armedType === 'zone' ? existingZoneNumbers : []}
           onDismiss={() => setLockPinFix(null)}
           onSaved={(asset) => {
-            setLockPinFix(null);
-            setArmedType(null);
+            const savedType = armedType;
+            const wasAddingForZone = addingControllerForZone;
+            disarm();
+            // LockPinSheet already invalidates map-layers and controllers.
+            // Invalidate assets here so the workspace asset list stays fresh.
             queryClient.invalidateQueries({ queryKey: ['/api/assets', { communityId }] });
             refreshList();
+            if (savedType === 'controller') {
+              setNewlyAddedControllerId(asset.id);
+              if (wasAddingForZone) {
+                setTimeout(() => {
+                  setArmedType('zone');
+                  setPickerVisible(true);
+                }, 600);
+              }
+            }
           }}
         />
       )}

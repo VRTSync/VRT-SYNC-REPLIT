@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,8 +17,9 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
-import { generateAutoLabel } from '@/lib/mcAutoLabel';
+import { generateAutoLabel, generateZoneLabel } from '@/lib/mcAutoLabel';
 import type { Fix } from '@/hooks/useHighAccuracyLocation';
+import type { ControllerRow } from '@/components/ControllerPicker';
 import Toast from '@/components/Toast';
 
 const LOCK_COLORS: Record<string, string> = {
@@ -45,6 +46,8 @@ export type LockPinSheetProps = {
   armedType: string;
   communityId: string;
   existingLabels: string[];
+  parentController?: ControllerRow | null;
+  existingZoneNumbers?: number[];
   onDismiss: () => void;
   onSaved: (asset: any) => void;
 };
@@ -55,13 +58,30 @@ export default function LockPinSheet({
   armedType,
   communityId,
   existingLabels,
+  parentController,
+  existingZoneNumbers = [],
   onDismiss,
   onSaved,
 }: LockPinSheetProps) {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
-  const autoLabel = generateAutoLabel({ assetType: armedType, existingLabels });
+  const isZone = armedType === 'zone' && !!parentController;
+
+  const { autoLabel, zoneNumber } = useMemo(() => {
+    if (isZone && parentController) {
+      const result = generateZoneLabel({
+        parentControllerKey: parentController.controllerKey,
+        existingZoneNumbers,
+      });
+      return { autoLabel: result.label, zoneNumber: result.zoneNumber };
+    }
+    return {
+      autoLabel: generateAutoLabel({ assetType: armedType, existingLabels }),
+      zoneNumber: null,
+    };
+  }, [isZone, parentController, existingZoneNumbers, armedType, existingLabels]);
+
   const [label, setLabel] = useState(autoLabel);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -75,13 +95,12 @@ export default function LockPinSheet({
 
   useEffect(() => {
     if (visible) {
-      const generated = generateAutoLabel({ assetType: armedType, existingLabels });
-      setLabel(generated);
+      setLabel(autoLabel);
       setPhotoUri(null);
       setInlineError(null);
       setIsSaving(false);
     }
-  }, [visible, armedType]);
+  }, [visible, autoLabel]);
 
   const lockColor = fix.accuracy <= 5 ? LOCK_COLORS.green : LOCK_COLORS.yellow;
   const isYellowLock = fix.accuracy > 5;
@@ -113,6 +132,8 @@ export default function LockPinSheet({
     }
   }, []);
 
+  const saveColor = isZone && parentController ? parentController.controllerColor : '#4CAF50';
+
   const handleSave = useCallback(async () => {
     const trimmedLabel = label.trim();
     if (!trimmedLabel) return;
@@ -121,13 +142,31 @@ export default function LockPinSheet({
     setInlineError(null);
 
     try {
-      const res = await apiRequest('POST', '/api/assets', {
+      const properties: Record<string, string> = {};
+      if (isZone && parentController) {
+        properties.controllerFeatureRef = parentController.featureRef ?? '';
+        properties.controllerLabel = parentController.label;
+        properties.controllerKey = parentController.controllerKey;
+        properties.controllerColor = parentController.controllerColor;
+        if (zoneNumber !== null) properties.zoneNumber = String(zoneNumber);
+      }
+
+      const body: Record<string, unknown> = {
         communityId,
         assetType: armedType,
         label: trimmedLabel,
         latitude: fix.latitude,
         longitude: fix.longitude,
-      });
+      };
+
+      if (isZone) {
+        body.featureRef = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        body.tags = [];
+        body.geometryType = 'point';
+        body.properties = properties;
+      }
+
+      const res = await apiRequest('POST', '/api/assets', body);
 
       if (res.status === 409) {
         const body = await res.json().catch(() => ({ error: 'Duplicate pin reference' }));
@@ -187,7 +226,7 @@ export default function LockPinSheet({
     } finally {
       setIsSaving(false);
     }
-  }, [label, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast]);
+  }, [label, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast, isZone, parentController, zoneNumber]);
 
   const canSave = label.trim().length > 0 && !isSaving;
 
@@ -214,6 +253,17 @@ export default function LockPinSheet({
             <View style={styles.typePill}>
               <Text style={styles.typePillText}>{prettyType}</Text>
             </View>
+
+            {isZone && parentController && (
+              <View style={[styles.parentChip, { borderColor: parentController.controllerColor }]}>
+                <View style={[styles.parentCircle, { backgroundColor: parentController.controllerColor }]}>
+                  <Text style={styles.parentKey}>{parentController.controllerKey}</Text>
+                </View>
+                <Text style={styles.parentLabel} numberOfLines={1}>
+                  Controller {parentController.controllerKey} — {parentController.label}
+                </Text>
+              </View>
+            )}
 
             <ScrollView style={styles.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
@@ -299,7 +349,7 @@ export default function LockPinSheet({
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
+                style={[styles.saveBtn, { backgroundColor: canSave ? saveColor : undefined }, !canSave && styles.saveBtnDisabled]}
                 onPress={handleSave}
                 disabled={!canSave}
                 activeOpacity={0.8}
@@ -574,5 +624,38 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: '#fff',
+  },
+  parentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+    backgroundColor: '#f9fafb',
+  },
+  parentCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  parentKey: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  parentLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
   },
 });
