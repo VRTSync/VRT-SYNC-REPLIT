@@ -349,17 +349,6 @@ export default function McWorkspaceScreen() {
     enabled: !!communityId,
   });
 
-  const assetsQuery = useQuery<Asset[]>({
-    queryKey: ['mc-assets', id],
-    queryFn: async () => {
-      const res = await apiRequest('GET', `/api/assets?communityId=${communityId}`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!communityId,
-  });
-
-  const reviewControllersQuery = { data: controllers };
 
   const existingLabelsByType = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -547,33 +536,6 @@ export default function McWorkspaceScreen() {
       .map((z) => z.zoneNumber)
       .filter((n): n is number => typeof n === 'number');
   }, [controllers, selectedController]);
-
-  const activeAssets = useMemo(
-    () => (assetsQuery.data ?? []).filter((a) => !a.isArchived),
-    [assetsQuery.data],
-  );
-
-  const reshootAssets = useMemo(
-    () =>
-      activeAssets
-        .filter(
-          (a) =>
-            a.latitude != null &&
-            a.longitude != null &&
-            (a.gpsAccuracy === null || a.gpsAccuracy === undefined || a.gpsAccuracy > RESHOOT_ACCURACY_THRESHOLD),
-        )
-        .map((a) => ({
-          id: a.id,
-          label: a.label,
-          assetType: a.assetType,
-          latitude: a.latitude,
-          longitude: a.longitude,
-          gpsAccuracy: a.gpsAccuracy ?? null,
-          version: a.version,
-          properties: a.properties,
-        })),
-    [activeAssets],
-  );
 
   // ─── Creation flow handlers ────────────────────────────────────────────────
 
@@ -1237,7 +1199,6 @@ export default function McWorkspaceScreen() {
                   }, 600);
                 }
               }
-            }
           }}
         />
       )}
