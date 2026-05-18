@@ -299,6 +299,35 @@ export default function McWorkspaceScreen() {
     enabled: !!communityId,
   });
 
+  // MC8: full-detail asset query for review mode (tally + reshoot)
+  const assetsQuery = useQuery<Asset[]>({
+    queryKey: ['mc-assets', communityId],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/assets?communityId=${communityId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!communityId && reviewMode,
+  });
+
+  const activeAssets = useMemo(
+    () => (assetsQuery.data ?? []).filter((a) => !a.isArchived),
+    [assetsQuery.data],
+  );
+
+  const reshootAssets = useMemo(
+    () => activeAssets
+      .filter((a) => a.gpsAccuracy == null || a.gpsAccuracy > RESHOOT_ACCURACY_THRESHOLD)
+      .map((a) => ({ ...a, gpsAccuracy: a.gpsAccuracy ?? null })),
+    [activeAssets],
+  );
+
+  // Wrap controllers in a query-shaped object for review panel compatibility
+  const reviewControllersQuery = useMemo(
+    () => ({ data: controllers }),
+    [controllers],
+  );
+
   const { data: communityAssets = [] } = useQuery<{ id: string; label: string; assetType: string }[]>({
     queryKey: ['/api/assets', { communityId }],
     queryFn: async () => {
@@ -464,19 +493,19 @@ export default function McWorkspaceScreen() {
       .join(' · ');
   }, [typeCounts]);
 
-  const haloColor = LOCK_COLORS[gps.lockState] ?? '#F44336';
+  const haloColor = LOCK_COLORS[gps.fix?.lockState ?? 'red'] ?? '#F44336';
 
   const userLocationHalo = useMemo(() => {
-    if (!armedType || gps.latitude == null || gps.longitude == null || gps.accuracy == null) {
+    if (!armedType || gps.fix == null) {
       return null;
     }
-    return { lat: gps.latitude, lng: gps.longitude, accuracyMetres: gps.accuracy, color: haloColor };
-  }, [armedType, gps.latitude, gps.longitude, gps.accuracy, haloColor]);
+    return { lat: gps.fix.latitude, lng: gps.fix.longitude, accuracyMetres: gps.fix.accuracy, color: haloColor };
+  }, [armedType, gps.fix, haloColor]);
 
   const userLocation = useMemo(() => {
-    if (gps.latitude == null || gps.longitude == null) return null;
-    return { latitude: gps.latitude, longitude: gps.longitude };
-  }, [gps.latitude, gps.longitude]);
+    if (gps.fix == null) return null;
+    return { latitude: gps.fix.latitude, longitude: gps.fix.longitude };
+  }, [gps.fix]);
 
   const armedTypeDef = useMemo(() => {
     if (!armedType) return null;
@@ -555,9 +584,8 @@ export default function McWorkspaceScreen() {
 
   const canLockPin =
     !!armedType &&
-    (gps.lockState === 'green' || gps.lockState === 'yellow') &&
-    gps.latitude != null &&
-    gps.longitude != null &&
+    gps.fix != null &&
+    (gps.fix.lockState === 'green' || gps.fix.lockState === 'yellow') &&
     !(armedType === 'zone' && !selectedController);
 
   const armedColor = useMemo(() => {
@@ -777,7 +805,7 @@ export default function McWorkspaceScreen() {
             <View style={[styles.lockPill, { backgroundColor: haloColor + '22' }]}>
               <View style={[styles.lockDot, { backgroundColor: haloColor }]} />
               <Text style={[styles.lockLabel, { color: haloColor }]}>
-                {LOCK_LABELS[gps.lockState]}
+                {LOCK_LABELS[gps.fix?.lockState ?? 'red']}
               </Text>
             </View>
             {SyncChip}
@@ -836,7 +864,7 @@ export default function McWorkspaceScreen() {
               armedType={armedType}
               onArmType={handleArmType}
               typeCounts={typeCounts}
-              lockState={gps.lockState}
+              lockState={gps.fix?.lockState ?? 'red'}
             />
 
             {mapTapEnabled && (
@@ -945,7 +973,7 @@ export default function McWorkspaceScreen() {
               {armedType === 'zone' && selectedController
                 ? `in Controller ${selectedController.controllerKey}. `
                 : ''}
-              {gps.lockState === 'red' ? 'No GPS signal — move outdoors.' : gps.lockState === 'yellow' ? 'Acquiring GPS lock…' : 'GPS locked — ready to place.'}
+              {(gps.fix?.lockState ?? 'red') === 'red' ? 'No GPS signal — move outdoors.' : gps.fix?.lockState === 'yellow' ? 'Acquiring GPS lock…' : 'GPS locked — ready to place.'}
             </Text>
           )}
 

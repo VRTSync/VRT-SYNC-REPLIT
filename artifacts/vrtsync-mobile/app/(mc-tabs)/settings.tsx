@@ -40,12 +40,7 @@ function formatAccuracy(val: number | null): string {
 
 export default function McSettingsScreen() {
   const {
-    lockState,
-    latitude,
-    longitude,
-    accuracy,
-    sampleCount,
-    lastFixAge,
+    fix,
     isWatching,
     permissionDenied,
     start,
@@ -55,10 +50,17 @@ export default function McSettingsScreen() {
     openSettings,
   } = useHighAccuracyLocation();
 
+  const lockState = fix?.lockState ?? 'red';
+  const latitude = fix?.latitude ?? null;
+  const longitude = fix?.longitude ?? null;
+  const accuracy = fix?.accuracy ?? null;
+  const sampleCount = fix?.sampleCount ?? 0;
+  const lastFixAge = fix?.lastFixAge ?? null;
+
   const [lastSnapshot, setLastSnapshot] = useState<Fix | null>(null);
   const [snapshotTime, setSnapshotTime] = useState<string | null>(null);
   const ageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [displayAge, setDisplayAge] = useState<number | null>(lastFixAge);
+  const [displayAge, setDisplayAge] = useState<number | null>(null);
 
   useEffect(() => {
     setDisplayAge(lastFixAge);

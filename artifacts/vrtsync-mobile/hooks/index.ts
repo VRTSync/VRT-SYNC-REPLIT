@@ -1,8 +1,8 @@
 export { useHighAccuracyLocation } from './useHighAccuracyLocation';
 export type {
   Fix,
+  FixSnapshot,
   LockState,
-  HighAccuracyLocationState,
   UseHighAccuracyLocationOptions,
   UseHighAccuracyLocationResult,
 } from './useHighAccuracyLocation';

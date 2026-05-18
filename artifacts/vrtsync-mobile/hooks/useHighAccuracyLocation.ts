@@ -11,15 +11,13 @@ export interface Fix {
   timestamp: number;
 }
 
-export interface HighAccuracyLocationState {
+export interface FixSnapshot {
   lockState: LockState;
-  latitude: number | null;
-  longitude: number | null;
-  accuracy: number | null;
+  latitude: number;
+  longitude: number;
+  accuracy: number;
   sampleCount: number;
-  lastFixAge: number | null;
-  isWatching: boolean;
-  permissionDenied: boolean;
+  lastFixAge: number;
 }
 
 export interface UseHighAccuracyLocationOptions {
@@ -30,12 +28,21 @@ export interface UseHighAccuracyLocationOptions {
   yellowThreshold?: number;
 }
 
-export interface UseHighAccuracyLocationResult extends HighAccuracyLocationState {
+export interface UseHighAccuracyLocationResult {
+  fix: FixSnapshot | null;
+  isWatching: boolean;
+  permissionDenied: boolean;
   start: () => Promise<void>;
   stop: () => void;
   reset: () => void;
   snapshot: () => Fix | null;
   openSettings: () => void;
+}
+
+interface InternalState {
+  fix: FixSnapshot | null;
+  isWatching: boolean;
+  permissionDenied: boolean;
 }
 
 const DEFAULT_BUFFER_SIZE = 10;
@@ -63,13 +70,8 @@ export function useHighAccuracyLocation(
     yellowThreshold = DEFAULT_YELLOW_THRESHOLD,
   } = options;
 
-  const [state, setState] = useState<HighAccuracyLocationState>({
-    lockState: 'red',
-    latitude: null,
-    longitude: null,
-    accuracy: null,
-    sampleCount: 0,
-    lastFixAge: null,
+  const [state, setState] = useState<InternalState>({
+    fix: null,
     isWatching: false,
     permissionDenied: false,
   });
@@ -79,18 +81,9 @@ export function useHighAccuracyLocation(
   const isWatchingRef = useRef(false);
   const lastFixTimeRef = useRef<number | null>(null);
 
-  const computeState = useCallback(
-    (buffer: Fix[]): Partial<HighAccuracyLocationState> => {
-      if (buffer.length === 0) {
-        return {
-          lockState: 'red',
-          latitude: null,
-          longitude: null,
-          accuracy: null,
-          sampleCount: 0,
-          lastFixAge: null,
-        };
-      }
+  const computeFix = useCallback(
+    (buffer: Fix[]): FixSnapshot | null => {
+      if (buffer.length === 0) return null;
 
       const avgLat = buffer.reduce((s, f) => s + f.latitude, 0) / buffer.length;
       const avgLng = buffer.reduce((s, f) => s + f.longitude, 0) / buffer.length;
@@ -104,10 +97,10 @@ export function useHighAccuracyLocation(
           lockState = 'green';
         } else if (medAccuracy <= yellowThreshold) {
           lockState = 'yellow';
-        } else {
-          lockState = 'red';
         }
       }
+
+      if (lockState === 'red') return null;
 
       return {
         lockState,
@@ -149,17 +142,17 @@ export function useHighAccuracyLocation(
           fix,
         ];
 
-        const computed = computeState(bufferRef.current);
-        setState((prev) => ({
-          ...prev,
-          ...computed,
-          lastFixAge: Date.now() - fix.timestamp,
-        }));
+        const computed = computeFix(bufferRef.current);
+        const adjustedFix: FixSnapshot | null = computed
+          ? { ...computed, lastFixAge: Date.now() - fix.timestamp }
+          : null;
+
+        setState((prev) => ({ ...prev, fix: adjustedFix }));
       }
     );
 
     watcherRef.current = sub;
-  }, [bufferSize, outlierAccuracyMax, computeState]);
+  }, [bufferSize, outlierAccuracyMax, computeFix]);
 
   const start = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -184,26 +177,19 @@ export function useHighAccuracyLocation(
 
   const reset = useCallback(() => {
     bufferRef.current = [];
-    const computed = computeState([]);
-    setState((prev) => ({ ...prev, ...computed }));
-  }, [computeState]);
+    setState((prev) => ({ ...prev, fix: null }));
+  }, []);
 
   const snapshot = useCallback((): Fix | null => {
-    const currentState = computeState(bufferRef.current);
-    if (currentState.lockState === 'red') return null;
-    if (
-      currentState.latitude == null ||
-      currentState.longitude == null ||
-      currentState.accuracy == null
-    )
-      return null;
+    const currentFix = computeFix(bufferRef.current);
+    if (!currentFix) return null;
     return {
-      latitude: currentState.latitude,
-      longitude: currentState.longitude,
-      accuracy: currentState.accuracy,
+      latitude: currentFix.latitude,
+      longitude: currentFix.longitude,
+      accuracy: currentFix.accuracy,
       timestamp: lastFixTimeRef.current ?? Date.now(),
     };
-  }, [computeState]);
+  }, [computeFix]);
 
   const openSettings = useCallback(() => {
     Linking.openSettings();
@@ -233,7 +219,9 @@ export function useHighAccuracyLocation(
   }, []);
 
   return {
-    ...state,
+    fix: state.fix,
+    isWatching: state.isWatching,
+    permissionDenied: state.permissionDenied,
     start,
     stop,
     reset,
