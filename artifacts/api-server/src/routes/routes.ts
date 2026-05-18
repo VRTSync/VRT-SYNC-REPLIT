@@ -135,7 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/communities", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (user?.role === "admin") {
+      if (user?.role === "admin" || user?.role === "map_creator") {
         const allCommunities = await storage.getCommunities();
         return res.json(allCommunities);
       }
