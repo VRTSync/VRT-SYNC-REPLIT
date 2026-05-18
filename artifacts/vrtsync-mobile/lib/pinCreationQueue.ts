@@ -18,6 +18,11 @@ export type PendingPinEntry = {
   idempotencyKey: string;
   createdAt: string;
   syncedAt?: string;
+  capturedAccuracyM?: number | null;
+  capturedSampleCount?: number | null;
+  capturedAt?: string | null;
+  capturedDeviceModel?: string | null;
+  capturedUnderCanopy?: boolean;
 };
 
 export type EnqueueInput = {
@@ -29,6 +34,11 @@ export type EnqueueInput = {
   properties?: { key: string; value: string }[];
   photoTempUri?: string;
   idempotencyKey: string;
+  capturedAccuracyM?: number | null;
+  capturedSampleCount?: number | null;
+  capturedAt?: string | null;
+  capturedDeviceModel?: string | null;
+  capturedUnderCanopy?: boolean;
 };
 
 export type ListFilter = {
@@ -52,7 +62,8 @@ function getMMKV(): any {
 }
 
 function getEntryDir(entryId: string): string {
-  return `${FileSystem.documentDirectory}${PIN_QUEUE_DIR}/${entryId}/`;
+  const docDir: string = (FileSystem as any).documentDirectory ?? '';
+  return `${docDir}${PIN_QUEUE_DIR}/${entryId}/`;
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -106,6 +117,11 @@ export const pinCreationQueue = {
       attempts: 0,
       idempotencyKey: input.idempotencyKey,
       createdAt: new Date().toISOString(),
+      capturedAccuracyM: input.capturedAccuracyM ?? null,
+      capturedSampleCount: input.capturedSampleCount ?? null,
+      capturedAt: input.capturedAt ?? null,
+      capturedDeviceModel: input.capturedDeviceModel ?? null,
+      capturedUnderCanopy: input.capturedUnderCanopy ?? false,
     };
 
     const entries = readIndex();

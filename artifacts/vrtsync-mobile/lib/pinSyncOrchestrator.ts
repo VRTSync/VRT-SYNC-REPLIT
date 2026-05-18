@@ -38,9 +38,10 @@ async function uploadPhotoForEntry(photoLocalUri: string): Promise<string> {
     });
     if (!uploadRes.ok) throw new Error('Photo upload failed');
   } else {
-    const result = await FileSystem.uploadAsync(uploadURL, photoLocalUri, {
+    const fsAny = FileSystem as any;
+    const result = await fsAny.uploadAsync(uploadURL, photoLocalUri, {
       httpMethod: 'PUT',
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      uploadType: (fsAny.FileSystemUploadType ?? { BINARY_CONTENT: 'binaryContent' }).BINARY_CONTENT,
       headers: { 'Content-Type': 'image/jpeg' },
     });
     if (result.status < 200 || result.status >= 300) {
@@ -53,7 +54,8 @@ async function uploadPhotoForEntry(photoLocalUri: string): Promise<string> {
 
 async function deleteEntryPhotoDir(entryId: string): Promise<void> {
   try {
-    const dir = `${FileSystem.documentDirectory}pin-queue/${entryId}/`;
+    const docDir: string = (FileSystem as any).documentDirectory ?? '';
+    const dir = `${docDir}pin-queue/${entryId}/`;
     const info = await FileSystem.getInfoAsync(dir);
     if (info.exists) {
       await FileSystem.deleteAsync(dir, { idempotent: true });
@@ -95,17 +97,25 @@ class PinSyncOrchestrator {
       let serverAssetId = entry.serverAssetId;
 
       if (!serverAssetId) {
-        const res = await apiRequest('POST', '/api/assets', {
+        const body: Record<string, unknown> = {
           communityId: entry.communityId,
           assetType: entry.assetType,
           label: entry.label,
           latitude: entry.latitude,
           longitude: entry.longitude,
           idempotencyKey: entry.idempotencyKey,
-        });
+        };
+
+        if (entry.capturedAccuracyM != null) body.capturedAccuracyM = entry.capturedAccuracyM;
+        if (entry.capturedSampleCount != null) body.capturedSampleCount = entry.capturedSampleCount;
+        if (entry.capturedAt != null) body.capturedAt = entry.capturedAt;
+        if (entry.capturedDeviceModel != null) body.capturedDeviceModel = entry.capturedDeviceModel;
+        if (entry.capturedUnderCanopy != null) body.capturedUnderCanopy = entry.capturedUnderCanopy;
+
+        const res = await apiRequest('POST', '/api/assets', body);
         if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`Asset creation failed: ${res.status} ${body}`);
+          const text = await res.text();
+          throw new Error(`Asset creation failed: ${res.status} ${text}`);
         }
         const asset = await res.json();
         serverAssetId = asset.id as string;

@@ -678,6 +678,36 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 
     clearReshootHighlight: function() {
       if (this._reshootMarker) { map.removeLayer(this._reshootMarker); this._reshootMarker = null; }
+    },
+
+    setAccuracyRing: function(lat, lng, accuracyM, color) {
+      if (this._accuracyRingCircle) { map.removeLayer(this._accuracyRingCircle); this._accuracyRingCircle = null; }
+      if (this._accuracyRingTimer) { clearTimeout(this._accuracyRingTimer); this._accuracyRingTimer = null; }
+      var c = color || '#22c55e';
+      var state = { outer: 0.72, fill: 0.16 };
+      this._accuracyRingCircle = L.circle([lat, lng], {
+        radius: accuracyM,
+        color: c, fillColor: c,
+        fillOpacity: state.fill, weight: 2, opacity: state.outer, interactive: false
+      }).addTo(map);
+      var self = this;
+      var step = function() {
+        state.outer -= 0.036;
+        state.fill -= 0.008;
+        if (state.outer <= 0 || !self._accuracyRingCircle) {
+          if (self._accuracyRingCircle) { map.removeLayer(self._accuracyRingCircle); self._accuracyRingCircle = null; }
+          self._accuracyRingTimer = null;
+          return;
+        }
+        self._accuracyRingCircle.setStyle({ opacity: state.outer, fillOpacity: state.fill });
+        self._accuracyRingTimer = setTimeout(step, 150);
+      };
+      self._accuracyRingTimer = setTimeout(step, 150);
+    },
+
+    clearAccuracyRing: function() {
+      if (this._accuracyRingCircle) { map.removeLayer(this._accuracyRingCircle); this._accuracyRingCircle = null; }
+      if (this._accuracyRingTimer) { clearTimeout(this._accuracyRingTimer); this._accuracyRingTimer = null; }
     }
   };
 

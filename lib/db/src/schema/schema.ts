@@ -173,6 +173,11 @@ export const assets = pgTable("assets", {
   createdBy: varchar("created_by").references((): AnyPgColumn => users.id),
   updatedBy: varchar("updated_by").references((): AnyPgColumn => users.id),
   version: integer("version").notNull().default(1),
+  capturedAccuracyM: doublePrecision("captured_accuracy_m"),
+  capturedSampleCount: integer("captured_sample_count"),
+  capturedAt: timestamp("captured_at", { withTimezone: true }),
+  capturedDeviceModel: text("captured_device_model"),
+  capturedUnderCanopy: boolean("captured_under_canopy").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -473,7 +478,7 @@ export const assetAttachments = pgTable("asset_attachments", {
   url: text("url").notNull(),
   uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
   idempotencyKey: varchar("idempotency_key").notNull(),
-  capturedAt: timestamp("captured_at"),
+  capturedAt: timestamp("captured_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("asset_attachments_asset_idempotency_idx").on(table.assetId, table.idempotencyKey),
@@ -633,6 +638,11 @@ export const insertAssetSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   tags: z.array(z.string()).optional(),
+  capturedAccuracyM: z.number().nullable().optional(),
+  capturedSampleCount: z.number().int().nullable().optional(),
+  capturedAt: z.string().nullable().optional(),
+  capturedDeviceModel: z.string().nullable().optional(),
+  capturedUnderCanopy: z.boolean().optional(),
 });
 
 export const updateAssetSchema = z.object({
@@ -644,6 +654,11 @@ export const updateAssetSchema = z.object({
   tags: z.array(z.string()).optional(),
   isArchived: z.boolean().optional(),
   version: z.number(),
+  capturedAccuracyM: z.number().nullable().optional(),
+  capturedSampleCount: z.number().int().nullable().optional(),
+  capturedAt: z.string().nullable().optional(),
+  capturedDeviceModel: z.string().nullable().optional(),
+  capturedUnderCanopy: z.boolean().optional(),
 });
 
 export const upsertAssetPropertiesSchema = z.object({

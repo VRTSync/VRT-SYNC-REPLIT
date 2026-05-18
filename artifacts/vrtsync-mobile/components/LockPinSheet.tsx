@@ -15,10 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import * as Device from 'expo-device';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getApiUrl } from '@/lib/query-client';
 import { generateAutoLabel, generateZoneLabel } from '@/lib/mcAutoLabel';
 import type { Fix } from '@/hooks/useHighAccuracyLocation';
+import { pinCreationQueue } from '@/lib/pinCreationQueue';
 import type { ControllerRow } from '@/components/ControllerPicker';
 import Toast from '@/components/Toast';
 
@@ -52,6 +54,10 @@ export type LockPinSheetProps = {
   onSaved: (asset: any) => void;
   initialLabel?: string;
   initialDescription?: string;
+  capturedUnderCanopy?: boolean;
+  /** When set, the sheet PATCHes the existing asset in-place (GPS recapture). */
+  existingAssetId?: string;
+  existingAssetVersion?: number;
 };
 
 export default function LockPinSheet({
@@ -66,6 +72,9 @@ export default function LockPinSheet({
   onSaved,
   initialLabel,
   initialDescription,
+  capturedUnderCanopy = false,
+  existingAssetId,
+  existingAssetVersion,
 }: LockPinSheetProps) {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -152,95 +161,171 @@ export default function LockPinSheet({
     setInlineError(null);
 
     try {
-      const properties: Record<string, string> = {};
-      if (isZone && parentController) {
-        properties.controllerFeatureRef = parentController.featureRef ?? '';
-        properties.controllerLabel = parentController.label;
-        properties.controllerKey = parentController.controllerKey;
-        properties.controllerColor = parentController.controllerColor;
-        if (zoneNumber !== null) properties.zoneNumber = String(zoneNumber);
-      }
+      if (existingAssetId) {
+        // ── In-place GPS recapture (reshoot) ─────────────────────────────────
+        const patchBody: Record<string, unknown> = {
+          version: existingAssetVersion,
+          label: trimmedLabel,
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          capturedAccuracyM: fix.accuracy,
+          capturedAt: new Date(fix.timestamp).toISOString(),
+          capturedSampleCount: fix.sampleCount ?? null,
+          capturedDeviceModel: Platform.OS !== 'web' ? (Device.modelName ?? Platform.OS) : null,
+          capturedUnderCanopy,
+        };
 
-      if (description.trim()) {
-        properties.description = description.trim();
-      }
+        const patchRes = await apiRequest('PATCH', `/api/assets/${existingAssetId}`, patchBody);
 
-      const body: Record<string, unknown> = {
-        communityId,
-        assetType: armedType,
-        label: trimmedLabel,
-        latitude: fix.latitude,
-        longitude: fix.longitude,
-        properties,
-      };
+        if (patchRes.status === 409) {
+          const errBody = await patchRes.json().catch(() => ({ error: 'Version conflict — please retry' }));
+          setInlineError(errBody.error ?? 'Version conflict. Please retry.');
+          setIsSaving(false);
+          return;
+        }
 
-      if (isZone) {
-        body.featureRef = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-        body.tags = [];
-        body.geometryType = 'point';
-      }
+        if (!patchRes.ok) {
+          const errBody = await patchRes.json().catch(() => ({ error: 'Failed to update pin' }));
+          showToast(errBody.error ?? 'Failed to update pin', 'error');
+          setIsSaving(false);
+          return;
+        }
 
-      const res = await apiRequest('POST', '/api/assets', body);
+        const updated = await patchRes.json();
+        queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
+        queryClient.invalidateQueries({ queryKey: ['/api/assets', { communityId }] });
+        onSaved(updated);
+        showToast(`${trimmedLabel} updated!`);
+      } else {
+        // ── New pin creation ──────────────────────────────────────────────────
+        const properties: Record<string, string> = {};
+        if (isZone && parentController) {
+          properties.controllerFeatureRef = parentController.featureRef ?? '';
+          properties.controllerLabel = parentController.label;
+          properties.controllerKey = parentController.controllerKey;
+          properties.controllerColor = parentController.controllerColor;
+          if (zoneNumber !== null) properties.zoneNumber = String(zoneNumber);
+        }
+        if (description.trim()) {
+          properties.description = description.trim();
+        }
 
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({ error: 'Duplicate pin reference' }));
-        setInlineError(body.error ?? 'A pin with this reference already exists.');
-        setIsSaving(false);
-        return;
-      }
+        const body: Record<string, unknown> = {
+          communityId,
+          assetType: armedType,
+          label: trimmedLabel,
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          properties,
+          capturedAccuracyM: fix.accuracy,
+          capturedAt: new Date(fix.timestamp).toISOString(),
+          capturedSampleCount: fix.sampleCount ?? null,
+          capturedDeviceModel: Platform.OS !== 'web' ? (Device.modelName ?? Platform.OS) : null,
+          capturedUnderCanopy,
+        };
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Failed to save pin' }));
-        showToast(body.error ?? 'Failed to save pin', 'error');
-        setIsSaving(false);
-        return;
-      }
+        if (isZone) {
+          body.featureRef = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+          body.tags = [];
+          body.geometryType = 'point';
+        }
 
-      const data = await res.json();
-      const asset = data.asset ?? data;
-      const assetId: string = asset.id;
+        const res = await apiRequest('POST', '/api/assets', body);
 
-      if (photoUri) {
-        try {
-          const apiUrl = getApiUrl();
-          const presignRes = await fetch(`${apiUrl}/api/objects/upload`, {
-            method: 'POST',
-            credentials: 'include',
-          });
-          if (presignRes.ok) {
-            const { uploadURL } = await presignRes.json();
-            if (Platform.OS === 'web') {
-              const blob = await fetch(photoUri).then((r) => r.blob());
-              await fetch(uploadURL, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
-            } else {
-              await FileSystem.uploadAsync(uploadURL, photoUri, {
-                httpMethod: 'PUT',
-                headers: { 'Content-Type': 'image/jpeg' },
+        if (res.status === 409) {
+          const errBody = await res.json().catch(() => ({ error: 'Duplicate pin reference' }));
+          setInlineError(errBody.error ?? 'A pin with this reference already exists.');
+          setIsSaving(false);
+          return;
+        }
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({ error: 'Failed to save pin' }));
+          showToast(errBody.error ?? 'Failed to save pin', 'error');
+          setIsSaving(false);
+          return;
+        }
+
+        const data = await res.json();
+        const asset = data.asset ?? data;
+        const assetId: string = asset.id;
+
+        if (photoUri) {
+          try {
+            const apiUrl = getApiUrl();
+            const presignRes = await fetch(`${apiUrl}/api/objects/upload`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            if (presignRes.ok) {
+              const { uploadURL } = await presignRes.json();
+              if (Platform.OS === 'web') {
+                const blob = await fetch(photoUri).then((r) => r.blob());
+                await fetch(uploadURL, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+              } else {
+                await FileSystem.uploadAsync(uploadURL, photoUri, {
+                  httpMethod: 'PUT',
+                  headers: { 'Content-Type': 'image/jpeg' },
+                });
+              }
+              const idempotencyKey = `${assetId}_photo_${Date.now()}`;
+              await apiRequest('POST', `/api/assets/${assetId}/attachments`, {
+                uploadURL,
+                idempotencyKey,
               });
             }
-            const idempotencyKey = `${assetId}_photo_${Date.now()}`;
-            await apiRequest('POST', `/api/assets/${assetId}/attachments`, {
-              uploadURL,
-              idempotencyKey,
-            });
+          } catch {
           }
-        } catch {
         }
-      }
 
-      queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
-      if (armedType === 'controller' || armedType === 'zone') {
-        queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
-      }
+        queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
+        if (armedType === 'controller' || armedType === 'zone') {
+          queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
+        }
 
-      onSaved(asset);
-      showToast(`${trimmedLabel} saved!`);
+        onSaved(asset);
+        showToast(`${trimmedLabel} saved!`);
+      }
     } catch {
-      showToast('Network error — please try again', 'error');
+      if (!existingAssetId) {
+        // Network failure during new-pin creation: persist locally so GPS data
+        // is never lost. pinCreationQueue will sync on next connectivity event.
+        try {
+          const idempotencyKey = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+          await pinCreationQueue.enqueue({
+            communityId,
+            assetType: armedType,
+            label: label.trim(),
+            latitude: fix.latitude,
+            longitude: fix.longitude,
+            idempotencyKey,
+            capturedAccuracyM: fix.accuracy,
+            capturedSampleCount: fix.sampleCount ?? null,
+            capturedAt: new Date(fix.timestamp).toISOString(),
+            capturedDeviceModel: Platform.OS !== 'web' ? (Device.modelName ?? Platform.OS) : null,
+            capturedUnderCanopy,
+          });
+          queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
+          showToast(`${label.trim()} saved locally — syncs when back online`, 'success');
+          onSaved({
+            id: idempotencyKey,
+            label: label.trim(),
+            communityId,
+            assetType: armedType,
+            latitude: fix.latitude,
+            longitude: fix.longitude,
+          });
+        } catch {
+          showToast('Network error — please try again', 'error');
+        }
+      } else {
+        showToast('Network error — please try again', 'error');
+      }
     } finally {
       setIsSaving(false);
     }
-  }, [label, description, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast, isZone, parentController, zoneNumber]);
+  }, [label, description, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast,
+      isZone, parentController, zoneNumber, capturedUnderCanopy, existingAssetId, existingAssetVersion]);
 
   const canSave = label.trim().length > 0 && !isSaving;
 
@@ -302,6 +387,16 @@ export default function LockPinSheet({
                 </Text>
                 <Text style={styles.gpsAccuracy}>
                   ±{Math.round(fix.accuracy)}m
+                </Text>
+              </View>
+
+              {/* Capture quality summary: accuracy + sample count + canopy flag */}
+              <View style={styles.captureSummaryRow}>
+                <View style={[styles.captureSummaryDot, { backgroundColor: lockColor }]} />
+                <Text style={styles.captureSummaryText}>
+                  {`${fix.accuracy.toFixed(1)} m`}
+                  {fix.sampleCount ? ` · ${fix.sampleCount} samples` : ''}
+                  {capturedUnderCanopy ? ' · under canopy' : ''}
                 </Text>
               </View>
 
@@ -502,6 +597,24 @@ const styles = StyleSheet.create({
   lockPillText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  captureSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  captureSummaryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  captureSummaryText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   gpsCoords: {
     fontSize: 11,

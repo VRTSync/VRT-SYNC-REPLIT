@@ -3,16 +3,16 @@
  * Defines the three layer pills and the tile grid entries for each.
  *
  * Icon names are from @expo/vector-icons Ionicons:
- *   tree            → leaf-outline         (foliage)
- *   pet_station     → business-outline     (community amenity)
- *   controller      → flash-outline        (electrical/control)
- *   backflow        → link-outline         (pipe connection)
+ *   tree            → leaf-outline            (foliage)
+ *   pet_station     → business-outline        (community amenity)
+ *   controller      → hardware-chip-outline   (electrical/control)
+ *   backflow        → link-outline            (pipe connection)
  *   pump            → git-pull-request-outline (flow circuit)
- *   master_valve    → lock-closed-outline  (master shutoff)
- *   flow_meter      → analytics-outline    (measurement)
- *   quick_connect   → water-outline        (quick water access)
- *   isolation_valve → lock-closed-outline  (isolation shutoff — reuses valve icon)
- *   zone            → water-outline        (irrigation zone — reuses water icon)
+ *   master_valve    → lock-closed-outline     (master shutoff)
+ *   flow_meter      → analytics-outline       (measurement)
+ *   quick_connect   → flash-outline           (quick water access)
+ *   isolation_valve → git-branch-outline      (isolation shutoff)
+ *   zone            → grid-outline            (irrigation zone)
  */
 
 import type { ComponentProps } from 'react';
@@ -34,6 +34,20 @@ export type McLayerDef = {
   icon: IoniconName;
   types: McAssetType[];
 };
+
+export const IRRIGATION_GROUP_CONTROLLERS: McAssetType[] = [
+  { key: 'controller', label: 'Controller', icon: 'hardware-chip-outline' },
+  { key: 'zone',       label: 'Zone',       icon: 'grid-outline' },
+];
+
+export const IRRIGATION_GROUP_VALVES: McAssetType[] = [
+  { key: 'backflow',        label: 'Backflow',        icon: 'link-outline' },
+  { key: 'pump',            label: 'Pump',            icon: 'git-pull-request-outline' },
+  { key: 'master_valve',    label: 'Master Valve',    icon: 'lock-closed-outline' },
+  { key: 'flow_meter',      label: 'Flow Meter',      icon: 'analytics-outline' },
+  { key: 'quick_connect',   label: 'Quick Connect',   icon: 'flash-outline' },
+  { key: 'isolation_valve', label: 'Isolation Valve', icon: 'git-branch-outline' },
+];
 
 export const MC_LAYERS: McLayerDef[] = [
   {
@@ -57,14 +71,8 @@ export const MC_LAYERS: McLayerDef[] = [
     label: 'Irrigation',
     icon: 'water-outline',
     types: [
-      { key: 'controller',      label: 'Controller',       icon: 'flash-outline' },
-      { key: 'backflow',        label: 'Backflow',          icon: 'link-outline' },
-      { key: 'pump',            label: 'Pump',              icon: 'git-pull-request-outline' },
-      { key: 'master_valve',    label: 'Master Valve',      icon: 'lock-closed-outline' },
-      { key: 'flow_meter',      label: 'Flow Meter',        icon: 'analytics-outline' },
-      { key: 'quick_connect',   label: 'Quick Connect',     icon: 'water-outline' },
-      { key: 'isolation_valve', label: 'Isolation Valve',   icon: 'lock-closed-outline' },
-      { key: 'zone',            label: 'Zone',              icon: 'water-outline' },
+      ...IRRIGATION_GROUP_CONTROLLERS,
+      ...IRRIGATION_GROUP_VALVES,
     ],
   },
 ];

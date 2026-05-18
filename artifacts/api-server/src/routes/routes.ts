@@ -2145,6 +2145,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (!reqUser) return res.status(401).json({ error: "User not found" });
+
+      const communityId = req.query.communityId as string | undefined;
+      const sortRaw = req.query.sort as string | undefined;
+      const sort = (sortRaw === 'accuracy_asc' || sortRaw === 'accuracy_desc') ? sortRaw : undefined;
+      const hasAccuracyRaw = req.query.hasAccuracy as string | undefined;
+      const hasAccuracy = hasAccuracyRaw === 'true' ? true : hasAccuracyRaw === 'false' ? false : undefined;
+      const underCanopyRaw = req.query.underCanopy as string | undefined;
+      const underCanopy = underCanopyRaw === 'true' ? true : underCanopyRaw === 'false' ? false : undefined;
+      const minAccuracyMRaw = req.query.minAccuracyM as string | undefined;
+      const minAccuracyM = minAccuracyMRaw != null ? parseFloat(minAccuracyMRaw) : undefined;
+
+      const rows = await storage.getAssetsForQuality({
+        communityId, userId: reqUser.id, role: reqUser.role,
+        hasAccuracy, underCanopy, minAccuracyM, sort,
+      });
+
+      return res.json(rows);
+    } catch (error) {
+      req.log.error({ error }, "GET /api/assets error");
+      return res.status(500).json({ error: "Failed to fetch assets" });
+    }
+  });
+
   app.post("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const reqUser = await storage.getUserById(req.session.userId!);
@@ -2182,11 +2209,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         const pinSchema = z.object({
-          communityId: z.string().min(1),
-          assetType:   z.enum(MC_ASSET_TYPES),
-          latitude:    z.number(),
-          longitude:   z.number(),
-          label:       z.string().optional(),
+          communityId:          z.string().min(1),
+          assetType:            z.enum(MC_ASSET_TYPES),
+          latitude:             z.number(),
+          longitude:            z.number(),
+          label:                z.string().optional(),
+          capturedAccuracyM:    z.number().nullable().optional(),
+          capturedSampleCount:  z.number().int().nullable().optional(),
+          capturedAt:           z.string().nullable().optional(),
+          capturedDeviceModel:  z.string().nullable().optional(),
+          capturedUnderCanopy:  z.boolean().optional(),
         });
 
         const parsed = pinSchema.safeParse(req.body);
@@ -2194,7 +2226,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
         }
 
-        const { communityId, assetType, latitude, longitude, label } = parsed.data;
+        const {
+          communityId, assetType, latitude, longitude, label,
+          capturedAccuracyM, capturedSampleCount, capturedAt,
+          capturedDeviceModel, capturedUnderCanopy,
+        } = parsed.data;
 
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, communityId);
         if (!isMember) return res.status(403).json({ error: "You are not authorized to create assets in this community" });
@@ -2248,6 +2284,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             longitude,
             createdBy: reqUser.id,
             updatedBy: reqUser.id,
+            capturedAccuracyM: capturedAccuracyM ?? null,
+            capturedSampleCount: capturedSampleCount ?? null,
+            capturedAt: capturedAt ? new Date(capturedAt) : null,
+            capturedDeviceModel: capturedDeviceModel ?? null,
+            capturedUnderCanopy: capturedUnderCanopy ?? false,
           });
         } catch (createErr: any) {
           if (createErr?.code === '23505' || createErr?.message?.includes('duplicate') || createErr?.message?.includes('unique')) {
@@ -2431,9 +2472,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
 
-      const { version, ...data } = parsed.data;
+      const { version, capturedAt: capturedAtRaw, ...data } = parsed.data;
       const updated = await storage.updateAsset(req.params.id as string, version, {
         ...data,
+        ...(capturedAtRaw !== undefined ? { capturedAt: capturedAtRaw ? new Date(capturedAtRaw) : null } : {}),
         updatedBy: req.session.userId!,
       });
       if (!updated) {

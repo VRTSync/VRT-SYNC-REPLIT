@@ -13,6 +13,10 @@ function NativeMcTabLayout() {
         <Icon sf={{ default: "person.2", selected: "person.2.fill" }} />
         <Label>Customers</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="quality">
+        <Icon sf={{ default: "checkmark.seal", selected: "checkmark.seal.fill" }} />
+        <Label>Quality</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
         <Label>Settings</Label>
@@ -62,6 +66,15 @@ function ClassicMcTabLayout() {
           title: "Customers",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="quality"
+        options={{
+          title: "Quality",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="checkmark-circle-outline" color={color} size={size || 24} />
           ),
         }}
       />

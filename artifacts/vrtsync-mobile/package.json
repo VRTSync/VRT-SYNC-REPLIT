@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@workspace/layer-colors": "workspace:*",
-    "@workspace/leaflet-template": "workspace:*"
+    "@workspace/leaflet-template": "workspace:*",
+    "expo-device": "^55.0.17"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

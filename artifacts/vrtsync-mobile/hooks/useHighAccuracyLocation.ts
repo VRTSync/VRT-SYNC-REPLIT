@@ -3,12 +3,14 @@ import { AppState, type AppStateStatus, Linking } from 'react-native';
 import * as Location from 'expo-location';
 
 export type LockState = 'red' | 'yellow' | 'green';
+export type CaptureMode = 'strict' | 'canopy';
 
 export interface Fix {
   latitude: number;
   longitude: number;
   accuracy: number;
   timestamp: number;
+  sampleCount?: number;
 }
 
 export interface FixSnapshot {
@@ -26,7 +28,17 @@ export interface UseHighAccuracyLocationOptions {
   outlierAccuracyMax?: number;
   greenThreshold?: number;
   yellowThreshold?: number;
+  mode?: CaptureMode;
 }
+
+export interface CaptureStationaryOptions {
+  mode?: CaptureMode;
+  targetSamples?: number;
+  timeoutMs?: number;
+  onProgress?: (samplesCount: number, totalTarget: number, elapsedMs: number) => void;
+}
+
+export type CaptureResult = Fix | { aborted: 'moved' | 'timeout' | 'permission' };
 
 export interface UseHighAccuracyLocationResult {
   fix: FixSnapshot | null;
@@ -37,6 +49,7 @@ export interface UseHighAccuracyLocationResult {
   reset: () => void;
   snapshot: () => Fix | null;
   openSettings: () => void;
+  captureStationary: (options?: CaptureStationaryOptions) => Promise<CaptureResult>;
 }
 
 interface InternalState {
@@ -47,9 +60,19 @@ interface InternalState {
 
 const DEFAULT_BUFFER_SIZE = 10;
 const DEFAULT_MIN_SAMPLES = 5;
-const DEFAULT_OUTLIER_MAX = 50;
-const DEFAULT_GREEN_THRESHOLD = 5;
-const DEFAULT_YELLOW_THRESHOLD = 15;
+
+const STRICT_OUTLIER_MAX = 10;
+const STRICT_GREEN = 2.5;
+const STRICT_YELLOW = 5;
+const STRICT_DRIFT = 1.0;
+
+const CANOPY_OUTLIER_MAX = 15;
+const CANOPY_GREEN = 5;
+const CANOPY_YELLOW = 8;
+const CANOPY_DRIFT = 1.5;
+
+const CAPTURE_TARGET_SAMPLES = 25;
+const CAPTURE_TIMEOUT_MS = 15_000;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -59,15 +82,47 @@ function median(values: number[]): number {
     : sorted[mid];
 }
 
+function haversineMetres(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000;
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const dPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const dLambda = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dPhi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dLambda / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getModeThresholds(mode: CaptureMode) {
+  if (mode === 'canopy') {
+    return {
+      greenThreshold: CANOPY_GREEN,
+      yellowThreshold: CANOPY_YELLOW,
+      outlierAccuracyMax: CANOPY_OUTLIER_MAX,
+      driftMetres: CANOPY_DRIFT,
+    };
+  }
+  return {
+    greenThreshold: STRICT_GREEN,
+    yellowThreshold: STRICT_YELLOW,
+    outlierAccuracyMax: STRICT_OUTLIER_MAX,
+    driftMetres: STRICT_DRIFT,
+  };
+}
+
 export function useHighAccuracyLocation(
   options: UseHighAccuracyLocationOptions = {}
 ): UseHighAccuracyLocationResult {
+  const captureMode = options.mode ?? 'strict';
+  const modeThresholds = getModeThresholds(captureMode);
+
   const {
     bufferSize = DEFAULT_BUFFER_SIZE,
     minSamplesForLock = DEFAULT_MIN_SAMPLES,
-    outlierAccuracyMax = DEFAULT_OUTLIER_MAX,
-    greenThreshold = DEFAULT_GREEN_THRESHOLD,
-    yellowThreshold = DEFAULT_YELLOW_THRESHOLD,
+    outlierAccuracyMax = modeThresholds.outlierAccuracyMax,
+    greenThreshold = modeThresholds.greenThreshold,
+    yellowThreshold = modeThresholds.yellowThreshold,
   } = options;
 
   const [state, setState] = useState<InternalState>({
@@ -114,6 +169,25 @@ export function useHighAccuracyLocation(
     [minSamplesForLock, greenThreshold, yellowThreshold]
   );
 
+  // Refs so the live watcher callback always reads the latest computeFix / outlierMax
+  // without needing to restart the subscription when captureMode changes.
+  const computeFixRef = useRef(computeFix);
+  useEffect(() => { computeFixRef.current = computeFix; }, [computeFix]);
+
+  const outlierAccuracyMaxRef = useRef(outlierAccuracyMax);
+  useEffect(() => { outlierAccuracyMaxRef.current = outlierAccuracyMax; }, [outlierAccuracyMax]);
+
+  // Clear the rolling buffer when mode changes so stale samples don't contaminate
+  // the new threshold's lock computation.
+  const prevCaptureModeRef = useRef<CaptureMode>(captureMode);
+  useEffect(() => {
+    if (prevCaptureModeRef.current !== captureMode) {
+      prevCaptureModeRef.current = captureMode;
+      bufferRef.current = [];
+      setState((prev) => ({ ...prev, fix: null }));
+    }
+  }, [captureMode]);
+
   const startWatcher = useCallback(async () => {
     if (watcherRef.current) return;
 
@@ -131,7 +205,7 @@ export function useHighAccuracyLocation(
           timestamp: location.timestamp,
         };
 
-        if (fix.accuracy > outlierAccuracyMax) {
+        if (fix.accuracy > outlierAccuracyMaxRef.current) {
           return;
         }
 
@@ -142,7 +216,7 @@ export function useHighAccuracyLocation(
           fix,
         ];
 
-        const computed = computeFix(bufferRef.current);
+        const computed = computeFixRef.current(bufferRef.current);
         const adjustedFix: FixSnapshot | null = computed
           ? { ...computed, lastFixAge: Date.now() - fix.timestamp }
           : null;
@@ -152,7 +226,7 @@ export function useHighAccuracyLocation(
     );
 
     watcherRef.current = sub;
-  }, [bufferSize, outlierAccuracyMax, computeFix]);
+  }, [bufferSize]);
 
   const start = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -181,7 +255,7 @@ export function useHighAccuracyLocation(
   }, []);
 
   const snapshot = useCallback((): Fix | null => {
-    const currentFix = computeFix(bufferRef.current);
+    const currentFix = computeFixRef.current(bufferRef.current);
     if (!currentFix) return null;
     return {
       latitude: currentFix.latitude,
@@ -189,11 +263,121 @@ export function useHighAccuracyLocation(
       accuracy: currentFix.accuracy,
       timestamp: lastFixTimeRef.current ?? Date.now(),
     };
-  }, [computeFix]);
+  }, []);
 
   const openSettings = useCallback(() => {
     Linking.openSettings();
   }, []);
+
+  const captureStationary = useCallback(
+    async (opts: CaptureStationaryOptions = {}): Promise<CaptureResult> => {
+      const mode = opts.mode ?? captureMode;
+      const thresholds = getModeThresholds(mode);
+      const targetSamples = opts.targetSamples ?? CAPTURE_TARGET_SAMPLES;
+      const timeoutMs = opts.timeoutMs ?? CAPTURE_TIMEOUT_MS;
+      const onProgress = opts.onProgress;
+
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        return { aborted: 'permission' };
+      }
+
+      return new Promise<CaptureResult>((resolve) => {
+        const samples: Fix[] = [];
+        let anchorLat: number | null = null;
+        let anchorLon: number | null = null;
+        let sub: Location.LocationSubscription | null = null;
+        let timedOut = false;
+        // pendingRemove: set when cleanup() is called before the .then() subscription
+        // promise has resolved. The .then() handler checks this flag and immediately
+        // removes the subscription, preventing it from leaking.
+        let pendingRemove = false;
+        const startTs = Date.now();
+
+        const cleanup = () => {
+          if (sub) {
+            sub.remove();
+            sub = null;
+          } else {
+            pendingRemove = true;
+          }
+        };
+
+        const timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          cleanup();
+          resolve({ aborted: 'timeout' });
+        }, timeoutMs);
+
+        Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 300,
+            distanceInterval: 0,
+          },
+          (location) => {
+            if (timedOut) return;
+
+            const acc = location.coords.accuracy ?? 999;
+            if (acc > thresholds.outlierAccuracyMax) return;
+
+            const lat = location.coords.latitude;
+            const lon = location.coords.longitude;
+
+            if (anchorLat === null) {
+              anchorLat = lat;
+              anchorLon = lon;
+            } else {
+              const drift = haversineMetres(anchorLat, anchorLon!, lat, lon);
+              if (drift > thresholds.driftMetres) {
+                clearTimeout(timeoutHandle);
+                cleanup();
+                resolve({ aborted: 'moved' });
+                return;
+              }
+            }
+
+            samples.push({ latitude: lat, longitude: lon, accuracy: acc, timestamp: location.timestamp });
+            onProgress?.(samples.length, targetSamples, Date.now() - startTs);
+
+            if (samples.length >= targetSamples) {
+              const avgLat = samples.reduce((s, f) => s + f.latitude, 0) / samples.length;
+              const avgLon = samples.reduce((s, f) => s + f.longitude, 0) / samples.length;
+              const medAcc = median(samples.map((f) => f.accuracy));
+
+              // Only resolve when the rolling median satisfies the green threshold.
+              // If quality never reaches green before timeoutMs, the timeout fires instead
+              // and resolves { aborted: 'timeout' }. Keeping the rolling buffer means
+              // newer (better) samples continue to improve the median as the device settles.
+              if (medAcc <= thresholds.greenThreshold) {
+                clearTimeout(timeoutHandle);
+                cleanup();
+                resolve({
+                  latitude: avgLat,
+                  longitude: avgLon,
+                  accuracy: medAcc,
+                  timestamp: samples[samples.length - 1].timestamp,
+                  sampleCount: samples.length,
+                });
+              }
+            }
+          }
+        ).then((s) => {
+          // Guard: if cleanup() was called before this .then() ran (timedOut, moved,
+          // or samples collected), remove the subscription immediately.
+          if (timedOut || pendingRemove) {
+            s.remove();
+          } else {
+            sub = s;
+          }
+        }).catch(() => {
+          clearTimeout(timeoutHandle);
+          resolve({ aborted: 'permission' });
+        });
+      });
+    },
+    [captureMode]
+  );
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
@@ -227,5 +411,6 @@ export function useHighAccuracyLocation(
     reset,
     snapshot,
     openSettings,
+    captureStationary,
   };
 }

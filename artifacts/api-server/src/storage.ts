@@ -541,6 +541,11 @@ export async function createAsset(data: {
   tags?: string[];
   createdBy?: string;
   updatedBy?: string;
+  capturedAccuracyM?: number | null;
+  capturedSampleCount?: number | null;
+  capturedAt?: Date | null;
+  capturedDeviceModel?: string | null;
+  capturedUnderCanopy?: boolean;
 }): Promise<Asset> {
   const [asset] = await db.insert(assets).values(data).returning();
   return asset;
@@ -674,6 +679,50 @@ export async function createControllerAssetAtomic(data: {
   });
 }
 
+export async function getAssetsForQuality(params: {
+  communityId?: string;
+  userId: string;
+  role: string;
+  hasAccuracy?: boolean;
+  underCanopy?: boolean;
+  minAccuracyM?: number;
+  sort?: 'accuracy_asc' | 'accuracy_desc';
+}): Promise<Asset[]> {
+  const conditions: ReturnType<typeof eq>[] = [eq(assets.isArchived, false)];
+
+  if (params.communityId) {
+    if (params.role !== 'admin') {
+      const memberCheck = await isUserMemberOfCommunity(params.userId, params.communityId);
+      if (!memberCheck) return [];
+    }
+    conditions.push(eq(assets.communityId, params.communityId));
+  } else if (params.role !== 'admin') {
+    const userCommunities = await getUserCommunitiesList(params.userId);
+    if (userCommunities.length === 0) return [];
+    const communityIds = userCommunities.map((c) => c.id);
+    conditions.push(inArray(assets.communityId, communityIds) as ReturnType<typeof eq>);
+  }
+
+  if (params.hasAccuracy === true)  conditions.push(isNotNull(assets.capturedAccuracyM) as ReturnType<typeof eq>);
+  else if (params.hasAccuracy === false) conditions.push(isNull(assets.capturedAccuracyM) as ReturnType<typeof eq>);
+
+  if (params.underCanopy === true)  conditions.push(eq(assets.capturedUnderCanopy, true));
+  else if (params.underCanopy === false) conditions.push(eq(assets.capturedUnderCanopy, false));
+
+  if (params.minAccuracyM != null) conditions.push(gt(assets.capturedAccuracyM, params.minAccuracyM) as ReturnType<typeof eq>);
+
+  const orderClause =
+    params.sort === 'accuracy_asc'
+      ? sql`${assets.capturedAccuracyM} ASC NULLS LAST`
+      : params.sort === 'accuracy_desc'
+        ? sql`${assets.capturedAccuracyM} DESC NULLS LAST`
+        : sql`${assets.capturedAccuracyM} ASC NULLS LAST`;
+
+  return db.select().from(assets)
+    .where(and(...conditions))
+    .orderBy(orderClause, asc(assets.label));
+}
+
 export async function getAssetsByCommunitySorted(communityId: string, assetType?: string, includeArchived?: boolean): Promise<Asset[]> {
   const conditions = [eq(assets.communityId, communityId)];
   if (assetType) {
@@ -696,6 +745,11 @@ export async function updateAsset(id: string, expectedVersion: number, data: Par
   tags: string[];
   isArchived: boolean;
   updatedBy: string;
+  capturedAccuracyM: number | null;
+  capturedSampleCount: number | null;
+  capturedAt: Date | null;
+  capturedDeviceModel: string | null;
+  capturedUnderCanopy: boolean;
 }>): Promise<Asset | null> {
   const [updated] = await db.update(assets)
     .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })

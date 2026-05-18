@@ -91,6 +91,7 @@ type LeafletMapProps = {
   mapTapEnabled?: boolean;
   onMapTap?: (latitude: number, longitude: number) => void;
   reshootHighlight?: { latitude: number; longitude: number } | null;
+  accuracyRing?: { latitude: number; longitude: number; accuracyM: number; color?: string } | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -123,6 +124,7 @@ export default function LeafletMap({
   mapTapEnabled = false,
   onMapTap,
   reshootHighlight = null,
+  accuracyRing = null,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -363,6 +365,14 @@ export default function LeafletMap({
       sendCmd('clearReshootHighlight');
     }
   }, [reshootHighlight, sendCmd]);
+
+  useEffect(() => {
+    if (accuracyRing) {
+      sendCmd('setAccuracyRing', accuracyRing.latitude, accuracyRing.longitude, accuracyRing.accuracyM, accuracyRing.color ?? '#22c55e');
+    } else {
+      sendCmd('clearAccuracyRing');
+    }
+  }, [accuracyRing, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 
