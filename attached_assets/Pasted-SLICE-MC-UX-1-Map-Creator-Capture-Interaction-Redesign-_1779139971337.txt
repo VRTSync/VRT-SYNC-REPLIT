@@ -1,0 +1,213 @@
+SLICE MC-UX-1 — Map Creator Capture Interaction Redesign & Accuracy Tuning
+
+Goal
+The Map Creator portal shipped in MC1–MC8 works end-to-end but pilot use has surfaced three intertwined UX problems: the always-visible 8-tile asset grid (especially under the Irrigation layer) is hard to scan and steals vertical space from the map; map-tap-to-drop placement throws away the device's actual GPS accuracy by letting users fat-finger pin positions on a small screen; and the GPS lock thresholds inherited from MC3 (green ≤ 5 m, yellow ≤ 15 m) are too loose for the "find this buried valve again in a year" use case. MC-UX-1 redesigns the capture interaction around a deliberate "stand on the asset, confirm green lock, then capture" model, tightens the GPS hook for 1–3 m accuracy on dual-frequency hardware, adds an explicit Canopy mode (with a distinct visual palette to make the relaxed accuracy scale unmistakable) for legitimately obstructed environments, persists per-pin accuracy on every capture, and adds a new Quality tab in (mc-tabs) so the team can audit and re-walk any low-confidence points.
+
+After MC-UX-1, the Map Creator workflow looks like this:
+
+1. User opens a workspace and sees a slim layer pill bar at the top (Trees / Community / Irrigation), the full-bleed map below it, and a floating "+" button (FAB) in the lower-right.
+2. User taps a layer pill. Only that layer's existing features render on the map.
+3. User taps "+". A bottom sheet opens showing the asset types for the selected layer.
+4. User picks an asset type (e.g., Tree). The sheet collapses. An "Armed: Tree ✕" chip appears near the FAB along with a Capture Here button below it. The button's enabled state and label mirror the GPS lock — using the current capture mode's color palette.
+5. User walks to the asset, stands still. The lock turns green (Strict) or teal (Canopy) when median accuracy is within the current mode's threshold.
+6. User taps Capture Here. A 15-second stationary averaging session runs with a visible countdown and a progress ring on the button. If the user moves more than ~1 m during the window, the session aborts with a toast ("You moved — stand still and try again") and resets.
+7. On completion, the pin drops at the averaged position and the PinDropSheet opens for label / photo / notes / (controller selection for zones). The captured accuracy and capture mode travel with the pin into the database.
+8. The map shows the saved pin with a faint uncertainty circle at the recorded accuracy radius for ~3 seconds, then fades.
+9. The user can open the **Quality** tab at any time to see all captured pins across communities sorted by accuracy, filter to low-confidence captures, and tap a row to navigate back to a pin and re-capture it.
+
+Map-tap-to-drop is removed entirely. Pin dragging is never offered. If a pin is wrong, the workflow is "walk back to it and re-capture" — which is the only honest answer.
+
+Pre-requisites
+- MC1–MC8 merged and deployed.
+- The MC4 layer-filter bug (`activeLayers` doesn't filter by `activeLayer` state) and the MC5 pin-drop crash (`existingLabels` undefined identifier in `mc-workspace/[id].tsx:1115`) are fixed in separate bug-fix slices. MC-UX-1 assumes the existing workspace at least renders without crashing; otherwise the redesign work happens on a broken foundation.
+- `useHighAccuracyLocation` hook from MC3 exists.
+- The `assets` table is reachable for an additive migration.
+
+Scope (IN)
+
+1) Hardware requirement update
+
+- Update `docs/` (or the equivalent role-onboarding doc) to state that the Map Creator role requires **iPhone 17 (or newer) running iOS 18+**. This is a fleet decision, not a runtime gate; we don't block older devices but we don't tune for them either. All pilot devices in MC-UX-1 testing are iPhone 17.
+- Note: dual-frequency L1/L5 GNSS, with stationary capture, targets 1–3 m horizontal accuracy in open sky. Tree canopy and structures will degrade this — Canopy mode (see §4) is the documented workaround.
+- Note: GPS capture works fully offline and is **identical** to the online flow. The GNSS receiver listens directly to satellites; no network round-trip is ever required. A-GPS cached satellite ephemeris keeps cold-start fast for ~2–4 hours after last connectivity; beyond that, first fix in a fully offline location may take 30–60 seconds but still succeeds. There is no separate offline code path for capture — `captureStationary()` behaves the same in either state. The only thing the offline branch touches is the *save* (via `pinCreationQueue`), not the capture itself.
+
+2) GPS hook tuning — `artifacts/vrtsync-mobile/hooks/useHighAccuracyLocation.ts`
+
+- Tighten default (strict) thresholds:
+  - `greenThreshold`: 5 → **2.5** metres.
+  - `yellowThreshold`: 15 → **5** metres.
+  - `outlierAccuracyMax`: 50 → **10** metres. Wild jumps must never poison the buffer.
+- Add a **mode** option: `mode: 'strict' | 'canopy'` (default `'strict'`). The mode shifts both the accuracy thresholds and the drift tolerance:
+  - Strict: green ≤ 2.5 m, yellow ≤ 5 m, outlier max 10 m, drift tolerance 1.0 m.
+  - Canopy: green ≤ 5 m, yellow ≤ 8 m, outlier max 15 m, drift tolerance 1.5 m.
+- Add stationary-capture method (single implementation, mode-agnostic — same call online or offline):
+  ```ts
+  captureStationary(options?: {
+    bufferSize?: number;        // default 25
+    maxDriftMeters?: number;    // defaults to current mode's drift tolerance
+    timeoutMs?: number;         // default 15000
+    onProgress?: (collected: number, needed: number) => void;
+  }): Promise<Fix | { aborted: 'moved' | 'timeout' | 'permission' }>;
+  ```
+  Behaviour:
+  - Starts (or continues) the watcher. Discards any in-flight rolling-buffer state and begins a fresh dedicated capture buffer.
+  - Each incoming raw fix is checked against the *first* sample in the capture buffer. If horizontal distance between any two samples exceeds `maxDriftMeters`, abort with `{ aborted: 'moved' }`.
+  - Once `bufferSize` valid samples accumulate (median accuracy ≤ current mode's greenThreshold), resolve with the averaged Fix. Lat/lng = arithmetic mean; accuracy = median; sampleCount = bufferSize.
+  - If `timeoutMs` elapses without filling the buffer, abort with `{ aborted: 'timeout' }`.
+  - If permission becomes denied mid-capture, abort with `{ aborted: 'permission' }`.
+- `onProgress` fires after each accepted sample so the UI can render the countdown / progress ring.
+- The rolling-buffer behaviour and `snapshot()` method are retained for the live "current accuracy" readout next to the Capture button. The rolling buffer's lock state respects the current mode's thresholds.
+
+3) Database — add captured-accuracy columns to `assets`
+
+- New migration `000X_add_capture_metadata_to_assets.sql`:
+  ```sql
+  ALTER TABLE assets
+    ADD COLUMN IF NOT EXISTS captured_accuracy_m    numeric(6,2),
+    ADD COLUMN IF NOT EXISTS captured_sample_count  integer,
+    ADD COLUMN IF NOT EXISTS captured_at            timestamptz,
+    ADD COLUMN IF NOT EXISTS captured_device_model  text,
+    ADD COLUMN IF NOT EXISTS captured_under_canopy  boolean DEFAULT false;
+  ```
+- The first four columns are nullable. Existing pins (from MC5–MC7) stay null — they were captured under the old workflow and we don't pretend to know their accuracy.
+- `captured_under_canopy` defaults to false. Set to true only when the user explicitly enabled Canopy mode for that capture. This lets the Quality tab cleanly separate "low-accuracy pins that need re-walk" from "low-accuracy pins that are honest canopy captures."
+- Update the Drizzle schema and the asset-create API payload to accept these fields. The mobile client populates them from the stationary-capture result and the current capture mode; web clients (if any create pins later) can leave them null.
+- Update `pinCreationQueue` to carry these fields through to the eventual API call so offline-created pins retain full provenance.
+
+4) UI — interaction redesign in `app/mc-workspace/[id].tsx` and supporting components
+
+This is the bulk of the work. Replace the existing tile-grid overlay with the new layered chrome:
+
+- **Workspace top bar.** Keep the existing back / community-name area. Add one new affordance on the right: a **Capture mode toggle** showing the current mode. Icon and color reflect the mode at a glance:
+  - Strict: green `flash-outline` icon ("sharp / precise" feel).
+  - Canopy: teal `leaf-outline` icon ("foliage" feel).
+  - Tapping toggles between modes. The chosen mode is **persisted per workspace** (see §4 sticky behaviour below).
+- **Layer pill bar (top of screen, slim, semi-transparent).** Replaces today's `MapCreatorOverlay` layer pills. Three pills (Trees / Community / Irrigation). Tapping a pill updates `activeLayer` state AND (this is the MC4 bug fix that gets folded in here for free) filters `activeLayers` so only the selected layer's features render on the map.
+- **Map (full-bleed, edge-to-edge).** No persistent tile grid on top. The user-location halo and pin markers render as before. `mapTapEnabled` is set to **false** everywhere in MC mode — map tap does nothing. Pin markers have no drag handlers (verify and remove if present).
+- **FAB (`+` button, lower-right, ~64px circular).** Always visible in MC mode. Tapping it opens the asset picker bottom sheet.
+- **Asset picker bottom sheet.** Shows the asset tiles for the current layer. Layer-aware:
+  - Trees: a single Tree tile. Same UI as multi-tile layers (no special-case auto-arm — the user explicitly picks every time, for workflow consistency and future-proofing as the catalog grows).
+  - Community: a single Pet Station tile today.
+  - Irrigation: 8 tiles, **grouped into two sections** with subheadings:
+    - "Controllers & Zones" — Controller, Zone.
+    - "Valves, Meters & Fittings" — Backflow, Pump, Master Valve, Flow Meter, Quick Connect, Isolation Valve.
+  - Zone tile is **disabled** when no controllers exist for the community yet, with an inline message "Add a Controller first" and a one-tap "Arm Controller" button inside the disabled-tile area.
+  - Each tile gets a unique icon — fix the current Ionicons collisions:
+    - Master Valve → `lock-closed-outline` (unchanged).
+    - Isolation Valve → `git-branch-outline` (new — was duplicate lock icon).
+    - Quick Connect → `flash-outline` (new — was duplicate water icon).
+    - Zone → `grid-outline` (new — was duplicate water icon).
+    - Controller → `hardware-chip-outline` (new — was flash, which is now Quick Connect).
+  - Sheet remembers the **last-used asset per layer** within the session and pre-highlights it when reopened.
+- **Armed chip.** Once an asset is picked, the sheet collapses and an "Armed: Tree ✕" chip appears above the FAB. Tapping ✕ disarms. Tapping the chip body re-opens the asset sheet pre-highlighted on the current type.
+
+- **Capture Here button — mode-aware visual treatment.** The button reflects the current capture mode through a **distinct color palette per mode** so the user can never confuse the two accuracy scales:
+
+  Strict mode palette:
+  - Good lock (≤2.5 m): **green** (`#10B981` or app token), label "Capture Here (1.8 m)".
+  - Marginal (2.5–5 m): **yellow** (`#F59E0B`), label "Accuracy too low (4.2 m)", disabled.
+  - Bad (>5 m): **red** (`#EF4444`), label "Acquiring GPS…", disabled.
+  - Button icon: `flash-outline` (matches mode toggle).
+
+  Canopy mode palette:
+  - Good lock (≤5 m): **teal** (`#14B8A6`), label "Canopy: Capture Here (4.1 m) 🍃".
+  - Marginal (5–8 m): **amber** (`#D97706`), label "Canopy: Accuracy too low (6.8 m)", disabled.
+  - Bad (>8 m): **rust** (`#B45309`), label "Canopy: Acquiring GPS…", disabled.
+  - Button icon: `leaf-outline` (matches mode toggle).
+  - The 🍃 leaf glyph in the live readout and the "Canopy:" label prefix are mandatory — they make the relaxed scale unmistakable even at a glance, even for color-blind users.
+
+  The live accuracy readout text (e.g., the small number above or inside the button) uses the mode's "good" color (green in Strict, teal in Canopy) when in range, and shifts to the marginal/bad color as the lock degrades.
+
+- **Hard-block-first rule.** The very first capture attempt after entering a workspace is always gated on the green lock of the **current mode**. No exceptions. There is no soft-allow on yellow/amber for the first capture, ever. (Open the workspace → walk to the asset → wait for green → capture. That's the contract.)
+
+- **Canopy mode prompt.** If the user is in Strict mode and remains on yellow for more than 20 seconds *or* aborts two consecutive captures due to `'timeout'`, surface a one-time toast: *"Heavy canopy or obstructed sky? Tap the leaf icon up top to switch to Canopy mode."* The prompt **does not auto-switch** — the user must opt in by tapping the top-bar toggle. This keeps the relaxation explicit and traceable. The prompt fires at most once per workspace session.
+
+- **Sticky capture mode per property session (not persisted).** The chosen mode persists while the user remains inside a single workspace, but **always resets to Strict on every workspace open**, including when switching between properties. Implementation: in-memory state on the workspace screen, initialized to Strict on mount; no AsyncStorage / no persistence across mounts. The mental model: "I want Canopy for this walk-through of this property" — not "this property is permanently a canopy property." Rationale: prevents accidental relaxed captures after a multi-day break, and makes the Strict gate the always-default fresh-start state.
+
+- Tapping Capture Here (only possible on good lock) calls `captureStationary()`. While running:
+  - Button shows a 15-second countdown and a circular progress ring filling as samples accumulate.
+  - Underlying disarm/sheet-open interactions are blocked until the session resolves or aborts.
+- On success: pin drops at the captured lat/lng; PinDropSheet opens with the captured accuracy displayed at the top ("Captured at 1.8 m, 25 samples, just now" — plus "(Canopy mode)" suffix when applicable). On save, the pin stores accuracy, sample count, timestamp, device model, AND `captured_under_canopy` reflecting the mode at capture time. Pin marker on the map gets a faint accuracy ring for 3 seconds, then fades.
+- On `aborted: 'moved'`: toast "You moved during capture — stand still and try again." Armed state preserved.
+- On `aborted: 'timeout'`: toast "Couldn't get a stable fix in 15s. Try moving to clearer sky." Armed state preserved. Counts toward the two-aborts-triggers-canopy-prompt logic (Strict mode only).
+
+5) Quality tab — new tab in `(mc-tabs)`
+
+- Add a new screen, **Quality**, accessible from the (mc-tabs) tab bar. Tab order: Customers / Quality / Settings / Profile. Lives at `app/(mc-tabs)/quality.tsx`.
+- Header: community filter dropdown (defaults to "All communities"; user can scope to one community).
+- Body: a sortable list of all captured pins matching the filter.
+  - Default sort: worst accuracy first (excluding canopy-mode pins by default — see filter chips).
+  - Sort toggle: accuracy descending / ascending, capture date descending / ascending.
+  - Filter chips at the top: "All", ">5 m (strict)", ">3 m (strict)", "Missing accuracy" (pins created before MC-UX-1), "Canopy captures". The strict-mode filters exclude canopy-mode pins so a list of "things to fix" doesn't include points that are honestly low-accuracy because of trees.
+  - Each row shows: community name, asset type icon + label, accuracy ("2.1 m" colored per current mode palette / "—" for missing), a small 🍃 indicator if `captured_under_canopy = true`, capture date relative ("3 days ago"), and a chevron.
+  - Tapping a row navigates to the relevant workspace map zoomed to that pin with a highlight overlay and a single primary action button: "Re-capture this pin". Tapping it arms the same asset type, opens the asset sheet pre-selected, and runs the standard capture flow in whatever mode is currently active for that workspace. On success, the original pin's lat/lng/accuracy/timestamp/device/canopy-flag are **replaced** (not appended — single-pin re-capture, no history).
+- Performance: list is fetched server-side with a single `GET /api/assets?communityId=...|all&sort=accuracy_asc&hasAccuracy=true|false&underCanopy=true|false|any` endpoint. Add server-side query support if not already present. For "All communities" view, scope to communities the current user has access to.
+- **Pending-sync indicator (required).** At the top of the Quality tab, above the filter chips, render a compact status line that reflects the state of the offline pin queue:
+  - When `pinCreationQueue.length === 0` and no recent activity: hide the line.
+  - When there are queued pins: show "⚠ X pin(s) pending sync" with a "Sync now" button to trigger a manual sync attempt.
+  - On active sync: show "↻ Syncing X pin(s)…" with a progress indicator.
+  - On sync success (transient, 3s): show "✓ All pins synced".
+  - On sync failure: show "✗ Sync failed — X pin(s) still pending. Tap to retry." in red.
+  - The status line uses the existing `usePinQueue` context and `pinCreationQueue` from MC7. The same line should also appear on the workspace screen header (smaller variant) so users get the signal without leaving the map.
+
+6) Removed code paths
+
+- Delete the map-tap pin-drop branch in `mc-workspace/[id].tsx` (the `handleMapTap` path that opens the MC6 PinDropSheet with `pinLat`/`pinLng` from a tap). The MC7 offline-flow PinDropSheet stays — it's now invoked exclusively by the stationary-capture success handler.
+- Delete the existing always-visible tile-grid overlay in `MapCreatorOverlay.tsx`. The component becomes "layer pill bar + FAB + armed chip + capture button" only. If that's a clean break, rename it `MapCreatorChrome.tsx`; otherwise keep the name.
+- Confirm no pin marker in `LeafletMap.tsx` has draggable handlers; if any do (from earlier prototype work), remove them.
+
+Scope (OUT)
+
+- External Bluetooth GNSS receivers (Bad Elf, Eos Arrow, Emlid). Worth a future slice if iPhone-internal accuracy proves insufficient even in canopy mode.
+- RTK / NTRIP corrections.
+- A web-portal counterpart of the Quality tab. Mobile-only in this slice.
+- Bulk re-capture (selecting multiple pins to re-walk in sequence). Single-pin only here.
+- Capture history (storing prior accuracy/lat/lng on re-capture rather than overwriting). Could be added later as an `asset_captures` audit table.
+- Persisting the per-layer last-used asset across app restarts. Session-only is fine for v1.
+- Auto-switching to canopy mode based on satellite count / HDOP. We don't auto-switch — the user must opt in by tapping the top-bar toggle. The detection-and-prompt logic is in scope; auto-switch is out.
+
+Pass criteria — manual acceptance steps to be executed on iPhone 17 in the field
+
+- **C1.** Layer pill bar visible at top of workspace; full-bleed map below; FAB in lower-right. Workspace top bar shows the Capture mode toggle (flash icon for Strict, leaf icon for Canopy). No tile grid overlay anywhere.
+- **C2.** Tapping each of the three layer pills filters the map so only that layer's existing features render. Switching pills hides the previous layer's features instantly.
+- **C3.** Map tap does nothing in MC mode. No PinDropSheet opens, no pin drops.
+- **C4.** Tapping FAB opens the asset sheet for the active layer. Irrigation tiles are grouped under "Controllers & Zones" and "Valves, Meters & Fittings".
+- **C5.** With zero controllers in the community, the Zone tile is visibly disabled with the "Add a Controller first" inline message and a one-tap "Arm Controller" shortcut.
+- **C6.** Each irrigation tile has a unique icon — no two tiles share the same Ionicon.
+- **C7.** Picking an asset closes the sheet and shows "Armed: <Type> ✕" chip above the FAB. Tapping ✕ disarms. Tapping the chip body re-opens the sheet pre-highlighted on the current type.
+- **C8.** In Strict mode with GPS in a known-bad state (indoors), the Capture button is red and disabled.
+- **C9.** Outdoors with clear sky in Strict mode, lock turns green within 10 seconds. Button is **green**, reads "Capture Here (X.X m)" with X.X ≤ 2.5.
+- **C10.** Tapping Capture Here runs a visible 15-second countdown with a progress ring. Standing still completes the session and opens PinDropSheet. Moving more than ~1 m mid-capture aborts with the "You moved" toast.
+- **C11.** Saving the pin persists `captured_accuracy_m`, `captured_sample_count`, `captured_at`, `captured_device_model`, and `captured_under_canopy` to the assets table.
+- **C12.** On the workspace map, a saved pin briefly shows an accuracy ring at its accuracy radius before fading.
+- **C13. Distinct canopy palette.** Toggle to Canopy mode via the top-bar leaf icon. The Capture button immediately shifts to the teal/amber/rust palette (not green/yellow/red), prefixed with "Canopy:", and shows a 🍃 in the live readout. Visually unmistakable from Strict at a glance.
+- **C14. Canopy capture round-trip.** Under canopy in Canopy mode, perform a capture. Button is teal when locked ≤ 5 m. PinDropSheet shows "(Canopy mode)" alongside the accuracy. Saved pin has `captured_under_canopy = true`. The pin row in the Quality tab shows a 🍃 indicator.
+- **C15. Canopy mode prompt.** In Strict mode under heavy canopy, after ~20 seconds of yellow or two timeout aborts, the one-time "Heavy canopy or obstructed sky?" toast appears. The mode does NOT auto-switch. Tapping the leaf icon switches to Canopy.
+- **C16. Sticky canopy per session, resets on open.** Open workspace A in Strict, toggle to Canopy, capture a pin. Mode is still Canopy. Back out to the Customers list. Re-open workspace A — it opens in **Strict** (not Canopy). Open workspace B — it also opens in Strict. Canopy persists only within a single continuous session inside one workspace; every (re)open is a fresh Strict start.
+- **C17. Hard-block-first.** Open a fresh workspace session. The first capture attempt is gated on green in the current mode — no soft-allow on yellow/amber for the first capture, ever.
+- **C18. Quality tab.** The Quality tab in (mc-tabs) shows captured pins (defaulting to all communities the user has access to). Default sort is worst-accuracy first, excluding canopy pins. Filter chips work, including "Canopy captures" which shows only canopy-flagged pins. Tapping a row navigates to that workspace zoomed to that pin.
+- **C19. Re-capture from Quality.** Re-capturing from a row replaces the original pin's coordinates, accuracy, timestamp, device, and canopy-flag. The same row reflects the new values after the list refreshes.
+- **C20. Pre-MC-UX-1 pins.** Pins created before this slice show "—" for accuracy and are included under the "Missing accuracy" filter.
+- **C21. Offline capture is identical to online.** With airplane mode on (after recent network), arm a pin and capture. The GPS lock acquires normally, the capture completes successfully, the PinDropSheet opens with the same UI, and the pin lands in the offline queue with full accuracy metadata. After re-enabling network and syncing, the pin appears in the DB with all capture columns populated. The user-visible flow is indistinguishable from the online flow except for an offline indicator elsewhere in the app.
+- **C22. Survey-monument smoke test.** Pick a known landmark (a survey monument, manhole cover, or property pin). Capture it in Strict mode. The recorded accuracy is ≤ 3 m and the captured lat/lng is within 3 m of the landmark's known position when checked on Google Earth Pro / county GIS.
+- **C23. Pending-sync indicator.** With network on and the queue empty, the Quality tab shows no status line. Enable airplane mode and capture 3 pins — the Quality tab now shows "⚠ 3 pin(s) pending sync" with a "Sync now" button. Re-enable network; the indicator transitions through "↻ Syncing…" → "✓ All pins synced" → hidden. Force a sync failure (e.g., kill the server) and confirm the red "✗ Sync failed" state appears. A smaller variant of the same indicator is visible in the workspace screen header.
+
+Risk & rollback
+
+- The redesign touches the primary MC workflow. Wrap the new chrome (layer pill bar / FAB / armed chip / capture button / Quality tab / Canopy mode) behind a single feature flag (`MC_UX_V2`) for the first sprint after merge. If serious regressions emerge in pilot, flip the flag back to the old tile-grid + map-tap path. The old code is preserved behind the flag for exactly one sprint, then deleted.
+- The migration is purely additive (nullable columns + one defaulted boolean); rollback is `ALTER TABLE assets DROP COLUMN …` per column, or just leave in place since they're unused if the feature is off.
+- Stationary-capture timeouts are the most likely user-visible failure in the field. The Canopy mode prompt + the sticky-per-workspace persistence are the designed recovery path; verify both fire reliably in pilot.
+- Canopy mode itself is the risk-acceptance lever. The distinct palette is the user-facing guard; `captured_under_canopy = true` is the database guard. Verify both are honestly set on every canopy capture, and that the Quality tab cleanly distinguishes canopy pins from strict pins.
+
+Resolved questions
+
+- **Hard-block vs soft-allow on yellow.** Hard-block on the first attempt, always. Canopy mode is the explicit, user-opted-in relaxation — tagged in the database and visually distinct in the UI.
+- **Quality view location.** New tab in (mc-tabs). Customers / Quality / Settings / Profile. Global across communities with a community filter at the top.
+- **Device model on every pin.** Yes. `captured_device_model` persisted on every capture.
+- **Offline capture.** Yes. GPS hardware is one-way receive; no network required. Single `captureStationary()` code path serves both online and offline — no bifurcation. Offline-created pins flow through `pinCreationQueue` with full capture metadata preserved.
+- **Canopy mode color palette.** Distinct teal / amber / rust palette (vs. Strict green / yellow / red), plus a 🍃 glyph and "Canopy:" label prefix on the Capture button. Mode is also visible at all times via the top-bar toggle icon (flash vs leaf). Color-blind users get the textual cue.
+- **Canopy mode persistence.** Sticky **only within a single workspace session** (in-memory). Every (re)open of any workspace starts fresh in Strict. No AsyncStorage, no cross-session persistence. Forces the safer default and prevents stale relaxed-mode captures.
+
+Open questions
+
+(none remaining — all prior open questions resolved.)
