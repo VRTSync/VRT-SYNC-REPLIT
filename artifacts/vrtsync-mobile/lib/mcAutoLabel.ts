@@ -3,26 +3,12 @@
  * All functions are pure and unit-testable.
  */
 
-const PRETTY_LABELS: Record<string, string> = {
-  controller: "Controller",
-  zone: "Zone",
-  tree: "Tree",
-  backflow: "Backflow",
-  pet_station: "Pet Station",
-  master_valve: "Master Valve",
-  flow_meter: "Flow Meter",
-  quick_connect: "Quick Connect",
-  isolation_valve: "Isolation Valve",
-  landscape_bed: "Landscape Bed",
-  bluegrass_area: "Bluegrass Area",
-  native_area: "Native Area",
-  snow_area: "Snow Area",
-  pump: "Pump",
-  qc_iso_valve: "QC/Iso Valve",
-};
+import { ASSET_FIELD_TEMPLATES } from '@/shared/assetFieldTemplates';
 
 function prettyLabel(assetType: string): string {
-  return PRETTY_LABELS[assetType] ?? assetType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const template = ASSET_FIELD_TEMPLATES[assetType];
+  if (template) return template.displayName;
+  return assetType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /**
@@ -30,7 +16,7 @@ function prettyLabel(assetType: string): string {
  *   0 → A, 1 → B, …, 25 → Z, 26 → AA, 27 → AB, …
  */
 export function indexToControllerKey(n: number): string {
-  let result = "";
+  let result = '';
   let i = n;
   do {
     result = String.fromCharCode(65 + (i % 26)) + result;
@@ -54,7 +40,9 @@ function extractControllerKey(label: string): string | null {
  *
  * Rules:
  *  - `controller` → "Controller A", "Controller B", … "Controller Z", "Controller AA", …
- *  - everything else → "<Pretty Label> 1", "<Pretty Label> 2", … (gap-filling)
+ *  - everything else → "<Display Name> 1", "<Display Name> 2", … (gap-filling)
+ *    Display name comes from ASSET_FIELD_TEMPLATES[assetType].displayName, falling
+ *    back to title-casing the raw key for unknown types.
  */
 export function generateAutoLabel(opts: {
   assetType: string;
@@ -62,7 +50,7 @@ export function generateAutoLabel(opts: {
 }): string {
   const { assetType, existingLabels } = opts;
 
-  if (assetType === "controller") {
+  if (assetType === 'controller') {
     const usedKeys = new Set(
       existingLabels
         .map(extractControllerKey)
@@ -75,7 +63,7 @@ export function generateAutoLabel(opts: {
     return `Controller ${indexToControllerKey(idx)}`;
   }
 
-  const prefix = prettyLabel(assetType) + " ";
+  const prefix = prettyLabel(assetType) + ' ';
   const usedNums = new Set<number>();
   for (const l of existingLabels) {
     if (l.startsWith(prefix)) {
