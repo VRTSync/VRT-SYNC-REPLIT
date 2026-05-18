@@ -12,7 +12,7 @@ import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import { useMapFilter } from '@/client/contexts/MapFilterContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
-import { getDefaultLayerColor } from '@/shared/layerColors';
+import { getDefaultLayerColor } from '@workspace/layer-colors';
 
 type MapLayerMeta = {
   id: string;

@@ -9,7 +9,7 @@ import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import LeafletMap from '@/components/LeafletMap';
 import AssetDetailPanel from '@/components/AssetDetailPanel';
-import { getDefaultLayerColor } from '@/shared/layerColors';
+import { getDefaultLayerColor } from '@workspace/layer-colors';
 
 type MapLayerMeta = {
   id: string;

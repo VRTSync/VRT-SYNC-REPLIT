@@ -13,7 +13,7 @@ import { parseIrrigationKml } from "../kmlIrrigationParser";
 import { validateLayerGeoJSON } from "../layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "../layerKeys";
 import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "../kmlConverter";
-import { getDefaultLayerColor, CONTROLLER_COLORS } from "../shared/layerColors";
+import { getDefaultLayerColor, CONTROLLER_COLORS } from "@workspace/layer-colors";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,

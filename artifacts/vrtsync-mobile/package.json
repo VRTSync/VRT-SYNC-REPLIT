@@ -11,6 +11,7 @@
     "test": "jest --config jest.config.js"
   },
   "dependencies": {
+    "@workspace/layer-colors": "workspace:*",
     "@workspace/leaflet-template": "workspace:*"
   },
   "devDependencies": {

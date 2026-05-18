@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useHighAccuracyLocation } from '@/hooks/useHighAccuracyLocation';
 import { apiRequest } from '@/lib/query-client';
-import { getDefaultLayerColor, CONTROLLER_COLORS } from '@/shared/layerColors';
+import { getDefaultLayerColor, CONTROLLER_COLORS } from '@workspace/layer-colors';
 import StatusBarFill from '@/components/StatusBarFill';
 import Toast from '@/components/Toast';
 import TallyPanel from '@/components/TallyPanel';
