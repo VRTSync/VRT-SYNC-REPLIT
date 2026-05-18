@@ -56,6 +56,15 @@ type SimpleController = {
   zoneCount: number;
 };
 
+type ReshootContext = {
+  assetId: string;
+  assetVersion: number;
+  label: string;
+  assetType: string;
+  description: string;
+  parentControllerFeatureRef: string | null;
+};
+
 
 const LOCK_COLORS: Record<string, string> = {
   red: '#F44336',
@@ -214,6 +223,8 @@ export default function McWorkspaceScreen() {
   const [reviewTab, setReviewTab] = useState<'tally' | 'reshoot'>('tally');
   const [locking, setLocking] = useState(false);
   const [targetRegion, setTargetRegion] = useState<{ latitude: number; longitude: number; label?: string } | null>(null);
+  const [reshootContext, setReshootContext] = useState<ReshootContext | null>(null);
+  const [reshootHighlight, setReshootHighlight] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // --- Toast state ---
   const [toastVisible, setToastVisible] = useState(false);
@@ -337,6 +348,18 @@ export default function McWorkspaceScreen() {
     },
     enabled: !!communityId,
   });
+
+  const assetsQuery = useQuery<Asset[]>({
+    queryKey: ['mc-assets', id],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/assets?communityId=${communityId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!communityId,
+  });
+
+  const reviewControllersQuery = { data: controllers };
 
   const existingLabelsByType = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -525,6 +548,33 @@ export default function McWorkspaceScreen() {
       .filter((n): n is number => typeof n === 'number');
   }, [controllers, selectedController]);
 
+  const activeAssets = useMemo(
+    () => (assetsQuery.data ?? []).filter((a) => !a.isArchived),
+    [assetsQuery.data],
+  );
+
+  const reshootAssets = useMemo(
+    () =>
+      activeAssets
+        .filter(
+          (a) =>
+            a.latitude != null &&
+            a.longitude != null &&
+            (a.gpsAccuracy === null || a.gpsAccuracy === undefined || a.gpsAccuracy > RESHOOT_ACCURACY_THRESHOLD),
+        )
+        .map((a) => ({
+          id: a.id,
+          label: a.label,
+          assetType: a.assetType,
+          latitude: a.latitude,
+          longitude: a.longitude,
+          gpsAccuracy: a.gpsAccuracy ?? null,
+          version: a.version,
+          properties: a.properties,
+        })),
+    [activeAssets],
+  );
+
   // ─── Creation flow handlers ────────────────────────────────────────────────
 
   const disarm = () => {
@@ -532,6 +582,8 @@ export default function McWorkspaceScreen() {
     setSelectedController(null);
     setAddingControllerForZone(false);
     setLockPinFix(null);
+    setReshootContext(null);
+    setReshootHighlight(null);
   };
 
   /** Called by MapCreatorOverlay's arm-type tap. */
@@ -582,6 +634,51 @@ export default function McWorkspaceScreen() {
     setLockPinFix(fix);
   }, [armedType, selectedController, gps]);
 
+  const handlePinSave = async (assetId: string, label: string) => {
+    setPinDropVisible(false);
+    const savedType = armedType;
+    const wasAddingForZone = addingControllerForZone;
+    const ctx = reshootContext;
+
+    disarm();
+
+    if (ctx) {
+      try {
+        const res = await apiRequest('PATCH', `/api/assets/${ctx.assetId}`, {
+          isArchived: true,
+          version: ctx.assetVersion,
+        });
+        if (res.ok) {
+          queryClient.invalidateQueries({ queryKey: ['mc-assets', id] });
+          showToast(`${label} saved — original archived`, 'success');
+        } else {
+          showToast(`${label} saved — failed to archive original`, 'error');
+        }
+      } catch {
+        showToast(`${label} saved — failed to archive original`, 'error');
+      }
+      return;
+    }
+
+    if (savedType === 'controller') {
+      queryClient.invalidateQueries({ queryKey: ['/api/communities', communityId, 'controllers'] });
+      setNewlyAddedControllerId(assetId);
+      if (wasAddingForZone) {
+        setTimeout(() => {
+          setArmedType('zone');
+          setPickerVisible(true);
+        }, 600);
+      }
+    }
+
+    showToast(`${label} saved`, 'success');
+  };
+
+  const handlePinClose = () => {
+    setPinDropVisible(false);
+    setPinLat(null);
+    setPinLng(null);
+  };
   const canLockPin =
     !!armedType &&
     gps.fix != null &&
@@ -679,7 +776,7 @@ export default function McWorkspaceScreen() {
 
   // MC8: review handlers
   const handleShowOnMap = useCallback((asset: { id: string; latitude: number | null; longitude: number | null; label: string }) => {
-    if (!asset.latitude || !asset.longitude) {
+    if (asset.latitude == null || asset.longitude == null) {
       showToast(`No coordinates recorded for "${asset.label}"`, 'error');
       return;
     }
@@ -687,40 +784,56 @@ export default function McWorkspaceScreen() {
     setReviewMode(false);
   }, [showToast]);
 
-  const handleReshoot = useCallback((asset: { id: string; label: string; assetType: string; version: number; latitude: number | null; longitude: number | null }) => {
-    Alert.alert(
-      'Archive and re-shoot?',
-      `Archive "${asset.label}" and fly to its location so you can drop a replacement pin.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive & go to pin',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const res = await apiRequest('PATCH', `/api/assets/${asset.id}`, {
-                isArchived: true,
-                version: asset.version,
-              });
-              if (!res.ok) {
-                const body: { error?: string } = await res.json().catch(() => ({}));
-                showToast(body.error ?? 'Failed to archive pin', 'error');
-                return;
-              }
-              await queryClient.invalidateQueries({ queryKey: ['mc-assets', id] });
-              if (asset.latitude && asset.longitude) {
-                setTargetRegion({ latitude: asset.latitude, longitude: asset.longitude, label: `Re-shoot: ${asset.label}` });
-              }
-              setReviewMode(false);
-              showToast(`"${asset.label}" archived — drop a new pin at this location`, 'success');
-            } catch {
-              showToast('Failed to archive pin', 'error');
-            }
-          },
-        },
-      ]
-    );
-  }, [id, queryClient, showToast]);
+  const handleReshoot = useCallback((asset: {
+    id: string;
+    label: string;
+    assetType: string;
+    version: number;
+    latitude: number | null;
+    longitude: number | null;
+    properties?: Record<string, string>;
+  }) => {
+    if (asset.latitude == null || asset.longitude == null) {
+      showToast(`No coordinates recorded for "${asset.label}"`, 'error');
+      return;
+    }
+
+    const description = asset.properties?.description ?? '';
+    const parentControllerFeatureRef =
+      asset.assetType === 'zone' ? (asset.properties?.controllerFeatureRef ?? null) : null;
+
+    setReshootContext({
+      assetId: asset.id,
+      assetVersion: asset.version,
+      label: asset.label,
+      assetType: asset.assetType,
+      description,
+      parentControllerFeatureRef,
+    });
+
+    setReviewMode(false);
+    setTargetRegion({ latitude: asset.latitude, longitude: asset.longitude, label: `Re-shoot: ${asset.label}` });
+    setReshootHighlight({ latitude: asset.latitude, longitude: asset.longitude });
+
+    if (asset.assetType === 'zone') {
+      setArmedType('zone');
+      if (parentControllerFeatureRef) {
+        const parentCtrl =
+          controllers.find((c) => (c.featureRef ?? c.id) === parentControllerFeatureRef) ?? null;
+        if (parentCtrl) {
+          setSelectedController(parentCtrl);
+        } else {
+          setPickerVisible(true);
+        }
+      } else {
+        setPickerVisible(true);
+      }
+    } else {
+      setArmedType(asset.assetType);
+    }
+
+    showToast(`"${asset.label}" — drop a replacement pin when ready`, 'success');
+  }, [showToast, controllers]);
 
   const handleLockCommunity = useCallback(() => {
     Alert.alert(
@@ -849,6 +962,7 @@ export default function McWorkspaceScreen() {
           mapTapEnabled={mapTapEnabled}
           onMapTap={handleMapTap}
           targetRegion={targetRegion}
+          reshootHighlight={reshootHighlight}
         />
 
         {/* MC4/MC6/MC7 overlays — hidden when review mode is active */}
@@ -1027,6 +1141,24 @@ export default function McWorkspaceScreen() {
         highlightedControllerId={newlyAddedControllerId}
       />
 
+      {/* PinDropSheet — opened via Lock Pin Here button */}
+      {armedType && pinLat !== null && pinLng !== null && (
+        <PinDropSheet
+          visible={pinDropVisible}
+          assetType={armedType}
+          assetColor={armedColor}
+          latitude={pinLat}
+          longitude={pinLng}
+          communityId={communityId}
+          existingLabels={existingLabels}
+          parentController={armedType === 'zone' ? selectedController : null}
+          existingZoneNumbers={existingZoneNumbers}
+          onClose={handlePinClose}
+          onSave={handlePinSave}
+          initialLabel={reshootContext?.label}
+          initialDescription={reshootContext?.description}
+        />
+      )}
       <Toast
         visible={toastVisible}
         message={toastMessage}
@@ -1069,6 +1201,8 @@ export default function McWorkspaceScreen() {
           parentController={armedType === 'zone' ? selectedController : null}
           existingZoneNumbers={armedType === 'zone' ? existingZoneNumbers : []}
           onDismiss={() => setLockPinFix(null)}
+          initialLabel={reshootContext?.label}
+          initialDescription={reshootContext?.description}
           onSaved={(asset) => {
             const savedType = armedType;
             const wasAddingForZone = addingControllerForZone;
@@ -1077,13 +1211,31 @@ export default function McWorkspaceScreen() {
             // Invalidate assets here so the workspace asset list stays fresh.
             queryClient.invalidateQueries({ queryKey: ['/api/assets', { communityId }] });
             refreshList();
-            if (savedType === 'controller') {
-              setNewlyAddedControllerId(asset.id);
-              if (wasAddingForZone) {
-                setTimeout(() => {
-                  setArmedType('zone');
-                  setPickerVisible(true);
-                }, 600);
+              const ctx = reshootContext;
+              if (ctx) {
+                setReshootContext(null);
+                setReshootHighlight(null);
+                apiRequest('PATCH', `/api/assets/${ctx.assetId}`, {
+                  isArchived: true,
+                  version: ctx.assetVersion,
+                }).then((res) => {
+                  if (res.ok) {
+                    queryClient.invalidateQueries({ queryKey: ['mc-assets', id] });
+                    showToast(`${asset.label ?? 'Pin'} saved — original archived`, 'success');
+                  } else {
+                    showToast(`Pin saved — failed to archive original`, 'error');
+                  }
+                }).catch(() => {
+                  showToast(`Pin saved — failed to archive original`, 'error');
+                });
+              } else if (savedType === 'controller') {
+                setNewlyAddedControllerId(asset.id);
+                if (wasAddingForZone) {
+                  setTimeout(() => {
+                    setArmedType('zone');
+                    setPickerVisible(true);
+                  }, 600);
+                }
               }
             }
           }}

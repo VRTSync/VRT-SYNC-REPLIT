@@ -119,6 +119,17 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     0%, 100% { opacity: 1; }
     50% { opacity: 0.55; }
   }
+  .reshoot-ring {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid #ea580c;
+    background: rgba(234,88,12,0.18);
+    box-shadow: 0 0 14px rgba(234,88,12,0.55);
+    animation: reshoot-ring-pulse 1.15s ease-in-out infinite;
+  }
+  @keyframes reshoot-ring-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
 </style>
 </head>
 <body>
@@ -649,6 +660,24 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           l.setStyle({ color: c, fillColor: c });
         }
       });
+    },
+
+    setReshootHighlight: function(lat, lng) {
+      if (this._reshootMarker) { map.removeLayer(this._reshootMarker); this._reshootMarker = null; }
+      this._reshootMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          html: '<div class="reshoot-ring"></div>',
+          className: '',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14]
+        }),
+        zIndexOffset: 1200,
+        interactive: false
+      }).addTo(map);
+    },
+
+    clearReshootHighlight: function() {
+      if (this._reshootMarker) { map.removeLayer(this._reshootMarker); this._reshootMarker = null; }
     }
   };
 

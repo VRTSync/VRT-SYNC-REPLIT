@@ -50,6 +50,8 @@ export type LockPinSheetProps = {
   existingZoneNumbers?: number[];
   onDismiss: () => void;
   onSaved: (asset: any) => void;
+  initialLabel?: string;
+  initialDescription?: string;
 };
 
 export default function LockPinSheet({
@@ -62,6 +64,8 @@ export default function LockPinSheet({
   existingZoneNumbers = [],
   onDismiss,
   onSaved,
+  initialLabel,
+  initialDescription,
 }: LockPinSheetProps) {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
@@ -83,6 +87,7 @@ export default function LockPinSheet({
   }, [isZone, parentController, existingZoneNumbers, armedType, existingLabels]);
 
   const [label, setLabel] = useState(autoLabel);
+  const [description, setDescription] = useState(initialDescription ?? '');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
@@ -95,12 +100,17 @@ export default function LockPinSheet({
 
   useEffect(() => {
     if (visible) {
-      setLabel(autoLabel);
+      const generated = isZone && parentController
+        ? generateZoneLabel({ parentControllerKey: parentController.controllerKey, existingZoneNumbers }).label
+        : generateAutoLabel({ assetType: armedType, existingLabels });
+
+      setLabel(initialLabel ?? generated);
+      setDescription(initialDescription ?? '');
       setPhotoUri(null);
       setInlineError(null);
       setIsSaving(false);
     }
-  }, [visible, autoLabel]);
+  }, [visible, isZone, parentController, existingZoneNumbers, armedType, existingLabels, initialLabel, initialDescription]);
 
   const lockColor = fix.accuracy <= 5 ? LOCK_COLORS.green : LOCK_COLORS.yellow;
   const isYellowLock = fix.accuracy > 5;
@@ -151,19 +161,23 @@ export default function LockPinSheet({
         if (zoneNumber !== null) properties.zoneNumber = String(zoneNumber);
       }
 
+      if (description.trim()) {
+        properties.description = description.trim();
+      }
+
       const body: Record<string, unknown> = {
         communityId,
         assetType: armedType,
         label: trimmedLabel,
         latitude: fix.latitude,
         longitude: fix.longitude,
+        properties,
       };
 
       if (isZone) {
         body.featureRef = `mc_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
         body.tags = [];
         body.geometryType = 'point';
-        body.properties = properties;
       }
 
       const res = await apiRequest('POST', '/api/assets', body);
@@ -226,7 +240,7 @@ export default function LockPinSheet({
     } finally {
       setIsSaving(false);
     }
-  }, [label, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast, isZone, parentController, zoneNumber]);
+  }, [label, description, armedType, communityId, fix, photoUri, queryClient, onSaved, showToast, isZone, parentController, zoneNumber]);
 
   const canSave = label.trim().length > 0 && !isSaving;
 
@@ -312,6 +326,20 @@ export default function LockPinSheet({
                   <Text style={styles.inlineErrorText}>{inlineError}</Text>
                 </View>
               )}
+
+              <Text style={styles.fieldLabel}>Description (optional)</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                value={description}
+                onChangeText={(t) => setDescription(t.slice(0, 200))}
+                placeholder="Add notes..."
+                placeholderTextColor="#9ca3af"
+                maxLength={200}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+              <Text style={styles.charCount}>{description.length}/200</Text>
 
               <Text style={styles.fieldLabel}>Photo (optional)</Text>
               {photoUri ? (
@@ -503,6 +531,10 @@ const styles = StyleSheet.create({
   },
   textInputError: {
     borderColor: '#ef4444',
+  },
+  textArea: {
+    height: 80,
+    paddingTop: 10,
   },
   charCount: {
     fontSize: 11,

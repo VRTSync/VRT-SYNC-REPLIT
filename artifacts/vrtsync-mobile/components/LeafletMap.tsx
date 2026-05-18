@@ -90,6 +90,7 @@ type LeafletMapProps = {
   pendingPins?: PendingPinMarker[];
   mapTapEnabled?: boolean;
   onMapTap?: (latitude: number, longitude: number) => void;
+  reshootHighlight?: { latitude: number; longitude: number } | null;
 };
 
 const priorityColors: Record<string, string> = {
@@ -121,6 +122,7 @@ export default function LeafletMap({
   pendingPins = [],
   mapTapEnabled = false,
   onMapTap,
+  reshootHighlight = null,
 }: LeafletMapProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -353,6 +355,14 @@ export default function LeafletMap({
   useEffect(() => {
     sendCmd(mapTapEnabled ? 'enableMapTap' : 'disableMapTap');
   }, [mapTapEnabled, sendCmd]);
+
+  useEffect(() => {
+    if (reshootHighlight) {
+      sendCmd('setReshootHighlight', reshootHighlight.latitude, reshootHighlight.longitude);
+    } else {
+      sendCmd('clearReshootHighlight');
+    }
+  }, [reshootHighlight, sendCmd]);
 
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 

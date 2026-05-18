@@ -76,6 +76,9 @@ export type PinDropSheetProps = {
   onSave?: (assetId: string, label: string) => void;
   // MC7 general offline props
   onPinCreated?: (assetId: string | null, wasQueued: boolean) => void;
+  // Re-shoot pre-fill
+  initialLabel?: string;
+  initialDescription?: string;
 };
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -93,6 +96,8 @@ export default function PinDropSheet({
   existingZoneNumbers = [],
   onSave,
   onPinCreated,
+  initialLabel,
+  initialDescription,
 }: PinDropSheetProps) {
   const insets = useSafeAreaInsets();
   const { isOnline } = useOffline();
@@ -131,13 +136,13 @@ export default function PinDropSheet({
   // Reset form when sheet opens
   useEffect(() => {
     if (visible) {
-      setLabel(isMapCreatorMode ? computedAutoLabel : '');
-      setDescription('');
+      setLabel(isMapCreatorMode ? (initialLabel ?? computedAutoLabel) : (initialLabel ?? ''));
+      setDescription(initialDescription ?? '');
       setPhotoUri(null);
       setIsSaving(false);
       setError(null);
     }
-  }, [visible, computedAutoLabel, isMapCreatorMode]);
+  }, [visible, computedAutoLabel, isMapCreatorMode, initialLabel, initialDescription]);
 
   const pendingCount = pendingEntries.filter(
     (e: { communityId: string; state: string }) =>

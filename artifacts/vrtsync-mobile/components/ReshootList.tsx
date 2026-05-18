@@ -10,6 +10,7 @@ type ReshootAsset = {
   longitude: number | null;
   gpsAccuracy: number | null;
   version: number;
+  properties?: Record<string, string>;
 };
 
 type ReshootListProps = {
