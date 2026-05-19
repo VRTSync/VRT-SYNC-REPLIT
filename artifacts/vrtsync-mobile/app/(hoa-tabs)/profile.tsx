@@ -4,6 +4,7 @@ import {
   Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Updates from 'expo-updates';
 import { useAuth, getNotificationPreferences, setNotificationPreferences, type NotificationPreferences } from '@/client/contexts/AuthContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
@@ -210,6 +211,19 @@ export default function HoaProfileScreen() {
           </View>
         )}
 
+        <View style={styles.updateBadge}>
+          <Ionicons
+            name={Updates.isEmbeddedLaunch ? 'cube-outline' : 'cloud-done-outline'}
+            size={12}
+            color={Updates.isEmbeddedLaunch ? '#9ca3af' : '#25C1AC'}
+          />
+          <Text style={[styles.updateBadgeText, !Updates.isEmbeddedLaunch && styles.updateBadgeTextOta]}>
+            {Updates.isEmbeddedLaunch
+              ? 'Embedded build (no OTA applied)'
+              : `OTA · ${Updates.updateId?.slice(0, 8) ?? '—'}`}
+          </Text>
+        </View>
+
         {!confirmLogout ? (
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="hoa-logout-btn">
             <Ionicons name="log-out-outline" size={20} color="#f44336" />
@@ -383,4 +397,20 @@ const styles = StyleSheet.create({
   notifInfo: { flex: 1, marginRight: 12 },
   notifLabel: { fontSize: 15, fontWeight: '600' as const, color: '#1a1a1a' },
   notifDesc: { fontSize: 12, color: '#888', marginTop: 2 },
+  updateBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 5,
+    marginTop: 20,
+    marginBottom: 4,
+  },
+  updateBadgeText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    fontWeight: '500' as const,
+  },
+  updateBadgeTextOta: {
+    color: '#25C1AC',
+  },
 });
