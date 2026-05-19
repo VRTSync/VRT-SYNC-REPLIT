@@ -27,7 +27,8 @@
     "production": {
       "ios": {
         "appleId": "rmangel@vrtsync.com",
-        "appleTeamId": "WXT25AZD43"
+        "appleTeamId": "WXT25AZD43",
+        "ascAppId": "6760938002"
       }
     }
   }
