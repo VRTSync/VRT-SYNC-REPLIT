@@ -4,11 +4,11 @@ import {
   Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Updates from 'expo-updates';
 import { useAuth, getNotificationPreferences, setNotificationPreferences, type NotificationPreferences } from '@/client/contexts/AuthContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import AccountDetailsCard from '@/components/AccountDetailsCard';
+import OtaDiagnostic from '@/components/OtaDiagnostic';
 import Toast from '@/components/Toast';
 import { useToast } from '@/hooks/useToast';
 
@@ -195,18 +195,7 @@ export default function McProfileScreen() {
           </View>
         )}
 
-        <View style={styles.updateBadge}>
-          <Ionicons
-            name={Updates.isEmbeddedLaunch ? 'cube-outline' : 'cloud-done-outline'}
-            size={12}
-            color={Updates.isEmbeddedLaunch ? '#9ca3af' : '#25C1AC'}
-          />
-          <Text style={[styles.updateBadgeText, !Updates.isEmbeddedLaunch && styles.updateBadgeTextOta]}>
-            {Updates.isEmbeddedLaunch
-              ? 'Embedded build (no OTA applied)'
-              : `OTA · ${Updates.updateId?.slice(0, 8) ?? '—'}`}
-          </Text>
-        </View>
+        <OtaDiagnostic />
 
         {!confirmLogout ? (
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="mc-logout-btn">

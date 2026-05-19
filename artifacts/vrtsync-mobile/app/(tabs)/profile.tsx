@@ -4,12 +4,12 @@ import {
   ActivityIndicator, Switch, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Updates from 'expo-updates';
 import { useAuth, getNotificationPreferences, setNotificationPreferences, type NotificationPreferences } from '@/client/contexts/AuthContext';
 import StatusBarFill from '@/components/StatusBarFill';
 import { useCommunity } from '@/client/contexts/CommunityContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
 import AccountDetailsCard from '@/components/AccountDetailsCard';
+import OtaDiagnostic from '@/components/OtaDiagnostic';
 import Toast from '@/components/Toast';
 import { useToast } from '@/hooks/useToast';
 
@@ -367,18 +367,7 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      <View style={styles.updateBadge}>
-        <Ionicons
-          name={Updates.isEmbeddedLaunch ? 'cube-outline' : 'cloud-done-outline'}
-          size={12}
-          color={Updates.isEmbeddedLaunch ? '#9ca3af' : '#25C1AC'}
-        />
-        <Text style={[styles.updateBadgeText, !Updates.isEmbeddedLaunch && styles.updateBadgeTextOta]}>
-          {Updates.isEmbeddedLaunch
-            ? 'Embedded build (no OTA applied)'
-            : `OTA · ${Updates.updateId?.slice(0, 8) ?? '—'}`}
-        </Text>
-      </View>
+      <OtaDiagnostic />
 
       {!confirmLogout ? (
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} testID="logout-btn">
@@ -691,20 +680,4 @@ const styles = StyleSheet.create({
   notifInfo: { flex: 1, marginRight: 12 },
   notifLabel: { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
   notifDesc: { fontSize: 12, color: '#888', marginTop: 2 },
-  updateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    marginTop: 20,
-    marginBottom: 4,
-  },
-  updateBadgeText: {
-    fontSize: 11,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  updateBadgeTextOta: {
-    color: '#25C1AC',
-  },
 });
