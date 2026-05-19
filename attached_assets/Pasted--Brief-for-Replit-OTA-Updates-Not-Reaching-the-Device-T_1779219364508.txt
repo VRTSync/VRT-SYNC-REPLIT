@@ -1,0 +1,257 @@
+# Brief for Replit — OTA Updates Not Reaching the Device
+
+## TL;DR
+
+OTA pushes are silently going nowhere because (a) **no `channel` is set on any build profile** in `artifacts/vrtsync-mobile/eas.json`, and (b) there are **two different EAS `projectId`s in the repo** — if `eas update` is being run from the repo root, it's publishing to the wrong project entirely. The fix is config-level, not code-level. Concrete changes and verification steps below.
+
+---
+
+## Symptom
+
+After publishing OTA updates, none of the changes appear on the installed iPhone build. App opens fine, looks the same as before. No errors in the device logs about update fetching. The EAS dashboard may or may not show published updates depending on which project / channel the publish hit.
+
+---
+
+## Root cause #1 — No channel configured
+
+EAS Update routes updates from a **branch** (where you publish) to a **channel** (what the installed app subscribes to) via an explicit channel-to-branch mapping. If the build was made without a `channel` field on its profile, the installed app has no channel to listen on, and no update will ever reach it regardless of how many times you run `eas update`.
+
+**Evidence — `artifacts/vrtsync-mobile/eas.json` (current):**
+
+```json
+{
+  "cli": { "version": ">= 14.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": { "simulator": false }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": { "buildConfiguration": "Release" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "rmangel@vrtsync.com",
+        "appleTeamId": "WXT25AZD43"
+      }
+    }
+  }
+}
+```
+
+Zero `channel` declarations. Every build that came out of this file is OTA-deaf.
+
+---
+
+## Root cause #2 — Two different EAS project IDs in the repo
+
+There are **two `app.json` files** with **two different EAS `projectId`s**:
+
+| File | `projectId` |
+|------|---|
+| `/app.json` (repo root) | `a291a74a-6233-4a2a-bd89-a568cbe8a1b3` |
+| `/artifacts/vrtsync-mobile/app.json` | `0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2` |
+
+The mobile app.json is the correct one — its `updates.url` (`https://u.expo.dev/0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2`) matches its projectId, so the installed app is checking the `0e349162-…` project for updates.
+
+**If `eas update` is being run from the repo root** (where `app.json` says `a291a74a-…`), it publishes to a completely different EAS project that the installed app never checks. Updates go into the void.
+
+The root `app.json` looks like an orphan / legacy file. It should either be deleted or fixed so there's a single source of truth.
+
+---
+
+## Diagnostic checks to run first (5 minutes)
+
+Before applying fixes, confirm the symptoms by checking these:
+
+### 1. Where is `eas update` being run from?
+Check the deploy script or whatever command publishes updates. The command **must** be invoked with the working directory set to `artifacts/vrtsync-mobile/`. If it's running from the repo root, every prior publish has gone to project `a291a74a-…` (orphan) instead of `0e349162-…` (real).
+
+### 2. Is `eas update` being run at all?
+Some teams only run `eas build` after code changes and assume that triggers an OTA. It doesn't. `eas build` makes a new binary; `eas update` ships JS to existing binaries. Confirm both commands exist in the workflow.
+
+### 3. EAS dashboard inspection
+Go to https://expo.dev → project `0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2` → **Updates** tab. Check:
+- Are there any published updates at all?
+- What channel are they on?
+- What's the timestamp of the most recent publish?
+
+Then go to the **Channels** tab. Check:
+- Does a `production` channel exist?
+- Is it mapped to a branch?
+
+If updates exist on a channel that isn't mapped to a branch, or there's no channel at all, that confirms the routing is broken.
+
+### 4. On the device — dev menu
+On the iPhone with the installed build, open the Expo developer menu (shake the phone or three-finger tap). Look at the **Updates** section. It will show:
+- The channel the app is subscribed to (likely empty, `default`, or missing)
+- The most recent update fetched (likely "none" or the original embedded bundle)
+- The runtimeVersion the app is running
+
+If channel is empty / default / not what you expect, that's the proof.
+
+---
+
+## The fix — exact changes
+
+### Change 1 — `artifacts/vrtsync-mobile/eas.json`
+
+Add `channel` to each build profile:
+
+```json
+{
+  "cli": { "version": ">= 14.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "ios": { "simulator": false }
+    },
+    "production": {
+      "autoIncrement": true,
+      "channel": "production",
+      "ios": { "buildConfiguration": "Release" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "rmangel@vrtsync.com",
+        "appleTeamId": "WXT25AZD43"
+      }
+    }
+  }
+}
+```
+
+### Change 2 — Delete or correct the root `/app.json`
+
+The root file currently contains:
+
+```json
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "a291a74a-6233-4a2a-bd89-a568cbe8a1b3"
+      }
+    }
+  }
+}
+```
+
+Either:
+- **Delete it entirely** (preferred — the mobile app's app.json is the source of truth), or
+- **Replace the `projectId` with `0e349162-e3cf-4eb1-bfb4-f2eb4574b0c2`** so even accidental root-level commands hit the right project.
+
+Same goes for the root `/eas.json` — if no one is running EAS commands from the root, delete it. Two eas.json files with different `cli.version` constraints is asking for confusion.
+
+### Change 3 — Set up channels and branches in EAS (one-time)
+
+From `artifacts/vrtsync-mobile/`:
+
+```bash
+# Create the branches you'll publish to
+eas branch:create production
+eas branch:create preview
+eas branch:create development
+
+# Create the channels (one per build profile)
+eas channel:create production
+eas channel:create preview
+eas channel:create development
+
+# Map each channel to its branch
+eas channel:edit production --branch production
+eas channel:edit preview     --branch preview
+eas channel:edit development --branch development
+```
+
+### Change 4 — Rebuild once
+
+Existing installed builds were made *without* channel association. They will not retroactively start receiving updates — they have to be replaced by a fresh build that includes the channel.
+
+```bash
+cd artifacts/vrtsync-mobile
+eas build --profile production --platform ios
+```
+
+When that build finishes, install it on the device (TestFlight or internal distribution). This becomes the new baseline.
+
+### Change 5 — The new publish flow
+
+After each code change merged to whatever branch you treat as production:
+
+```bash
+cd artifacts/vrtsync-mobile
+eas update --branch production --message "Short description of what changed"
+```
+
+That's it. The installed app will pick up the update on its next two cold starts (first launch downloads the bundle, second launch applies it — kill the app fully between launches, don't just background it).
+
+---
+
+## Verification — how to confirm the fix worked
+
+1. After running the new `eas build` and installing it, open the Expo dev menu on the device. The **Updates** section should now show:
+   - Channel: `production`
+   - Branch: `production`
+   - Last update: the embedded bundle ID
+
+2. From `artifacts/vrtsync-mobile/`, run a trivial test publish:
+   ```bash
+   eas update --branch production --message "Test publish — verify OTA routing"
+   ```
+   Confirm in the EAS dashboard that the publish shows up under the `production` channel.
+
+3. On the device: kill the app fully (swipe up, swipe off). Reopen — it downloads the update silently. Kill again, reopen — the new code is now active. Check the dev menu Updates section; it should show the new update ID matching what the dashboard reported.
+
+4. As a content check, include a visible change in the test publish (e.g., a placeholder text tweak in a screen header). Confirm the change appears after the two-restart cycle. This proves the entire pipeline works end-to-end.
+
+---
+
+## Why the current Map Creator changes haven't appeared
+
+If MC-UX-1 implementation work has been done in the repo but `eas update` hasn't been run after the channel/projectId fix, none of it will reach the device. The device is still running the originally-installed bundle from whenever the current build was created, regardless of what code is sitting in main.
+
+The order of operations after the fix above is:
+1. Confirm channels are wired (steps 1–3).
+2. Rebuild once and install (step 4) — this gets the device onto a channel.
+3. From that point on, every code change → `eas update` → two restarts on the device → it's live.
+
+Without that one rebuild, all OTA pushes will continue to silently fail no matter how many times Replit publishes.
+
+---
+
+## Quick reference — common gotchas after the fix
+
+- `eas update` does **not** ship native module changes. If a code change adds a new native dep (anything in `package.json` that needs autolinking — `expo-` packages with native code, react-native libraries with iOS/Android folders), a new `eas build` is required, not just an `eas update`.
+- `runtimeVersion` in app.json is currently `{ "policy": "appVersion" }` with `version: "1.0.0"`. OTA updates only ship to builds with a matching runtime version. If anyone bumps `version` in app.json, every old install stops receiving updates until a new build matches. Don't bump version casually.
+- `updates.checkOnLaunch` is set to `"ALWAYS"` — good. The app checks for updates on every cold launch.
+- Background/foreground does **not** trigger an update check. The app must be fully killed and reopened.
+- Dev mode (the Metro-served dev client used for local development) does **not** receive OTA updates by design. OTA only works on EAS-built binaries.
+
+---
+
+## What to send back if the fix doesn't work
+
+If after all the above, OTA still isn't reaching the device, please collect:
+- Output of `eas channel:list` from `artifacts/vrtsync-mobile/`
+- Output of `eas branch:list` from same
+- Screenshot of the Updates panel in the device's Expo dev menu
+- The exact `eas update` command being run and from which directory
+- The dashboard URL of the most recent published update
+
+That tells us whether the publish is reaching EAS at all and whether the device is checking the right channel — from there it's a narrow set of remaining possibilities.
