@@ -1013,8 +1013,8 @@ export default function McWorkspaceScreen() {
           initialBounds={boundsData?.bounds ?? null}
           controllerMarkers={controllerMarkers}
           zoneMarkers={zoneMarkers}
-          showControllers={controllerMarkers.length > 0}
-          showZones={zoneMarkers.length > 0}
+          showControllers={activeLayer === 'irrigation' && controllerMarkers.length > 0}
+          showZones={activeLayer === 'irrigation' && zoneMarkers.length > 0}
           userLocationHalo={userLocationHalo}
           pendingPins={pendingPinMarkers}
           mapTapEnabled={mapTapEnabled}
