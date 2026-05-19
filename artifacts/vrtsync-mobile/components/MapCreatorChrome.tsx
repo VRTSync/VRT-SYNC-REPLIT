@@ -212,7 +212,7 @@ export default function MapCreatorChrome({
   return (
     <>
       {/* Layer pill bar */}
-      <View style={[styles.pillBar, { top: insets.top + 8 }]}>
+      <View style={[styles.pillBar, { top: 8 }]}>
         <View style={styles.pillGroup}>
           {MC_LAYERS.map((layer) => {
             const active = layer.key === activeLayer;
