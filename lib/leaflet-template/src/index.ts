@@ -140,14 +140,21 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 (function() {
   var map = L.map('map', {
     zoomControl: false,
-    attributionControl: false
+    attributionControl: false,
+    maxZoom: 23
   }).setView([39.8283, -98.5795], 4);
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 20
-  }).addTo(map);
+  var streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxNativeZoom: 19,
+    maxZoom: 23
+  });
+  var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxNativeZoom: 23,
+    maxZoom: 23
+  });
+  streetLayer.addTo(map);
 
   var geoLayers = {};
   var layerCache = {};
@@ -506,6 +513,16 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         if (show) { if (!map.hasLayer(cg)) map.addLayer(cg); }
         else { if (map.hasLayer(cg)) map.removeLayer(cg); }
       });
+    },
+
+    setSatellite: function(on) {
+      if (on) {
+        if (map.hasLayer(streetLayer)) map.removeLayer(streetLayer);
+        if (!map.hasLayer(satelliteLayer)) satelliteLayer.addTo(map);
+      } else {
+        if (map.hasLayer(satelliteLayer)) map.removeLayer(satelliteLayer);
+        if (!map.hasLayer(streetLayer)) streetLayer.addTo(map);
+      }
     },
 
     setCommunityOutline: function(geojson, style) {

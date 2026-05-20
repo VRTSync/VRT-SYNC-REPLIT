@@ -1035,6 +1035,7 @@ export default function McWorkspaceScreen() {
           targetRegion={targetRegion}
           reshootHighlight={reshootHighlight}
           accuracyRing={savedRing}
+          showSatelliteToggle
         />
 
         {/* MC4/MC6/MC7 overlays — hidden when review mode is active */}

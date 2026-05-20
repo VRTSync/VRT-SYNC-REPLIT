@@ -92,6 +92,7 @@ type LeafletMapProps = {
   onMapTap?: (latitude: number, longitude: number) => void;
   reshootHighlight?: { latitude: number; longitude: number } | null;
   accuracyRing?: { latitude: number; longitude: number; accuracyM: number; color?: string } | null;
+  showSatelliteToggle?: boolean;
 };
 
 const priorityColors: Record<string, string> = {
@@ -125,7 +126,9 @@ export default function LeafletMap({
   onMapTap,
   reshootHighlight = null,
   accuracyRing = null,
+  showSatelliteToggle = false,
 }: LeafletMapProps) {
+  const [satelliteMode, setSatelliteMode] = useState(false);
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const mapReadyRef = useRef(false);
@@ -374,6 +377,10 @@ export default function LeafletMap({
     }
   }, [accuracyRing, sendCmd]);
 
+  useEffect(() => {
+    sendCmd('setSatellite', satelliteMode);
+  }, [satelliteMode, sendCmd]);
+
   const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
 
   const iframeSrcDoc = useMemo(() => htmlContent, [htmlContent]);
@@ -461,14 +468,33 @@ export default function LeafletMap({
     <View style={styles.container}>
       {renderMap()}
 
-      <View style={styles.legend}>
-        {Object.entries(priorityColors).map(([label, color]) => (
-          <View key={label} style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: color }]} />
-            <Text style={styles.legendText}>{label}</Text>
-          </View>
-        ))}
-      </View>
+      {!showSatelliteToggle && (
+        <View style={styles.legend}>
+          {Object.entries(priorityColors).map(([label, color]) => (
+            <View key={label} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              <Text style={styles.legendText}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {showSatelliteToggle && (
+        <TouchableOpacity
+          style={[styles.satelliteBtn, satelliteMode && styles.satelliteBtnActive]}
+          onPress={() => setSatelliteMode(v => !v)}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name="earth"
+            size={14}
+            color={satelliteMode ? '#fff' : '#0C1D31'}
+          />
+          <Text style={[styles.satelliteBtnText, satelliteMode && styles.satelliteBtnTextActive]}>
+            {satelliteMode ? 'Street' : 'Satellite'}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -495,4 +521,32 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
   legendText: { fontSize: 10, color: '#666', textTransform: 'capitalize' },
+  satelliteBtn: {
+    position: 'absolute',
+    bottom: 16,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  satelliteBtnActive: {
+    backgroundColor: '#0C1D31',
+  },
+  satelliteBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0C1D31',
+  },
+  satelliteBtnTextActive: {
+    color: '#fff',
+  },
 });
