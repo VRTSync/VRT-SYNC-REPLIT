@@ -30,7 +30,7 @@ export const CONTROLLER_COLORS: string[] = [
 export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -151,7 +151,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     maxZoom: 23
   });
   var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxNativeZoom: 23,
+    maxNativeZoom: 19,
     maxZoom: 23
   });
   streetLayer.addTo(map);
