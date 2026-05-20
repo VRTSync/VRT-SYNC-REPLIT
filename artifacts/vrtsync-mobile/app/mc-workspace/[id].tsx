@@ -24,7 +24,7 @@ import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
 import { usePinQueue } from '@/client/contexts/PinQueueContext';
 import { type PendingPinEntry } from '@/lib/pinCreationQueue';
 import LockPinSheet from '@/components/LockPinSheet';
-import type { Fix, CaptureMode } from '@/hooks/useHighAccuracyLocation';
+import type { Fix, CaptureMode, LockState } from '@/hooks/useHighAccuracyLocation';
 import { MC_UX_V2 } from '@/lib/featureFlags';
 
 // --- Types ---
@@ -76,6 +76,22 @@ const LOCK_COLORS: Record<string, string> = {
 
 const LOCK_LABELS: Record<string, string> = {
   red: 'No GPS',
+  yellow: 'Acquiring',
+  green: 'Locked',
+};
+
+type GpsDisplayState = 'off' | 'acquiring' | 'yellow' | 'green';
+
+const GPS_DISPLAY_COLOR: Record<GpsDisplayState, string> = {
+  off: '#F44336',
+  acquiring: '#FFC107',
+  yellow: '#FFC107',
+  green: '#4CAF50',
+};
+
+const GPS_DISPLAY_LABEL: Record<GpsDisplayState, string> = {
+  off: 'No GPS',
+  acquiring: 'Acquiring…',
   yellow: 'Acquiring',
   green: 'Locked',
 };
@@ -518,7 +534,16 @@ export default function McWorkspaceScreen() {
       .join(' · ');
   }, [typeCounts]);
 
-  const haloColor = LOCK_COLORS[gps.fix?.lockState ?? 'red'] ?? '#F44336';
+  const gpsDisplayState: GpsDisplayState =
+    (gps.permissionDenied || !gps.isWatching) ? 'off' :
+    gps.fix == null ? 'acquiring' :
+    gps.fix.lockState === 'green' ? 'green' : 'yellow';
+
+  const effectiveLockState: LockState =
+    gpsDisplayState === 'green' ? 'green' :
+    gpsDisplayState === 'off' ? 'red' : 'yellow';
+
+  const haloColor = GPS_DISPLAY_COLOR[gpsDisplayState];
 
   const userLocationHalo = useMemo(() => {
     if (!armedType || gps.fix == null) {
@@ -955,7 +980,7 @@ export default function McWorkspaceScreen() {
             <View style={[styles.lockPill, { backgroundColor: haloColor + '22' }]}>
               <View style={[styles.lockDot, { backgroundColor: haloColor }]} />
               <Text style={[styles.lockLabel, { color: haloColor }]}>
-                {LOCK_LABELS[gps.fix?.lockState ?? 'red']}
+                {GPS_DISPLAY_LABEL[gpsDisplayState]}
               </Text>
             </View>
             {SyncChip}
@@ -1061,7 +1086,7 @@ export default function McWorkspaceScreen() {
                     setAddingControllerForZone(false);
                   }
                 }}
-                lockState={gps.fix?.lockState ?? 'red'}
+                lockState={effectiveLockState}
                 typeCounts={typeCounts}
                 isLocked={isLocked}
                 hasControllers={controllers.length > 0}
@@ -1206,7 +1231,7 @@ export default function McWorkspaceScreen() {
               {armedType === 'zone' && selectedController
                 ? `in Controller ${selectedController.controllerKey}. `
                 : ''}
-              {(gps.fix?.lockState ?? 'red') === 'red' ? 'No GPS signal — move outdoors.' : gps.fix?.lockState === 'yellow' ? 'Acquiring GPS lock…' : 'GPS locked — ready to place.'}
+              {gpsDisplayState === 'off' ? 'No GPS signal — move outdoors.' : gpsDisplayState === 'green' ? 'GPS locked — ready to place.' : 'Acquiring GPS lock…'}
             </Text>
           )}
 
