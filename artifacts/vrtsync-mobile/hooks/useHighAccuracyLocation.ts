@@ -135,6 +135,7 @@ export function useHighAccuracyLocation(
   const watcherRef = useRef<Location.LocationSubscription | null>(null);
   const isWatchingRef = useRef(false);
   const lastFixTimeRef = useRef<number | null>(null);
+  const permissionDeniedRef = useRef(false);
 
   const computeFix = useCallback(
     (buffer: Fix[]): FixSnapshot | null => {
@@ -173,6 +174,10 @@ export function useHighAccuracyLocation(
   // without needing to restart the subscription when captureMode changes.
   const computeFixRef = useRef(computeFix);
   useEffect(() => { computeFixRef.current = computeFix; }, [computeFix]);
+
+  // Stable ref to start() so the AppState handler can re-check permissions
+  // without adding start to the effect dependency array.
+  const startRef = useRef<() => Promise<void>>(async () => {});
 
   const outlierAccuracyMaxRef = useRef(outlierAccuracyMax);
   useEffect(() => { outlierAccuracyMaxRef.current = outlierAccuracyMax; }, [outlierAccuracyMax]);
@@ -231,14 +236,20 @@ export function useHighAccuracyLocation(
   const start = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
+      permissionDeniedRef.current = true;
       setState((prev) => ({ ...prev, permissionDenied: true, isWatching: false }));
       return;
     }
 
+    permissionDeniedRef.current = false;
     setState((prev) => ({ ...prev, permissionDenied: false, isWatching: true }));
     isWatchingRef.current = true;
     await startWatcher();
   }, [startWatcher]);
+
+  // Keep startRef in sync so the AppState handler can call start() without
+  // listing it as a dependency (start is stable but this is safer than closure capture).
+  startRef.current = start;
 
   const stop = useCallback(() => {
     if (watcherRef.current) {
@@ -381,9 +392,16 @@ export function useHighAccuracyLocation(
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
-      if (nextState === 'active' && isWatchingRef.current && !watcherRef.current) {
-        await startWatcher();
-      } else if (nextState !== 'active' && watcherRef.current) {
+      if (nextState === 'active') {
+        if (permissionDeniedRef.current) {
+          // User may have just granted location in Settings — re-run the full
+          // start() path so the permission check fires again and the watcher
+          // starts cleanly if access was granted.
+          await startRef.current();
+        } else if (isWatchingRef.current && !watcherRef.current) {
+          await startWatcher();
+        }
+      } else if (watcherRef.current) {
         watcherRef.current.remove();
         watcherRef.current = null;
       }

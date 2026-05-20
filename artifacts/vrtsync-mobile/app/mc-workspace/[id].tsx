@@ -972,6 +972,19 @@ export default function McWorkspaceScreen() {
         {isLocked && <View style={styles.headerSpacer} />}
       </View>
 
+      {/* GPS permission denied banner */}
+      {gps.permissionDenied && !isLocked && (
+        <View style={styles.permissionBanner}>
+          <Ionicons name="location-outline" size={16} color="#92400e" />
+          <Text style={styles.permissionBannerText}>
+            Location access is off. GPS is required to place assets.
+          </Text>
+          <TouchableOpacity onPress={gps.openSettings} style={styles.permissionBannerBtn} activeOpacity={0.8}>
+            <Text style={styles.permissionBannerBtnText}>Open Settings</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Locked banner (MC8) */}
       {isLocked && (
         <View style={styles.lockedBanner}>
@@ -1473,6 +1486,33 @@ const styles = StyleSheet.create({
     color: '#25C1AC',
   },
   reviewToggleTextActive: {
+    color: '#fff',
+  },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#fde68a',
+  },
+  permissionBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400e',
+    lineHeight: 18,
+  },
+  permissionBannerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: '#d97706',
+    borderRadius: 8,
+  },
+  permissionBannerBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: '#fff',
   },
   lockedBanner: {
