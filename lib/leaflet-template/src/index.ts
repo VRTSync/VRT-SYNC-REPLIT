@@ -160,7 +160,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   var layerCache = {};
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
-  var ctrlLayer = L.layerGroup().addTo(map);
+  var ctrlLayer = L.layerGroup();
   var pendingPinsLayer = L.layerGroup().addTo(map);
   var controllerClusterGroups = {};
   var userLocMarker = null;
@@ -210,7 +210,6 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   function getOrCreateClusterGroup(controllerId, color) {
     if (!controllerClusterGroups[controllerId]) {
       controllerClusterGroups[controllerId] = makeClusterGroup(color || '#6b7280');
-      map.addLayer(controllerClusterGroups[controllerId]);
     }
     return controllerClusterGroups[controllerId];
   }

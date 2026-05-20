@@ -390,7 +390,6 @@ PortalRouter.register('map', async function (container) {
           }
         });
         loadCommunity(community.id);
-        pushIrrigationToIframe();
       } else if (msg.type === 'viewAssetDetail') {
         handleAssetDetail(msg.data);
       }
