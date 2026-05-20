@@ -163,16 +163,26 @@ export default function PinDropSheet({
     setError(null);
   }, []);
 
-  // ─── Photo handlers (MC7 general mode) ────────────────────────────────────
+  // ─── Photo handlers (shared by both modes) ────────────────────────────────
   const handlePickPhoto = useCallback(async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      showToast('Camera access is required to take photos.', 'error');
+      return;
+    }
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
-  }, []);
+  }, [showToast]);
 
   const handlePickFromLibrary = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showToast('Photo library access is required to select photos.', 'error');
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
-  }, []);
+  }, [showToast]);
 
   // ─── Save: Map Creator mode (MC6) ─────────────────────────────────────────
   const handleSaveMapCreator = async () => {
@@ -206,6 +216,32 @@ export default function PinDropSheet({
       const res = await apiRequest('POST', '/api/assets', body);
       const asset = await res.json();
       if (!asset?.id) throw new Error(asset?.error || 'Unexpected server response');
+
+      if (photoUri) {
+        try {
+          const apiUrl = getApiUrl();
+          const presignRes = await fetch(`${apiUrl}/api/objects/upload`, { method: 'POST', credentials: 'include' });
+          if (presignRes.ok) {
+            const { uploadURL } = await presignRes.json();
+            if (Platform.OS === 'web') {
+              const blob = await fetch(photoUri).then((r) => r.blob());
+              await fetch(uploadURL, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+            } else {
+              await FileSystem.uploadAsync(uploadURL, photoUri, {
+                httpMethod: 'PUT',
+                uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+                headers: { 'Content-Type': 'image/jpeg' },
+              });
+            }
+            await apiRequest('POST', `/api/assets/${asset.id}/attachments`, {
+              uploadURL,
+              idempotencyKey: `mc_photo_${asset.id}_${Date.now()}`,
+            });
+          }
+        } catch {
+          showToast('Pin saved, but photo failed to upload.', 'error');
+        }
+      }
 
       queryClient.invalidateQueries({ queryKey: [`/api/communities/${communityId}/assets`] });
       queryClient.invalidateQueries({ queryKey: [`/api/communities/${communityId}/controllers`] });
@@ -331,6 +367,7 @@ export default function PinDropSheet({
 
   if (isMapCreatorMode) {
     return (
+      <>
       <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
         <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
@@ -392,6 +429,32 @@ export default function PinDropSheet({
               />
             </View>
 
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Photo (optional)</Text>
+              {photoUri ? (
+                <View style={styles.photoPreviewRow}>
+                  <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    <Text style={styles.removePhotoBtnText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.photoButtons}>
+                  {Platform.OS !== 'web' && (
+                    <TouchableOpacity style={styles.photoBtn} onPress={handlePickPhoto} activeOpacity={0.7}>
+                      <Ionicons name="camera-outline" size={18} color="#25C1AC" />
+                      <Text style={styles.photoBtnText}>Camera</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.photoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
+                    <Ionicons name="images-outline" size={18} color="#25C1AC" />
+                    <Text style={styles.photoBtnText}>Library</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
             <View style={styles.coordRow}>
               <Ionicons name="location-outline" size={14} color="#9ca3af" />
               <Text style={styles.coordText}>
@@ -419,6 +482,8 @@ export default function PinDropSheet({
           </View>
         </View>
       </Modal>
+      <Toast visible={toast.visible} message={toast.message} type={toast.type} toastKey={toast.key} />
+      </>
     );
   }
 
