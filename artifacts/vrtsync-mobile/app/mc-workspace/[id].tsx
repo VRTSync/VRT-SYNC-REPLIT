@@ -598,11 +598,11 @@ export default function McWorkspaceScreen() {
   const [isCaptureRunning, setIsCaptureRunning] = useState(false);
   const [captureProgress, setCaptureProgress] = useState(0);
   const [captureSamplesCount, setCaptureSamplesCount] = useState(0);
-  const [captureSecondsLeft, setCaptureSecondsLeft] = useState(15);
+  const [captureSecondsLeft, setCaptureSecondsLeft] = useState(30);
   const [captureTimeoutCount, setCaptureTimeoutCount] = useState(0);
   const captureCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const CAPTURE_TARGET_SAMPLES = 25;
-  const CAPTURE_TIMEOUT_S = 15;
+  const CAPTURE_TARGET_SAMPLES = 15;
+  const CAPTURE_TIMEOUT_S = 30;
 
   const handleCaptureHere = useCallback(async (mode: CaptureMode) => {
     if (isCaptureRunning || !armedType) return;
@@ -638,7 +638,7 @@ export default function McWorkspaceScreen() {
       if ('aborted' in result) {
         const msgs: Record<string, string> = {
           moved: 'Hold steady — you moved during capture.',
-          timeout: 'Capture timed out. Check GPS signal.',
+          timeout: 'Capture timed out. Hold still and try again, or switch to Canopy mode.',
           permission: 'Location permission required.',
         };
         showToast(msgs[result.aborted] ?? 'Capture aborted', 'error');

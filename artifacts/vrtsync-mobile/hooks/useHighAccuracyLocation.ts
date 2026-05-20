@@ -71,8 +71,8 @@ const CANOPY_GREEN = 5;
 const CANOPY_YELLOW = 8;
 const CANOPY_DRIFT = 1.5;
 
-const CAPTURE_TARGET_SAMPLES = 25;
-const CAPTURE_TIMEOUT_MS = 15_000;
+const CAPTURE_TARGET_SAMPLES = 15;
+const CAPTURE_TIMEOUT_MS = 30_000;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
