@@ -79,6 +79,8 @@ export type PinDropSheetProps = {
   // Re-shoot pre-fill
   initialLabel?: string;
   initialDescription?: string;
+  // When set, fetches and shows existing attachments (edit mode)
+  existingAssetId?: string;
 };
 
 // ─── Component ─────────────────────────────────────────────────────────────
@@ -98,6 +100,7 @@ export default function PinDropSheet({
   onPinCreated,
   initialLabel,
   initialDescription,
+  existingAssetId,
 }: PinDropSheetProps) {
   const insets = useSafeAreaInsets();
   const { isOnline } = useOffline();
@@ -127,6 +130,7 @@ export default function PinDropSheet({
   const [generalAssetType, setGeneralAssetType] = useState<GeneralAssetKey>('tree');
   const [description, setDescription] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error'; key: number }>({
@@ -139,10 +143,29 @@ export default function PinDropSheet({
       setLabel(isMapCreatorMode ? (initialLabel ?? computedAutoLabel) : (initialLabel ?? ''));
       setDescription(initialDescription ?? '');
       setPhotoUri(null);
+      setExistingPhotoUrl(null);
       setIsSaving(false);
       setError(null);
     }
   }, [visible, computedAutoLabel, isMapCreatorMode, initialLabel, initialDescription]);
+
+  // Fetch existing attachments when editing an existing asset
+  useEffect(() => {
+    if (!visible || !existingAssetId) return;
+    let cancelled = false;
+    const apiBase = getApiUrl();
+    apiRequest('GET', `/api/assets/${existingAssetId}/attachments`)
+      .then((res) => res.json())
+      .then((data: Array<{ url: string }>) => {
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          const rawUrl = data[0].url;
+          const absUrl = rawUrl.startsWith('/') ? `${apiBase}${rawUrl}` : rawUrl;
+          setExistingPhotoUrl(absUrl);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, existingAssetId]);
 
   const pendingCount = pendingEntries.filter(
     (e: { communityId: string; state: string }) =>
@@ -159,6 +182,7 @@ export default function PinDropSheet({
     setGeneralAssetType('tree');
     setDescription('');
     setPhotoUri(null);
+    setExistingPhotoUrl(null);
     setIsSaving(false);
     setError(null);
   }, []);
@@ -431,13 +455,20 @@ export default function PinDropSheet({
 
             <View style={styles.field}>
               <Text style={styles.fieldLabel}>Photo (optional)</Text>
-              {photoUri ? (
+              {(photoUri || existingPhotoUrl) ? (
                 <View style={styles.photoPreviewRow}>
-                  <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                    <Text style={styles.removePhotoBtnText}>Remove</Text>
-                  </TouchableOpacity>
+                  <Image source={{ uri: photoUri ?? existingPhotoUrl! }} style={styles.photoPreview} />
+                  {photoUri ? (
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                      <Text style={styles.removePhotoBtnText}>Remove</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
+                      <Ionicons name="camera-outline" size={18} color="#25C1AC" />
+                      <Text style={[styles.removePhotoBtnText, { color: '#25C1AC' }]}>Replace</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
                 <View style={styles.photoButtons}>
@@ -541,13 +572,20 @@ export default function PinDropSheet({
               </ScrollView>
 
               <Text style={styles.fieldLabelGeneral}>Photo (optional)</Text>
-              {photoUri ? (
+              {(photoUri || existingPhotoUrl) ? (
                 <View style={styles.photoPreviewRow}>
-                  <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-                  <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
-                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                    <Text style={styles.removePhotoBtnText}>Remove</Text>
-                  </TouchableOpacity>
+                  <Image source={{ uri: photoUri ?? existingPhotoUrl! }} style={styles.photoPreview} />
+                  {photoUri ? (
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                      <Text style={styles.removePhotoBtnText}>Remove</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={styles.removePhotoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
+                      <Ionicons name="camera-outline" size={18} color="#25C1AC" />
+                      <Text style={[styles.removePhotoBtnText, { color: '#25C1AC' }]}>Replace</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : (
                 <View style={styles.photoButtons}>

@@ -98,6 +98,7 @@ export default function LockPinSheet({
   const [label, setLabel] = useState(autoLabel);
   const [description, setDescription] = useState(initialDescription ?? '');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error'; key: number }>({
@@ -116,10 +117,28 @@ export default function LockPinSheet({
       setLabel(initialLabel ?? generated);
       setDescription(initialDescription ?? '');
       setPhotoUri(null);
+      setExistingPhotoUrl(null);
       setInlineError(null);
       setIsSaving(false);
     }
   }, [visible, isZone, parentController, existingZoneNumbers, armedType, existingLabels, initialLabel, initialDescription]);
+
+  useEffect(() => {
+    if (!visible || !existingAssetId) return;
+    let cancelled = false;
+    const apiBase = getApiUrl();
+    apiRequest('GET', `/api/assets/${existingAssetId}/attachments`)
+      .then((res) => res.json())
+      .then((data: Array<{ url: string }>) => {
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          const rawUrl = data[0].url;
+          const absUrl = rawUrl.startsWith('/') ? `${apiBase}${rawUrl}` : rawUrl;
+          setExistingPhotoUrl(absUrl);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, existingAssetId]);
 
   const lockColor = fix.accuracy <= 5 ? LOCK_COLORS.green : LOCK_COLORS.yellow;
   const isYellowLock = fix.accuracy > 5;
@@ -192,6 +211,35 @@ export default function LockPinSheet({
         }
 
         const updated = await patchRes.json();
+
+        if (photoUri) {
+          try {
+            const apiUrl = getApiUrl();
+            const presignRes = await fetch(`${apiUrl}/api/objects/upload`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            if (presignRes.ok) {
+              const { uploadURL } = await presignRes.json();
+              if (Platform.OS === 'web') {
+                const blob = await fetch(photoUri).then((r) => r.blob());
+                await fetch(uploadURL, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+              } else {
+                await FileSystem.uploadAsync(uploadURL, photoUri, {
+                  httpMethod: 'PUT',
+                  headers: { 'Content-Type': 'image/jpeg' },
+                });
+              }
+              const idempotencyKey = `${existingAssetId}_photo_${Date.now()}`;
+              await apiRequest('POST', `/api/assets/${existingAssetId}/attachments`, {
+                uploadURL,
+                idempotencyKey,
+              });
+            }
+          } catch {
+          }
+        }
+
         queryClient.invalidateQueries({ queryKey: ['/api/map-layers', { communityId }] });
         queryClient.invalidateQueries({ queryKey: ['/api/assets', { communityId }] });
         onSaved(updated);
@@ -437,18 +485,20 @@ export default function LockPinSheet({
               <Text style={styles.charCount}>{description.length}/200</Text>
 
               <Text style={styles.fieldLabel}>Photo (optional)</Text>
-              {photoUri ? (
+              {(photoUri || existingPhotoUrl) ? (
                 <View style={styles.photoPreviewRow}>
-                  <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+                  <Image source={{ uri: photoUri ?? existingPhotoUrl! }} style={styles.photoPreview} />
                   <View style={styles.photoActions}>
                     <TouchableOpacity style={styles.photoActionBtn} onPress={Platform.OS !== 'web' ? handlePickPhoto : handlePickFromLibrary} activeOpacity={0.7}>
                       <Ionicons name="camera-outline" size={16} color="#25C1AC" />
                       <Text style={styles.photoActionBtnText}>Replace</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.photoActionBtn, styles.removeBtn]} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
-                      <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                      <Text style={styles.removeBtnText}>Remove</Text>
-                    </TouchableOpacity>
+                    {photoUri ? (
+                      <TouchableOpacity style={[styles.photoActionBtn, styles.removeBtn]} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                        <Text style={styles.removeBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
               ) : (
