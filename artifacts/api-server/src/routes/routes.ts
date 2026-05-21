@@ -2450,6 +2450,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/assets/:id/attachments/:attachmentId", requireAdminOrMapCreator, async (req: Request, res: Response) => {
+    try {
+      const assetId = req.params.id as string;
+      const attachmentId = req.params.attachmentId as string;
+
+      const asset = await storage.getAssetById(assetId);
+      if (!asset) return res.status(404).json({ error: "Asset not found" });
+
+      const reqUser = await storage.getUserById(req.session.userId!);
+      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (reqUser.role !== "admin") {
+        const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
+        if (!isMember) return res.status(403).json({ error: "Access denied" });
+      }
+
+      const deleted = await storage.deleteAssetAttachment(assetId, attachmentId);
+      if (!deleted) return res.status(404).json({ error: "Attachment not found" });
+      res.status(204).send();
+    } catch (error) {
+      req.log.error({ error }, "Delete asset attachment error");
+      res.status(500).json({ error: "Failed to delete asset attachment" });
+    }
+  });
+
   app.patch("/api/assets/:id", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const parsed = updateAssetSchema.safeParse(req.body);

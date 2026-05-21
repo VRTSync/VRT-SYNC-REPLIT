@@ -3345,3 +3345,11 @@ export async function getAssetAttachments(assetId: string): Promise<AssetAttachm
     .where(eq(assetAttachments.assetId, assetId))
     .orderBy(desc(assetAttachments.createdAt));
 }
+
+export async function deleteAssetAttachment(assetId: string, attachmentId: string): Promise<boolean> {
+  const result = await db
+    .delete(assetAttachments)
+    .where(and(eq(assetAttachments.id, attachmentId), eq(assetAttachments.assetId, assetId)))
+    .returning({ id: assetAttachments.id });
+  return result.length > 0;
+}

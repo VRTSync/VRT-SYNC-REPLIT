@@ -131,6 +131,7 @@ export default function PinDropSheet({
   const [description, setDescription] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+  const [existingAttachmentId, setExistingAttachmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error'; key: number }>({
@@ -144,6 +145,7 @@ export default function PinDropSheet({
       setDescription(initialDescription ?? '');
       setPhotoUri(null);
       setExistingPhotoUrl(null);
+      setExistingAttachmentId(null);
       setIsSaving(false);
       setError(null);
     }
@@ -156,11 +158,12 @@ export default function PinDropSheet({
     const apiBase = getApiUrl();
     apiRequest('GET', `/api/assets/${existingAssetId}/attachments`)
       .then((res) => res.json())
-      .then((data: Array<{ url: string }>) => {
+      .then((data: Array<{ id: string; url: string }>) => {
         if (!cancelled && Array.isArray(data) && data.length > 0) {
           const rawUrl = data[0].url;
           const absUrl = rawUrl.startsWith('/') ? `${apiBase}${rawUrl}` : rawUrl;
           setExistingPhotoUrl(absUrl);
+          setExistingAttachmentId(data[0].id);
         }
       })
       .catch(() => {});
@@ -197,6 +200,18 @@ export default function PinDropSheet({
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8, allowsEditing: false });
     if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
   }, [showToast]);
+
+  const handleRemoveExistingPhoto = useCallback(async () => {
+    if (!existingAssetId || !existingAttachmentId) return;
+    try {
+      await apiRequest('DELETE', `/api/assets/${existingAssetId}/attachments/${existingAttachmentId}`);
+      setExistingPhotoUrl(null);
+      setExistingAttachmentId(null);
+      showToast('Photo removed');
+    } catch {
+      showToast('Failed to remove photo', 'error');
+    }
+  }, [existingAssetId, existingAttachmentId, showToast]);
 
   const handlePickFromLibrary = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -458,17 +473,23 @@ export default function PinDropSheet({
               {(photoUri || existingPhotoUrl) ? (
                 <View style={styles.photoPreviewRow}>
                   <Image source={{ uri: photoUri ?? existingPhotoUrl! }} style={styles.photoPreview} />
-                  {photoUri ? (
-                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
-                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                      <Text style={styles.removePhotoBtnText}>Remove</Text>
-                    </TouchableOpacity>
-                  ) : (
+                  <View style={{ gap: 8 }}>
                     <TouchableOpacity style={styles.removePhotoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
                       <Ionicons name="camera-outline" size={18} color="#25C1AC" />
                       <Text style={[styles.removePhotoBtnText, { color: '#25C1AC' }]}>Replace</Text>
                     </TouchableOpacity>
-                  )}
+                    {photoUri ? (
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : existingPhotoUrl ? (
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={handleRemoveExistingPhoto} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
               ) : (
                 <View style={styles.photoButtons}>
@@ -575,17 +596,23 @@ export default function PinDropSheet({
               {(photoUri || existingPhotoUrl) ? (
                 <View style={styles.photoPreviewRow}>
                   <Image source={{ uri: photoUri ?? existingPhotoUrl! }} style={styles.photoPreview} />
-                  {photoUri ? (
-                    <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
-                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                      <Text style={styles.removePhotoBtnText}>Remove</Text>
-                    </TouchableOpacity>
-                  ) : (
+                  <View style={{ gap: 8 }}>
                     <TouchableOpacity style={styles.removePhotoBtn} onPress={handlePickFromLibrary} activeOpacity={0.7}>
                       <Ionicons name="camera-outline" size={18} color="#25C1AC" />
                       <Text style={[styles.removePhotoBtnText, { color: '#25C1AC' }]}>Replace</Text>
                     </TouchableOpacity>
-                  )}
+                    {photoUri ? (
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : existingPhotoUrl ? (
+                      <TouchableOpacity style={styles.removePhotoBtn} onPress={handleRemoveExistingPhoto} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                        <Text style={styles.removePhotoBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                 </View>
               ) : (
                 <View style={styles.photoButtons}>

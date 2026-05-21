@@ -99,6 +99,7 @@ export default function LockPinSheet({
   const [description, setDescription] = useState(initialDescription ?? '');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+  const [existingAttachmentId, setExistingAttachmentId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error'; key: number }>({
@@ -118,6 +119,7 @@ export default function LockPinSheet({
       setDescription(initialDescription ?? '');
       setPhotoUri(null);
       setExistingPhotoUrl(null);
+      setExistingAttachmentId(null);
       setInlineError(null);
       setIsSaving(false);
     }
@@ -129,11 +131,12 @@ export default function LockPinSheet({
     const apiBase = getApiUrl();
     apiRequest('GET', `/api/assets/${existingAssetId}/attachments`)
       .then((res) => res.json())
-      .then((data: Array<{ url: string }>) => {
+      .then((data: Array<{ id: string; url: string }>) => {
         if (!cancelled && Array.isArray(data) && data.length > 0) {
           const rawUrl = data[0].url;
           const absUrl = rawUrl.startsWith('/') ? `${apiBase}${rawUrl}` : rawUrl;
           setExistingPhotoUrl(absUrl);
+          setExistingAttachmentId(data[0].id);
         }
       })
       .catch(() => {});
@@ -169,6 +172,18 @@ export default function LockPinSheet({
       setPhotoUri(result.assets[0].uri);
     }
   }, []);
+
+  const handleRemoveExistingPhoto = useCallback(async () => {
+    if (!existingAssetId || !existingAttachmentId) return;
+    try {
+      await apiRequest('DELETE', `/api/assets/${existingAssetId}/attachments/${existingAttachmentId}`);
+      setExistingPhotoUrl(null);
+      setExistingAttachmentId(null);
+      showToast('Photo removed');
+    } catch {
+      showToast('Failed to remove photo', 'error');
+    }
+  }, [existingAssetId, existingAttachmentId, showToast]);
 
   const saveColor = isZone && parentController ? parentController.controllerColor : '#4CAF50';
 
@@ -495,6 +510,11 @@ export default function LockPinSheet({
                     </TouchableOpacity>
                     {photoUri ? (
                       <TouchableOpacity style={[styles.photoActionBtn, styles.removeBtn]} onPress={() => setPhotoUri(null)} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                        <Text style={styles.removeBtnText}>Remove</Text>
+                      </TouchableOpacity>
+                    ) : existingPhotoUrl ? (
+                      <TouchableOpacity style={[styles.photoActionBtn, styles.removeBtn]} onPress={handleRemoveExistingPhoto} activeOpacity={0.7}>
                         <Ionicons name="trash-outline" size={16} color="#ef4444" />
                         <Text style={styles.removeBtnText}>Remove</Text>
                       </TouchableOpacity>
