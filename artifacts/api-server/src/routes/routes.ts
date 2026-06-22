@@ -30,9 +30,9 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable } from "@workspace/db";
 import { db, pool } from "../db";
-import { eq, and, desc, ne } from "drizzle-orm";
+import { eq, and, desc, ne, inArray } from "drizzle-orm";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
@@ -1209,9 +1209,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/xeriscape/community/:communityId/polygons", requireAdmin, async (req: Request, res: Response) => {
     try {
       const { communityId } = req.params;
-      const { eq, and } = await import("drizzle-orm");
-      const { assets: assetsTable, assetProperties: assetPropertiesTable } = await import("@workspace/db");
-      const { db } = await import("./db");
 
       const bluegrassAssets = await db
         .select()
@@ -1231,7 +1228,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const assetIds = bluegrassAssets.map((a: any) => a.id);
-      const { inArray } = await import("drizzle-orm");
       const allProps = await db
         .select()
         .from(assetPropertiesTable)
@@ -1243,13 +1239,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         propsByAssetId[prop.assetId][prop.key] = prop.value;
       }
 
-      const { db: dbForLayers } = await import("./db");
-      const { mapLayers: mapLayersTable } = await import("@workspace/db");
-
       const layerGeojsonMap: Record<string, any> = {};
       const layerIds = [...new Set(bluegrassAssets.map((a: any) => a.mapLayerId).filter(Boolean))];
       if (layerIds.length > 0) {
-        const layers = await dbForLayers
+        const layers = await db
           .select()
           .from(mapLayersTable)
           .where(inArray(mapLayersTable.id, layerIds as string[]));
