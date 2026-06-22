@@ -1065,10 +1065,29 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     try {
       const geojson = await apiFetch('/api/admin/xeriscape/community/' + communityId + '/polygons');
       allFeatures = geojson.features || [];
+      const assetsFound = geojson.assetsFound ?? allFeatures.length;
+      const featuresResolved = geojson.featuresResolved ?? allFeatures.length;
 
       if (allFeatures.length === 0) {
         if (loadingEl) loadingEl.style.display = 'none';
-        if (noPolygonsEl) noPolygonsEl.classList.add('xp-visible');
+        if (noPolygonsEl) {
+          if (assetsFound > 0 && featuresResolved === 0) {
+            noPolygonsEl.innerHTML = `
+              <div style="text-align:center;max-width:400px;padding:24px">
+                <div style="font-size:36px;margin-bottom:12px">⚠️</div>
+                <div style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:8px">Bluegrass areas found but geometry couldn't be resolved</div>
+                <div style="font-size:13px;color:var(--gray-500);line-height:1.6">Found ${assetsFound} bluegrass area${assetsFound !== 1 ? 's' : ''} for this community, but their map geometry could not be resolved. Check that the community layer has GeoJSON data uploaded and that feature IDs match.</div>
+              </div>`;
+          } else {
+            noPolygonsEl.innerHTML = `
+              <div style="text-align:center;max-width:360px;padding:24px">
+                <div style="font-size:36px;margin-bottom:12px">🗺️</div>
+                <div style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:8px">No mapped bluegrass areas found</div>
+                <div style="font-size:13px;color:var(--gray-500);line-height:1.6">No mapped bluegrass areas were found for this community. Add or sync bluegrass polygons in the Community layer to use the Xeriscape Planner.</div>
+              </div>`;
+          }
+          noPolygonsEl.classList.add('xp-visible');
+        }
         return;
       }
 

@@ -1224,8 +1224,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           )
         );
 
+      req.log.info({ communityId, assetsFound: bluegrassAssets.length }, "xeriscape polygons: bluegrass assets found");
+
       if (bluegrassAssets.length === 0) {
-        return res.json({ type: "FeatureCollection", features: [] });
+        return res.json({ type: "FeatureCollection", features: [], assetsFound: 0, featuresResolved: 0 });
       }
 
       const assetIds = bluegrassAssets.map((a: any) => a.id);
@@ -1258,31 +1260,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const featureMap: Record<string, any> = {};
               const feats = parsed.features || (parsed.type === "Feature" ? [parsed] : []);
               for (const f of feats) {
-                const fid = f.id != null && f.id !== "" ? String(f.id) : (f.properties?.featureId || f.properties?.id || null);
-                if (fid) featureMap[fid] = f;
+                // Index by every plausible ID variant so lookups succeed regardless of format
+                const candidates: string[] = [];
+                if (f.id != null && f.id !== "") candidates.push(String(f.id));
+                if (f.properties?.featureId != null) candidates.push(String(f.properties.featureId));
+                if (f.properties?.id != null) candidates.push(String(f.properties.id));
+                if (f.properties?.featureRef != null) candidates.push(String(f.properties.featureRef));
+                for (const key of candidates) {
+                  if (key && !featureMap[key]) featureMap[key] = f;
+                }
+                // Also index by label/name as last-resort fallback
+                const nameKey = f.properties?.label || f.properties?.name;
+                if (nameKey && !featureMap[String(nameKey)]) featureMap[`__name__${String(nameKey)}`] = f;
               }
               layerGeojsonMap[layer.id] = featureMap;
-            } catch {}
+              req.log.info({ layerId: layer.id, featureCount: feats.length, indexedKeys: Object.keys(featureMap).length }, "xeriscape polygons: layer GeoJSON indexed");
+            } catch (parseErr) {
+              req.log.warn({ layerId: layer.id, err: parseErr }, "xeriscape polygons: failed to parse layer geojsonData");
+            }
+          } else {
+            req.log.warn({ layerId: layer.id }, "xeriscape polygons: layer has no geojsonData — assets referencing this layer will be skipped");
           }
         }
       }
 
       const features: any[] = [];
+      let skippedCount = 0;
       for (const asset of bluegrassAssets) {
         const props = propsByAssetId[asset.id] || {};
         const sqFt = props.sqFt ? parseFloat(props.sqFt) : 0;
 
         let geometry: any = null;
         if (asset.mapLayerId && asset.featureRef && layerGeojsonMap[asset.mapLayerId]) {
-          const feat = layerGeojsonMap[asset.mapLayerId][asset.featureRef];
-          if (feat?.geometry) geometry = feat.geometry;
+          const featureMap = layerGeojsonMap[asset.mapLayerId];
+          // Try the raw featureRef, then its stringified form, then label-based fallback
+          const feat =
+            featureMap[asset.featureRef] ||
+            featureMap[String(asset.featureRef)] ||
+            featureMap[`__name__${asset.label}`] ||
+            null;
+          if (feat?.geometry) {
+            geometry = feat.geometry;
+          } else {
+            req.log.warn(
+              { assetId: asset.id, featureRef: asset.featureRef, mapLayerId: asset.mapLayerId, label: asset.label, availableKeys: Object.keys(featureMap).slice(0, 20) },
+              "xeriscape polygons: featureRef did not match any feature in layer"
+            );
+          }
         }
 
         if (!geometry && asset.latitude != null && asset.longitude != null) {
           geometry = { type: "Point", coordinates: [asset.longitude, asset.latitude] };
         }
 
-        if (!geometry) continue;
+        if (!geometry) {
+          skippedCount++;
+          continue;
+        }
 
         features.push({
           type: "Feature",
@@ -1297,9 +1331,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      res.json({ type: "FeatureCollection", features });
+      req.log.info(
+        { communityId, assetsFound: bluegrassAssets.length, featuresResolved: features.length, skipped: skippedCount },
+        "xeriscape polygons: resolution complete"
+      );
+
+      res.json({ type: "FeatureCollection", features, assetsFound: bluegrassAssets.length, featuresResolved: features.length });
     } catch (error) {
-      console.error("Xeriscape community polygons error:", error);
+      req.log.error({ err: error }, "xeriscape community polygons error");
       res.status(500).json({ error: "Failed to load community xeriscape polygons" });
     }
   });
