@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import pinoHttp from "pino-http";
+import helmet from "helmet";
 import { setupSession } from "./auth";
 import { logger } from "./lib/logger";
 import healthRouter from "./routes/health";
@@ -8,6 +9,10 @@ import healthRouter from "./routes/health";
 const app: Express = express();
 
 app.set("trust proxy", 1);
+
+// Security headers — CSP disabled so the API does not interfere with browser
+// clients; all other helmet defaults (X-Frame-Options, HSTS, etc.) are active.
+app.use(helmet({ contentSecurityPolicy: false }));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.header("origin");

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import pinoHttp from "pino-http";
+import helmet from "helmet";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -14,6 +15,27 @@ const logger = pino({ name: "web-portal" });
 const app: Express = express();
 
 app.set("trust proxy", 1);
+
+// Security headers with a CSP that permits Leaflet (unpkg.com), Google Fonts,
+// and inline styles/scripts used by the portal shells.
+// crossOriginEmbedderPolicy is disabled to avoid breaking CDN tile loads.
+// Verification: open any portal page in DevTools → Console → confirm zero CSP violations.
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+        frameAncestors: ["'self'"],
+      },
+    },
+  })
+);
 
 const PORT = parseInt(process.env.PORT || "3100", 10);
 

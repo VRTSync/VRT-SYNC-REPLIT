@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import rateLimit from "express-rate-limit";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import bcrypt from "bcryptjs";
@@ -100,8 +101,26 @@ export function requireAdminOrMapCreator(req: Request, res: Response, next: Next
   });
 }
 
+// Rate limiters for auth endpoints
+// Verification: send 11 rapid POSTs to /api/auth/login — the 11th returns 429.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Try again later." },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Try again later." },
+});
+
 export function registerAuthRoutes(app: any) {
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
       const parsed = insertUserSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -131,7 +150,7 @@ export function registerAuthRoutes(app: any) {
     }
   });
 
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", loginLimiter, async (req: Request, res: Response) => {
     try {
       const parsed = loginSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -163,7 +182,7 @@ export function registerAuthRoutes(app: any) {
     }
   });
 
-  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+  app.post("/api/auth/logout", authLimiter, async (req: Request, res: Response) => {
     const userId = req.session?.userId;
     const { deviceId } = req.body ?? {};
     if (userId && deviceId) {
@@ -181,7 +200,7 @@ export function registerAuthRoutes(app: any) {
     });
   });
 
-  app.post("/api/auth/verify-password", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/auth/verify-password", authLimiter, requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.session.userId!;
       const { currentPassword } = req.body;
@@ -203,7 +222,7 @@ export function registerAuthRoutes(app: any) {
     }
   });
 
-  app.patch("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/auth/me", authLimiter, requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = req.session.userId!;
       const { displayName, currentPassword, newPassword, avatarUrl } = req.body;
