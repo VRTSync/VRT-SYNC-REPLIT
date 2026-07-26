@@ -1,0 +1,33 @@
+# Task #341: Rate-limit auth endpoints + security headers
+
+**What/why:** `/api/auth/login` has no brute-force protection, and neither service sends security headers (no CSP, no X-Frame-Options). Add express-rate-limit to auth routes and helmet to both services.
+
+## Acceptance criteria
+
+1. `express-rate-limit` added to `artifacts/api-server` dependencies. Login limiter: max 10 attempts per 15 minutes per IP on `POST /api/auth/login`, `standardHeaders: true`, JSON error `{ message: "Too many login attempts. Try again later." }` with status 429. Apply a looser limiter (60/15min) to the rest of `/api/auth/*` POSTs (register, change-password). Uses default IP keying — `trust proxy` is already set so client IPs resolve correctly behind Replit's proxy.
+2. `helmet` added to both `artifacts/api-server` and `artifacts/web-portal`:
+   - API: defaults are fine, but disable `contentSecurityPolicy` (JSON API, CSP irrelevant) and keep CORS behavior unchanged.
+   - Web-portal: helmet with a CSP that permits current legitimate sources — inline scripts/styles are required by the shells and login page (`'unsafe-inline'`), plus: `script-src` `https://unpkg.com` (Leaflet); `style-src` `https://unpkg.com` `https://fonts.googleapis.com`; `font-src` `https://fonts.gstatic.com`; `img-src` `'self' data: https:` (map tiles, logo); `connect-src 'self'`; `frame-ancestors 'self'` (pin-picker/leaflet iframes are same-origin). Set `crossOriginEmbedderPolicy: false` to avoid breaking tile/CDN loads.
+3. Mobile app is unaffected: Expo app calls `/api/*` only; confirm no new header breaks React Native fetch (helmet on API must not alter CORS headers).
+4. All four web portals and the login page load with zero CSP violations in the browser console.
+
+## Files involved
+
+- `artifacts/api-server/src/app.ts` (helmet), `artifacts/api-server/src/auth.ts` or `routes/routes.ts` (limiters on auth routes), `artifacts/api-server/package.json`
+- `artifacts/web-portal/src/server.ts`, `artifacts/web-portal/package.json`
+
+## Must NOT change
+
+- CORS config on the API (`*.replit.dev` / `*.replit.app` origins).
+- Any route logic; session config (that's Task #338).
+- Login page HTML (its inline script/style must keep working under the CSP).
+
+## How to verify
+
+- 11 rapid failed logins → 11th returns 429; wait/window reset works.
+- Browser devtools on `/web/login` and each portal dashboard: no CSP violation reports; Leaflet maps render (unpkg + tile hosts allowed); Google Fonts load.
+- Mobile app login + map still work against the deployed API.
+
+## Gotchas (from replit.md)
+
+- After dependency changes, esbuild bundles them — no need to externalize unless a runtime `MODULE_NOT_FOUND` appears (only `pdfkit`/`fontkit`/`@swc/helpers` are externalized today; keep it that way).

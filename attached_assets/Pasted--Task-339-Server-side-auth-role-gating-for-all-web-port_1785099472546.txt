@@ -1,0 +1,32 @@
+# Task #339: Server-side auth + role gating for all web portal shells
+
+**What/why:** The web-portal server serves the contractor/hoa/pm HTML shells to anyone (no session check), and the admin shell only checks "logged in", not "is admin". Data is protected by the API, but shells and page JS leak app structure. Gate every shell server-side by session AND role.
+
+## Acceptance criteria
+
+1. In `artifacts/web-portal/src/server.ts`, add a helper that resolves the current user's role from the session: query the `users` table by `req.session.userId` using the existing `pg` pool (a plain `SELECT role FROM users WHERE id = $1` is fine — do not add an ORM dependency to this artifact). Cache per-request only; no in-memory user cache.
+2. Shell routes enforce:
+   - `/web/admin/*` → role `admin`
+   - `/web/contractor/*` → role `contractor`
+   - `/web/hoa/*` → roles `hoa_admin`, `hoa_member`
+   - `/web/pm/*` → role `property_manager`
+3. No session → redirect to `/web/login`. Wrong role → redirect to that role's own dashboard (same mapping as `roleMap` in the login page script: admin→`/web/admin/dashboard`, property_manager→`/web/pm/dashboard`, contractor→`/web/contractor/dashboard`, hoa_admin/hoa_member→`/web/hoa/dashboard`). Unknown role → redirect to `/web/login`.
+4. `/web/login`, `/leaflet-map.html`, `/pin-picker.html`, and static mounts stay public.
+5. The existing client-side role checks in `admin.js` and `portal.js` stay in place (defense in depth).
+
+## Files involved
+
+- `artifacts/web-portal/src/server.ts` only.
+
+## Must NOT change
+
+- Static asset mounts, cache-stamping, login page HTML/behavior, pin-picker/leaflet routes.
+- Client-side auth flow in `admin.js` / `portal.js`.
+- API server.
+
+## How to verify
+
+- Logged out: `curl -i` each shell URL → 302 to `/web/login`.
+- Logged in as hoa_member: `/web/admin/dashboard` → 302 to `/web/hoa/dashboard`; `/web/hoa/dashboard` → 200.
+- Logged in as admin: all four shells behave per matrix.
+- DB unavailable → error handler returns 500, doesn't crash the process.
