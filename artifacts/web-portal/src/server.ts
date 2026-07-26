@@ -68,6 +68,11 @@ function stampHtml(html: string): string {
 const PgSession = connectPgSimple(session);
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  console.error("SESSION_SECRET environment variable is required");
+  process.exit(1);
+}
 app.use(
   session({
     store: new PgSession({
@@ -75,11 +80,11 @@ app.use(
       tableName: "user_sessions",
       createTableIfMissing: false,
     }),
-    secret: process.env.SESSION_SECRET || "contractor-portal-secret-key",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: false,
+      secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: "lax",

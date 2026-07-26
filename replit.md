@@ -10,7 +10,7 @@ A field-operations platform for landscape and HOA community management — mobil
 - `pnpm --filter @workspace/db run migrate:generate --name <name>` — generate a new migration SQL file (see Gotchas)
 - `pnpm --filter @workspace/db run migrate:up` — apply pending migrations against `DATABASE_URL` (CLI runner)
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only — **risky in prod, prefer migrations**)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `DATABASE_URL`, `SESSION_SECRET` — Postgres connection string and session signing secret
 
 ## Stack
 

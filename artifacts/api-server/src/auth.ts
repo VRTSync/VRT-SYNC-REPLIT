@@ -12,6 +12,11 @@ import { ObjectStorageService } from "./objectStorage";
 const PgSession = connectPgSimple(session);
 
 export function setupSession(app: any) {
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (!sessionSecret) {
+    console.error("SESSION_SECRET environment variable is required");
+    process.exit(1);
+  }
   app.use(
     session({
       store: new PgSession({
@@ -19,11 +24,11 @@ export function setupSession(app: any) {
         tableName: "user_sessions",
         createTableIfMissing: true,
       }),
-      secret: process.env.SESSION_SECRET || "contractor-portal-secret-key",
+      secret: sessionSecret,
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         maxAge: 30 * 24 * 60 * 60 * 1000,
         sameSite: "lax",
