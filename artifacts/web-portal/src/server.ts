@@ -267,6 +267,44 @@ async function doLogin(){
 document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('fpBackdrop').classList.remove('open');});
 </script></body></html>`;
 
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+async function getUserRole(req: Request): Promise<string | null> {
+  const userId = (req.session as any)?.userId;
+  if (!userId) return null;
+  // May throw — let Express error handler catch it
+  const result = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
+  if (result.rows.length === 0) return null;
+  return result.rows[0].role as string;
+}
+
+const roleDashboard: Record<string, string> = {
+  admin: "/web/admin/dashboard",
+  property_manager: "/web/pm/dashboard",
+  contractor: "/web/contractor/dashboard",
+  hoa_admin: "/web/hoa/dashboard",
+  hoa_member: "/web/hoa/dashboard",
+};
+
+function requireRole(allowed: string[]) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    let role: string | null;
+    try {
+      role = await getUserRole(req);
+    } catch (err) {
+      return next(err);
+    }
+    if (!role) {
+      return res.redirect("/web/login");
+    }
+    if (!allowed.includes(role)) {
+      const dest = roleDashboard[role] ?? "/web/login";
+      return res.redirect(dest);
+    }
+    return next();
+  };
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // Login
@@ -286,10 +324,7 @@ app.get("/web/admin", (_req: Request, res: Response) => {
   res.redirect("/web/admin/dashboard");
 });
 
-app.get(/^\/web\/admin\/(?!login).*$/, (req: Request, res: Response) => {
-  if (!(req.session as any)?.userId) {
-    return res.redirect("/web/login");
-  }
+app.get(/^\/web\/admin\/(?!login).*$/, requireRole(["admin"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(adminShell);
 });
@@ -299,7 +334,7 @@ app.get("/web/contractor", (_req: Request, res: Response) =>
   res.redirect("/web/contractor/dashboard")
 );
 
-app.get(/^\/web\/contractor\/.*$/, (_req: Request, res: Response) => {
+app.get(/^\/web\/contractor\/.*$/, requireRole(["contractor"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(contractorShell);
 });
@@ -309,7 +344,7 @@ app.get("/web/hoa", (_req: Request, res: Response) =>
   res.redirect("/web/hoa/dashboard")
 );
 
-app.get(/^\/web\/hoa\/.*$/, (_req: Request, res: Response) => {
+app.get(/^\/web\/hoa\/.*$/, requireRole(["hoa_admin", "hoa_member"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(hoaShell);
 });
@@ -319,7 +354,7 @@ app.get("/web/pm", (_req: Request, res: Response) =>
   res.redirect("/web/pm/dashboard")
 );
 
-app.get(/^\/web\/pm\/.*$/, (_req: Request, res: Response) => {
+app.get(/^\/web\/pm\/.*$/, requireRole(["property_manager"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(pmShell);
 });
