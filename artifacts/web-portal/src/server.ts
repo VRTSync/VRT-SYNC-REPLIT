@@ -124,7 +124,7 @@ const pmShell = stampHtml(
 const loginHtml = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>VRTSync — Sign In</title>
-<link rel="icon" href="https://vrtsync.com/favicon.png" type="image/png">
+<link rel="icon" href="/portal-static/favicon.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
@@ -166,12 +166,21 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
 .static-fallback .bg-overlay{opacity:var(--fl-static-overlay-opacity)}
 .static-fallback .bg-topo{opacity:var(--fl-static-topo-opacity)}
 @media(prefers-reduced-motion:reduce){.bg-overlay{opacity:var(--fl-static-overlay-opacity) !important;-webkit-mask-image:none !important;mask-image:none !important}.bg-topo{opacity:var(--fl-static-topo-opacity) !important}}
+#fpBackdrop{display:none;position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.55);align-items:center;justify-content:center}
+#fpBackdrop.open{display:flex}
+#fpModal{background:rgba(15,25,45,0.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(37,193,172,0.25);border-radius:16px;padding:36px 40px;width:100%;max-width:360px;box-shadow:0 4px 30px rgba(0,0,0,0.5),0 0 60px rgba(37,193,172,0.08);position:relative;color:#e2e8f0}
+#fpModal h3{font-family:'Outfit',sans-serif;font-size:22px;font-weight:700;margin-bottom:14px;color:#e2e8f0}
+#fpModal p{font-size:14px;line-height:1.6;color:#94a3b8;margin-bottom:18px}
+#fpModal a{color:#25C1AC;text-decoration:none;font-weight:500}
+#fpModal a:hover{text-decoration:underline}
+#fpClose{position:absolute;top:14px;right:16px;background:none;border:none;cursor:pointer;color:#64748b;font-size:22px;line-height:1;padding:0}
+#fpClose:hover{color:#e2e8f0}
 </style></head><body>
 <div class="bg-base"></div>
 <div class="bg-topo"></div>
 <div class="bg-overlay" id="bgOverlay"></div>
 <div class="page">
-  <div class="brand"><img src="https://vrtsync.com/assets/FINAL-02_1768843649073-eIfol9Dz.png" alt="VRTSync" /></div>
+  <div class="brand"><img src="/portal-static/logo.png" alt="VRTSync" /></div>
   <div class="card">
     <h2>Log In</h2>
     <p class="tagline">DATA. MAPPED. SYNCED.</p>
@@ -195,7 +204,15 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
       </div>
     </div>
     <button class="btn" id="btn">Log in</button>
-    <p class="forgot"><a href="#">Forgot your password?</a></p>
+    <p class="forgot"><a href="javascript:void(0)" onclick="document.getElementById('fpBackdrop').classList.add('open')">Forgot your password?</a></p>
+  </div>
+</div>
+<div id="fpBackdrop" onclick="if(event.target===this)document.getElementById('fpBackdrop').classList.remove('open')">
+  <div id="fpModal">
+    <button id="fpClose" onclick="document.getElementById('fpBackdrop').classList.remove('open')" aria-label="Close">&times;</button>
+    <h3>Reset your password</h3>
+    <p>To reset your password, please contact your administrator or reach out to our support team.</p>
+    <p><a href="mailto:support@vrtsync.com">support@vrtsync.com</a></p>
   </div>
 </div>
 <footer>&copy; 2026 VRTSync</footer>
@@ -245,6 +262,9 @@ async function doLogin(){
   document.addEventListener('mouseleave',resetOverlay);
   window.addEventListener('blur',resetOverlay);
 })();
+</script>
+<script>
+document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('fpBackdrop').classList.remove('open');});
 </script></body></html>`;
 
 // ── Routes ────────────────────────────────────────────────────────────────────
