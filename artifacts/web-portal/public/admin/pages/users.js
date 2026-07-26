@@ -1,5 +1,6 @@
 AdminRouter.register('users', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   let allCommunities = [];
   try {
@@ -357,9 +358,4 @@ AdminRouter.register('users', async function(container) {
     }
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
 });

@@ -6,7 +6,7 @@ version = "1.0.0"
 [[services]]
 localPort = 3100
 name = "Web Portal"
-paths = ["/web", "/admin-static", "/portal-static", "/leaflet-map.html", "/pin-picker.html"]
+paths = ["/web", "/admin-static", "/portal-static", "/common-static", "/leaflet-map.html", "/pin-picker.html"]
 
 [services.development]
 run = "pnpm --filter @workspace/web-portal run dev"

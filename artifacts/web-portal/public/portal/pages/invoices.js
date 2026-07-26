@@ -20,10 +20,7 @@ PortalRouter.register('invoices', async function(container) {
   container.innerHTML = M.pageHeader('Invoices', community) + '<div id="invoices-root"></div>';
   var root = container.querySelector('#invoices-root');
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatDate(str) {
     if (!str) return '';

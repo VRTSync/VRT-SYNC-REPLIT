@@ -1,5 +1,6 @@
 window._renderMapLayers = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   function formatBytes(bytes) {
     if (bytes === 0) return '0 B';
@@ -1608,9 +1609,4 @@ window._renderMapLayers = async function(container, communityId) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
 };

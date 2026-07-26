@@ -1,5 +1,6 @@
 AdminRouter.register('schedules', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   container.innerHTML = `
     <div class="page-header" style="margin-top:16px">
@@ -369,10 +370,4 @@ AdminRouter.register('schedules', async function(container) {
     });
   }
 
-  function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = String(str);
-    return d.innerHTML;
-  }
 });

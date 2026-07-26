@@ -29,10 +29,7 @@ PortalRouter.register('contacts', async function (container) {
     'Other': { bg: '#f3f4f6', color: '#4b5563' },
   };
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function typeBadge(type) {
     const b = TYPE_BADGE[type] || TYPE_BADGE['Other'];

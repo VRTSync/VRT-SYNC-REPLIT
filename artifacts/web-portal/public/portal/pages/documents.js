@@ -23,10 +23,7 @@ PortalRouter.register('documents', async function (container) {
   container.innerHTML = M.pageHeader('Documents', activeCommunity) + '<div id="drive-root"></div>';
   const root = container.querySelector('#drive-root');
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatSize(bytes) {
     if (!bytes) return '';

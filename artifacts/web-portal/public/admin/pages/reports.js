@@ -6,10 +6,7 @@ AdminRouter.register('reports', async function(container) {
   var selectedCommunityId = communities.length === 1 ? communities[0].id : '';
   var activeReport = null;
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatCurrency(val) {
     if (val == null) return '$0.00';

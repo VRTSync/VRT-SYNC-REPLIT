@@ -903,13 +903,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     return { costPerSf, savingsPerSf };
   }
 
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+  const escapeHtml = VRTUtils.esc;
 
   function statusLabel(status) {
     const map = {

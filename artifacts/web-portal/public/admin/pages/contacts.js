@@ -18,11 +18,7 @@ AdminRouter.register('contacts', async function(container) {
   let filterType = '';
   let editingContact = null;
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
+  const esc = VRTUtils.esc;
 
   try {
     allCommunities = await apiFetch('/api/communities');

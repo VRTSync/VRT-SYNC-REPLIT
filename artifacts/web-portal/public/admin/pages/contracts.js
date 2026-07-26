@@ -71,10 +71,7 @@ AdminRouter.register('contracts', async function(container) {
   var contractorFilter = document.getElementById('ct-contractor-filter');
   var statusFilter = document.getElementById('ct-status-filter');
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatDate(str) {
     if (!str) return '';

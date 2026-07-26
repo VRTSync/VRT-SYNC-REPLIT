@@ -23,10 +23,7 @@ PortalRouter.register('users', async function(container) {
 
   var isPM = role === 'property_manager';
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   var allUsers = [];
   var searchTerm = '';

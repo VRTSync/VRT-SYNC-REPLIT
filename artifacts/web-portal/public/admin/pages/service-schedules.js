@@ -1,5 +1,6 @@
 AdminRouter.register('service-schedules', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -461,10 +462,4 @@ AdminRouter.register('service-schedules', async function(container) {
     return new Date(d).toLocaleString();
   }
 
-  function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = String(str);
-    return d.innerHTML;
-  }
 });

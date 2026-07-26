@@ -1,5 +1,6 @@
 AdminRouter.register('communities', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   const breadcrumb = document.getElementById('breadcrumb-area');
   if (breadcrumb) breadcrumb.innerHTML = '';
@@ -137,9 +138,4 @@ AdminRouter.register('communities', async function(container) {
     });
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
 });

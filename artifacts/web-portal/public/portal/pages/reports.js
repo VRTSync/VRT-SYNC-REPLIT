@@ -21,10 +21,7 @@ PortalRouter.register('reports', async function(container, params) {
   /* Support deep-linking to a specific report via params.report */
   var activeReport = (params && params.report) || null;
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatCurrency(val) {
     if (val == null) return '$0.00';

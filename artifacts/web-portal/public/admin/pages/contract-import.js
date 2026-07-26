@@ -1,5 +1,6 @@
 AdminRouter.register('imports/contract-tasks', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -618,13 +619,6 @@ AdminRouter.register('imports/contract-tasks', async function(container) {
       btn.textContent = 'Retry Import';
       showToast('Import failed: ' + err.message, 'error');
     }
-  }
-
-  function esc(str) {
-    if (!str) return '';
-    const d = document.createElement('div');
-    d.textContent = String(str);
-    return d.innerHTML;
   }
 
   render();

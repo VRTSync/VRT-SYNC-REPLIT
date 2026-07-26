@@ -19,14 +19,7 @@ PortalRouter.register('account', async function (container) {
     property_manager: 'Property Manager',
   };
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatDate(dateStr) {
     if (!dateStr) return '—';

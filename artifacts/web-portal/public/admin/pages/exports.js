@@ -1,5 +1,6 @@
 AdminRouter.register('exports', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
   const communities = AdminState.getCommunities();
 
   container.innerHTML = `
@@ -12,7 +13,7 @@ AdminRouter.register('exports', async function(container) {
         <label style="font-size:13px;font-weight:600;color:#374151">Community:</label>
         <select id="export-community-filter" class="form-select" style="max-width:260px">
           <option value="">All Communities</option>
-          ${communities.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+          ${communities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
         </select>
       </div>
       <table class="data-table" id="exports-table">
@@ -46,7 +47,7 @@ AdminRouter.register('exports', async function(container) {
       const rows = await apiFetch(url);
       renderTable(rows);
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#EF4444">${err.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#EF4444">${esc(err.message)}</td></tr>`;
     }
   }
 
@@ -67,7 +68,7 @@ AdminRouter.register('exports', async function(container) {
 
       return `<tr>
         <td>${created}</td>
-        <td>${communityName}</td>
+        <td>${esc(communityName)}</td>
         <td>${dateRange}</td>
         <td>${statusBadge}</td>
         <td>${downloads}</td>
@@ -88,7 +89,7 @@ AdminRouter.register('exports', async function(container) {
   function getDownloadLinks(row) {
     if (row.status !== 'complete') {
       if (row.status === 'failed') {
-        return `<span style="color:#EF4444;font-size:12px" title="${row.errorMessage || ''}">Failed</span>`;
+        return `<span style="color:#EF4444;font-size:12px" title="${esc(row.errorMessage || '')}">Failed</span>`;
       }
       return '<span style="color:#9CA3AF;font-size:12px">Pending...</span>';
     }
@@ -139,7 +140,7 @@ AdminRouter.register('exports', async function(container) {
             <div class="form-group">
               <label class="form-label">Community *</label>
               <select class="form-select" id="export-community">
-                ${communities.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                ${communities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
               </select>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -171,7 +172,7 @@ AdminRouter.register('exports', async function(container) {
               <label class="form-label">Contractor (optional)</label>
               <select class="form-select" id="export-contractor">
                 <option value="">All Contractors</option>
-                ${contractors.map(u => `<option value="${u.id}">${u.displayName || u.username}</option>`).join('')}
+                ${contractors.map(u => `<option value="${u.id}">${esc(u.displayName || u.username)}</option>`).join('')}
               </select>
             </div>
             <div class="form-group">
@@ -314,7 +315,7 @@ AdminRouter.register('exports', async function(container) {
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
             </div>
             <h3 style="margin-bottom:8px;color:#0C1D31">Export Failed</h3>
-            <p style="color:#EF4444;font-size:14px">${message}</p>
+            <p style="color:#EF4444;font-size:14px">${esc(message)}</p>
           </div>
         `;
       }

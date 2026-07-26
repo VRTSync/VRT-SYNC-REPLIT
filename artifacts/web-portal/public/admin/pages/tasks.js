@@ -1,5 +1,6 @@
 window._renderTasks = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   container.innerHTML = `
     <div class="page-header" style="margin-top:16px">
@@ -540,9 +541,4 @@ window._renderTasks = async function(container, communityId) {
     });
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
 };

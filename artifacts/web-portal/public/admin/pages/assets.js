@@ -1,5 +1,6 @@
 window._renderAssets = async function(container, communityId) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
 
   let allAssets = [];
   let selectedIds = new Set();
@@ -278,9 +279,4 @@ window._renderAssets = async function(container, communityId) {
     });
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
 };

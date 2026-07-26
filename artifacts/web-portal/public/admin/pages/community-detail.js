@@ -1,5 +1,6 @@
 AdminRouter.register('community-detail', async function(container, params) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
   const communityId = params.id;
   const activeTab = params.tab || 'overview';
 
@@ -387,9 +388,4 @@ AdminRouter.register('community-detail', async function(container, params) {
     });
   }
 
-  function esc(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
 });

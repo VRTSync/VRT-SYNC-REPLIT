@@ -46,10 +46,7 @@ AdminRouter.register('invoices', async function(container) {
   const tbody = document.getElementById('invoices-tbody');
   const filterSelect = document.getElementById('inv-community-filter');
 
-  function esc(s) {
-    if (s == null) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
+  const esc = VRTUtils.esc;
 
   function formatDate(str) {
     if (!str) return '';

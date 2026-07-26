@@ -59,7 +59,7 @@ const STATIC_VERSION = Date.now().toString(36);
 
 function stampHtml(html: string): string {
   return html.replace(
-    /(\/(?:admin|portal)-static\/[^"'?]+\.(?:css|js))/g,
+    /(\/(?:admin|portal|common)-static\/[^"'?]+\.(?:css|js))/g,
     `$1?v=${STATIC_VERSION}`
   );
 }
@@ -110,6 +110,7 @@ app.use(
 // ── Static asset mounts ──────────────────────────────────────────────────────
 app.use("/admin-static", express.static(path.join(PUBLIC_ROOT, "admin")));
 app.use("/portal-static", express.static(path.join(PUBLIC_ROOT, "portal")));
+app.use("/common-static", express.static(path.join(PUBLIC_ROOT, "common")));
 
 // ── Load HTML shells ─────────────────────────────────────────────────────────
 const adminShell = stampHtml(
