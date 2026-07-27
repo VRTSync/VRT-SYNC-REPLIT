@@ -37,6 +37,9 @@ import { eq, and, desc, ne, inArray } from "drizzle-orm";
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
 
+// 60-second in-process cache for GET /api/admin/dashboard
+let adminDashboardCache: { data: Awaited<ReturnType<typeof storage.getAdminDashboard>>; expiresAt: number } | null = null;
+
 /** Convert a 0-based index to Excel-column-style letter key: 0→A, 25→Z, 26→AA, 27→AB … */
 function nextControllerKey(n: number): string {
   let result = "";
@@ -968,6 +971,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Admin summary error:", error);
       res.status(500).json({ error: "Failed to fetch admin summary" });
+    }
+  });
+
+  app.get("/api/admin/dashboard", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const now = Date.now();
+      if (adminDashboardCache && adminDashboardCache.expiresAt > now) {
+        return res.json(adminDashboardCache.data);
+      }
+      const data = await storage.getAdminDashboard();
+      adminDashboardCache = { data, expiresAt: now + 60_000 };
+      res.json(data);
+    } catch (error) {
+      console.error("Admin dashboard error:", error);
+      res.status(500).json({ error: "Failed to fetch admin dashboard" });
     }
   });
 

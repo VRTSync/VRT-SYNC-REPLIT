@@ -1,5 +1,5 @@
 import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
-import { db } from "./db";
+import { db, pool } from "./db";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
@@ -3352,4 +3352,309 @@ export async function deleteAssetAttachment(assetId: string, attachmentId: strin
     .where(and(eq(assetAttachments.id, attachmentId), eq(assetAttachments.assetId, assetId)))
     .returning({ id: assetAttachments.id });
   return result.length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Admin Dashboard Aggregate Endpoint
+// ---------------------------------------------------------------------------
+
+export interface AdminDashboardData {
+  totals: {
+    communities: number;
+    communitiesOnboarding: number;
+    communitiesAddedThisMonth: number;
+    activeAssets: number;
+    assetsAddedThisMonth: number;
+    incompleteAssets: number;
+    completenessPct: number;
+    mapLayers: number;
+  };
+  exceptions: {
+    communitiesWithOverdueWork: number;
+    requestsUnacknowledged48h: { count: number; oldestDays: number | null };
+    communitiesQuiet14d: number;
+    onboardingStalled30d: number;
+  };
+  activityTrend: Array<{
+    isoWeek: string;
+    completedCount: number;
+    openCount: number;
+  }>;
+  reliability: {
+    onTimeServicePct30d: null;
+    missedServices30d: null;
+    photoProofPct30d: number | null;
+  };
+  business: {
+    invoicedThisMonthCents: number;
+    unpaidOver30dCents: null;
+    unpaidOver30dCount: null;
+    contractsExpiring60d: number;
+    contractsExpiredUnrenewed: number;
+  };
+  completenessDistribution: {
+    pct98to100: number;
+    pct90to98: number;
+    pct70to90: number;
+    pctBelow70: number;
+  };
+  users: {
+    active30d: null;
+    contractorsActive7d: null;
+    hoaMembersAddedThisMonth: number;
+  };
+}
+
+export async function getAdminDashboard(): Promise<AdminDashboardData> {
+  const t0 = Date.now();
+
+  // ── Load all active assets + properties once; used for multiple metrics ───
+  const { ASSET_TYPE_TEMPLATES: tmpl } = await import("./assetSync");
+  const allActiveAssets = await db
+    .select({ id: assets.id, assetType: assets.assetType, communityId: assets.communityId })
+    .from(assets)
+    .where(eq(assets.isArchived, false));
+
+  const allProps = allActiveAssets.length > 0
+    ? await db
+        .select({ assetId: assetProperties.assetId, key: assetProperties.key })
+        .from(assetProperties)
+        .where(inArray(assetProperties.assetId, allActiveAssets.map(a => a.id)))
+    : [];
+
+  const propKeysByAsset = new Map<string, Set<string>>();
+  for (const p of allProps) {
+    if (!propKeysByAsset.has(p.assetId)) propKeysByAsset.set(p.assetId, new Set());
+    propKeysByAsset.get(p.assetId)!.add(p.key);
+  }
+
+  // Per-community completeness (using ASSET_TYPE_TEMPLATES required keys — same as getAdminSummary)
+  // completeCount[communityId] = number of complete active assets
+  // totalCount[communityId]    = total active assets
+  const completeCountByCommunity = new Map<string, number>();
+  const totalCountByCommunity = new Map<string, number>();
+  let globalIncomplete = 0;
+
+  for (const asset of allActiveAssets) {
+    const cid = asset.communityId;
+    totalCountByCommunity.set(cid, (totalCountByCommunity.get(cid) ?? 0) + 1);
+    const template = tmpl[asset.assetType as keyof typeof tmpl];
+    const required: string[] = template?.requiredKeys || [];
+    const propKeys = propKeysByAsset.get(asset.id) ?? new Set<string>();
+    const isComplete = required.every(k => propKeys.has(k));
+    if (isComplete) {
+      completeCountByCommunity.set(cid, (completeCountByCommunity.get(cid) ?? 0) + 1);
+    } else {
+      globalIncomplete++;
+    }
+  }
+
+  const totalActive = allActiveAssets.length;
+  const completenessPct = totalActive > 0 ? Math.round(((totalActive - globalIncomplete) / totalActive) * 100) : 100;
+
+  console.log(`[admin/dashboard] asset data loaded (${Date.now() - t0}ms)`);
+
+  // ── SQL aggregates (run in parallel for speed) ────────────────────────────
+  const t1 = Date.now();
+  const [
+    totalsResult,
+    exceptionsResult,
+    trendResult,
+    photoProofResult,
+    businessResult,
+    usersResult,
+  ] = await Promise.all([
+    // totals: counts that don't need ASSET_TYPE_TEMPLATES
+    pool.query<{
+      communities: string;
+      communities_added_this_month: string;
+      active_assets: string;
+      assets_added_this_month: string;
+      map_layers: string;
+    }>(`
+      SELECT
+        (SELECT COUNT(*) FROM communities)::text AS communities,
+        (SELECT COUNT(*) FROM communities WHERE created_at >= date_trunc('month', now()))::text AS communities_added_this_month,
+        (SELECT COUNT(*) FROM assets WHERE is_archived = false)::text AS active_assets,
+        (SELECT COUNT(*) FROM assets WHERE is_archived = false AND created_at >= date_trunc('month', now()))::text AS assets_added_this_month,
+        (SELECT COUNT(*) FROM map_layers)::text AS map_layers
+    `),
+
+    // exceptions
+    pool.query<{
+      communities_overdue: string;
+      unack_count: string;
+      unack_oldest_days: string | null;
+      communities_quiet: string;
+      onboarding_stalled: string;
+    }>(`
+      SELECT
+        (
+          SELECT COUNT(DISTINCT community_id)
+          FROM tasks
+          WHERE due_date < now()
+            AND status NOT IN ('completed')
+        )::text AS communities_overdue,
+        (
+          SELECT COUNT(*)
+          FROM tasks
+          WHERE status = 'submitted'
+            AND created_at < now() - interval '48 hours'
+        )::text AS unack_count,
+        (
+          SELECT EXTRACT(DAY FROM now() - MIN(created_at))::text
+          FROM tasks
+          WHERE status = 'submitted'
+            AND created_at < now() - interval '48 hours'
+        ) AS unack_oldest_days,
+        (
+          SELECT COUNT(DISTINCT c.id)
+          FROM communities c
+          WHERE GREATEST(
+            COALESCE((SELECT MAX(tc.completed_at) FROM task_completions tc JOIN tasks t ON t.id = tc.task_id WHERE t.community_id = c.id), 'epoch'::timestamp),
+            COALESCE((SELECT MAX(sv.completed_at) FROM service_visits sv WHERE sv.community_id = c.id), 'epoch'::timestamp),
+            COALESCE((SELECT MAX(an.created_at) FROM asset_notes an WHERE an.community_id = c.id), 'epoch'::timestamp)
+          ) < now() - interval '14 days'
+        )::text AS communities_quiet,
+        (
+          SELECT COUNT(DISTINCT c2.id)
+          FROM communities c2
+          WHERE NOT EXISTS (
+            SELECT 1 FROM assets a
+            WHERE a.community_id = c2.id
+              AND a.created_at >= now() - interval '30 days'
+              AND a.is_archived = false
+          )
+          AND (SELECT COUNT(*) FROM assets a2 WHERE a2.community_id = c2.id AND a2.is_archived = false) = 0
+        )::text AS onboarding_stalled
+    `),
+
+    // activityTrend: last 8 ISO weeks
+    pool.query<{ iso_week: string; completed_count: string; open_count: string }>(`
+      WITH weeks AS (SELECT generate_series(0, 7) AS offset_weeks),
+      week_bounds AS (
+        SELECT
+          date_trunc('week', now()) - (offset_weeks * interval '1 week') AS week_start,
+          date_trunc('week', now()) - (offset_weeks * interval '1 week') + interval '7 days' AS week_end,
+          to_char(date_trunc('week', now()) - (offset_weeks * interval '1 week'), 'IYYY-IW') AS iso_week
+        FROM weeks
+      )
+      SELECT
+        wb.iso_week,
+        (SELECT COUNT(*) FROM task_completions tc WHERE tc.completed_at >= wb.week_start AND tc.completed_at < wb.week_end)::text AS completed_count,
+        (SELECT COUNT(*) FROM tasks t WHERE t.created_at >= wb.week_start AND t.created_at < wb.week_end AND t.status NOT IN ('completed'))::text AS open_count
+      FROM week_bounds wb
+      ORDER BY wb.week_start ASC
+    `),
+
+    // photoProofPct30d
+    pool.query<{ photo_proof_pct: string | null }>(`
+      SELECT
+        CASE WHEN COUNT(DISTINCT tc.id) > 0
+          THEN ROUND(
+            COUNT(DISTINCT tc.id) FILTER (WHERE a.id IS NOT NULL)::numeric
+            / COUNT(DISTINCT tc.id)::numeric * 100,
+            1
+          )::text
+          ELSE NULL
+        END AS photo_proof_pct
+      FROM task_completions tc
+      LEFT JOIN attachments a ON a.task_completion_id = tc.id
+      WHERE tc.completed_at >= now() - interval '30 days'
+    `),
+
+    // business
+    pool.query<{
+      invoiced_cents: string;
+      contracts_expiring_60d: string;
+      contracts_expired_unrenewed: string;
+    }>(`
+      SELECT
+        COALESCE((SELECT SUM(cost * 100) FROM invoices WHERE completion_date >= date_trunc('month', now())), 0)::text AS invoiced_cents,
+        (SELECT COUNT(*) FROM contracts WHERE end_date BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '60 days' AND is_active = true)::text AS contracts_expiring_60d,
+        (SELECT COUNT(*) FROM contracts WHERE end_date < CURRENT_DATE AND is_active = true)::text AS contracts_expired_unrenewed
+    `),
+
+    // users
+    pool.query<{ hoa_added_this_month: string }>(`
+      SELECT COUNT(*)::text AS hoa_added_this_month
+      FROM users
+      WHERE role = 'hoa_member'
+        AND created_at >= date_trunc('month', now())
+    `),
+  ]);
+
+  console.log(`[admin/dashboard] SQL aggregates (${Date.now() - t1}ms)`);
+
+  // ── Per-community completeness → communitiesOnboarding + distribution ─────
+  // Fetch all community IDs so communities with zero assets are included
+  const allCommunityIds = await db.select({ id: communities.id }).from(communities);
+
+  let communitiesOnboarding = 0;
+  const dist = { pct98to100: 0, pct90to98: 0, pct70to90: 0, pctBelow70: 0 };
+
+  for (const { id } of allCommunityIds) {
+    const total = totalCountByCommunity.get(id) ?? 0;
+    const complete = completeCountByCommunity.get(id) ?? 0;
+    const pct = total === 0 ? 0 : (complete / total) * 100;
+    if (pct < 90) communitiesOnboarding++;
+    if (pct >= 98) dist.pct98to100++;
+    else if (pct >= 90) dist.pct90to98++;
+    else if (pct >= 70) dist.pct70to90++;
+    else dist.pctBelow70++;
+  }
+
+  const tr = totalsResult.rows[0];
+  const er = exceptionsResult.rows[0];
+  const br = businessResult.rows[0];
+  const photoProofPct = photoProofResult.rows[0]?.photo_proof_pct != null
+    ? Number(photoProofResult.rows[0].photo_proof_pct)
+    : null;
+
+  console.log(`[admin/dashboard] total wall-clock (${Date.now() - t0}ms)`);
+
+  return {
+    totals: {
+      communities: Number(tr.communities),
+      communitiesOnboarding,
+      communitiesAddedThisMonth: Number(tr.communities_added_this_month),
+      activeAssets: Number(tr.active_assets),
+      assetsAddedThisMonth: Number(tr.assets_added_this_month),
+      incompleteAssets: globalIncomplete,
+      completenessPct,
+      mapLayers: Number(tr.map_layers),
+    },
+    exceptions: {
+      communitiesWithOverdueWork: Number(er.communities_overdue),
+      requestsUnacknowledged48h: {
+        count: Number(er.unack_count),
+        oldestDays: er.unack_oldest_days != null ? Number(er.unack_oldest_days) : null,
+      },
+      communitiesQuiet14d: Number(er.communities_quiet),
+      onboardingStalled30d: Number(er.onboarding_stalled),
+    },
+    activityTrend: trendResult.rows.map(r => ({
+      isoWeek: r.iso_week,
+      completedCount: Number(r.completed_count),
+      openCount: Number(r.open_count),
+    })),
+    reliability: {
+      onTimeServicePct30d: null, // service_schedules stores day_of_week patterns, not per-date rows
+      missedServices30d: null,   // service_schedules stores day_of_week patterns, not per-date rows
+      photoProofPct30d: photoProofPct,
+    },
+    business: {
+      invoicedThisMonthCents: Math.round(Number(br.invoiced_cents)),
+      unpaidOver30dCents: null,  // invoices table has no status column
+      unpaidOver30dCount: null,  // invoices table has no status column
+      contractsExpiring60d: Number(br.contracts_expiring_60d),
+      contractsExpiredUnrenewed: Number(br.contracts_expired_unrenewed),
+    },
+    completenessDistribution: dist,
+    users: {
+      active30d: null,           // users table has no last-login/activity timestamp
+      contractorsActive7d: null, // users table has no last-login/activity timestamp
+      hoaMembersAddedThisMonth: Number(usersResult.rows[0]?.hoa_added_this_month ?? 0),
+    },
+  };
 }
