@@ -3,13 +3,29 @@ import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEn
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member", "property_manager", "map_creator"]);
+export const userRoleEnum = pgEnum("user_role", ["contractor", "admin", "hoa_admin", "hoa_member", "property_manager", "map_creator", "client_admin"]);
 export const taskStatusEnum = pgEnum("task_status", ["pending", "in_progress", "completed", "submitted", "acknowledged"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high", "urgent"]);
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
 export const exportStatusEnum = pgEnum("export_status", ["queued", "running", "complete", "failed"]);
 export const serviceTypeEnum = pgEnum("service_type", ["mowing_visit"]);
+
+export const organizations = pgTable("organizations", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  kind: varchar("kind").notNull().default("commercial"),
+  contactName: text("contact_name"),
+  contactEmail: text("contact_email"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true });
+export const selectOrganizationSchema = createInsertSchema(organizations);
+export type Organization = typeof organizations.$inferSelect;
+export type NewOrganization = typeof organizations.$inferInsert;
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -20,6 +36,7 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   role: userRoleEnum("role").notNull().default("contractor"),
   hoaCommunityId: varchar("hoa_community_id").references(() => communities.id),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: 'set null' }),
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").notNull().default(true),
   notificationPreferences: jsonb("notification_preferences"),
@@ -35,8 +52,14 @@ export const communities = pgTable("communities", {
   isMapCreatorLocked: boolean("is_map_creator_locked").notNull().default(false),
   mapCreatorLockedAt: timestamp("map_creator_locked_at"),
   mapCreatorLockedBy: varchar("map_creator_locked_by").references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: 'set null' }),
+  code: varchar("code"),
+  address: text("address"),
+  city: text("city"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("communities_organization_id_idx").on(table.organizationId),
+]);
 
 export const communityMembers = pgTable("community_members", {
   id: varchar("id")
@@ -48,6 +71,37 @@ export const communityMembers = pgTable("community_members", {
 }, (table) => [
   uniqueIndex("community_members_community_user_idx").on(table.communityId, table.userId),
 ]);
+
+export const branchGroups = pgTable("branch_groups", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  color: varchar("color"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const branchGroupMembers = pgTable("branch_group_members", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().references(() => branchGroups.id, { onDelete: 'cascade' }),
+  communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+}, (table) => [
+  uniqueIndex("branch_group_members_group_community_idx").on(table.groupId, table.communityId),
+]);
+
+export const insertBranchGroupSchema = createInsertSchema(branchGroups).omit({ id: true, createdAt: true });
+export const selectBranchGroupSchema = createInsertSchema(branchGroups);
+export type BranchGroup = typeof branchGroups.$inferSelect;
+export type NewBranchGroup = typeof branchGroups.$inferInsert;
+
+export const insertBranchGroupMemberSchema = createInsertSchema(branchGroupMembers).omit({ id: true });
+export const selectBranchGroupMemberSchema = createInsertSchema(branchGroupMembers);
+export type BranchGroupMember = typeof branchGroupMembers.$inferSelect;
+export type NewBranchGroupMember = typeof branchGroupMembers.$inferInsert;
 
 export const tasks = pgTable("tasks", {
   id: varchar("id")
@@ -75,6 +129,9 @@ export const tasks = pgTable("tasks", {
   assetId: varchar("asset_id").references(() => assets.id, { onDelete: 'set null' }),
   category: varchar("category"),
   acknowledgedAt: timestamp("acknowledged_at"),
+  estimateCents: integer("estimate_cents"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by").references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -401,7 +458,8 @@ export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
   user: one(users, { fields: [pushTokens.userId], references: [users.id] }),
 }));
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
+  organization: one(organizations, { fields: [users.organizationId], references: [organizations.id] }),
   communityMembers: many(communityMembers),
   assignedTasks: many(tasks, { relationName: "assignedTasks" }),
   createdTasks: many(tasks, { relationName: "createdTasks" }),
@@ -416,12 +474,30 @@ export const offlinePacksRelations = relations(offlinePacks, ({ one }) => ({
   community: one(communities, { fields: [offlinePacks.communityId], references: [communities.id] }),
 }));
 
-export const communitiesRelations = relations(communities, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  communities: many(communities),
+  users: many(users),
+  branchGroups: many(branchGroups),
+}));
+
+export const branchGroupsRelations = relations(branchGroups, ({ one, many }) => ({
+  organization: one(organizations, { fields: [branchGroups.organizationId], references: [organizations.id] }),
+  members: many(branchGroupMembers),
+}));
+
+export const branchGroupMembersRelations = relations(branchGroupMembers, ({ one }) => ({
+  group: one(branchGroups, { fields: [branchGroupMembers.groupId], references: [branchGroups.id] }),
+  community: one(communities, { fields: [branchGroupMembers.communityId], references: [communities.id] }),
+}));
+
+export const communitiesRelations = relations(communities, ({ one, many }) => ({
+  organization: one(organizations, { fields: [communities.organizationId], references: [organizations.id] }),
   members: many(communityMembers),
   tasks: many(tasks),
   assets: many(assets),
   mapLayers: many(mapLayers),
   offlinePacks: many(offlinePacks),
+  branchGroupMembers: many(branchGroupMembers),
 }));
 
 export const communityMembersRelations = relations(communityMembers, ({ one }) => ({
