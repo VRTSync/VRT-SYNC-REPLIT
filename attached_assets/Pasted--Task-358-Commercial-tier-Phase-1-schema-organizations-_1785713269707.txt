@@ -1,0 +1,96 @@
+# Task #358: Commercial tier — Phase 1 schema (organizations, branch fields, groups, work-order fields)
+
+**What/why:** VRTSync is adding a commercial "Branch Portfolio" tier (multi-location clients like banks; first client pilot: PNC via High Plains Property Maintenance). Phase 1 is SCHEMA ONLY — new tables and columns plus migrations. No routes, no UI, no behavior changes. Existing HOA functionality must be completely unaffected.
+
+## Design principles (do not deviate)
+
+- A commercial branch IS a community: branches are rows in the existing `communities` table. No parallel branch table.
+- Work orders ARE tasks: the approval workflow extends the existing `tasks` table. No parallel work-order table.
+- New tables only for genuinely new concepts: organizations and branch groups.
+
+## Acceptance criteria
+
+### 1. New table `organizations`
+
+```
+id           varchar PK default gen_random_uuid()
+name         text NOT NULL
+kind         varchar NOT NULL default 'commercial'   -- future-proofing; no enum
+contactName  text
+contactEmail text
+createdAt    timestamp default now() NOT NULL
+```
+
+### 2. `communities` — three new nullable columns
+
+```
+organizationId varchar NULL references organizations(id) on delete set null
+code           varchar NULL          -- client's own identifier, e.g. "FB02"
+address        text NULL
+city           text NULL
+```
+
+- All nullable. `organizationId IS NULL` = standalone HOA community (all existing rows).
+- Index on `organizationId`.
+- Partial unique index on `(organization_id, code)` WHERE both NOT NULL — a client's codes are unique within their org.
+
+### 3. New tables for groups
+
+```
+branch_groups:
+  id             varchar PK default gen_random_uuid()
+  organizationId varchar NOT NULL references organizations(id) on delete cascade
+  name           text NOT NULL
+  color          varchar NULL         -- hex or token, UI decides later
+  sortOrder      integer NOT NULL default 0
+  createdAt      timestamp default now() NOT NULL
+
+branch_group_members:
+  id          varchar PK default gen_random_uuid()
+  groupId     varchar NOT NULL references branch_groups(id) on delete cascade
+  communityId varchar NOT NULL references communities(id) on delete cascade
+  unique index on (groupId, communityId)
+```
+
+(Join table deliberately allows a branch in multiple groups.)
+
+### 4. `users` — org scoping + role
+
+- New nullable column `organizationId varchar references organizations(id) on delete set null` (mirrors the existing `hoaCommunityId` pattern).
+- Add `client_admin` to `userRoleEnum` (`ALTER TYPE ... ADD VALUE` in the migration — note: ADD VALUE cannot run inside a transaction block with some Postgres setups; use the established pattern for enum changes if one exists in prior migrations, otherwise `ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'client_admin'` as its own statement).
+
+### 5. `tasks` — work-order approval fields (all nullable)
+
+```
+estimateCents  integer NULL      -- contractor's estimate, cents
+approvedAt     timestamp NULL
+approvedBy     varchar NULL references users(id) on delete set null
+```
+
+No changes to task statuses, existing enums, or any existing column.
+
+### 6. Migrations & typing
+
+- Everything ships as migration file(s) under `lib/db/migrations/` via `pnpm --filter @workspace/db run migrate:generate` — NOT only the ALTER safety-net block, and never `drizzle-kit push` in prod.
+- Rebuild the API server after generating so migrations copy to `dist/migrations/`.
+- Drizzle schema exports + drizzle-zod insert/select schemas added for new tables, following the file's existing conventions. Do NOT name any export `exports` (known drizzle-kit gotcha).
+- `replit.md` updated: brief "Commercial tier (organizations/branches)" note under Architecture decisions stating branch=community and work-order=task principles.
+
+## Files involved
+
+- `lib/db/src/schema/schema.ts`
+- `lib/db/migrations/` (new file(s))
+- `replit.md`
+
+## Must NOT change
+
+- Any existing column, enum value, table, or index.
+- Any route, storage function, or UI — this task has zero runtime behavior.
+- `artifacts/api-server/src/shared/` / mobile shared copies (untouched).
+
+## How to verify
+
+- Fresh boot on a copy of the dev DB: migrations apply cleanly; server starts; `pnpm run typecheck` passes.
+- Existing HOA flows spot-checked unchanged: login each role, load admin dashboard, load a community's map and tasks (should be byte-for-byte identical behavior).
+- Manual SQL: insert an organization, set `organizationId`+`code` on a test community, create a group with 2 member communities, set `estimateCents` on a task — all succeed; deleting the org sets community.organizationId to NULL (not cascade-deleting the community).
+- Confirm partial unique index: same code in same org rejected; same code in different orgs allowed; NULL codes unaffected.
