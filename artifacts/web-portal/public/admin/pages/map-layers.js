@@ -1219,7 +1219,10 @@ window._renderMapLayers = async function(container, communityId) {
     overlay.querySelector('.cancel-btn').addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 
-    uploadBtn.addEventListener('click', async () => {
+    // Stored version from the LAYER_EXISTS 409 response, used for optimistic locking on Replace/Merge
+    let conflictVersion = null;
+
+    async function doUpload(mode) {
       const displayName = overlay.querySelector('#ul-name').value.trim();
       const layerKey = layerKeySelect.value;
       const subLayerKey = subLayerKeySelect.value;
@@ -1232,6 +1235,10 @@ window._renderMapLayers = async function(container, communityId) {
       uploadBtn.disabled = true;
       uploadBtn.textContent = 'Uploading...';
 
+      // Hide conflict panel if re-submitting
+      const conflictPanel = overlay.querySelector('#ul-conflict-panel');
+      if (conflictPanel) conflictPanel.style.display = 'none';
+
       try {
         const formData = new FormData();
         formData.append('file', selectedFile);
@@ -1239,19 +1246,75 @@ window._renderMapLayers = async function(container, communityId) {
         formData.append('communityId', communityId);
         formData.append('layerKey', layerKey);
         formData.append('subLayerKey', subLayerKey);
+        if (mode) formData.append('mode', mode);
+        // Include version so the server can enforce optimistic concurrency on replace/merge
+        if (mode && conflictVersion != null) formData.append('version', String(conflictVersion));
 
         const resp = await fetch('/api/map-layers/upload', {
           method: 'POST',
           body: formData,
           credentials: 'include',
         });
+
+        if (resp.status === 409) {
+          const data = await resp.json().catch(() => ({}));
+          if (data.code === 'LAYER_EXISTS') {
+            conflictVersion = data.existing.version;
+            showConflictPanel(data.existing);
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload & Sync';
+            return;
+          }
+          if (data.code === 'VERSION_CONFLICT') {
+            // Layer was modified between conflict discovery and the re-submit;
+            // re-fetch the latest existing info and re-prompt
+            showToast('Layer was updated by someone else — please review the latest version below', 'info');
+            conflictVersion = null;
+            try {
+              const latestResp = await fetch('/api/map-layers/upload', {
+                method: 'POST',
+                body: (() => {
+                  const fd = new FormData();
+                  fd.append('file', selectedFile);
+                  fd.append('displayName', displayName);
+                  fd.append('communityId', communityId);
+                  fd.append('layerKey', layerKey);
+                  fd.append('subLayerKey', subLayerKey);
+                  return fd;
+                })(),
+                credentials: 'include',
+              });
+              if (latestResp.status === 409) {
+                const latestData = await latestResp.json().catch(() => ({}));
+                if (latestData.code === 'LAYER_EXISTS') {
+                  conflictVersion = latestData.existing.version;
+                  showConflictPanel(latestData.existing);
+                }
+              }
+            } catch {}
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Upload & Sync';
+            return;
+          }
+          throw new Error(data.error || `Upload failed (${resp.status})`);
+        }
+
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.error || `Upload failed (${resp.status})`);
         }
+
         const result = await resp.json();
         overlay.remove();
-        showToast(`Layer created with ${result.featureCount} features`, 'success');
+
+        if (result.mode === 'replace') {
+          showToast(`Replaced — ${result.featureCount} feature${result.featureCount !== 1 ? 's' : ''}`, 'success');
+        } else if (result.mode === 'merge') {
+          showToast(`Merged — ${result.featuresAdded} added, ${result.featuresSkipped} duplicate${result.featuresSkipped !== 1 ? 's' : ''} skipped`, 'success');
+        } else {
+          showToast(`Uploaded — ${result.featureCount} feature${result.featureCount !== 1 ? 's' : ''}`, 'success');
+        }
+
         if (result.syncResult) {
           showSyncReport(result.syncResult);
         }
@@ -1261,7 +1324,52 @@ window._renderMapLayers = async function(container, communityId) {
         uploadBtn.disabled = false;
         uploadBtn.textContent = 'Upload & Sync';
       }
-    });
+    }
+
+    function showConflictPanel(existing) {
+      let panel = overlay.querySelector('#ul-conflict-panel');
+      if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'ul-conflict-panel';
+        overlay.querySelector('#ul-sync-preview-area').after(panel);
+      }
+
+      const updatedAt = existing.updatedAt ? new Date(existing.updatedAt).toLocaleDateString() : '—';
+      panel.innerHTML = `
+        <div style="margin-top:16px;border:2px solid #e67e22;border-radius:8px;padding:16px;background:#fdf6ee">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <span style="font-size:18px">⚠️</span>
+            <strong style="color:#c0392b;font-size:14px">A layer already exists for this key combination</strong>
+          </div>
+          <div style="font-size:13px;color:var(--gray-700);margin-bottom:12px">
+            <div><strong>Existing layer:</strong> ${esc(existing.displayName)}</div>
+            <div style="margin-top:4px"><strong>Features:</strong> ${existing.featureCount} &nbsp;|&nbsp; <strong>Last updated:</strong> ${esc(updatedAt)}</div>
+          </div>
+          <div style="font-size:13px;color:var(--gray-600);margin-bottom:12px">Choose how to handle the conflict:</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-danger btn-sm" id="ul-conflict-replace">Replace</button>
+            <button class="btn btn-sm" id="ul-conflict-merge" style="background:#2980b9;color:#fff;border:none">Merge features</button>
+            <button class="btn btn-secondary btn-sm" id="ul-conflict-cancel-panel">Cancel</button>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:var(--gray-500)">
+            <strong>Replace</strong> overwrites all existing geometry with the uploaded file.<br>
+            <strong>Merge</strong> appends new features and skips duplicates (matched by feature id).
+          </div>
+        </div>
+      `;
+      panel.style.display = 'block';
+
+      panel.querySelector('#ul-conflict-replace').addEventListener('click', () => doUpload('replace'));
+      panel.querySelector('#ul-conflict-merge').addEventListener('click', () => doUpload('merge'));
+      panel.querySelector('#ul-conflict-cancel-panel').addEventListener('click', () => {
+        panel.style.display = 'none';
+        conflictVersion = null;
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload & Sync';
+      });
+    }
+
+    uploadBtn.addEventListener('click', () => doUpload(null));
   }
 
   function clientValidate(geojson, subLayerKey) {

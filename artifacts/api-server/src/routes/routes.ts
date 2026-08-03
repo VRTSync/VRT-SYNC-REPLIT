@@ -40,6 +40,28 @@ import { eq, and, desc, ne, inArray } from "drizzle-orm";
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
 
+/**
+ * Unwrap a Drizzle/pg error chain to find the underlying pg DatabaseError.
+ * Drizzle wraps the native pg error inside DrizzleQueryError, so `error.constraint`
+ * is undefined at the top level — we need to walk `.cause`.
+ */
+function pgErrorOf(error: any): any {
+  let e = error;
+  while (e) {
+    // pg DatabaseError has a numeric-string `code` like "23505"
+    if (e?.code && typeof e.code === "string" && /^\d{5}$/.test(e.code)) return e;
+    e = e?.cause ?? null;
+  }
+  return null;
+}
+
+function isUniqueViolation(error: any, constraint?: string): boolean {
+  const pg = pgErrorOf(error);
+  if (!pg || pg.code !== "23505") return false;
+  if (constraint) return pg.constraint === constraint;
+  return true;
+}
+
 // 60-second in-process cache for GET /api/admin/dashboard
 let adminDashboardCache: { data: Awaited<ReturnType<typeof storage.getAdminDashboard>>; expiresAt: number } | null = null;
 
@@ -2785,7 +2807,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { geojsonData, ...rest } = layer;
       res.status(201).json({ ...rest, featureCount, syncResult });
     } catch (error: any) {
-      if (error?.constraint === "map_layers_community_layer_sub_idx") {
+      if (isUniqueViolation(error, "map_layers_community_layer_sub_idx")) {
         return void res.status(409).json({ error: "A layer with that key combination already exists" });
       }
       console.error("Create map layer error:", error);
@@ -2863,13 +2885,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(400).json({ error: "No file or GeoJSON data provided" });
       }
 
-      const featureCount = JSON.parse(geojsonData).features?.length || 0;
+      const uploadedFeatures: any[] = JSON.parse(geojsonData).features || [];
+      const featureCount = uploadedFeatures.length;
 
-      const existingLayer = req.body.layerId ? await storage.getMapLayerById(req.body.layerId) : null;
-
-      if (existingLayer) {
+      // --- Explicit layerId replace path (used by outline flow) ---
+      const existingLayerById = req.body.layerId ? await storage.getMapLayerById(req.body.layerId) : null;
+      if (existingLayerById) {
         const version = parseInt(req.body.version || "1", 10);
-        const updated = await storage.updateMapLayer(existingLayer.id, version, {
+        const updated = await storage.updateMapLayer(existingLayerById.id, version, {
           displayName,
           sourceFormat,
           geojsonData,
@@ -2883,28 +2906,112 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = updated;
         return void res.json({ ...rest, featureCount, syncResult });
-      } else {
-        const uploadCount = (await storage.getMapLayersByCommunity(communityId, layerKey)).length;
-        const autoColor = getDefaultLayerColor(subLayerKey, uploadCount);
-        const layer = await storage.createMapLayer({
-          communityId,
-          layerKey,
-          subLayerKey,
+      }
+
+      // --- Conflict pre-check by (communityId, layerKey, subLayerKey) ---
+      const mode = req.body.mode as "replace" | "merge" | undefined;
+      const existingLayer = await storage.getMapLayerByKeys(communityId, layerKey, subLayerKey);
+
+      if (existingLayer && !mode) {
+        // No explicit mode sent — return conflict info so the client can ask
+        let existingFeatureCount = 0;
+        if (existingLayer.geojsonData) {
+          try {
+            existingFeatureCount = JSON.parse(existingLayer.geojsonData).features?.length || 0;
+          } catch {}
+        }
+        return void res.status(409).json({
+          code: "LAYER_EXISTS",
+          existing: {
+            id: existingLayer.id,
+            displayName: existingLayer.displayName,
+            featureCount: existingFeatureCount,
+            updatedAt: existingLayer.updatedAt,
+            version: existingLayer.version,
+          },
+        });
+      }
+
+      if (existingLayer && mode === "replace") {
+        // Version-checked replace
+        const version = parseInt(req.body.version || String(existingLayer.version), 10);
+        const updated = await storage.updateMapLayer(existingLayer.id, version, {
           displayName,
           sourceFormat,
           geojsonData,
-          color: autoColor,
         });
-        const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
-        const { geojsonData: _, ...rest } = layer;
-        return void res.status(201).json({ ...rest, featureCount, syncResult });
+        if (!updated) {
+          return void res.status(409).json({
+            error: "Conflict: layer was modified. Please refresh and try again.",
+            code: "VERSION_CONFLICT",
+          });
+        }
+        const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
+        const { geojsonData: _, ...rest } = updated;
+        return void res.json({ ...rest, featureCount, syncResult, mode: "replace" });
       }
+
+      if (existingLayer && mode === "merge") {
+        // Merge: append uploaded features to existing, de-duplicate by feature id
+        let existingFeatures: any[] = [];
+        if (existingLayer.geojsonData) {
+          try {
+            existingFeatures = JSON.parse(existingLayer.geojsonData).features || [];
+          } catch {}
+        }
+        const existingIds = new Set(existingFeatures.map((f: any) => f.id ?? f.properties?.featureId).filter(Boolean));
+        let featuresAdded = 0;
+        let featuresSkipped = 0;
+        const mergedFeatures = [...existingFeatures];
+        for (const f of uploadedFeatures) {
+          const fid = f.id ?? f.properties?.featureId;
+          if (fid && existingIds.has(fid)) {
+            featuresSkipped++;
+          } else {
+            mergedFeatures.push(f);
+            if (fid) existingIds.add(fid);
+            featuresAdded++;
+          }
+        }
+        const mergedGeojson = JSON.stringify({ type: "FeatureCollection", features: mergedFeatures });
+        const version = parseInt(req.body.version || String(existingLayer.version), 10);
+        const updated = await storage.updateMapLayer(existingLayer.id, version, {
+          displayName: displayName || existingLayer.displayName,
+          sourceFormat,
+          geojsonData: mergedGeojson,
+        });
+        if (!updated) {
+          return void res.status(409).json({
+            error: "Conflict: layer was modified. Please refresh and try again.",
+            code: "VERSION_CONFLICT",
+          });
+        }
+        const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
+        const { geojsonData: _, ...rest } = updated;
+        return void res.json({ ...rest, featureCount: mergedFeatures.length, featuresAdded, featuresSkipped, syncResult, mode: "merge" });
+      }
+
+      // --- No existing layer: standard insert ---
+      const uploadCount = (await storage.getMapLayersByCommunity(communityId, layerKey)).length;
+      const autoColor = getDefaultLayerColor(subLayerKey, uploadCount);
+      const layer = await storage.createMapLayer({
+        communityId,
+        layerKey,
+        subLayerKey,
+        displayName,
+        sourceFormat,
+        geojsonData,
+        color: autoColor,
+      });
+      const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
+      const { geojsonData: _, ...rest } = layer;
+      return void res.status(201).json({ ...rest, featureCount, syncResult });
     } catch (error: any) {
-      if (error?.constraint === "map_layers_community_layer_sub_idx") {
+      if (isUniqueViolation(error, "map_layers_community_layer_sub_idx")) {
         return void res.status(409).json({ error: "A layer with that key combination already exists for this community" });
       }
-      console.error("Map layer upload error:", error);
-      res.status(500).json({ error: error.message || "Failed to process upload" });
+      if (req.log) { req.log.error({ err: error }, "Map layer upload error"); } else { console.error("Map layer upload error:", error); }
+      res.status(500).json({ error: "Failed to process upload" });
     }
   });
 
@@ -3002,8 +3109,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         warnings: parseResult.warnings,
       });
     } catch (error: any) {
-      console.error("Irrigation upload error:", error);
-      res.status(500).json({ error: error.message || "Failed to process irrigation KML" });
+      req.log.error({ err: error }, "Irrigation upload error");
+      res.status(500).json({ error: "Failed to process irrigation KML" });
     }
   });
 

@@ -930,6 +930,17 @@ export async function getMapLayerById(id: string): Promise<MapLayer | undefined>
   return layer;
 }
 
+export async function getMapLayerByKeys(communityId: string, layerKey: string, subLayerKey: string): Promise<MapLayer | undefined> {
+  const [layer] = await db.select().from(mapLayers).where(
+    and(
+      eq(mapLayers.communityId, communityId),
+      eq(mapLayers.layerKey, layerKey),
+      eq(mapLayers.subLayerKey, subLayerKey),
+    )
+  );
+  return layer;
+}
+
 export async function updateMapLayer(id: string, expectedVersion: number, data: Partial<{
   displayName: string;
   sourceFormat: string;
