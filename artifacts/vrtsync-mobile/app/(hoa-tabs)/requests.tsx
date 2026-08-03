@@ -316,9 +316,9 @@ function generateAllRequestsMapHTML(requests: HoaRequest[], focusedId: string | 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
-  var map = L.map('map', { zoomControl: false, attributionControl: false })
+  var map = L.map('map', { zoomControl: false })
     .setView([33.5, -112], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN || ''}',{tileSize:512,zoomOffset:-1,maxNativeZoom:22,maxZoom:23,attribution:'\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>'}).addTo(map);
 
   ${focusedJs}
   var bounds = [];

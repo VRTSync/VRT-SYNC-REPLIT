@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApiUrl } from '@/lib/query-client';
 /**
  * The Leaflet map HTML is imported from the canonical shared template.
@@ -129,6 +130,21 @@ export default function LeafletMap({
   showSatelliteToggle = false,
 }: LeafletMapProps) {
   const [satelliteMode, setSatelliteMode] = useState(false);
+  const [satModeLoaded, setSatModeLoaded] = useState(false);
+
+  // Persist satellite preference across screen changes and app restarts (AsyncStorage key: mapSatelliteMode)
+  useEffect(() => {
+    AsyncStorage.getItem('mapSatelliteMode').then((val) => {
+      if (val === 'true') setSatelliteMode(true);
+      setSatModeLoaded(true);
+    }).catch(() => { setSatModeLoaded(true); });
+  }, []);
+
+  useEffect(() => {
+    if (!satModeLoaded) return;
+    AsyncStorage.setItem('mapSatelliteMode', String(satelliteMode)).catch(() => {});
+  }, [satelliteMode, satModeLoaded]);
+
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const mapReadyRef = useRef(false);
@@ -381,7 +397,16 @@ export default function LeafletMap({
     sendCmd('setSatellite', satelliteMode);
   }, [satelliteMode, sendCmd]);
 
-  const htmlContent = useMemo(() => LEAFLET_MAP_HTML, []);
+  // Substitute the mobile Mapbox token into the HTML before passing to WebView.
+  // EXPO_PUBLIC_MAPBOX_TOKEN must be unrestricted — a URL-restricted token is silently
+  // rejected because the WebView sends no usable referrer/origin header.
+  const htmlContent = useMemo(() => {
+    const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN || '';
+    if (!token) {
+      return `<!DOCTYPE html><html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,system-ui,sans-serif;background:#f5f7fa;margin:0"><div style="text-align:center;padding:24px;max-width:280px"><div style="font-size:16px;font-weight:700;color:#333;margin-bottom:6px">Map unavailable</div><div style="font-size:13px;color:#888">EXPO_PUBLIC_MAPBOX_TOKEN is not configured. Contact your administrator.</div></div></body></html>`;
+    }
+    return LEAFLET_MAP_HTML.replace(/__MAPBOX_TOKEN__/g, token);
+  }, []);
 
   const iframeSrcDoc = useMemo(() => htmlContent, [htmlContent]);
 
@@ -536,7 +561,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 4,
-    elevation: 4,
+    elevation: 8,
+    zIndex: 200,
   },
   satelliteBtnActive: {
     backgroundColor: '#0C1D31',

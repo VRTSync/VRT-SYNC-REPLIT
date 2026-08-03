@@ -1043,10 +1043,13 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const mapEl = document.getElementById('xp-map');
     if (!mapEl) return;
 
-    map = L.map(mapEl, { zoomControl: true, attributionControl: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 20,
-      attribution: '&copy; OpenStreetMap contributors',
+    map = L.map(mapEl, { zoomControl: true });
+    L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=' + (window.MAPBOX_TOKEN || ''), {
+      tileSize: 512,
+      zoomOffset: -1,
+      maxNativeZoom: 22,
+      maxZoom: 23,
+      attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
     }).addTo(map);
   }
 
@@ -1672,8 +1675,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         keyboard: false,
       });
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 20,
+      L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=' + (window.MAPBOX_TOKEN || ''), {
+        tileSize: 512,
+        zoomOffset: -1,
+        maxNativeZoom: 22,
+        maxZoom: 23,
+        attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(miniMap);
 
       const bounds = L.latLngBounds([]);
@@ -2633,10 +2640,13 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const mapEl = document.getElementById('xp-map');
     if (!mapEl) return;
 
-    map = L.map(mapEl, { zoomControl: true, attributionControl: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 20,
-      attribution: '&copy; OpenStreetMap contributors',
+    map = L.map(mapEl, { zoomControl: true });
+    L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=' + (window.MAPBOX_TOKEN || ''), {
+      tileSize: 512,
+      zoomOffset: -1,
+      maxNativeZoom: 22,
+      maxZoom: 23,
+      attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
     }).addTo(map);
 
     try {

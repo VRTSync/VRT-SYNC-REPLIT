@@ -12,6 +12,25 @@ import pino from "pino";
 import { LEAFLET_MAP_HTML } from "@workspace/leaflet-template";
 
 const logger = pino({ name: "web-portal" });
+
+// ── Mapbox token (web — URL-restricted to vrtsync.com and Replit preview domains) ──
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || "";
+if (!MAPBOX_TOKEN) {
+  logger.warn(
+    "MAPBOX_TOKEN is not set — map tiles will be unavailable. " +
+    "Add it to Replit Secrets (Settings → Secrets → MAPBOX_TOKEN)."
+  );
+}
+
+/** Returns the Leaflet map HTML with the Mapbox token substituted, or an
+ *  in-map error page if the token is missing. */
+function buildLeafletMapHtml(): string {
+  if (!MAPBOX_TOKEN) {
+    return `<!DOCTYPE html><html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,system-ui,sans-serif;background:#f5f7fa;margin:0"><div style="text-align:center;padding:24px;max-width:300px"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2" style="margin-bottom:12px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><div style="font-size:16px;font-weight:700;color:#333;margin-bottom:6px">Map unavailable</div><div style="font-size:13px;color:#888">MAPBOX_TOKEN is not configured on the server. Ask your administrator to add it to Replit Secrets.</div></div></body></html>`;
+  }
+  return LEAFLET_MAP_HTML.replace(/__MAPBOX_TOKEN__/g, MAPBOX_TOKEN);
+}
+
 const app: Express = express();
 
 app.set("trust proxy", 1);
@@ -337,7 +356,10 @@ app.get("/web/admin", (_req: Request, res: Response) => {
 
 app.get(/^\/web\/admin\/(?!login).*$/, requireRole(["admin"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.send(adminShell);
+  // Inject the Mapbox token so static admin JS (e.g. xeriscape-planner.js) can
+  // access it via window.MAPBOX_TOKEN without hard-coding it.
+  const tokenScript = `<script>window.MAPBOX_TOKEN=${JSON.stringify(MAPBOX_TOKEN)};</script>`;
+  res.send(adminShell.replace("</head>", `${tokenScript}</head>`));
 });
 
 // Contractor routes
@@ -380,13 +402,13 @@ app.get(/^\/web\/portfolio\/.*$/, requireRole(["client_admin", "admin"]), (_req:
   res.send(portfolioShell);
 });
 
-// Leaflet map
+// Leaflet map — token substituted server-side (MAPBOX_TOKEN env var)
 app.get("/leaflet-map.html", (_req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
-  res.type("html").send(LEAFLET_MAP_HTML);
+  res.type("html").send(buildLeafletMapHtml());
 });
 
-// Pin picker
+// Pin picker — Mapbox light-v11 basemap, token substituted server-side
 app.get("/pin-picker.html", (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   const latParsed = parseFloat(req.query.lat as string);
@@ -395,6 +417,9 @@ app.get("/pin-picker.html", (req: Request, res: Response) => {
   const lat = Number.isFinite(latParsed) ? latParsed : 39.5;
   const lng = Number.isFinite(lngParsed) ? lngParsed : -104.9;
   const zoom = Number.isFinite(zoomParsed) ? zoomParsed : 15;
+  const tileUrl = MAPBOX_TOKEN
+    ? `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`
+    : "";
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -408,8 +433,10 @@ app.get("/pin-picker.html", (req: Request, res: Response) => {
 <script>
 (function() {
   var initLat=${lat},initLng=${lng},initZoom=${zoom};
-  var map=L.map('map',{zoomControl:true,attributionControl:false}).setView([initLat,initLng],initZoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20}).addTo(map);
+  var map=L.map('map',{zoomControl:true}).setView([initLat,initLng],initZoom);
+  ${tileUrl
+    ? `L.tileLayer(${JSON.stringify(tileUrl)},{tileSize:512,zoomOffset:-1,maxNativeZoom:22,maxZoom:23,attribution:'\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>'}).addTo(map);`
+    : `/* MAPBOX_TOKEN not set — tiles unavailable */`}
   var pinIcon=L.divIcon({html:'<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><path d="M14 0C6.27 0 0 6.27 0 14c0 9.33 14 22 14 22S28 23.33 28 14C28 6.27 21.73 0 14 0z" fill="#E53935"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>',className:'',iconSize:[28,36],iconAnchor:[14,36]});
   var marker=L.marker([initLat,initLng],{icon:pinIcon,draggable:true}).addTo(map);
   function emitPin(lat,lng){if(window.parent!==window)window.parent.postMessage({type:'pin',lat:lat,lng:lng},'*');}

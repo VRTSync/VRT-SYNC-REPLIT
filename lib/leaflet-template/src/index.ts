@@ -140,19 +140,53 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 (function() {
   var map = L.map('map', {
     zoomControl: false,
-    attributionControl: false,
     maxZoom: 23
   }).setView([39.8283, -98.5795], 4);
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-  var streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxNativeZoom: 19,
-    maxZoom: 23
+  // ── Basemap config ─────────────────────────────────────────────────────────
+  // Provider: Mapbox — two tokens in use:
+  //   __MAPBOX_TOKEN__ is replaced at serve time by the web portal (MAPBOX_TOKEN env,
+  //   URL-restricted to vrtsync.com and Replit preview domains).
+  //   For the mobile WebView, LeafletMap.tsx substitutes EXPO_PUBLIC_MAPBOX_TOKEN
+  //   (unrestricted) before setting source.html — a URL-restricted token would be
+  //   silently rejected because WebView sends no usable referrer/origin header.
+  // Offline packs: no bundled/cached tiles are currently present. Leaflet uses the
+  //   browser HTTP cache; RN WebView tile cache is disabled (cacheEnabled={false}),
+  //   so no provider-change tile-cache migration is needed.
+  var BASEMAPS = {
+    street: {
+      url: 'https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=__MAPBOX_TOKEN__',
+      tileSize: 512,
+      zoomOffset: -1,
+      maxNativeZoom: 22,
+      maxZoom: 23,
+      attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>'
+    },
+    satellite: {
+      url: 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=__MAPBOX_TOKEN__',
+      tileSize: 512,
+      zoomOffset: -1,
+      maxNativeZoom: 22,
+      maxZoom: 23,
+      attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>'
+    }
+  };
+
+  var streetLayer = L.tileLayer(BASEMAPS.street.url, {
+    tileSize: BASEMAPS.street.tileSize,
+    zoomOffset: BASEMAPS.street.zoomOffset,
+    maxNativeZoom: BASEMAPS.street.maxNativeZoom,
+    maxZoom: BASEMAPS.street.maxZoom,
+    attribution: BASEMAPS.street.attribution
   });
-  var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxNativeZoom: 19,
-    maxZoom: 23
+  var satelliteLayer = L.tileLayer(BASEMAPS.satellite.url, {
+    tileSize: BASEMAPS.satellite.tileSize,
+    zoomOffset: BASEMAPS.satellite.zoomOffset,
+    maxNativeZoom: BASEMAPS.satellite.maxNativeZoom,
+    maxZoom: BASEMAPS.satellite.maxZoom,
+    attribution: BASEMAPS.satellite.attribution
   });
   streetLayer.addTo(map);
 

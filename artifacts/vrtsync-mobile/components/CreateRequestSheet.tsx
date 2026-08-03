@@ -58,9 +58,9 @@ function generatePinPickerHTML(lat: number, lng: number): string {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
-  var map = L.map('map', { zoomControl: false, attributionControl: false })
+  var map = L.map('map', { zoomControl: false })
     .setView([${lat}, ${lng}], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN || ''}',{tileSize:512,zoomOffset:-1,maxNativeZoom:22,maxZoom:23,attribution:'\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
   var marker = null;
   function post(type, data) {
     var msg = JSON.stringify({ type: type, data: data });
@@ -103,9 +103,9 @@ function generateReadOnlyMapHTML(lat: number, lng: number): string {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function() {
-  var map = L.map('map', { zoomControl: false, attributionControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false })
+  var map = L.map('map', { zoomControl: false, dragging: false, touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false })
     .setView([${lat}, ${lng}], 16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN || ''}',{tileSize:512,zoomOffset:-1,maxNativeZoom:22,maxZoom:23,attribution:'\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
   L.marker([${lat}, ${lng}], {
     icon: L.divIcon({ html: '<div class="pin-icon"></div>', className: '', iconSize: [24,24], iconAnchor: [12,12] })
   }).addTo(map);
