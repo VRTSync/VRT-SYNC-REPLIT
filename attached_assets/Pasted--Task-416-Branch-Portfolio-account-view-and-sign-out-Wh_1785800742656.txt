@@ -1,0 +1,69 @@
+# Task #416: Branch Portfolio — account view and sign out
+
+## What & Why
+
+The Branch Portfolio portal has no way to see who you're signed in as beyond a static name in the sidebar, and **no way to sign out at all**. Every other portal has both: the admin hub has a user menu with a logout button (`admin/admin.js` ~43), and the HOA/PM/contractor portal has a full Account page (`portal/pages/account.js`) with profile and change-password.
+
+A client-facing portal a bank logs into must let the user confirm their identity and end their session. This is table stakes, and currently absent.
+
+## Done looks like
+
+- The sidebar user block (avatar + name + role, bottom of the sidebar) is **interactive** — clicking it opens a small menu with **Account** and **Sign out**.
+- **Sign out** POSTs `/api/auth/logout` and redirects to `/web/login`. Session is genuinely ended (returning to `/web/portfolio/dashboard` afterward redirects to login).
+- **Account page** at `#/account`: display name, username, role, organization name, and a **Change password** form (current password + new + confirm), mirroring `portal/pages/account.js` in behavior and validation.
+- Changing the display name updates the sidebar without a page reload.
+- Errors (wrong current password, weak/mismatched new password) render **inline on the form**, not as toasts that discard input.
+- Admin preview mode (`?org=`) shows the admin's own identity with the "Admin (preview)" badge already present, and signing out works the same.
+- No new API endpoints — reuse `GET /api/auth/me`, `PATCH /api/auth/me`, `POST /api/auth/logout`, all of which the other portals already use.
+
+## Out of scope
+
+- Avatar upload (the HOA portal has it; skip unless trivial to reuse).
+- Notification preferences, MFA, or session management beyond a single sign-out.
+- Any change to auth endpoints, roles, or the other portals.
+
+## Steps
+
+### 1. Sidebar user menu — `public/portfolio/portfolio.js`
+
+- Make the existing user block (`#user-name-label` / `#user-role-label` area) a button with `aria-haspopup`/`aria-expanded`.
+- On click, open a small popup menu anchored above it containing **Account** (navigates to `#/account`) and **Sign out**.
+- Close on outside click and on Escape; keyboard reachable.
+- **Sign out** handler:
+  ```js
+  await apiFetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/web/login';
+  ```
+  matching `admin/admin.js` ~43. Disable the button while in flight so a double-click can't fire twice.
+
+### 2. Account page — `public/portfolio/pages/account.js` (new)
+
+- Register `PortfolioRouter.register('account', …)`.
+- Two panels, styled with the portfolio's existing panel treatment (colored dot + light-sweep header):
+  - **Profile**: avatar initials, display name (editable), username (read-only), role (read-only, friendly label — "Client Admin"), organization name (read-only). Save via `PATCH /api/auth/me` with `{ displayName, currentPassword }` exactly as `portal/pages/account.js` does.
+  - **Change password**: current, new, confirm. Validate match and minimum length client-side; submit via the same `PATCH /api/auth/me` path used by the existing account page (check its payload shape and reuse it verbatim).
+- On successful display-name change, update the sidebar label in place.
+- All values escaped with `VRTUtils.esc`.
+
+### 3. Wiring
+
+- Add the script tag to `templates/portfolio-shell.html` in the correct load order.
+- Add `account` to the router's known routes (no nav item — it's reached from the user menu, matching how the other portals do it).
+- Add the menu/account styles to `portfolio.css` using existing variables.
+
+### 4. Verify
+
+- As the PNC client user: open the user menu, confirm name/role/org are correct; visit Account; change the display name → sidebar updates without reload; change the password → sign out → sign back in with the new password.
+- Wrong current password → inline error, form retains input.
+- Sign out → lands on `/web/login`; navigating back to `/web/portfolio/dashboard` redirects to login (session actually ended).
+- As admin with `?org=`: menu shows the admin's identity, "Admin (preview)" badge still present, sign-out works.
+- Keyboard: menu opens/closes with keyboard, Escape closes, focus is not trapped.
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/portfolio.js` (sidebar render, user block ~118–125)
+- `artifacts/web-portal/public/portfolio/pages/account.js` (new)
+- `artifacts/web-portal/public/portal/pages/account.js` (**pattern reference** — profile + change-password behavior, validation, payload shape)
+- `artifacts/web-portal/public/admin/admin.js` (~43 — logout pattern)
+- `artifacts/web-portal/templates/portfolio-shell.html` (script tag)
+- `artifacts/web-portal/public/portfolio/portfolio.css`
