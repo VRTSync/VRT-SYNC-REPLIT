@@ -41,6 +41,7 @@
   // ── Sidebar render ────────────────────────────────────────────────────────
   var NAV_ITEMS = [
     { route: 'dashboard', label: 'Dashboard' },
+    { route: 'branches',  label: 'Branches'  },
   ];
 
   function renderSidebar(user) {

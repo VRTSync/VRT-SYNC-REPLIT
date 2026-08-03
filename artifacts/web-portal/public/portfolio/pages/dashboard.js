@@ -279,7 +279,7 @@
           lastSvcText = '—';
         }
 
-        return '<tr>'
+        return '<tr class="clickable" data-branch-id="' + esc(b.id) + '">'
           + '<td class="bcode">' + esc(code)    + '</td>'
           + '<td><div class="bname">' + esc(name) + '</div>'
           +     (city ? '<div class="bsub">' + esc(city) + '</div>' : '')
@@ -362,6 +362,16 @@
         + renderBranchSnapshot(branches, orderedGroups);
 
       container.innerHTML = html;
+
+      // Wire branch snapshot rows to navigate to branch-detail
+      container.querySelectorAll('tr.clickable[data-branch-id]').forEach(function (row) {
+        row.addEventListener('click', function () {
+          var id = row.getAttribute('data-branch-id');
+          if (id && window.PortfolioRouter) {
+            PortfolioRouter.navigate('branch-detail', true, { id: id });
+          }
+        });
+      });
 
     }).catch(function (err) {
       console.error('[portfolio/dashboard] fetch failed:', err);
