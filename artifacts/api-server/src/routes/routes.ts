@@ -33,7 +33,7 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray } from "drizzle-orm";
 
@@ -5441,6 +5441,314 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Portfolio groups error:", error);
       return void res.status(500).json({ error: "Failed to fetch portfolio groups" });
+    }
+  });
+
+  // ── Portfolio Phase 3d: Work Orders endpoints ────────────────────────────
+  //
+  // origin values in use across the codebase (grep 2024-08):
+  //   "HOA" — tasks created by HOA members via the HOA portal (requests.js)
+  //   null  — tasks created by admin/contractor directly
+  // No "client_portal" or "client" origin values exist today.
+  // We use origin = 'client' as a role-generic value for any commercial
+  // client portal submission (not tied to a specific org name like "PNC").
+
+  app.get("/api/portfolio/work-orders", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+
+      // Fetch org for display name (used in source label)
+      const [org, workOrdersResult] = await Promise.all([
+        storage.getOrganizationById(orgId),
+        pool.query<{
+          id: string;
+          community_id: string;
+          community_name: string;
+          community_code: string | null;
+          title: string;
+          description: string | null;
+          status: string;
+          priority: string;
+          origin: string | null;
+          estimate_cents: number | null;
+          approved_at: string | null;
+          approved_by: string | null;
+          created_at: string;
+          updated_at: string;
+          days_open: string;
+          photo_count: string;
+          // completed_at is only for closed tasks
+          completed_at: string | null;
+        }>(`
+          WITH org_coms AS (
+            SELECT id, name, code FROM communities WHERE organization_id = $1
+          )
+          SELECT
+            t.id,
+            t.community_id,
+            c.name AS community_name,
+            c.code AS community_code,
+            t.title,
+            t.description,
+            t.status,
+            t.priority,
+            t.origin,
+            t.estimate_cents,
+            t.approved_at::text,
+            t.approved_by,
+            t.created_at::text,
+            t.updated_at::text,
+            -- daysOpen: calendar days since creation (rounded)
+            EXTRACT(DAY FROM now() - t.created_at)::text AS days_open,
+            -- photoCount: attachments directly on the task (pre-completion photos)
+            COALESCE((
+              SELECT COUNT(*) FROM attachments a
+               WHERE a.task_id = t.id AND a.task_completion_id IS NULL
+            ), 0)::text AS photo_count,
+            -- completed_at: latest completion timestamp (for closed tasks)
+            (SELECT tc.completed_at::text FROM task_completions tc
+              WHERE tc.task_id = t.id
+              ORDER BY tc.completed_at DESC LIMIT 1) AS completed_at
+          FROM tasks t
+          JOIN org_coms c ON c.id = t.community_id
+          ORDER BY t.created_at DESC
+        `, [orgId]),
+      ]);
+
+      const orgName = org?.name ?? null;
+      const now30 = new Date();
+      now30.setDate(now30.getDate() - 30);
+
+      const open: any[] = [];
+      const closed: any[] = [];
+
+      for (const r of workOrdersResult.rows) {
+        // ref: short form of the task id (first 8 chars, uppercased, prefixed WO-)
+        // Using id short form since there's no dedicated work-order number sequence.
+        const ref = 'WO-' + r.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+
+        // source: derive display from origin
+        // origin = 'client' → "<orgName> request" (e.g. "PNC request")
+        // origin = 'HOA' → "HP" (HOA portal — shouldn't appear in portfolio but handle gracefully)
+        // origin = null/other → "HP"
+        let source: string;
+        if (r.origin === 'client') {
+          source = orgName ? orgName + ' request' : 'Client request';
+        } else {
+          source = 'HP';
+        }
+
+        const row = {
+          id: r.id,
+          ref,
+          communityId: r.community_id,
+          branchName: r.community_name,
+          branchCode: r.community_code,
+          title: r.title,
+          description: r.description,
+          status: r.status,
+          priority: r.priority,
+          source,
+          origin: r.origin,
+          estimateCents: r.estimate_cents,
+          approvedAt: r.approved_at,
+          approvedBy: r.approved_by,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          daysOpen: Math.max(0, Number(r.days_open ?? 0)),
+          photoCount: Number(r.photo_count ?? 0),
+        };
+
+        if (r.status === 'completed') {
+          // Only include completed tasks from the last 30 days
+          const completedAt = r.completed_at ? new Date(r.completed_at) : null;
+          if (completedAt && completedAt >= now30) {
+            closed.push({ ...row, completedAt: r.completed_at });
+          }
+        } else {
+          open.push(row);
+        }
+      }
+
+      // Pipeline counts
+      const pipeline = {
+        flaggedByHp: open.filter(t => t.origin !== 'client').length,
+        awaitingApproval: open.filter(t => t.estimateCents != null && !t.approvedAt).length,
+        scheduled: open.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
+        completed30d: closed.length,
+      };
+
+      console.log(`[GET /api/portfolio/work-orders] org=${orgId} open=${open.length} closed=${closed.length} (${Date.now() - t0}ms)`);
+      return void res.json({ pipeline, open, closed });
+    } catch (error) {
+      console.error("Portfolio work-orders GET error:", error);
+      return void res.status(500).json({ error: "Failed to fetch work orders" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+
+      const { communityId, title, description, latitude, longitude, objectKeys } = req.body;
+      if (!communityId || typeof communityId !== "string") {
+        return void res.status(400).json({ error: "communityId is required" });
+      }
+      if (!title || typeof title !== "string" || title.trim().length === 0) {
+        return void res.status(400).json({ error: "title is required" });
+      }
+
+      // Verify the communityId belongs to this org (403 if not — cross-org isolation)
+      const community = await storage.getCommunityById(communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Branch not found or does not belong to this organization" });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const orgName = org?.name ?? null;
+
+      const task = await storage.createTask({
+        communityId,
+        title: title.trim(),
+        description: description?.trim() || undefined,
+        createdBy: req.session.userId!,
+        latitude: typeof latitude === 'number' ? latitude : undefined,
+        longitude: typeof longitude === 'number' ? longitude : undefined,
+        // origin = 'client': role-generic value for any commercial portal submission
+        origin: 'client',
+        status: 'pending',
+      });
+
+      // Attach any already-uploaded object keys (existing upload/confirm flow)
+      if (Array.isArray(objectKeys) && objectKeys.length > 0) {
+        const objectStorageService = new ObjectStorageService();
+        for (const key of objectKeys) {
+          if (typeof key !== "string") continue;
+          try {
+            await storage.createAttachment({
+              taskId: task.id,
+              fileRef: key,
+              url: key,
+              uploadedBy: req.session.userId!,
+              idempotencyKey: key,
+            });
+          } catch (_) { /* skip duplicate keys */ }
+        }
+      }
+
+      // Return the created task as an open work-order row
+      const ref = 'WO-' + task.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+      const source = orgName ? orgName + ' request' : 'Client request';
+
+      console.log(`[POST /api/portfolio/work-orders] org=${orgId} task=${task.id} (${Date.now() - t0}ms)`);
+      return void res.status(201).json({
+        id: task.id,
+        ref,
+        communityId: task.communityId,
+        branchName: community.name,
+        branchCode: community.code ?? null,
+        title: task.title,
+        description: task.description ?? null,
+        status: task.status,
+        priority: task.priority,
+        source,
+        origin: task.origin,
+        estimateCents: task.estimateCents ?? null,
+        approvedAt: task.approvedAt ?? null,
+        approvedBy: task.approvedBy ?? null,
+        createdAt: task.createdAt.toISOString(),
+        updatedAt: task.updatedAt.toISOString(),
+        daysOpen: 0,
+        photoCount: Array.isArray(objectKeys) ? objectKeys.length : 0,
+      });
+    } catch (error) {
+      console.error("Portfolio work-orders POST error:", error);
+      return void res.status(500).json({ error: "Failed to create work order" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders/:taskId/approve", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      // Fetch task and verify it belongs to this org
+      const task = await storage.getTaskById(taskId);
+      if (!task) {
+        return void res.status(404).json({ error: "Work order not found" });
+      }
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      // Idempotent: if already approved, return current state with 200
+      if (task.approvedAt) {
+        const org = await storage.getOrganizationById(orgId);
+        const ref = 'WO-' + task.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+        const source = task.origin === 'client'
+          ? (org?.name ? org.name + ' request' : 'Client request')
+          : 'HP';
+        return void res.json({
+          id: task.id,
+          ref,
+          communityId: task.communityId,
+          branchName: community.name,
+          branchCode: community.code ?? null,
+          title: task.title,
+          status: task.status,
+          estimateCents: task.estimateCents ?? null,
+          approvedAt: task.approvedAt.toISOString(),
+          approvedBy: task.approvedBy ?? null,
+          source,
+          origin: task.origin ?? null,
+        });
+      }
+
+      // Set approvedAt + approvedBy (direct DB update; no version bump needed for approval)
+      const [updated] = await db.update(tasks)
+        .set({ approvedAt: new Date(), approvedBy: req.session.userId! })
+        .where(eq(tasks.id, taskId))
+        .returning();
+
+      if (!updated) {
+        return void res.status(404).json({ error: "Work order not found" });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const ref = 'WO-' + updated.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+      const source = updated.origin === 'client'
+        ? (org?.name ? org.name + ' request' : 'Client request')
+        : 'HP';
+
+      console.log(`[POST /api/portfolio/work-orders/:taskId/approve] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.json({
+        id: updated.id,
+        ref,
+        communityId: updated.communityId,
+        branchName: community.name,
+        branchCode: community.code ?? null,
+        title: updated.title,
+        status: updated.status,
+        estimateCents: updated.estimateCents ?? null,
+        approvedAt: updated.approvedAt!.toISOString(),
+        approvedBy: updated.approvedBy ?? null,
+        source,
+        origin: updated.origin ?? null,
+      });
+    } catch (error) {
+      console.error("Portfolio work-orders approve error:", error);
+      return void res.status(500).json({ error: "Failed to approve work order" });
     }
   });
 

@@ -43,7 +43,35 @@
     { route: 'dashboard',    label: 'Dashboard'     },
     { route: 'branches',     label: 'Branches'      },
     { route: 'map',          label: 'Portfolio Map' },
+    { route: 'work-orders',  label: 'Work Orders'   },
   ];
+
+  // Cache of pipeline awaiting-approval count for sidebar badge
+  var _awaitingApprovalCount = 0;
+
+  // Fetch work-order pipeline counts for the sidebar badge (non-blocking)
+  function fetchWorkOrderBadge() {
+    var orgSuffix = '';
+    if (window.PortfolioState && window.PortfolioState.organizationId) {
+      orgSuffix = '?organizationId=' + encodeURIComponent(window.PortfolioState.organizationId);
+    }
+    fetch('/api/portfolio/work-orders' + orgSuffix, { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !data.pipeline) return;
+        var n = Number(data.pipeline.awaitingApproval || 0);
+        if (n !== _awaitingApprovalCount) {
+          _awaitingApprovalCount = n;
+          // Re-render the nav badge without a full sidebar redraw
+          var badge = document.getElementById('wo-nav-badge');
+          if (badge) {
+            badge.textContent = n > 0 ? String(n) : '';
+            badge.style.display = n > 0 ? 'inline-block' : 'none';
+          }
+        }
+      })
+      .catch(function () { /* non-critical; ignore */ });
+  }
 
   function renderSidebar(user) {
     // Org name
@@ -67,9 +95,16 @@
     if (navEl) {
       var search = window.location.search; // preserves ?org=... for admin
       navEl.innerHTML = NAV_ITEMS.map(function (item) {
+        var badge = '';
+        if (item.route === 'work-orders' && _awaitingApprovalCount > 0) {
+          badge = ' <span id="wo-nav-badge" style="display:inline-block;background:var(--amber);color:var(--navy);border-radius:999px;font-size:10px;font-weight:700;padding:1px 7px;vertical-align:middle;margin-left:4px;">'
+            + esc(_awaitingApprovalCount) + '</span>';
+        } else if (item.route === 'work-orders') {
+          badge = ' <span id="wo-nav-badge" style="display:none;background:var(--amber);color:var(--navy);border-radius:999px;font-size:10px;font-weight:700;padding:1px 7px;vertical-align:middle;margin-left:4px;"></span>';
+        }
         return '<a href="/web/portfolio/' + item.route + search
           + '" data-route="' + esc(item.route) + '" class="nav-link">'
-          + esc(item.label) + '</a>';
+          + esc(item.label) + badge + '</a>';
       }).join('');
 
       navEl.querySelectorAll('a[data-route]').forEach(function (a) {
@@ -188,6 +223,7 @@
               renderSidebar(user);
               PortfolioRouter.init();
               scheduleAutoRefresh();
+              fetchWorkOrderBadge();
               var route = PortfolioRouter.getRouteFromPath();
               PortfolioRouter.navigate(route, false, PortfolioRouter.getParams());
             })
@@ -212,6 +248,7 @@
               renderSidebar(user);
               PortfolioRouter.init();
               scheduleAutoRefresh();
+              fetchWorkOrderBadge();
               var route = PortfolioRouter.getRouteFromPath();
               PortfolioRouter.navigate(route, false, PortfolioRouter.getParams());
             })

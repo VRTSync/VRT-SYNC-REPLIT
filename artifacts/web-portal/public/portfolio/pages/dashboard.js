@@ -102,12 +102,13 @@
       + kpiTile('Assets Mapped',      assetsMapped,    'across all branches',      'teal',  '')
       + kpiTile('Services Logged',    servicesLogged,  'all time',                 'blue',  '')
       + kpiTile('Photo Documentation', photoProofPct + '%', 'of completions verified', 'green', '')
-      + kpiTile('Open Work Orders',   openWO,          wo.awaitingApproval + ' awaiting approval', 'amber', '')
+      + kpiTile('Open Work Orders',   openWO,          wo.awaitingApproval + ' awaiting approval', 'amber kpi-clickable', 'data-nav="work-orders" title="View Work Orders" style="cursor:pointer;"')
       + '</div>';
   }
 
-  function kpiTile(label, value, sub, colorClass, _extra) {
-    return '<div class="kpi ' + colorClass + '">'
+  function kpiTile(label, value, sub, colorClass, extra) {
+    var attrs = extra || '';
+    return '<div class="kpi ' + colorClass + '" ' + attrs + '>'
       + '<div class="k-label">' + esc(label) + '</div>'
       + '<div class="k-value">' + esc(value) + '</div>'
       + '<div class="k-sub">'  + esc(sub)   + '</div>'
@@ -369,6 +370,16 @@
           var id = row.getAttribute('data-branch-id');
           if (id && window.PortfolioRouter) {
             PortfolioRouter.navigate('branch-detail', true, { id: id });
+          }
+        });
+      });
+
+      // Wire "Open Work Orders" KPI tile to navigate to work-orders page
+      container.querySelectorAll('[data-nav]').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var route = el.getAttribute('data-nav');
+          if (route && window.PortfolioRouter) {
+            PortfolioRouter.navigate(route, true, {});
           }
         });
       });
