@@ -359,14 +359,24 @@ export default function MapScreen() {
     return zones;
   }, [activeCategory, showZoneLayer, controllers, enabledControllers]);
 
+  // Geometry is only withheld when marker data actually exists to replace it.
+  const hasControllerMarkerData = useMemo(
+    () => controllers.some(c => c.latitude != null && c.longitude != null),
+    [controllers]
+  );
+  const hasZoneMarkerData = useMemo(
+    () => controllers.some(c => c.zones.some(z => z.latitude != null && z.longitude != null)),
+    [controllers]
+  );
+
   const activeLayers = React.useMemo(() => {
     return allLayers
       .filter((l) => l.layerKey === activeCategory)
       .filter((l) => !disabledLayerIds.has(l.id))
       .filter((l) => {
-        if (controllers.length > 0) {
-          if (l.subLayerKey === 'controller' || l.subLayerKey === 'zone') return false;
-        }
+        // Geometry is only withheld when marker data actually exists to replace it.
+        if (l.subLayerKey === 'controller' && hasControllerMarkerData) return false;
+        if (l.subLayerKey === 'zone' && hasZoneMarkerData) return false;
         return true;
       })
       .map((l, idx) => {
@@ -382,7 +392,7 @@ export default function MapScreen() {
           controllerColorMap: (l.subLayerKey === 'zone' || l.subLayerKey === 'controller') ? controllerColorMap : undefined,
         };
       });
-  }, [allLayers, activeCategory, disabledLayerIds, loadedGeoJSON, controllers, controllerColorMap]);
+  }, [allLayers, activeCategory, disabledLayerIds, loadedGeoJSON, hasControllerMarkerData, hasZoneMarkerData, controllerColorMap]);
 
   const fitToContentKey = useMemo(() => {
     const parts = [

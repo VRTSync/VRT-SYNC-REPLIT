@@ -424,14 +424,24 @@ export default function McWorkspaceScreen() {
     return map;
   }, [controllers]);
 
+  // Geometry is only withheld when marker data actually exists to replace it.
+  const hasControllerMarkerData = useMemo(
+    () => controllers.some(c => c.latitude != null && c.longitude != null),
+    [controllers]
+  );
+  const hasZoneMarkerData = useMemo(
+    () => controllers.some(c => c.zones.some(z => z.latitude != null && z.longitude != null)),
+    [controllers]
+  );
+
   const activeLayers = useMemo(() => {
     return allLayers
       .filter((l) => {
         // MC4 (MC_UX_V2): only show layers for the currently selected layer pill
         if (MC_UX_V2 && l.layerKey !== activeLayer) return false;
-        if (controllers.length > 0) {
-          if (l.subLayerKey === 'controller' || l.subLayerKey === 'zone') return false;
-        }
+        // Geometry is only withheld when marker data actually exists to replace it.
+        if (l.subLayerKey === 'controller' && hasControllerMarkerData) return false;
+        if (l.subLayerKey === 'zone' && hasZoneMarkerData) return false;
         return true;
       })
       .map((l, idx) => ({
@@ -445,7 +455,7 @@ export default function McWorkspaceScreen() {
           ? controllerColorMap
           : undefined,
       }));
-  }, [allLayers, loadedGeoJSON, controllers, controllerColorMap, activeLayer]);
+  }, [allLayers, loadedGeoJSON, hasControllerMarkerData, hasZoneMarkerData, controllerColorMap, activeLayer]);
 
   const controllerMarkers = useMemo(() => {
     return controllers
