@@ -3015,9 +3015,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Preview-only endpoint: parse KML and return summary without writing anything
+  app.post("/api/map-layers/preview-irrigation", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const { communityId } = req.body;
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
+      if (!req.file) return void res.status(400).json({ error: "KML file is required" });
+
+      const fileContent = req.file.buffer.toString("utf-8");
+      const fileName = (req.file.originalname || "").toLowerCase();
+      if (!fileName.endsWith(".kml")) {
+        return void res.status(400).json({ error: "Only KML files are supported" });
+      }
+
+      const parseResult = parseIrrigationKml(fileContent);
+
+      // Summarise multi-zone valve boxes (boxes with >1 zone)
+      const multiZoneBoxes: { label: string; zones: number[] }[] = [];
+      for (const ctrl of parseResult.controllers) {
+        const boxMap = new Map<string, { label: string; zones: number[] }>();
+        for (const z of ctrl.zones) {
+          if (!z.valveBoxRef) continue;
+          if (!boxMap.has(z.valveBoxRef)) {
+            boxMap.set(z.valveBoxRef, { label: z.valveBoxLabel || z.valveBoxRef, zones: [] });
+          }
+          if (z.zoneNumber != null) boxMap.get(z.valveBoxRef)!.zones.push(z.zoneNumber);
+        }
+        for (const box of boxMap.values()) {
+          if (box.zones.length > 1) multiZoneBoxes.push(box);
+        }
+      }
+
+      // Sibling asset counts by type
+      const siblingCounts: Record<string, number> = {};
+      for (const a of parseResult.siblingAssets) {
+        siblingCounts[a.assetType] = (siblingCounts[a.assetType] || 0) + 1;
+      }
+
+      const controllerSummaries = parseResult.controllers.map(ctrl => ({
+        name: ctrl.name,
+        featureRef: ctrl.featureRef,
+        totalDeclaredZones: ctrl.totalDeclaredZones,
+        mappedZoneCount: ctrl.zones.filter(z => z.lat != null).length,
+        unmappedZoneCount: ctrl.zones.filter(z => z.lat == null).length,
+        zoneNumbers: ctrl.zones.map(z => z.zoneNumber).filter(Boolean),
+      }));
+
+      res.json({
+        controllers: controllerSummaries,
+        totalMappedZones: parseResult.controllers.reduce((s, c) => s + c.zones.filter(z => z.lat != null).length, 0),
+        totalUnmappedZones: parseResult.controllers.reduce((s, c) => s + c.zones.filter(z => z.lat == null).length, 0),
+        multiZoneBoxes,
+        siblingAssets: siblingCounts,
+        warnings: parseResult.warnings,
+      });
+    } catch (error: any) {
+      req.log.error({ err: error }, "Irrigation preview error");
+      res.status(500).json({ error: "Failed to parse irrigation KML" });
+    }
+  });
+
   app.post("/api/map-layers/upload-irrigation", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
     try {
-      const { communityId, displayName } = req.body;
+      const { communityId, displayName, totalZonesOverride: totalZonesOverrideRaw } = req.body;
       if (!communityId) {
         return void res.status(400).json({ error: "communityId is required" });
       }
@@ -3033,9 +3093,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(400).json({ error: "Only KML files are supported for irrigation controller+zone upload" });
       }
 
-      const parseResult = parseIrrigationKml(fileContent);
+      // Parse per-controller totalZones overrides from the UI
+      let totalZonesOverride: Record<string, number> | undefined;
+      if (totalZonesOverrideRaw) {
+        try {
+          totalZonesOverride = JSON.parse(totalZonesOverrideRaw);
+        } catch { /* ignore malformed override */ }
+      }
 
-      if (parseResult.controllers.length === 0) {
+      const parseResult = parseIrrigationKml(fileContent, totalZonesOverride);
+
+      if (parseResult.controllers.length === 0 && parseResult.siblingAssets.length === 0) {
         return void res.status(400).json({
           error: "No controller/zone data found in this KML file. Make sure the file contains controller folders with zone placemarks.",
           warnings: parseResult.warnings,
@@ -3043,7 +3111,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const controllerDisplayName = displayName || "Controllers";
-      const zoneDisplayName = (displayName ? displayName.replace(/controller/i, "Zone").replace(/Controller/i, "Zone") : "Zones");
+      const zoneDisplayName = displayName
+        ? displayName.replace(/controller/i, "Zone").replace(/Controller/i, "Zone")
+        : "Zones";
 
       const existingLayers = await storage.getMapLayersByCommunity(communityId, "irrigation");
       let controllerLayer = existingLayers.find(l => l.subLayerKey === "controller");
@@ -3092,19 +3162,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // Ensure sibling sub-layers exist and collect their IDs
+      const SIBLING_SUBLAYER_DISPLAY: Record<string, string> = {
+        isolation_valve: "Gate Valves",
+        quick_connect: "Quick Connects",
+        backflow: "Backflow",
+        wire_splice: "Wire Splices",
+      };
+
+      const siblingLayerMap = new Map<string, string>(); // subLayerKey → layerId
+      const siblingSubLayers = [...new Set(parseResult.siblingAssets.map(a => a.subLayerKey))];
+      for (const subLayerKey of siblingSubLayers) {
+        let layer = existingLayers.find(l => l.subLayerKey === subLayerKey);
+        if (!layer) {
+          layer = await storage.createMapLayer({
+            communityId,
+            layerKey: "irrigation",
+            subLayerKey,
+            displayName: SIBLING_SUBLAYER_DISPLAY[subLayerKey] || subLayerKey,
+            sourceFormat: "kml",
+            color: getDefaultLayerColor(subLayerKey, irrLayerCount + siblingSubLayers.indexOf(subLayerKey) + 2),
+          });
+        }
+        siblingLayerMap.set(subLayerKey, layer.id);
+      }
+
+      // Prepare sibling assets with resolved layerIds
+      const resolvedSiblingAssets = parseResult.siblingAssets.map(a => ({
+        name: a.name,
+        featureRef: a.featureRef,
+        lat: a.lat,
+        lng: a.lng,
+        assetType: a.assetType,
+        mapLayerId: siblingLayerMap.get(a.subLayerKey)!,
+      })).filter(a => a.mapLayerId);
+
       const syncResult = await syncIrrigationAssets(
         communityId,
         controllerLayer.id,
         zoneLayer.id,
         parseResult.controllers,
         req.session.userId!,
+        resolvedSiblingAssets,
       );
+
+      const mappedZones = parseResult.controllers.reduce((s, c) => s + c.zones.filter(z => z.lat != null).length, 0);
+      const unmappedZones = parseResult.controllers.reduce((s, c) => s + c.zones.filter(z => z.lat == null).length, 0);
 
       res.json({
         controllerLayerId: controllerLayer.id,
         zoneLayerId: zoneLayer.id,
         controllerCount: parseResult.controllers.length,
-        zoneCount: parseResult.controllers.reduce((sum, c) => sum + c.zones.length, 0),
+        zoneCount: mappedZones,
+        unmappedZoneCount: unmappedZones,
+        siblingAssetCount: parseResult.siblingAssets.length,
         syncResult,
         warnings: parseResult.warnings,
       });

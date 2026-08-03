@@ -24,6 +24,9 @@ PortalRouter.register('map', async function (container) {
       { key: 'master_valve', label: 'Master Valve', color: '#1F4E79' },
       { key: 'flow_meter', label: 'Flow Meter', color: '#00CED1' },
       { key: 'qc_iso_valve', label: 'QC/ISO Valve', color: '#87CEEB' },
+      { key: 'isolation_valve', label: 'Gate Valve', color: '#F39C12' },
+      { key: 'quick_connect', label: 'Quick Connect', color: '#E67E22' },
+      { key: 'wire_splice', label: 'Wire Splice', color: '#9B59B6' },
     ],
     snow: [
       { key: 'plow', label: 'Plow', color: '#4A90E2' },

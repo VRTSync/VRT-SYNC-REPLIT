@@ -29,7 +29,7 @@ export const ASSET_TYPE_TEMPLATES: Record<string, {
   },
   zone: {
     requiredKeys: ["zoneNumber", "runTime"],
-    optionalKeys: ["controllerFeatureRef", "controllerLabel", "zoneType", "zoneLabelShort"],
+    optionalKeys: ["controllerFeatureRef", "controllerLabel", "zoneType", "zoneLabelShort", "valveBoxRef", "valveBoxLabel"],
   },
   tree: {
     requiredKeys: ["species"],
@@ -75,6 +75,10 @@ export const ASSET_TYPE_TEMPLATES: Record<string, {
     requiredKeys: [],
     optionalKeys: ["size"],
   },
+  splice: {
+    requiredKeys: [],
+    optionalKeys: ["notes"],
+  },
 };
 
 export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
@@ -86,6 +90,7 @@ export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
   "irrigation/pump": "pump",
   "irrigation/quick_connect": "quick_connect",
   "irrigation/isolation_valve": "isolation_valve",
+  "irrigation/wire_splice": "splice",
   "trees/tree": "tree",
   "community/pet_station": "pet_station",
   "community/landscape_bed": "landscape_bed",
@@ -568,6 +573,8 @@ export interface IrrigationSyncResult {
   controllersUpdated: number;
   zonesCreated: number;
   zonesUpdated: number;
+  siblingAssetsCreated: number;
+  siblingAssetsUpdated: number;
   propertiesSet: number;
 }
 
@@ -592,14 +599,26 @@ export async function syncIrrigationAssets(
       zoneNumber: number | null;
       zoneType: string | null;
       zoneLabelShort: string | null;
+      valveBoxRef?: string | null;
+      valveBoxLabel?: string | null;
     }>;
   }>,
   triggeredByUserId?: string,
+  siblingAssets?: Array<{
+    name: string;
+    featureRef: string;
+    lat: number | null;
+    lng: number | null;
+    assetType: string;
+    mapLayerId: string;
+  }>,
 ): Promise<IrrigationSyncResult> {
   let controllersCreated = 0;
   let controllersUpdated = 0;
   let zonesCreated = 0;
   let zonesUpdated = 0;
+  let siblingAssetsCreated = 0;
+  let siblingAssetsUpdated = 0;
   let propertiesSet = 0;
 
   const controllerFeatureRefs: string[] = [];
@@ -669,8 +688,11 @@ export async function syncIrrigationAssets(
       }
     }
 
+    // Process all zones (mapped and unmapped)
     for (const zone of ctrl.zones) {
       zoneFeatureRefs.push(zone.featureRef);
+
+      const isUnmapped = zone.lat == null && zone.lng == null;
 
       const [existingZone] = await db.select().from(assets).where(
         and(
@@ -683,10 +705,12 @@ export async function syncIrrigationAssets(
       let zoneAssetId: string;
 
       if (existingZone) {
+        // For unmapped zones, preserve existing coordinates (null) without overwriting
+        // For mapped zones, update normally
         await db.update(assets)
           .set({
             label: zone.name,
-            geometryType: "point",
+            geometryType: isUnmapped ? null : "point",
             latitude: zone.lat,
             longitude: zone.lng,
             isArchived: false,
@@ -705,7 +729,7 @@ export async function syncIrrigationAssets(
           label: zone.name,
           featureRef: zone.featureRef,
           mapLayerId: zoneMapLayerId,
-          geometryType: "point",
+          geometryType: isUnmapped ? null : "point",
           latitude: zone.lat,
           longitude: zone.lng,
           isArchived: false,
@@ -722,6 +746,8 @@ export async function syncIrrigationAssets(
         zoneNumber: zone.zoneNumber != null ? String(zone.zoneNumber) : null,
         zoneType: zone.zoneType,
         zoneLabelShort: zone.zoneLabelShort,
+        valveBoxRef: zone.valveBoxRef ?? null,
+        valveBoxLabel: zone.valveBoxLabel ?? null,
       };
 
       for (const [key, value] of Object.entries(zoneProps)) {
@@ -755,6 +781,8 @@ export async function syncIrrigationAssets(
     }
   }
 
+  // Archive guard: only archive zone assets absent from the current import
+  // AND having non-null coordinates (unmapped zones have null coords and must survive re-imports).
   if (zoneFeatureRefs.length > 0) {
     const toArchive = await db.select().from(assets).where(
       and(
@@ -763,6 +791,7 @@ export async function syncIrrigationAssets(
         eq(assets.isArchived, false),
         notInArray(assets.featureRef, zoneFeatureRefs),
         isNotNull(assets.featureRef),
+        isNotNull(assets.latitude),  // only archive mapped (positioned) assets
       )
     );
     for (const a of toArchive) {
@@ -772,5 +801,77 @@ export async function syncIrrigationAssets(
     }
   }
 
-  return { controllersCreated, controllersUpdated, zonesCreated, zonesUpdated, propertiesSet };
+  // Sync sibling assets (isolation valves, quick connects, backflows, splices)
+  if (siblingAssets && siblingAssets.length > 0) {
+    // Group by mapLayerId for efficient orphan detection
+    const siblingLayerIds = new Set(siblingAssets.map(a => a.mapLayerId));
+
+    for (const sibling of siblingAssets) {
+      const [existingSibling] = await db.select().from(assets).where(
+        and(
+          eq(assets.communityId, communityId),
+          eq(assets.mapLayerId, sibling.mapLayerId),
+          eq(assets.featureRef, sibling.featureRef),
+        )
+      );
+
+      if (existingSibling) {
+        await db.update(assets)
+          .set({
+            label: sibling.name,
+            geometryType: "point",
+            latitude: sibling.lat,
+            longitude: sibling.lng,
+            isArchived: false,
+            archivedAt: null,
+            sourceUpdatedAt: new Date(),
+            updatedAt: new Date(),
+            ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
+          })
+          .where(eq(assets.id, existingSibling.id));
+        siblingAssetsUpdated++;
+      } else {
+        await db.insert(assets).values({
+          communityId,
+          assetType: sibling.assetType as Asset["assetType"],
+          label: sibling.name,
+          featureRef: sibling.featureRef,
+          mapLayerId: sibling.mapLayerId,
+          geometryType: "point",
+          latitude: sibling.lat,
+          longitude: sibling.lng,
+          isArchived: false,
+          sourceUpdatedAt: new Date(),
+          ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
+        });
+        siblingAssetsCreated++;
+      }
+    }
+
+    // Archive orphaned sibling assets per layer
+    for (const layerId of siblingLayerIds) {
+      const presentRefs = siblingAssets
+        .filter(a => a.mapLayerId === layerId)
+        .map(a => a.featureRef);
+
+      if (presentRefs.length > 0) {
+        const toArchive = await db.select().from(assets).where(
+          and(
+            eq(assets.communityId, communityId),
+            eq(assets.mapLayerId, layerId),
+            eq(assets.isArchived, false),
+            notInArray(assets.featureRef, presentRefs),
+            isNotNull(assets.featureRef),
+          )
+        );
+        for (const a of toArchive) {
+          await db.update(assets)
+            .set({ isArchived: true, archivedAt: new Date(), updatedAt: new Date() })
+            .where(eq(assets.id, a.id));
+        }
+      }
+    }
+  }
+
+  return { controllersCreated, controllersUpdated, zonesCreated, zonesUpdated, siblingAssetsCreated, siblingAssetsUpdated, propertiesSet };
 }

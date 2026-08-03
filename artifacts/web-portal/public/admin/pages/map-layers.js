@@ -11,7 +11,7 @@ window._renderMapLayers = async function(container, communityId) {
 
   const LAYER_HIERARCHY = {
     community: ["bluegrass_area", "native_area", "landscape_bed", "pet_station"],
-    irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve"],
+    irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve", "isolation_valve", "quick_connect", "wire_splice"],
     snow: ["plow", "atv", "hand_shovel", "ice_melt", "slicer", "storage_area"],
     trees: ["tree"],
   };
@@ -1597,45 +1597,60 @@ window._renderMapLayers = async function(container, communityId) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:520px">
+      <div class="modal" style="max-width:620px">
         <div class="modal-header">
           <h2>Upload Irrigation Controllers &amp; Zones KML</h2>
           <button class="modal-close">&times;</button>
         </div>
-        <div class="modal-body">
-          <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">
-            Upload a KML file with the standard Controller/Zones folder structure.
-            This will automatically create both <strong>Controller</strong> and <strong>Zone</strong> layers,
-            extract parent/child relationships, and parse controller colors from the KML styles.
-          </p>
-          <div class="form-group">
-            <label>Display Name (optional)</label>
-            <input type="text" class="form-input" id="irr-name" placeholder="e.g. Miramonte Controllers" />
-          </div>
-          <div class="form-group">
-            <label>KML File</label>
-            <div id="irr-dropzone" style="border:2px dashed var(--gray-300);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s">
-              <div style="font-size:28px;margin-bottom:8px;color:var(--gray-400)">🌊</div>
-              <div id="irr-droptext" style="color:var(--gray-500)">Drop your irrigation KML file here or click to browse</div>
-              <div style="font-size:12px;color:var(--gray-400);margin-top:4px">Supports .kml files with Controllers &amp; Zones structure</div>
-              <input type="file" id="irr-file" accept=".kml" style="display:none" />
+        <div class="modal-body" id="irr-modal-body">
+          <!-- Step 1: file selection -->
+          <div id="irr-step-1">
+            <p style="color:var(--gray-500);font-size:13px;margin-bottom:16px">
+              Upload a KML file exported from Google Earth. The parser handles multi-zone valve boxes,
+              sibling folders (Gate Valves, Backflow, etc.), and generates placeholder records for
+              unmapped zones. A preview is shown before anything is saved.
+            </p>
+            <div class="form-group">
+              <label>Display Name (optional)</label>
+              <input type="text" class="form-input" id="irr-name" placeholder="e.g. Miramonte Controllers" />
+            </div>
+            <div class="form-group">
+              <label>KML File</label>
+              <div id="irr-dropzone" style="border:2px dashed var(--gray-300);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s">
+                <div style="font-size:28px;margin-bottom:8px;color:var(--gray-400)">🌊</div>
+                <div id="irr-droptext" style="color:var(--gray-500)">Drop your irrigation KML file here or click to browse</div>
+                <div style="font-size:12px;color:var(--gray-400);margin-top:4px">Supports .kml files with Controllers &amp; Zones structure</div>
+                <input type="file" id="irr-file" accept=".kml" style="display:none" />
+              </div>
             </div>
           </div>
+          <!-- Step 2: preview (populated by JS) -->
+          <div id="irr-step-2" style="display:none"></div>
+          <!-- Result area -->
           <div id="irr-result" style="display:none"></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary cancel-btn">Cancel</button>
-          <button class="btn btn-primary upload-irr-btn" disabled>Upload &amp; Sync</button>
+          <button class="btn btn-secondary" id="irr-back-btn" style="display:none">← Back</button>
+          <button class="btn btn-primary" id="irr-preview-btn" disabled>Preview</button>
+          <button class="btn btn-primary" id="irr-confirm-btn" style="display:none">Confirm &amp; Import</button>
         </div>
       </div>
     `;
     document.body.appendChild(overlay);
 
     let selectedFile = null;
+    let previewData = null;
+    // Map from controllerFeatureRef → user-edited totalZones
+    const totalZonesOverride = {};
 
     const dropzone = overlay.querySelector('#irr-dropzone');
     const fileInput = overlay.querySelector('#irr-file');
-    const uploadBtn = overlay.querySelector('.upload-irr-btn');
+    const previewBtn = overlay.querySelector('#irr-preview-btn');
+    const confirmBtn = overlay.querySelector('#irr-confirm-btn');
+    const backBtn = overlay.querySelector('#irr-back-btn');
+    const step1 = overlay.querySelector('#irr-step-1');
+    const step2 = overlay.querySelector('#irr-step-2');
     const resultArea = overlay.querySelector('#irr-result');
 
     dropzone.addEventListener('click', () => fileInput.click());
@@ -1655,19 +1670,167 @@ window._renderMapLayers = async function(container, communityId) {
       }
       selectedFile = file;
       overlay.querySelector('#irr-droptext').textContent = file.name + ' (' + formatBytes(file.size) + ')';
-      uploadBtn.disabled = false;
+      previewBtn.disabled = false;
     }
 
-    uploadBtn.addEventListener('click', async () => {
+    // Step 1 → Step 2: parse and show preview
+    previewBtn.addEventListener('click', async () => {
       if (!selectedFile) return;
-      uploadBtn.disabled = true;
-      uploadBtn.textContent = 'Uploading...';
+      previewBtn.disabled = true;
+      previewBtn.textContent = 'Parsing...';
 
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('communityId', communityId);
-      const displayName = overlay.querySelector('#irr-name').value.trim();
+
+      try {
+        const res = await fetch('/api/map-layers/preview-irrigation', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Parse failed');
+
+        previewData = data;
+
+        // Populate totalZonesOverride defaults from parse result
+        for (const ctrl of (data.controllers || [])) {
+          totalZonesOverride[ctrl.featureRef] = ctrl.totalDeclaredZones || ctrl.mappedZoneCount;
+        }
+
+        renderPreview(data);
+        step1.style.display = 'none';
+        step2.style.display = 'block';
+        previewBtn.style.display = 'none';
+        backBtn.style.display = 'inline-block';
+        confirmBtn.style.display = 'inline-block';
+      } catch (err) {
+        showToast('Preview failed: ' + err.message, 'error');
+      } finally {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview';
+      }
+    });
+
+    function renderPreview(data) {
+      const controllers = data.controllers || [];
+      const warnings = data.warnings || [];
+      const siblingAssets = data.siblingAssets || {};
+
+      let html = '<div style="font-size:13px">';
+
+      // Summary cards
+      html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">';
+      html += `<div style="background:#f0f7ff;border:1px solid #c3daf7;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:#2980b9">${controllers.length}</div>
+        <div style="font-size:11px;color:#4a7fa8">Controllers</div>
+      </div>`;
+      html += `<div style="background:#f0fff4;border:1px solid #b2dfdb;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:#27ae60">${data.totalMappedZones || 0}</div>
+        <div style="font-size:11px;color:#27ae60">Mapped Zones</div>
+      </div>`;
+      html += `<div style="background:#fef9e7;border:1px solid #ffd54f;border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:#e67e22">${data.totalUnmappedZones || 0}</div>
+        <div style="font-size:11px;color:#e67e22">Unmapped Zones</div>
+      </div>`;
+      html += '</div>';
+
+      // Other assets
+      if (Object.keys(siblingAssets).length > 0) {
+        html += '<div style="margin-bottom:12px;padding:10px;background:var(--gray-50);border-radius:6px">';
+        html += '<div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Other Assets</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+        for (const [type, count] of Object.entries(siblingAssets)) {
+          html += `<span class="badge" style="background:#0C1D31;color:#fff;font-size:12px">${esc(type)}: ${count}</span>`;
+        }
+        html += '</div></div>';
+      }
+
+      // Multi-zone boxes
+      if (data.multiZoneBoxes && data.multiZoneBoxes.length > 0) {
+        html += '<div style="margin-bottom:12px">';
+        html += '<div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Multi-Zone Valve Boxes</div>';
+        html += '<div style="max-height:100px;overflow-y:auto;background:var(--gray-50);border-radius:6px;padding:8px">';
+        for (const box of data.multiZoneBoxes) {
+          html += `<div style="font-size:12px;margin-bottom:2px"><strong>${esc(box.label)}</strong>: zones ${box.zones.join(', ')}</div>`;
+        }
+        html += '</div></div>';
+      }
+
+      // Per-controller total zones fields
+      if (controllers.length > 0) {
+        html += '<div style="margin-bottom:12px">';
+        html += '<div style="font-weight:600;margin-bottom:8px;color:var(--navy)">Controllers — Editable Zone Totals</div>';
+        html += '<div style="display:flex;flex-direction:column;gap:6px">';
+        for (const ctrl of controllers) {
+          const defaultTotal = ctrl.totalDeclaredZones || ctrl.mappedZoneCount || 0;
+          html += `<div style="display:flex;align-items:center;gap:10px;padding:8px;background:var(--gray-50);border-radius:6px">
+            <span style="flex:1;font-size:13px;color:var(--navy)">${esc(ctrl.name)}</span>
+            <span style="font-size:12px;color:var(--gray-500)">${ctrl.mappedZoneCount} mapped + ${ctrl.unmappedZoneCount} unmapped</span>
+            <label style="font-size:12px;color:var(--gray-500);white-space:nowrap">Total zones:
+              <input type="number" min="1" max="999" value="${defaultTotal}"
+                data-ctrl-ref="${esc(ctrl.featureRef)}"
+                class="irr-total-zones-input"
+                style="width:60px;padding:3px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;margin-left:4px">
+            </label>
+          </div>`;
+        }
+        html += '</div></div>';
+      }
+
+      // Warnings
+      if (warnings.length > 0) {
+        html += '<div style="margin-bottom:8px;padding:10px;background:#fff3cd;border-radius:6px">';
+        html += '<div style="font-weight:600;color:#856404;margin-bottom:4px;font-size:12px">Warnings</div>';
+        warnings.slice(0, 8).forEach(w => {
+          html += `<div style="font-size:12px;color:#856404">⚠ ${esc(w)}</div>`;
+        });
+        if (warnings.length > 8) {
+          html += `<div style="font-size:11px;color:#999">...and ${warnings.length - 8} more</div>`;
+        }
+        html += '</div>';
+      }
+
+      html += '</div>';
+      step2.innerHTML = html;
+
+      // Wire up total zones inputs
+      step2.querySelectorAll('.irr-total-zones-input').forEach(input => {
+        input.addEventListener('change', () => {
+          const ref = input.dataset.ctrlRef;
+          const val = parseInt(input.value, 10);
+          if (!isNaN(val) && val > 0) {
+            totalZonesOverride[ref] = val;
+          }
+        });
+      });
+    }
+
+    // Back to step 1
+    backBtn.addEventListener('click', () => {
+      step2.style.display = 'none';
+      step1.style.display = 'block';
+      previewBtn.style.display = 'inline-block';
+      previewBtn.disabled = false;
+      backBtn.style.display = 'none';
+      confirmBtn.style.display = 'none';
+      resultArea.style.display = 'none';
+    });
+
+    // Confirm & import
+    confirmBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Importing...';
+      backBtn.disabled = true;
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('communityId', communityId);
+      const displayName = overlay.querySelector('#irr-name')?.value?.trim();
       if (displayName) formData.append('displayName', displayName);
+      formData.append('totalZonesOverride', JSON.stringify(totalZonesOverride));
 
       try {
         const res = await fetch('/api/map-layers/upload-irrigation', {
@@ -1676,39 +1839,37 @@ window._renderMapLayers = async function(container, communityId) {
           credentials: 'include',
         });
         const data = await res.json();
-
         if (!res.ok) throw new Error(data.error || 'Upload failed');
 
         let html = '<div style="background:var(--gray-50);padding:12px;border-radius:8px;margin-top:12px">';
-        html += '<div style="font-weight:600;color:var(--navy);margin-bottom:8px">Import Complete</div>';
+        html += '<div style="font-weight:600;color:var(--navy);margin-bottom:8px">✓ Import Complete</div>';
         html += '<div style="font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
-        html += '<div>Controllers found:</div><div><strong>' + data.controllerCount + '</strong></div>';
-        html += '<div>Zones found:</div><div><strong>' + data.zoneCount + '</strong></div>';
-        html += '<div>Controllers created:</div><div><strong>' + data.syncResult.controllersCreated + '</strong></div>';
-        html += '<div>Controllers updated:</div><div><strong>' + data.syncResult.controllersUpdated + '</strong></div>';
+        html += '<div>Controllers:</div><div><strong>' + data.controllerCount + '</strong></div>';
+        html += '<div>Mapped zones:</div><div><strong>' + data.zoneCount + '</strong></div>';
+        html += '<div>Unmapped zones:</div><div><strong>' + (data.unmappedZoneCount || 0) + '</strong></div>';
+        html += '<div>Other assets:</div><div><strong>' + (data.siblingAssetCount || 0) + '</strong></div>';
         html += '<div>Zones created:</div><div><strong>' + data.syncResult.zonesCreated + '</strong></div>';
         html += '<div>Zones updated:</div><div><strong>' + data.syncResult.zonesUpdated + '</strong></div>';
-        html += '<div>Properties set:</div><div><strong>' + data.syncResult.propertiesSet + '</strong></div>';
         html += '</div>';
-
         if (data.warnings && data.warnings.length > 0) {
-          html += '<div style="margin-top:12px;padding:8px;background:#fff3cd;border-radius:4px;font-size:12px">';
-          html += '<div style="font-weight:600;color:#856404;margin-bottom:4px">Warnings:</div>';
-          data.warnings.forEach(w => { html += '<div style="color:#856404">• ' + esc(w) + '</div>'; });
+          html += '<div style="margin-top:8px;font-size:12px;color:#856404">';
+          data.warnings.slice(0, 5).forEach(w => { html += '<div>⚠ ' + esc(w) + '</div>'; });
+          if (data.warnings.length > 5) html += '<div style="color:#999">...and ' + (data.warnings.length - 5) + ' more</div>';
           html += '</div>';
         }
-
         html += '</div>';
+        step2.style.display = 'none';
         resultArea.innerHTML = html;
         resultArea.style.display = 'block';
-
-        uploadBtn.textContent = 'Done';
+        confirmBtn.textContent = 'Done';
+        backBtn.style.display = 'none';
         showToast('Irrigation data imported successfully', 'success');
         await loadLayers();
       } catch (err) {
         showToast(err.message, 'error');
-        uploadBtn.disabled = false;
-        uploadBtn.textContent = 'Upload & Sync';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Confirm & Import';
+        backBtn.disabled = false;
       }
     });
 

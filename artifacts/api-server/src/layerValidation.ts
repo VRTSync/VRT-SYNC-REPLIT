@@ -7,6 +7,7 @@ const EXPECTED_GEOMETRY: Record<string, string[]> = {
   pump: ["Point"],
   quick_connect: ["Point"],
   isolation_valve: ["Point"],
+  wire_splice: ["Point"],
   tree: ["Point"],
   pet_station: ["Point"],
   landscape_bed: ["Polygon", "MultiPolygon"],

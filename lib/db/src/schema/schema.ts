@@ -191,6 +191,7 @@ export const assetTypeEnum = pgEnum("asset_type", [
   "controller", "backflow", "zone", "tree", "pet_station",
   "landscape_bed", "bluegrass_area", "native_area", "snow_area",
   "master_valve", "flow_meter", "pump", "quick_connect", "isolation_valve",
+  "splice",
 ]);
 
 export const assetNotes = pgTable("asset_notes", {

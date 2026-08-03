@@ -1,6 +1,6 @@
 export const CANONICAL_LAYER_HIERARCHY: Record<string, string[]> = {
   community: ["bluegrass_area", "native_area", "landscape_bed", "pet_station"],
-  irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve"],
+  irrigation: ["backflow", "controller", "zone", "master_valve", "flow_meter", "qc_iso_valve", "isolation_valve", "quick_connect", "wire_splice"],
   snow: ["plow", "atv", "hand_shovel", "ice_melt", "slicer", "storage_area"],
   trees: ["tree"],
   outline: ["community_boundary"],
