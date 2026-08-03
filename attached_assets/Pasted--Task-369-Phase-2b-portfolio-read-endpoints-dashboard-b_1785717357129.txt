@@ -1,0 +1,123 @@
+# Task #369: Phase 2b — portfolio read endpoints (dashboard, branches, branch detail)
+
+## What & Why
+
+Phase 2a (#368) added org scoping and admin provisioning. A `client_admin` can log in and call `GET /api/portfolio/me`, but there is no data behind the portal: no dashboard aggregates, no branch list with activity, no per-branch detail.
+
+This task adds the **read** endpoints the Branch Portfolio UI will consume. Still no UI — Phase 3 builds the shell and pages against these.
+
+Design reference for what each screen needs: `mockups/pnc-branch-portfolio-v4.html`.
+
+## Core principles (do not deviate)
+
+- Every endpoint is `requireClient` + `enforceOrgScoping`. No endpoint may return data outside the caller's organization.
+- **Never fabricate a metric the schema can't answer.** Return `null` with a code comment stating why (the `/api/admin/dashboard` precedent from #357 — follow it exactly).
+- Aggregates only; no per-asset dumps in list endpoints.
+- Read-only. No POST/PATCH/DELETE in this task.
+
+## Done looks like
+
+- Four endpoints live, all org-scoped, each returning the shape below.
+- A `client_admin` from org A gets 403 on any org B resource; an admin can preview any org via the existing `/api/admin/organizations/:id/portfolio` pattern (add an admin passthrough where noted).
+- Response times logged; each endpoint uses SQL aggregates rather than loading rows into memory to count them.
+- `pnpm run typecheck` passes; server boots; no schema, mobile, shared, or web-portal changes.
+
+## Out of scope
+
+- Any UI (Phase 3).
+- Work-order approval actions, group CRUD, document/report generation (later phases).
+- Service-visit materialization — on-time/missed metrics stay `null` until that task lands.
+- Any change to existing endpoints.
+
+## Steps
+
+### 1. `GET /api/portfolio/dashboard`
+
+Portfolio-wide summary. Shape:
+
+```json
+{
+  "totals": {
+    "branches": 0, "branchesActive": 0,
+    "assetsMapped": 0, "irrigationZones": 0, "trees": 0, "snowZones": 0,
+    "servicesLogged": 0, "photoProofPct": 0.0
+  },
+  "openWorkOrders": { "total": 0, "awaitingApproval": 0, "scheduled": 0 },
+  "thisWeek": {
+    "weekStart": "2026-08-03", "weekEnd": "2026-08-09",
+    "scheduled": 0, "completed": 0, "needsAttention": 0, "branchesCovered": 0,
+    "days": [ { "date": "2026-08-03", "items": [ { "label": "Mowing", "branchCount": 2, "status": "completed" } ] } ]
+  },
+  "byGroup": [ { "groupId": "...", "name": "...", "branches": 0, "services": 0, "openItems": 0 } ]
+}
+```
+
+Definitions:
+- `servicesLogged` = task completions + completed service visits for the org's communities, since org creation (or all time — state which in a comment).
+- `photoProofPct` = completions with ≥1 attachment / total completions.
+- `assetsMapped` / `irrigationZones` / `trees` / `snowZones` = counts of active assets by type, using the same asset-type grouping the admin dashboard uses.
+- `openWorkOrders`: tasks in the org's communities that are not completed AND have `estimate_cents IS NOT NULL OR origin` indicating a work order — **if there is no reliable way to distinguish a "work order" from an ordinary task with today's columns, count all non-completed tasks and note the limitation in a comment.** Do not invent a heuristic that looks authoritative.
+- `awaitingApproval` = non-completed tasks with `estimate_cents IS NOT NULL AND approved_at IS NULL`.
+- `thisWeek.days`: service visits for the current week grouped by date and service type, with status from `service_visits.status`.
+- `needsAttention` = overdue tasks + visits with status `missed`.
+
+### 2. `GET /api/portfolio/branches`
+
+One row per branch, for the Branches table:
+
+```json
+[ { "id": "...", "code": "FB02", "name": "...", "city": "...", "address": "...",
+    "groupIds": ["..."],
+    "assetCount": 0, "irrigationZones": 0, "trees": 0,
+    "servicesYtd": 0, "lastServiceAt": "2026-07-27T00:00:00Z", "lastServiceLabel": "irrigation repair",
+    "openWorkOrders": 0 } ]
+```
+
+- Single query set (avoid N+1 per branch — use grouped aggregates joined to the branch list).
+- `onTimePct` deliberately **omitted** until visit materialization exists; do not approximate it.
+
+### 3. `GET /api/portfolio/branches/:communityId`
+
+Per-branch detail for the layer-tabbed branch view:
+
+```json
+{
+  "branch": { "id": "...", "code": "...", "name": "...", "address": "...", "city": "...", "groupIds": [] },
+  "layers": [ { "id": "...", "name": "Irrigation", "type": "...", "assetCount": 18 } ],
+  "inventory": [ { "assetType": "...", "count": 0, "layerId": "..." } ],
+  "recentServices": [ { "id": "...", "date": "...", "title": "...", "type": "...", "photoCount": 0, "amountCents": null } ],
+  "openWorkOrders": [ { "id": "...", "title": "...", "status": "...", "estimateCents": null, "approvedAt": null, "openedAt": "..." } ],
+  "snowSeason": { "season": "2026", "events": 0, "clearings": 0, "photoPct": 0.0, "avgResponseHours": null }
+}
+```
+
+- `layers` comes from the community's configured `map_layers` — **the branch view's tabs are data-driven from this**, never a hardcoded list.
+- `snowSeason.avgResponseHours` = `null` (no snowfall-end timestamp exists); comment why.
+- `recentServices` limited to 20, newest first.
+
+### 4. `GET /api/portfolio/groups`
+
+```json
+[ { "id": "...", "name": "...", "color": "...", "branchIds": [],
+    "metrics": { "branches": 0, "servicesPerBranch": 0.0, "openItems": 0, "photoProofPct": 0.0 } } ]
+```
+
+- Per-branch averages and rates only — no raw totals presented as comparable (group sizes differ).
+
+### 5. Admin passthrough
+
+For each of the four endpoints, allow an admin caller to specify `?organizationId=` and receive that org's data (so support/demo prep doesn't require client credentials). Implement as: if role is `admin`, use the query param; if `client_admin`, ignore any param and use the session org.
+
+### 6. Verify
+
+- Provision a test org with 2 branches, a group, a few tasks/visits/assets; call all four endpoints and confirm shapes and numbers by hand against SQL.
+- Client from org A requesting org B (via param or path) → 403 in every case.
+- Endpoint with zero data returns zeros/empty arrays, never `NaN`, `null` totals, or 500s.
+- Log timings; note any endpoint over ~500ms on test data.
+
+## Relevant files
+
+- `artifacts/api-server/src/routes/routes.ts` (add near the `/api/portfolio/me` route from #368)
+- `artifacts/api-server/src/storage.ts` (new query functions; follow `getAdminDashboard` for the parallel-aggregate pattern)
+- `artifacts/api-server/src/auth.ts` (reference only — `requireClient`, `enforceOrgScoping` already exist)
+- `mockups/pnc-branch-portfolio-v4.html` (design reference for which numbers each screen needs)
