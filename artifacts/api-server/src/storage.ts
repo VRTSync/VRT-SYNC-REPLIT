@@ -2544,7 +2544,7 @@ export async function getServiceScheduleById(id: string): Promise<ServiceSchedul
 
 export async function createServiceSchedule(data: {
   communityId: string;
-  serviceType?: "mowing_visit";
+  serviceType?: "mowing_visit" | "snow_clearing" | "irrigation_service" | "tree_care" | "landscape_service" | "general_service";
   dayOfWeek: number;
   seasonStart?: string | null;
   seasonEnd?: string | null;

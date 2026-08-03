@@ -9,7 +9,7 @@ export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"
 export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "monthly", "once"]);
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
 export const exportStatusEnum = pgEnum("export_status", ["queued", "running", "complete", "failed"]);
-export const serviceTypeEnum = pgEnum("service_type", ["mowing_visit"]);
+export const serviceTypeEnum = pgEnum("service_type", ["mowing_visit", "snow_clearing", "irrigation_service", "tree_care", "landscape_service", "general_service"]);
 export const serviceVisitStatusEnum = pgEnum("service_visit_status", ["scheduled", "completed", "skipped", "missed"]);
 export const invoiceStatusEnum = pgEnum("invoice_status", ["draft", "submitted", "approved", "paid", "void"]);
 
@@ -827,7 +827,7 @@ export const insertTaskScheduleSchema = z.object({
 
 export const insertServiceScheduleSchema = z.object({
   communityId: z.string().min(1),
-  serviceType: z.enum(["mowing_visit"]).default("mowing_visit"),
+  serviceType: z.enum(["mowing_visit", "snow_clearing", "irrigation_service", "tree_care", "landscape_service", "general_service"]).default("mowing_visit"),
   dayOfWeek: z.number().int().min(0).max(6),
   seasonStart: z.string().nullable().optional(),
   seasonEnd: z.string().nullable().optional(),
