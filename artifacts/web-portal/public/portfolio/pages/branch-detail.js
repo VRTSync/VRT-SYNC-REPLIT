@@ -23,16 +23,18 @@
   // tab pane slots. GeoJSON is fetched lazily (per-tab on first visit) and
   // cached in geojsonCache for the lifetime of the current branch view.
   var _bMap = {
-    iframe:       null,
-    ready:        false,
-    pending:      [],
-    handler:      null,
-    geojsonCache: null, // Map<layerId, geojson|null> — null = fetched but no geometry
-    addedSet:     null, // Set<layerId>  — layers already sent to iframe via addLayers
-    layerColors:  null, // Record<layerId, hex> — original colour per layer (for dimming)
-    branchId:     null, // current branch id (for GeoJSON URL construction)
-    allLayers:    null, // all layers array for current branch
-    container:    null, // container element (for slot lookup in lazy handlers)
+    iframe:        null,
+    ready:         false,
+    pending:       [],
+    handler:       null,
+    geojsonCache:  null, // Map<layerId, geojson|null> — null = fetched but no geometry
+    addedSet:      null, // Set<layerId>  — layers already sent to iframe via addLayers
+    layerColors:   null, // Record<layerId, hex> — original colour per layer (for dimming)
+    branchId:      null, // current branch id (for GeoJSON URL construction)
+    allLayers:     null, // all layers array for current branch (includes outline)
+    serviceLayers: null, // layers where type !== 'outline' — used for tab bar
+    outlineLayer:  null, // first outline layer, if any — pushed as context shape
+    container:     null, // container element (for slot lookup in lazy handlers)
   };
 
   function _bCmd(fn) {
@@ -53,6 +55,7 @@
     _bMap.iframe = null; _bMap.ready = false; _bMap.pending = [];
     _bMap.geojsonCache = null; _bMap.addedSet = null; _bMap.layerColors = null;
     _bMap.branchId = null; _bMap.allLayers = null; _bMap.container = null;
+    _bMap.serviceLayers = null; _bMap.outlineLayer = null;
   }
 
   /** Dot colour → hex for layer styling. */
@@ -95,6 +98,7 @@
     var toAdd = [];
     layers.forEach(function (layer) {
       if (_bMap.addedSet.has(layer.id)) return;
+      if (layer.type === 'outline') return; // outline is pushed via setCommunityOutline, not addLayers
       var geojson = geojsonMap[layer.id];
       if (!geojson) return;
       var accent = layerAccent(layer);
@@ -111,6 +115,21 @@
       _bMap.addedSet.add(layer.id);
     });
     if (toAdd.length > 0) _bCmd('addLayers', toAdd);
+  }
+
+  /**
+   * Fetch the outline layer's GeoJSON (cached) and send it to the iframe as a
+   * community boundary shape via setCommunityOutline.  The iframe renders it as
+   * a neutral grey context polygon that does not participate in dimming or
+   * showLayerIds visibility toggling.  No-ops when there is no outline layer or
+   * when its GeoJSON is empty.
+   */
+  function _pushOutline() {
+    var outline = _bMap.outlineLayer;
+    if (!outline) return;
+    _fetchLayer(outline).then(function (geojson) {
+      if (geojson) _bCmd('setCommunityOutline', geojson);
+    });
   }
 
   /** Show a "no geometry" notice inside a slot container. */
@@ -151,6 +170,8 @@
         _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
       });
       _bCmd('fitToContent', [], null);
+      // Always re-send the outline so it remains visible on the summary view
+      _pushOutline();
     });
   }
 
@@ -179,6 +200,8 @@
         }
       });
       _bCmd('fitToContent', [], null);
+      // Always re-send the outline so it remains visible on this tab view
+      _pushOutline();
     });
   }
 
@@ -189,7 +212,7 @@
    */
   function _switchToTab(tabIdx) {
     if (!_bMap.iframe || !_bMap.container) return;
-    var layers = _bMap.allLayers || [];
+    var layers = _bMap.serviceLayers || [];
     var slotId, layer;
     if (tabIdx === 0) {
       slotId = 'bmap-summary';
@@ -216,12 +239,14 @@
   function setupBranchMaps(container, data) {
     _bTeardown();
     var layers = data.layers || [];
-    _bMap.geojsonCache = new Map();
-    _bMap.addedSet     = new Set();
-    _bMap.layerColors  = {};
-    _bMap.branchId     = data.branch.id;
-    _bMap.allLayers    = layers;
-    _bMap.container    = container;
+    _bMap.geojsonCache  = new Map();
+    _bMap.addedSet      = new Set();
+    _bMap.layerColors   = {};
+    _bMap.branchId      = data.branch.id;
+    _bMap.allLayers     = layers;
+    _bMap.serviceLayers = layers.filter(function (l) { return l.type !== 'outline'; });
+    _bMap.outlineLayer  = layers.find(function (l) { return l.type === 'outline'; }) || null;
+    _bMap.container     = container;
 
     // Mount in summary slot — always present now that we render it unconditionally.
     // Fall back to first layer slot in case the branch has no summary panel.
@@ -603,17 +628,21 @@
 
     var branch = data.branch;
     var layers = data.layers || [];
+    // Exclude outline layers from the tab bar — they are boundary shapes, not
+    // service layers.  The outline is pushed separately via setCommunityOutline
+    // so it always appears as a neutral context shape on every map view.
+    var serviceLayers = layers.filter(function (l) { return l.type !== 'outline'; });
 
     var selectorHtml = renderSelectorBlock(branchId, allBranches);
     var titleHtml    = renderTitleRow(branch, groupLookup);
-    var tabBarHtml   = renderTabBar(layers, 0 /* start on Summary */);
+    var tabBarHtml   = renderTabBar(serviceLayers, 0 /* start on Summary */);
 
     // Build all tab pane HTML (hidden except index 0)
     var summaryPane = '<div class="tabpane on" data-pane-idx="0">'
       + renderSummaryTab(data)
       + '</div>';
 
-    var layerPanes = layers.map(function (layer, i) {
+    var layerPanes = serviceLayers.map(function (layer, i) {
       return '<div class="tabpane" data-pane-idx="' + (i + 1) + '">'
         + renderLayerContent(layer, data)
         + '</div>';
@@ -624,8 +653,8 @@
     // Wire selector block
     wireSelectorBlock(container, branchId, allBranches);
 
-    // Wire tab bar (pass layers so slot switching works)
-    wireTabBar(container, layers);
+    // Wire tab bar (pass service layers so slot switching works)
+    wireTabBar(container, serviceLayers);
 
     // Mount live Leaflet maps
     setupBranchMaps(container, data);
