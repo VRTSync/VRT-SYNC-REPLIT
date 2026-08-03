@@ -355,6 +355,54 @@ export default function HoaMapScreen() {
     return grouped;
   }, [allLayers]);
 
+  // null = not yet fetched; number = actual feature count (0 means empty)
+  const featureCounts = useMemo(() => {
+    const counts: Record<string, number | null> = {};
+    allLayers.forEach(l => {
+      const geojson = loadedGeoJSON[l.id];
+      counts[l.id] = geojson === undefined ? null : (geojson?.features?.length ?? 0);
+    });
+    return counts;
+  }, [allLayers, loadedGeoJSON]);
+
+  // A category is populated when ≥1 of its non-marker layers has >0 features,
+  // or (for irrigation) when controllers exist.
+  const populatedCategories = useMemo(() => {
+    const populated = new Set<string>();
+    CATEGORY_TABS.forEach(cat => {
+      const catLayers = layersByCategory[cat.key] || [];
+      const hasFeatures = catLayers.some(
+        l => l.subLayerKey !== 'controller' && l.subLayerKey !== 'zone' && (featureCounts[l.id] ?? 0) > 0
+      );
+      if (hasFeatures) populated.add(cat.key);
+      if (cat.key === 'irrigation' && controllers.length > 0) populated.add(cat.key);
+    });
+    return populated;
+  }, [layersByCategory, featureCounts, controllers]);
+
+  // Once GeoJSON has started loading, switch away from an empty category to the
+  // first category that actually has data (mirrors the portal's populatedCategories logic).
+  const populatedAutoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (populatedAutoSelectedRef.current) return;
+    if (params.category) return;
+    // Wait until at least one layer's GeoJSON has resolved before deciding
+    const anyLoaded = allLayers.some(l => featureCounts[l.id] !== null) || controllers.length > 0;
+    if (!anyLoaded) return;
+    if (populatedCategories.has(activeCategory)) {
+      populatedAutoSelectedRef.current = true;
+      return;
+    }
+    for (const tab of CATEGORY_TABS) {
+      if (populatedCategories.has(tab.key)) {
+        populatedAutoSelectedRef.current = true;
+        handleCategorySelect(tab.key);
+        return;
+      }
+    }
+    populatedAutoSelectedRef.current = true;
+  }, [populatedCategories, controllers.length]);
+
   if (!mapReady) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
@@ -377,14 +425,20 @@ export default function HoaMapScreen() {
           <View style={[styles.categoryBar, { top: categoryBarTop }]}>
             {CATEGORY_TABS.map((cat) => {
               const isActive = activeCategory === cat.key;
+              const hasAnyCatLayers = allLayers.some(l => l.layerKey === cat.key);
+              const isPopulated = populatedCategories.has(cat.key);
+              // Dim tabs for categories that have layers configured but none have data yet.
+              // Only apply dimming after GeoJSON has started loading (so initial render stays stable).
+              const anyGeoJSONLoaded = allLayers.some(l => featureCounts[l.id] !== null) || controllers.length > 0;
+              const isDimmed = hasAnyCatLayers && anyGeoJSONLoaded && !isPopulated;
               return (
                 <TouchableOpacity
                   key={cat.key}
-                  style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+                  style={[styles.categoryTab, isActive && styles.categoryTabActive, isDimmed && styles.categoryTabDimmed]}
                   onPress={() => handleCategorySelect(cat.key)}
                 >
-                  <Ionicons name={cat.icon} size={20} color={isActive ? '#25C1AC' : '#999'} />
-                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive]}>{cat.label}</Text>
+                  <Ionicons name={cat.icon} size={20} color={isActive ? '#25C1AC' : isDimmed ? '#ccc' : '#999'} />
+                  <Text style={[styles.categoryTabText, isActive && styles.categoryTabTextActive, isDimmed && styles.categoryTabTextDimmed]}>{cat.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -444,17 +498,25 @@ export default function HoaMapScreen() {
                       />
                     </View>
                   )}
-                  {catLayers.map((layer, idx) => (
-                    <View key={layer.id} style={styles.layerToggleRow}>
-                      <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
-                      <Text style={styles.layerToggleName} numberOfLines={1}>{layer.displayName}</Text>
-                      <Switch
-                        value={!disabledLayerIds.has(layer.id)}
-                        onValueChange={() => toggleLayer(layer.id)}
-                        trackColor={{ true: '#25C1AC', false: '#ddd' }}
-                      />
-                    </View>
-                  ))}
+                  {catLayers.map((layer, idx) => {
+                    const count = featureCounts[layer.id];
+                    const isEmpty = count === 0; // null = not yet loaded; 0 = definitely empty
+                    return (
+                      <View key={layer.id} style={[styles.layerToggleRow, isEmpty && { opacity: 0.4 }]}>
+                        <View style={[styles.layerColorDot, { backgroundColor: layer.color || getDefaultLayerColor(layer.subLayerKey, idx) }]} />
+                        <Text style={styles.layerToggleName} numberOfLines={1}>
+                          {layer.displayName}
+                          {isEmpty ? <Text style={styles.layerNoDataTag}>{' '}(no data)</Text> : null}
+                        </Text>
+                        <Switch
+                          value={!disabledLayerIds.has(layer.id)}
+                          onValueChange={() => toggleLayer(layer.id)}
+                          trackColor={{ true: '#25C1AC', false: '#ddd' }}
+                          disabled={isEmpty}
+                        />
+                      </View>
+                    );
+                  })}
                   {hasControllers && (
                     <>
                       <View style={styles.layerToggleRow}>
@@ -566,6 +628,9 @@ const styles = StyleSheet.create({
   categoryTabActive: {
     backgroundColor: 'rgba(37,193,172,0.1)',
   },
+  categoryTabDimmed: {
+    opacity: 0.5,
+  },
   categoryTabText: {
     fontSize: 10,
     fontWeight: '600' as const,
@@ -573,6 +638,14 @@ const styles = StyleSheet.create({
   },
   categoryTabTextActive: {
     color: '#25C1AC',
+  },
+  categoryTabTextDimmed: {
+    color: '#ccc',
+  },
+  layerNoDataTag: {
+    fontSize: 11,
+    color: '#bbb',
+    fontWeight: '400' as const,
   },
   layersButton: {
     position: 'absolute',
