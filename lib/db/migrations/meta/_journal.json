@@ -50,6 +50,13 @@
       "when": 1785628800000,
       "tag": "0006_service_and_invoice_status",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785720827444,
+      "tag": "0007_extend_service_type_enum",
+      "breakpoints": true
     }
   ]
 }
