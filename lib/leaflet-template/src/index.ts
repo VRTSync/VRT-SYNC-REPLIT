@@ -770,6 +770,23 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     var popupEl = ev.popup.getElement();
     if (popupEl) {
       L.DomEvent.on(popupEl, 'click', handlePopupActionClick);
+      // Emit markerSelect immediately when a feature popup opens so that
+      // parent frames can respond to the first pin click rather than waiting
+      // for the popup-action button.  Existing pages that don't listen for
+      // this message type are unaffected.  The mobile app receives and ignores
+      // unknown message types, so behaviour there is also unchanged.
+      // NOTE: this code is inside an HTML template string — no TypeScript syntax.
+      var actionEl = popupEl.querySelector('.popup-action[data-action="viewDetail"][data-ref]');
+      if (actionEl) {
+        var ds = actionEl.dataset;
+        post('markerSelect', {
+          featureRef: ds.ref       || '',
+          layerKey:   ds.layer     || '',
+          label:      ds.label     || '',
+          assetType:  ds.assetType || '',
+          layerName:  ds.layerName || '',
+        });
+      }
     }
   });
 

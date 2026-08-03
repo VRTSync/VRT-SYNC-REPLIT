@@ -898,6 +898,195 @@ tbody tr:last-child td { border-bottom: none; }
   box-shadow: var(--shadow);
 }
 
+/* ── Branch detail: live Leaflet map container ───────────────────────────── */
+/* Replaces .map-placeholder when geometry exists. Same height/shape. */
+.branch-map-container {
+  height: 340px;
+  position: relative;
+  overflow: hidden;
+  background: #e8f4f0;
+}
+.branch-map-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* ── Portfolio Map page ──────────────────────────────────────────────────── */
+.pfm-page {
+  max-width: 1200px;
+}
+.pfm-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.pfm-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0;
+  flex-shrink: 0;
+}
+.pfm-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pfm-chip {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--gray-300);
+  background: var(--white);
+  color: var(--gray-700);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.pfm-chip:hover { border-color: var(--teal); color: var(--teal-dark); }
+.pfm-chip--active {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+.pfm-map-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 20px;
+  height: 520px;
+}
+.pfm-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+/* ── Branch card popup (portal DOM, overlaid on map wrap) ────────────────── */
+.pfm-branch-card {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 240px;
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
+  z-index: 10;
+}
+.pfm-card-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--gray-400);
+  line-height: 1;
+  padding: 2px 4px;
+}
+.pfm-card-close:hover { color: var(--gray-700); }
+.pfm-card-code {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--teal-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+.pfm-card-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 2px;
+  padding-right: 20px;
+}
+.pfm-card-city {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-bottom: 12px;
+}
+.pfm-card-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.pfm-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  padding: 8px 4px;
+}
+.pfm-stat-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1;
+}
+.pfm-stat-val--amber { color: var(--amber); }
+.pfm-stat-lbl {
+  font-size: 10px;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 3px;
+}
+.pfm-card-link {
+  display: block;
+  text-align: center;
+  background: var(--navy);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.pfm-card-link:hover { background: var(--navy-light); }
+
+/* ── Not-yet-mapped list ─────────────────────────────────────────────────── */
+.pfm-unmapped {
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  box-shadow: var(--shadow);
+}
+.pfm-unmapped-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-600);
+  margin-bottom: 10px;
+}
+.pfm-unmapped-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pfm-unmapped-chip {
+  font-size: 12px;
+  background: var(--gray-100);
+  border-radius: 4px;
+  padding: 3px 10px;
+  color: var(--gray-600);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Service rows ────────────────────────────────────────────────────────── */
 .svc-row {
   display: flex;

@@ -18,6 +18,248 @@
 
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
 
+  // ── Per-branch Leaflet map state ──────────────────────────────────────────
+  // One shared iframe is created per branch detail render and moved between
+  // tab pane slots. GeoJSON is fetched lazily (per-tab on first visit) and
+  // cached in geojsonCache for the lifetime of the current branch view.
+  var _bMap = {
+    iframe:       null,
+    ready:        false,
+    pending:      [],
+    handler:      null,
+    geojsonCache: null, // Map<layerId, geojson|null> — null = fetched but no geometry
+    addedSet:     null, // Set<layerId>  — layers already sent to iframe via addLayers
+    layerColors:  null, // Record<layerId, hex> — original colour per layer (for dimming)
+    branchId:     null, // current branch id (for GeoJSON URL construction)
+    allLayers:    null, // all layers array for current branch
+    container:    null, // container element (for slot lookup in lazy handlers)
+  };
+
+  function _bCmd(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    if (!_bMap.iframe || !_bMap.iframe.contentWindow) return;
+    if (!_bMap.ready) { _bMap.pending.push({ fn: fn, args: args }); return; }
+    _bMap.iframe.contentWindow.postMessage({ type: 'cmd', fn: fn, args: args }, '*');
+  }
+
+  function _bFlush() {
+    var cmds = _bMap.pending.slice(); _bMap.pending = [];
+    cmds.forEach(function (c) { _bCmd.apply(null, [c.fn].concat(c.args)); });
+  }
+
+  function _bTeardown() {
+    if (_bMap.handler) { window.removeEventListener('message', _bMap.handler); _bMap.handler = null; }
+    if (_bMap.iframe && _bMap.iframe.parentNode) _bMap.iframe.parentNode.removeChild(_bMap.iframe);
+    _bMap.iframe = null; _bMap.ready = false; _bMap.pending = [];
+    _bMap.geojsonCache = null; _bMap.addedSet = null; _bMap.layerColors = null;
+    _bMap.branchId = null; _bMap.allLayers = null; _bMap.container = null;
+  }
+
+  /** Dot colour → hex for layer styling. */
+  function _dotHex(accent) {
+    var map = { blue: '#3b82f6', green: '#10b981', teal: '#25C1AC', gray: '#9ca3af', lime: '#84cc16', slate: '#64748b' };
+    return (accent && map[accent.dot]) || '#25C1AC';
+  }
+
+  /**
+   * Fetch one layer's GeoJSON lazily. Returns a Promise<geojson|null>.
+   * Fetches regardless of assetCount — outline layers have geometry but no assets.
+   * Result is cached so repeat calls are instant with no network round-trip.
+   */
+  function _fetchLayer(layer) {
+    if (_bMap.geojsonCache.has(layer.id)) return Promise.resolve(_bMap.geojsonCache.get(layer.id));
+    var suffix = orgParam();
+    var url = '/api/portfolio/branches/' + encodeURIComponent(_bMap.branchId)
+      + '/layers/' + encodeURIComponent(layer.id) + '/geojson' + suffix;
+    return apiFetch(url).then(function (geojson) {
+      // Treat null/empty feature collections as "no geometry"
+      var hasFeatures = geojson
+        && geojson.features
+        && geojson.features.length > 0;
+      var val = hasFeatures ? geojson : null;
+      _bMap.geojsonCache.set(layer.id, val);
+      return val;
+    }).catch(function (err) {
+      console.warn('[branch-detail] geojson fetch failed layer=' + layer.id, err);
+      _bMap.geojsonCache.set(layer.id, null);
+      return null;
+    });
+  }
+
+  /**
+   * Send any newly-fetched layers to the iframe's addLayers cache.
+   * Skips layers that are already in the iframe's layerCache (tracked by addedSet).
+   * Records original colours in _bMap.layerColors so dimming can be undone.
+   */
+  function _pushNewLayers(layers, geojsonMap) {
+    var toAdd = [];
+    layers.forEach(function (layer) {
+      if (_bMap.addedSet.has(layer.id)) return;
+      var geojson = geojsonMap[layer.id];
+      if (!geojson) return;
+      var accent = layerAccent(layer);
+      var color  = _dotHex(accent);
+      _bMap.layerColors[layer.id] = color; // remember for dimming restore
+      toAdd.push({
+        id: layer.id,
+        layerKey:    layer.type || 'community',
+        subLayerKey: layer.type || 'community',
+        displayName: layer.name,
+        color:       color,
+        geojson:     geojson,
+      });
+      _bMap.addedSet.add(layer.id);
+    });
+    if (toAdd.length > 0) _bCmd('addLayers', toAdd);
+  }
+
+  /** Show a "no geometry" notice inside a slot container. */
+  function _showNoGeometry(slotId) {
+    if (!_bMap.container) return;
+    var slot = _bMap.container.querySelector('#' + slotId);
+    if (!slot) return;
+    // Remove iframe if it's currently in this slot
+    if (_bMap.iframe && _bMap.iframe.parentNode === slot) slot.removeChild(_bMap.iframe);
+    if (!slot.querySelector('.mp-note')) {
+      slot.innerHTML = '<div class="map-placeholder"><div class="mp-note">No geometry mapped for this layer yet</div></div>';
+    }
+  }
+
+  /**
+   * Show the Summary tab: fetch ALL layers (including outline layers that have
+   * geometry but no assets), push new ones to the iframe, restore original colours,
+   * then show all with showLayerIds.  If nothing has geometry, show placeholder.
+   * No network activity for layers already in the cache.
+   */
+  function _showSummaryTab() {
+    var layers = _bMap.allLayers || [];
+    if (layers.length === 0) { _showNoGeometry('bmap-summary'); return; }
+    Promise.all(layers.map(function (l) {
+      return _fetchLayer(l).then(function (g) { return { id: l.id, layer: l, g: g }; });
+    })).then(function (results) {
+      var gmap = {};
+      results.forEach(function (r) { gmap[r.id] = r.g; });
+      _pushNewLayers(layers, gmap);
+      var allIds = layers.filter(function (l) { return gmap[l.id]; }).map(function (l) { return l.id; });
+      if (allIds.length === 0) { _showNoGeometry('bmap-summary'); return; }
+      // Ensure iframe is in the summary slot
+      var slot = _bMap.container && _bMap.container.querySelector('#bmap-summary');
+      if (slot && _bMap.iframe && _bMap.iframe.parentNode !== slot) slot.appendChild(_bMap.iframe);
+      _bCmd('showLayerIds', allIds);
+      // Restore original colours for all layers (undo any per-tab dimming)
+      allIds.forEach(function (id) {
+        _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
+      });
+      _bCmd('fitToContent', [], null);
+    });
+  }
+
+  /**
+   * Show a specific layer tab: lazily fetch only that layer (cache hit = instant),
+   * push it to the iframe if new, then show ALL loaded layers but dim the inactive
+   * ones via updateLayerColor — so the active layer stands out while the others
+   * remain visible as a greyed-out context layer.
+   * No network activity if the layer was already loaded.
+   */
+  function _showLayerTab(layer) {
+    if (!layer) return;
+    _fetchLayer(layer).then(function (geojson) {
+      if (!geojson) { _showNoGeometry('bmap-layer-' + layer.id); return; }
+      var gmap = {}; gmap[layer.id] = geojson;
+      _pushNewLayers([layer], gmap);
+      // Collect all layers that have been loaded into the iframe
+      var loadedIds = Array.from(_bMap.addedSet);
+      _bCmd('showLayerIds', loadedIds);
+      // Active layer: full colour; others: dimmed grey for context
+      loadedIds.forEach(function (id) {
+        if (id === layer.id) {
+          _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
+        } else {
+          _bCmd('updateLayerColor', id, '#c8cdd4');
+        }
+      });
+      _bCmd('fitToContent', [], null);
+    });
+  }
+
+  /**
+   * Move the shared iframe into the named slot, then trigger lazy loading
+   * for the appropriate tab content.
+   * tabIdx 0 = Summary; tabIdx > 0 = layers[tabIdx-1].
+   */
+  function _switchToTab(tabIdx) {
+    if (!_bMap.iframe || !_bMap.container) return;
+    var layers = _bMap.allLayers || [];
+    var slotId, layer;
+    if (tabIdx === 0) {
+      slotId = 'bmap-summary';
+    } else {
+      layer = layers[tabIdx - 1];
+      if (!layer) return;
+      slotId = 'bmap-layer-' + layer.id;
+    }
+    var slot = _bMap.container.querySelector('#' + slotId);
+    if (!slot) return; // this layer has no geometry — no slot was rendered
+    slot.appendChild(_bMap.iframe);
+    if (tabIdx === 0) {
+      _showSummaryTab();
+    } else {
+      _showLayerTab(layer);
+    }
+  }
+
+  /**
+   * Mount the shared Leaflet iframe in the summary (or first available) slot
+   * and register the mapReady message listener.
+   * Called after renderDetailPage() sets the container innerHTML.
+   */
+  function setupBranchMaps(container, data) {
+    _bTeardown();
+    var layers = data.layers || [];
+    _bMap.geojsonCache = new Map();
+    _bMap.addedSet     = new Set();
+    _bMap.layerColors  = {};
+    _bMap.branchId     = data.branch.id;
+    _bMap.allLayers    = layers;
+    _bMap.container    = container;
+
+    // Mount in summary slot — always present now that we render it unconditionally.
+    // Fall back to first layer slot in case the branch has no summary panel.
+    var slot = container.querySelector('#bmap-summary');
+    if (!slot) {
+      for (var i = 0; i < layers.length; i++) {
+        slot = container.querySelector('#bmap-layer-' + layers[i].id);
+        if (slot) break;
+      }
+    }
+    if (!slot) return; // no map panels at all — shouldn't happen but guard
+
+    var iframe = document.createElement('iframe');
+    iframe.src = '/leaflet-map.html';
+    iframe.className = 'branch-map-iframe';
+    iframe.setAttribute('allowfullscreen', 'true');
+    _bMap.iframe = iframe;
+    slot.appendChild(iframe);
+
+    _bMap.handler = function (e) {
+      if (!e.data) return;
+      // Leaflet template serialises every message with JSON.stringify
+      var msg;
+      if (typeof e.data === 'string') {
+        try { msg = JSON.parse(e.data); } catch (_) { return; }
+      } else {
+        msg = e.data;
+      }
+      if (msg.type === 'mapReady' && !_bMap.ready) {
+        _bMap.ready = true;
+        _bFlush();
+        // Initial tab is always Summary — kick off its lazy load
+        _showSummaryTab();
+      }
+    };
+    window.addEventListener('message', _bMap.handler);
+  }
+
   // ── Admin org-id suffix ───────────────────────────────────────────────────
   function orgParam() {
     var state = window.PortfolioState;
@@ -167,18 +409,22 @@
       + '</div>';
   }
 
-  // ── Map placeholder panel ──────────────────────────────────────────────────
-  function renderMapPlaceholder(title, panelClass, assetCount) {
-    var note = (assetCount === 0)
-      ? 'No geometry mapped for this layer yet'
-      : assetCount + ' asset' + (assetCount === 1 ? '' : 's') + ' mapped · map integration coming in a later slice';
+  // ── Map placeholder panel (used only when assetCount === 0) ──────────────
+  function renderMapPlaceholder(title, panelClass) {
     return '<div class="panel ' + esc(panelClass || '') + '">'
-      + '<div class="panel-head"><h2>' + esc(title) + '</h2>'
-      + '<span class="view-all" style="cursor:default;color:var(--gray-400);">Open full map →</span>'
-      + '</div>'
+      + '<div class="panel-head"><h2>' + esc(title) + '</h2></div>'
       + '<div class="map-placeholder">'
-        + '<div class="mp-note">' + esc(note) + '</div>'
+        + '<div class="mp-note">No geometry mapped for this layer yet</div>'
       + '</div>'
+      + '</div>';
+  }
+
+  // ── Live Leaflet map panel ─────────────────────────────────────────────────
+  // Returns an HTML string with a uniquely-id'd mount point for the shared iframe.
+  function renderMapPanel(title, panelClass, slotId) {
+    return '<div class="panel ' + esc(panelClass || '') + '">'
+      + '<div class="panel-head"><h2>' + esc(title) + '</h2></div>'
+      + '<div class="branch-map-container" id="' + esc(slotId) + '"></div>'
       + '</div>';
   }
 
@@ -215,7 +461,9 @@
       { label: 'Last Service',    value: lastSvcDate,     border: 'b-green' },
     ]);
 
-    var mapHtml = renderMapPlaceholder('Property Map', 'p-blue', totalAssets);
+    // Always render the map panel — geometry is fetched lazily and a
+    // "no geometry" notice is shown in-slot if the API returns nothing.
+    var mapHtml = renderMapPanel('Property Map', 'p-blue', 'bmap-summary');
 
     // Recent services panel
     var svcRows = svcs.length > 0
@@ -280,8 +528,9 @@
       { label: 'Open Items',   value: (data.openWorkOrders || []).length, border: 'b-amber' },
     ]);
 
-    // Map placeholder
-    var mapHtml = renderMapPlaceholder(layer.name + ' Map', accent.panel, layer.assetCount || 0);
+    // Always render the map panel — geometry is fetched lazily and a
+    // "no geometry" notice is shown in-slot if the API returns nothing.
+    var mapHtml = renderMapPanel(layer.name + ' Map', accent.panel, 'bmap-layer-' + layer.id);
 
     // Inventory table
     var invRows;
@@ -375,8 +624,11 @@
     // Wire selector block
     wireSelectorBlock(container, branchId, allBranches);
 
-    // Wire tab bar
-    wireTabBar(container);
+    // Wire tab bar (pass layers so slot switching works)
+    wireTabBar(container, layers);
+
+    // Mount live Leaflet maps
+    setupBranchMaps(container, data);
   }
 
   // ── Wire selector block ────────────────────────────────────────────────────
@@ -449,7 +701,7 @@
   }
 
   // ── Wire tab bar ───────────────────────────────────────────────────────────
-  function wireTabBar(container) {
+  function wireTabBar(container, layers) {
     var tabs  = container.querySelectorAll('#branch-tab-bar .tab');
     var panes = container.querySelectorAll('.tabpane[data-pane-idx]');
 
@@ -463,12 +715,19 @@
         tab.classList.add('on');
         var target = container.querySelector('.tabpane[data-pane-idx="' + idx + '"]');
         if (target) target.classList.add('on');
+
+        // Move the shared iframe to the new slot and lazy-load its geometry.
+        // Tab 0 = Summary (shows all layers); others = single-layer (others hidden).
+        _switchToTab(idx);
       });
     });
   }
 
   // ── Main render ────────────────────────────────────────────────────────────
   function renderBranchDetail(container, params) {
+    // Tear down any map from a previous render (branch navigation)
+    _bTeardown();
+
     var branchId = params && params.id;
     if (!branchId) {
       container.innerHTML = '<div class="pf-empty">No branch ID specified.</div>';

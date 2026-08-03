@@ -4509,6 +4509,27 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
   };
 }
 
+/** Extract all leaf [lng, lat] coordinate pairs from any GeoJSON geometry/feature/collection. */
+function extractAllCoords(obj: any): number[][] {
+  if (!obj || typeof obj !== 'object') return [];
+  // Direct coordinate arrays
+  if (Array.isArray(obj)) {
+    if (obj.length >= 2 && typeof obj[0] === 'number' && typeof obj[1] === 'number') {
+      return [obj as number[]];
+    }
+    return obj.flatMap((item: any) => extractAllCoords(item));
+  }
+  if (obj.type === 'FeatureCollection' && Array.isArray(obj.features)) {
+    return obj.features.flatMap((f: any) => extractAllCoords(f));
+  }
+  if (obj.type === 'Feature' && obj.geometry) {
+    return extractAllCoords(obj.geometry);
+  }
+  if (obj.coordinates) {
+    return extractAllCoords(obj.coordinates);
+  }
+  return [];
+}
 export async function getPortfolioGroups(orgId: string) {
   const t0 = Date.now();
 
@@ -4611,4 +4632,111 @@ export async function getPortfolioGroups(orgId: string) {
       photoProofPct: Number(r.photo_proof_pct ?? 0),
     },
   }));
+}
+
+export async function getBranchMapPoints(orgId: string): Promise<{
+  branches: Array<{ id: string; code: string | null; name: string; city: string | null; lat: number; lng: number; assetCount: number; openWorkOrders: number; hasGeometry: boolean }>;
+  unmapped: Array<{ id: string; code: string | null; name: string }>;
+}> {
+  const cached = branchMapPointsCache.get(orgId);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  // Load all communities for this org
+  const comms = await db.select().from(communities).where(eq(communities.organizationId, orgId)).orderBy(communities.name);
+
+  const branches: Array<{ id: string; code: string | null; name: string; city: string | null; lat: number; lng: number; assetCount: number; openWorkOrders: number; servicesYtd: number; hasGeometry: boolean }> = [];
+  const unmapped: Array<{ id: string; code: string | null; name: string }> = [];
+
+  for (const community of comms) {
+    // Load layers with geojsonData for this community
+    const layers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, community.id));
+
+    // Compute centroid: prefer outline layer, else bbox of all layers
+    let centroid: [number, number] | null = null;
+
+    const outlineLayer = layers.find(l => l.layerKey === 'outline' && l.geojsonData);
+    if (outlineLayer && outlineLayer.geojsonData) {
+      try {
+        const parsed = JSON.parse(outlineLayer.geojsonData);
+        centroid = bboxCentroid(extractAllCoords(parsed));
+      } catch (_) { /* unparseable — skip */ }
+    }
+
+    if (!centroid) {
+      const allCoords: number[][] = [];
+      for (const layer of layers) {
+        if (!layer.geojsonData) continue;
+        try {
+          const parsed = JSON.parse(layer.geojsonData);
+          allCoords.push(...extractAllCoords(parsed));
+        } catch (_) { /* skip */ }
+      }
+      centroid = bboxCentroid(allCoords);
+    }
+
+    // Asset count and open work orders
+    const yearStart = new Date(new Date().getFullYear(), 0, 1);
+    const [acResult, woResult, svcResult] = await Promise.all([
+      db.select({ cnt: count() }).from(assets)
+        .where(and(eq(assets.communityId, community.id), eq(assets.isArchived, false)))
+        .then(r => r[0]),
+      db.select({ cnt: count() }).from(tasks)
+        .where(and(eq(tasks.communityId, community.id), ne(tasks.status, 'completed')))
+        .then(r => r[0]),
+      // servicesYtd: task completions this calendar year for this community
+      pool.query<{ cnt: string }>(
+        `SELECT COUNT(*)::text AS cnt FROM task_completions tc
+         JOIN tasks t ON t.id = tc.task_id
+         WHERE t.community_id = $1 AND tc.completed_at >= $2`,
+        [community.id, yearStart]
+      ).then(r => r.rows[0]),
+    ]);
+
+    const assetCount = Number(acResult?.cnt ?? 0);
+    const openWorkOrders = Number(woResult?.cnt ?? 0);
+    const servicesYtd = Number(svcResult?.cnt ?? 0);
+
+    if (centroid) {
+      branches.push({
+        id: community.id,
+        code: (community as any).code ?? null,
+        name: community.name,
+        city: (community as any).city ?? null,
+        lat: centroid[0],
+        lng: centroid[1],
+        assetCount,
+        openWorkOrders,
+        servicesYtd,
+        hasGeometry: true,
+      });
+    } else {
+      unmapped.push({
+        id: community.id,
+        code: (community as any).code ?? null,
+        name: community.name,
+      });
+    }
+  }
+
+  const result = { branches, unmapped };
+  branchMapPointsCache.set(orgId, { data: result, expiresAt: Date.now() + 60_000 });
+  return result;
+}
+
+const branchMapPointsCache = new Map<string, { data: Awaited<ReturnType<typeof getBranchMapPoints>>; expiresAt: number }>();
+
+/** Compute bbox centroid from coordinate pairs. Returns [lat, lng] or null. */
+function bboxCentroid(coords: number[][]): [number, number] | null {
+  if (coords.length === 0) return null;
+  let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (const pair of coords) {
+    const lng = pair[0], lat = pair[1];
+    if (!isFinite(lng) || !isFinite(lat)) continue;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+  if (!isFinite(minLng)) return null;
+  return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
 }

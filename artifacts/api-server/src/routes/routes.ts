@@ -5384,6 +5384,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/portfolio/map", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getBranchMapPoints(resolved.orgId);
+      console.log(`[GET /api/portfolio/map] org=${resolved.orgId} mapped=${data.branches.length} unmapped=${data.unmapped.length} (${Date.now() - t0}ms)`);
+      return void res.json(data);
+    } catch (error) {
+      console.error("Portfolio map error:", error);
+      return void res.status(500).json({ error: "Failed to fetch portfolio map data" });
+    }
+  });
+
+  app.get("/api/portfolio/branches/:communityId/layers/:layerId/geojson", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const { communityId, layerId } = req.params as { communityId: string; layerId: string };
+
+      // Verify the community belongs to this org (no existence leak)
+      const community = await storage.getCommunityById(communityId);
+      if (!community || community.organizationId !== resolved.orgId) {
+        return void res.status(403).json({ error: "Branch not found or does not belong to this organization" });
+      }
+
+      // Verify the layer belongs to this community (404 — existence leak within org is acceptable)
+      const layer = await storage.getMapLayerById(layerId);
+      if (!layer || layer.communityId !== communityId) {
+        return void res.status(404).json({ error: "Layer not found for this branch" });
+      }
+
+      if (!layer.geojsonData) {
+        return void res.json(null);
+      }
+
+      console.log(`[GET /api/portfolio/branches/:communityId/layers/:layerId/geojson] org=${resolved.orgId} community=${communityId} layer=${layerId} (${Date.now() - t0}ms)`);
+      res.setHeader("Content-Type", "application/json");
+      return void res.send(layer.geojsonData);
+    } catch (error) {
+      console.error("Portfolio branch layer geojson error:", error);
+      return void res.status(500).json({ error: "Failed to fetch layer GeoJSON" });
+    }
+  });
+
   app.get("/api/portfolio/groups", requireClientOrAdmin, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {
