@@ -41,6 +41,7 @@ declare module "express-session" {
   interface SessionData {
     userId: string;
     hoaCommunityId?: string;
+    organizationId?: string;
   }
 }
 
@@ -50,6 +51,10 @@ export function isHoaRole(role: string): boolean {
 
 export function isMapCreatorRole(role: string): boolean {
   return role === 'map_creator';
+}
+
+export function isClientRole(role: string): boolean {
+  return role === 'client_admin';
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -89,6 +94,63 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }).catch(() => {
     res.status(500).json({ message: "Internal error" });
   });
+}
+
+export async function requireClient(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!req.session.userId) {
+    res.status(401).json({ message: "Not authenticated" });
+    return;
+  }
+  try {
+    const user = await storage.getUserById(req.session.userId);
+    if (!user || !isClientRole(user.role)) {
+      res.status(403).json({ message: "Client access required" });
+      return;
+    }
+    (req as any).currentUser = user;
+    next();
+  } catch {
+    res.status(500).json({ message: "Internal error" });
+  }
+}
+
+export async function enforceOrgScoping(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!req.session.userId) {
+    // Unauthenticated requests are handled downstream; don't block here
+    next();
+    return;
+  }
+  try {
+    const user = await storage.getUserById(req.session.userId);
+    if (!user || !isClientRole(user.role)) {
+      // Non-client roles are not org-scoped; pass through
+      next();
+      return;
+    }
+    const userOrgId = user.organizationId;
+    if (!userOrgId) {
+      res.status(403).json({ message: "Access denied: client user has no organization" });
+      return;
+    }
+    // Check if a specific organizationId appears in params/query/body
+    const targetOrgId = (req.params as any).organizationId ?? (req.query as any).organizationId ?? req.body?.organizationId;
+    if (targetOrgId && targetOrgId !== userOrgId) {
+      res.status(403).json({ message: "Access denied: cross-organization access is not allowed" });
+      return;
+    }
+    // Check if a specific community is targeted — enforce it belongs to the same org
+    const communityId = req.params.id || (req.params as any).communityId || req.query.communityId || req.body?.communityId;
+    if (communityId) {
+      const community = await storage.getCommunityById(communityId as string);
+      if (community && community.organizationId && community.organizationId !== userOrgId) {
+        res.status(403).json({ message: "Access denied: community belongs to a different organization" });
+        return;
+      }
+    }
+    next();
+  } catch {
+    res.status(500).json({ message: "Internal error" });
+  }
 }
 
 export function requireAdminOrMapCreator(req: Request, res: Response, next: NextFunction) {
@@ -147,6 +209,9 @@ export function registerAuthRoutes(app: any) {
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         req.session.hoaCommunityId = user.hoaCommunityId;
       }
+      if (isClientRole(user.role) && user.organizationId) {
+        req.session.organizationId = user.organizationId;
+      }
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
@@ -175,6 +240,9 @@ export function registerAuthRoutes(app: any) {
       req.session.userId = user.id;
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         req.session.hoaCommunityId = user.hoaCommunityId;
+      }
+      if (isClientRole(user.role) && user.organizationId) {
+        req.session.organizationId = user.organizationId;
       }
       const { password: _, ...safeUser } = user;
       await new Promise<void>((resolve, reject) =>

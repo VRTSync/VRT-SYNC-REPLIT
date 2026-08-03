@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { requireAuth, requireAdmin, requireAdminOrMapCreator, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole } from "../auth";
+import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
@@ -68,6 +68,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAuthRoutes(app);
 
   app.use("/api", enforceHoaScoping);
+  app.use("/api", enforceOrgScoping);
 
   app.get("/public-objects/{*filePath}", async (req: Request, res: Response) => {
     const filePath = (req.params as any).filePath as string;
@@ -139,6 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (user?.role === "admin" || user?.role === "map_creator") {
+        // Admins and map creators see all communities, including commercial branches
         const allCommunities = await storage.getCommunities();
         return res.json(allCommunities);
       }
@@ -146,8 +148,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const community = await storage.getCommunityById(user.hoaCommunityId);
         return res.json(community ? [community] : []);
       }
+      // For property_manager, contractor, and other non-admin/non-HOA roles:
+      // exclude commercial branches (communities with an organizationId)
       const memberships = await storage.getUserCommunities(req.session.userId!);
-      res.json(memberships.map((m) => m.community));
+      const nonCommercial = memberships
+        .map((m) => m.community)
+        .filter((c) => !c.organizationId);
+      res.json(nonCommercial);
     } catch (error) {
       console.error("Get communities error:", error);
       res.status(500).json({ error: "Failed to fetch communities" });
@@ -1564,7 +1571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/users", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { username, password, displayName, role, hoaCommunityId } = req.body;
+      const { username, password, displayName, role, hoaCommunityId, organizationId } = req.body;
       if (!username || !password) {
         return res.status(400).json({ error: "username and password are required" });
       }
@@ -1581,6 +1588,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: limitCheck });
         }
       }
+      if (isClientRole(role) && !organizationId) {
+        return res.status(400).json({ error: "client_admin role requires an organizationId" });
+      }
+      if (!isClientRole(role) && organizationId) {
+        return res.status(400).json({ error: "organizationId is only valid for client_admin role" });
+      }
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(409).json({ error: "Username already taken" });
@@ -1592,6 +1605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         displayName: displayName || username,
         role: role || "contractor",
         hoaCommunityId: isHoaRole(role) ? hoaCommunityId : undefined,
+        organizationId: isClientRole(role) ? organizationId : undefined,
       });
       if (isHoaRole(role) && hoaCommunityId) {
         await storage.addCommunityMembers(hoaCommunityId, [user.id]);
@@ -3190,14 +3204,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!isAdmin) {
           const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
           if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+          // Non-admin users cannot search commercial branches (organizationId IS NOT NULL)
+          const comm = await storage.getCommunityById(communityId);
+          if (comm?.organizationId) return res.status(403).json({ error: "Not a member of this community" });
         }
         communityIds = [communityId];
       } else {
-        const memberships = await storage.getUserCommunities(user.id);
-        communityIds = memberships.map(m => m.community.id);
         if (isAdmin) {
           const allComms = await storage.getCommunities();
           communityIds = allComms.map(c => c.id);
+        } else {
+          // Non-admin users only search non-commercial communities (organizationId IS NULL)
+          const memberships = await storage.getUserCommunities(user.id);
+          communityIds = memberships
+            .map(m => m.community)
+            .filter(c => !c.organizationId)
+            .map(c => c.id);
         }
       }
 
@@ -5099,6 +5121,252 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err) {
       console.error("Delete contact error:", err);
       res.status(500).json({ error: "Failed to delete contact" });
+    }
+  });
+
+  // ── Portfolio endpoint (client_admin) ─────────────────────────────────────
+  app.get("/api/portfolio/me", requireClient, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).currentUser;
+      const orgId = user?.organizationId ?? req.session.organizationId;
+      if (!orgId) {
+        return res.status(403).json({ error: "No organization assigned to this user" });
+      }
+      const portfolio = await storage.getPortfolioForOrg(orgId);
+      if (!portfolio) {
+        return res.status(404).json({ error: "Organization not found" });
+      }
+      res.json(portfolio);
+    } catch (error) {
+      console.error("Portfolio me error:", error);
+      res.status(500).json({ error: "Failed to fetch portfolio" });
+    }
+  });
+
+  // ── Admin: Organization provisioning routes ───────────────────────────────
+
+  app.post("/api/admin/organizations", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, kind, contactName, contactEmail } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      const org = await storage.createOrganization({
+        name: name.trim(),
+        kind: kind ?? "commercial",
+        contactName: contactName ?? null,
+        contactEmail: contactEmail ?? null,
+      });
+      res.status(201).json(org);
+    } catch (error) {
+      console.error("Create organization error:", error);
+      res.status(500).json({ error: "Failed to create organization" });
+    }
+  });
+
+  app.get("/api/admin/organizations", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const orgs = await storage.listOrganizations();
+      res.json(orgs);
+    } catch (error) {
+      console.error("List organizations error:", error);
+      res.status(500).json({ error: "Failed to list organizations" });
+    }
+  });
+
+  app.get("/api/admin/organizations/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const org = await storage.getOrganizationById(req.params.id as string);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      res.json(org);
+    } catch (error) {
+      console.error("Get organization error:", error);
+      res.status(500).json({ error: "Failed to get organization" });
+    }
+  });
+
+  app.patch("/api/admin/organizations/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, kind, contactName, contactEmail } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) updates.name = name;
+      if (kind !== undefined) updates.kind = kind;
+      if (contactName !== undefined) updates.contactName = contactName;
+      if (contactEmail !== undefined) updates.contactEmail = contactEmail;
+      const org = await storage.updateOrganization(req.params.id as string, updates as any);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      res.json(org);
+    } catch (error) {
+      console.error("Update organization error:", error);
+      res.status(500).json({ error: "Failed to update organization" });
+    }
+  });
+
+  app.delete("/api/admin/organizations/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = req.params.id as string;
+      const hasBranches = await storage.orgHasBranches(id);
+      if (hasBranches) {
+        return res.status(409).json({ error: "Organization still has branches — reassign or delete them first" });
+      }
+      const deleted = await storage.deleteOrganization(id);
+      if (!deleted) return res.status(404).json({ error: "Organization not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete organization error:", error);
+      res.status(500).json({ error: "Failed to delete organization" });
+    }
+  });
+
+  app.get("/api/admin/organizations/:id/portfolio", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const portfolio = await storage.getPortfolioForOrg(req.params.id as string);
+      if (!portfolio) return res.status(404).json({ error: "Organization not found" });
+      res.json(portfolio);
+    } catch (error) {
+      console.error("Admin portfolio error:", error);
+      res.status(500).json({ error: "Failed to fetch portfolio" });
+    }
+  });
+
+  // ── Admin: Branch (community) routes ──────────────────────────────────────
+
+  app.get("/api/admin/organizations/:id/branches", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const branches = await storage.listBranchesByOrg(req.params.id as string);
+      res.json(branches);
+    } catch (error) {
+      console.error("List branches error:", error);
+      res.status(500).json({ error: "Failed to list branches" });
+    }
+  });
+
+  app.post("/api/admin/organizations/:id/branches", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, code, address, city, description } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      if (!code || typeof code !== "string" || code.trim().length === 0) {
+        return res.status(400).json({ error: "code is required" });
+      }
+      const orgId = req.params.id as string;
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      try {
+        const branch = await storage.createBranch({
+          organizationId: orgId,
+          name: name.trim(),
+          code: code.trim(),
+          address: address ?? undefined,
+          city: city ?? undefined,
+          description: description ?? undefined,
+        });
+        res.status(201).json(branch);
+      } catch (err: any) {
+        // Catch unique constraint on (organization_id, code)
+        if (err?.code === "23505" || err?.message?.includes("duplicate")) {
+          return res.status(409).json({ error: `A branch with code '${code}' already exists in this organization` });
+        }
+        throw err;
+      }
+    } catch (error) {
+      if ((error as any)?.statusCode === 409) return res.status(409).json(error);
+      console.error("Create branch error:", error);
+      res.status(500).json({ error: "Failed to create branch" });
+    }
+  });
+
+  app.patch("/api/admin/branches/:communityId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { code, address, city, name, description } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (code !== undefined) updates.code = code;
+      if (address !== undefined) updates.address = address;
+      if (city !== undefined) updates.city = city;
+      if (name !== undefined) updates.name = name;
+      if (description !== undefined) updates.description = description;
+      const branch = await storage.updateBranch(req.params.communityId as string, updates as any);
+      if (!branch) return res.status(404).json({ error: "Branch not found" });
+      res.json(branch);
+    } catch (error) {
+      console.error("Update branch error:", error);
+      res.status(500).json({ error: "Failed to update branch" });
+    }
+  });
+
+  // ── Admin: Branch group routes ────────────────────────────────────────────
+
+  app.get("/api/admin/organizations/:id/groups", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const groups = await storage.listBranchGroups(req.params.id as string);
+      res.json(groups);
+    } catch (error) {
+      console.error("List branch groups error:", error);
+      res.status(500).json({ error: "Failed to list branch groups" });
+    }
+  });
+
+  app.post("/api/admin/organizations/:id/groups", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, color, sortOrder } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      const orgId = req.params.id as string;
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+      const group = await storage.createBranchGroup(orgId, {
+        name: name.trim(),
+        color: color ?? undefined,
+        sortOrder: sortOrder ?? 0,
+      });
+      res.status(201).json(group);
+    } catch (error) {
+      console.error("Create branch group error:", error);
+      res.status(500).json({ error: "Failed to create branch group" });
+    }
+  });
+
+  app.patch("/api/admin/groups/:groupId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, color, sortOrder } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) updates.name = name;
+      if (color !== undefined) updates.color = color;
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      const group = await storage.updateBranchGroup(req.params.groupId as string, updates as any);
+      if (!group) return res.status(404).json({ error: "Branch group not found" });
+      return res.json(group);
+    } catch (error) {
+      console.error("Update branch group error:", error);
+      return res.status(500).json({ error: "Failed to update branch group" });
+    }
+  });
+
+  app.delete("/api/admin/groups/:groupId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const deleted = await storage.deleteBranchGroup(req.params.groupId as string);
+      if (!deleted) return res.status(404).json({ error: "Branch group not found" });
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Delete branch group error:", error);
+      return res.status(500).json({ error: "Failed to delete branch group" });
+    }
+  });
+
+  app.put("/api/admin/groups/:groupId/members", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { communityIds } = req.body;
+      if (!Array.isArray(communityIds)) {
+        return res.status(400).json({ error: "communityIds must be an array" });
+      }
+      await storage.setBranchGroupMembers(req.params.groupId as string, communityIds as string[]);
+      return res.json({ ok: true });
+    } catch (error) {
+      console.error("Set branch group members error:", error);
+      return res.status(500).json({ error: "Failed to set branch group members" });
     }
   });
 

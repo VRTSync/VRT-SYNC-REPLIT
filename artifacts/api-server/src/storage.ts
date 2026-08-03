@@ -6,6 +6,7 @@ import {
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
   notifications, driveFolders, driveFiles, invoices, contracts, contacts, pushTickets,
   assetAttachments,
+  organizations, branchGroups, branchGroupMembers,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
@@ -16,6 +17,8 @@ import {
   type Contact, type InsertContact, type PushTicket,
   type AssetAttachment,
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
+  type Organization, type NewOrganization,
+  type BranchGroup, type NewBranchGroup,
   userRoleEnum,
 } from "@workspace/db";
 
@@ -3657,4 +3660,158 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       hoaMembersAddedThisMonth: Number(usersResult.rows[0]?.hoa_added_this_month ?? 0),
     },
   };
+}
+
+// ─── Organization CRUD ────────────────────────────────────────────────────────
+
+export async function createOrganization(data: NewOrganization): Promise<Organization> {
+  const [org] = await db.insert(organizations).values(data).returning();
+  return org;
+}
+
+export async function getOrganizationById(id: string): Promise<Organization | undefined> {
+  const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+  return org;
+}
+
+export async function listOrganizations(): Promise<Organization[]> {
+  return db.select().from(organizations).orderBy(organizations.name);
+}
+
+export async function updateOrganization(id: string, data: Partial<NewOrganization>): Promise<Organization | undefined> {
+  const [updated] = await db.update(organizations).set(data).where(eq(organizations.id, id)).returning();
+  return updated;
+}
+
+export async function deleteOrganization(id: string): Promise<boolean> {
+  const result = await db.delete(organizations).where(eq(organizations.id, id)).returning();
+  return result.length > 0;
+}
+
+// ─── Branch (community with organizationId) helpers ──────────────────────────
+
+export async function listBranchesByOrg(orgId: string): Promise<Community[]> {
+  return db.select().from(communities)
+    .where(eq(communities.organizationId, orgId))
+    .orderBy(communities.code, communities.name);
+}
+
+export async function orgHasBranches(orgId: string): Promise<boolean> {
+  const [row] = await db.select({ count: count() }).from(communities)
+    .where(eq(communities.organizationId, orgId));
+  return Number(row?.count ?? 0) > 0;
+}
+
+export async function createBranch(data: {
+  organizationId: string;
+  name: string;
+  code: string;
+  address?: string;
+  city?: string;
+  description?: string;
+}): Promise<Community> {
+  const community = await createCommunity({ name: data.name, description: data.description });
+  const [updated] = await db.update(communities)
+    .set({
+      organizationId: data.organizationId,
+      code: data.code,
+      address: data.address ?? null,
+      city: data.city ?? null,
+    })
+    .where(eq(communities.id, community.id))
+    .returning();
+  return updated;
+}
+
+export async function updateBranch(communityId: string, data: {
+  code?: string;
+  address?: string | null;
+  city?: string | null;
+  name?: string;
+  description?: string | null;
+}): Promise<Community | undefined> {
+  const [updated] = await db.update(communities).set(data).where(eq(communities.id, communityId)).returning();
+  return updated;
+}
+
+// ─── Branch Group CRUD ────────────────────────────────────────────────────────
+
+export async function createBranchGroup(orgId: string, data: {
+  name: string;
+  color?: string;
+  sortOrder?: number;
+}): Promise<BranchGroup> {
+  const [group] = await db.insert(branchGroups).values({
+    organizationId: orgId,
+    name: data.name,
+    color: data.color,
+    sortOrder: data.sortOrder ?? 0,
+  }).returning();
+  return group;
+}
+
+export async function listBranchGroups(orgId: string): Promise<BranchGroup[]> {
+  return db.select().from(branchGroups)
+    .where(eq(branchGroups.organizationId, orgId))
+    .orderBy(branchGroups.sortOrder, branchGroups.name);
+}
+
+export async function updateBranchGroup(id: string, data: Partial<NewBranchGroup>): Promise<BranchGroup | undefined> {
+  const [updated] = await db.update(branchGroups).set(data).where(eq(branchGroups.id, id)).returning();
+  return updated;
+}
+
+export async function deleteBranchGroup(id: string): Promise<boolean> {
+  const result = await db.delete(branchGroups).where(eq(branchGroups.id, id)).returning();
+  return result.length > 0;
+}
+
+export async function setBranchGroupMembers(groupId: string, communityIds: string[]): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(branchGroupMembers).where(eq(branchGroupMembers.groupId, groupId));
+    if (communityIds.length > 0) {
+      await tx.insert(branchGroupMembers).values(
+        communityIds.map((communityId) => ({ groupId, communityId }))
+      );
+    }
+  });
+}
+
+// ─── Portfolio query ──────────────────────────────────────────────────────────
+
+export async function getPortfolioForOrg(orgId: string): Promise<{
+  organization: Organization;
+  branches: Community[];
+  groups: (BranchGroup & { branchIds: string[] })[];
+} | null> {
+  const org = await getOrganizationById(orgId);
+  if (!org) return null;
+
+  const [branches, groups] = await Promise.all([
+    listBranchesByOrg(orgId),
+    listBranchGroups(orgId),
+  ]);
+
+  // Load all group members for this org's groups in one query
+  const groupIds = groups.map(g => g.id);
+  let memberRows: { groupId: string; communityId: string }[] = [];
+  if (groupIds.length > 0) {
+    memberRows = await db.select({
+      groupId: branchGroupMembers.groupId,
+      communityId: branchGroupMembers.communityId,
+    }).from(branchGroupMembers).where(inArray(branchGroupMembers.groupId, groupIds));
+  }
+
+  const membersByGroup = new Map<string, string[]>();
+  for (const row of memberRows) {
+    if (!membersByGroup.has(row.groupId)) membersByGroup.set(row.groupId, []);
+    membersByGroup.get(row.groupId)!.push(row.communityId);
+  }
+
+  const groupsWithMembers = groups.map(g => ({
+    ...g,
+    branchIds: membersByGroup.get(g.id) ?? [],
+  }));
+
+  return { organization: org, branches, groups: groupsWithMembers };
 }
