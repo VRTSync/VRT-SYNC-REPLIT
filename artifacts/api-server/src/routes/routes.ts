@@ -76,12 +76,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const file = await objectStorageService.searchPublicObject(filePath);
       if (!file) {
-        return res.status(404).json({ error: "File not found" });
+        return void res.status(404).json({ error: "File not found" });
       }
       objectStorageService.downloadObject(file, res);
     } catch (error) {
       console.error("Error searching for public object:", error);
-      return res.status(500).json({ error: "Internal server error" });
+      return void res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -96,14 +96,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         requestedPermission: ObjectPermission.READ,
       });
       if (!canAccess) {
-        return res.sendStatus(401);
+        return void res.sendStatus(401);
       }
       objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
       if (error instanceof ObjectNotFoundError) {
-        return res.sendStatus(404);
+        return void res.sendStatus(404);
       }
-      return res.sendStatus(500);
+      return void res.sendStatus(500);
     }
   });
 
@@ -121,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/objects/confirm", requireAuth, async (req: Request, res: Response) => {
     const { uploadURL, communityId } = req.body;
     if (!uploadURL) {
-      return res.status(400).json({ error: "uploadURL is required" });
+      return void res.status(400).json({ error: "uploadURL is required" });
     }
     try {
       const objectStorageService = new ObjectStorageService();
@@ -142,11 +142,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (user?.role === "admin" || user?.role === "map_creator") {
         // Admins and map creators see all communities, including commercial branches
         const allCommunities = await storage.getCommunities();
-        return res.json(allCommunities);
+        return void res.json(allCommunities);
       }
       if (isHoaRole(user?.role || '') && user?.hoaCommunityId) {
         const community = await storage.getCommunityById(user.hoaCommunityId);
-        return res.json(community ? [community] : []);
+        return void res.json(community ? [community] : []);
       }
       // For property_manager, contractor, and other non-admin/non-HOA roles:
       // exclude commercial branches (communities with an organizationId)
@@ -165,7 +165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = insertCommunitySchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const community = await storage.createCommunity({
         name: parsed.data.name,
@@ -188,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = req.params.id as string;
       const community = await storage.updateCommunity(id, { name, description });
       if (!community) {
-        return res.status(404).json({ error: "Community not found" });
+        return void res.status(404).json({ error: "Community not found" });
       }
       res.json(community);
     } catch (error) {
@@ -229,7 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { userId, userIds } = req.body;
       const ids: string[] = userIds || (userId ? [userId] : []);
       if (ids.length === 0) {
-        return res.status(400).json({ error: "userId or userIds[] is required" });
+        return void res.status(400).json({ error: "userId or userIds[] is required" });
       }
       const result = await storage.addCommunityMembers(req.params.id as string, ids);
       res.status(201).json(result);
@@ -252,11 +252,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/communities/:id/controllers", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       const communityId = req.params.id as string;
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
 
       const controllerAssets = await storage.getAssetsByCommunitySorted(communityId, "controller");
@@ -330,12 +330,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/dashboard", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       const data = await storage.getDashboardData(user.id, communityId, user.role === "admin");
       res.json(data);
@@ -348,13 +348,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/dashboard/role", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
 
       let communityId: string | undefined;
 
       if (isHoaRole(user.role)) {
         if (!user.hoaCommunityId) {
-          return res.status(403).json({ error: "HOA user is not assigned to a community" });
+          return void res.status(403).json({ error: "HOA user is not assigned to a community" });
         }
         communityId = user.hoaCommunityId;
       } else {
@@ -362,13 +362,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (!communityId) {
-        return res.status(400).json({ error: "communityId is required" });
+        return void res.status(400).json({ error: "communityId is required" });
       }
 
       if (user.role !== "admin" && !isHoaRole(user.role)) {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
         if (!isMember) {
-          return res.status(403).json({ error: "You are not a member of this community" });
+          return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
 
@@ -385,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
-        return res.status(401).json({ error: "User not found" });
+        return void res.status(401).json({ error: "User not found" });
       }
 
       let communityId: string | null = (req.query.communityId as string | undefined) ?? null;
@@ -400,7 +400,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (communityId && user.role !== "admin" && !isHoaRole(user.role)) {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
         if (!isMember) {
-          return res.status(403).json({ error: "You are not a member of this community" });
+          return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
 
@@ -450,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
-        return res.status(401).json({ error: "User not found" });
+        return void res.status(401).json({ error: "User not found" });
       }
       let communityId = req.query.communityId as string | undefined;
 
@@ -459,7 +459,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const rawTasks = await storage.getTasksByCommunity(communityId);
         const tasks = await storage.enrichTasksWithAssigneeName(rawTasks);
         console.log(`[GET /api/tasks] hoa user=${user.id} community=${communityId} count=${tasks.length} (${Date.now() - t0}ms)`);
-        return res.json(tasks);
+        return void res.json(tasks);
       }
 
       if (user.role === "admin" || user.role === "property_manager") {
@@ -467,21 +467,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (user.role === "property_manager") {
             const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
             if (!isMember) {
-              return res.status(403).json({ error: "You are not a member of this community" });
+              return void res.status(403).json({ error: "You are not a member of this community" });
             }
           }
           const rawTasks = await storage.getTasksByCommunity(communityId);
           const allTasks = await storage.enrichTasksWithAssigneeName(rawTasks);
           console.log(`[GET /api/tasks] role=${user.role} community=${communityId} count=${allTasks.length} (${Date.now() - t0}ms)`);
-          return res.json(allTasks);
+          return void res.json(allTasks);
         }
         if (user.role === "admin") {
           const rawTasks = await storage.getAllTasks();
           const allTasks = await storage.enrichTasksWithAssigneeName(rawTasks);
           console.log(`[GET /api/tasks] admin all-tasks count=${allTasks.length} (${Date.now() - t0}ms)`);
-          return res.json(allTasks);
+          return void res.json(allTasks);
         }
-        return res.json([]);
+        return void res.json([]);
       }
 
       if (!communityId) {
@@ -494,7 +494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (communityId) {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
         if (!isMember) {
-          return res.status(403).json({ error: "You are not a member of this community" });
+          return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
 
@@ -514,11 +514,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!task) {
         console.log(`[GET /api/tasks/:id] task=${req.params.id} not found (${Date.now() - t0}ms)`);
-        return res.status(404).json({ error: "Task not found" });
+        return void res.status(404).json({ error: "Task not found" });
       }
       if (!allowed) {
         console.log(`[GET /api/tasks/:id] task=${req.params.id} access denied for user=${req.session.userId} (${Date.now() - t0}ms)`);
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
       console.log(`[GET /api/tasks/:id] task=${req.params.id} served (${Date.now() - t0}ms)`);
       res.json(task);
@@ -533,8 +533,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const taskId = req.params.id as string;
       const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, taskId);
-      if (!task) return res.status(404).json({ error: "Task not found" });
-      if (!allowed) return res.status(403).json({ error: "You do not have access to this task" });
+      if (!task) return void res.status(404).json({ error: "Task not found" });
+      if (!allowed) return void res.status(403).json({ error: "You do not have access to this task" });
 
       const [rawCompletions, taskAttachments, taskLink] = await Promise.all([
         storage.getTaskCompletions(taskId),
@@ -566,18 +566,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/tasks", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "User not found" });
+      if (!actor) return void res.status(401).json({ error: "User not found" });
       if (actor.role !== "admin" && actor.role !== "property_manager") {
-        return res.status(403).json({ error: "Only admins and property managers can create tasks" });
+        return void res.status(403).json({ error: "Only admins and property managers can create tasks" });
       }
       const parsed = insertTaskSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       if (actor.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(actor.id, parsed.data.communityId);
         if (!isMember) {
-          return res.status(403).json({ error: "You are not a member of this community" });
+          return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
       const task = await storage.createTask({
@@ -613,24 +613,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!task) {
-        return res.status(404).json({ error: "Task not found" });
+        return void res.status(404).json({ error: "Task not found" });
       }
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const { version, ...data } = req.body;
       if (typeof version !== "number") {
-        return res.status(400).json({ error: "version is required" });
+        return void res.status(400).json({ error: "version is required" });
       }
 
       if (task!.origin === "HOA") {
         const updatingUser = await storage.getUserById(req.session.userId!);
         if (updatingUser?.role === "contractor" && data.priority !== undefined) {
-          return res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
+          return void res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
         }
         if (data.status === "acknowledged") {
           if (updatingUser?.role !== "contractor" && updatingUser?.role !== "admin") {
-            return res.status(403).json({ error: "Only contractors and admins can acknowledge HOA requests" });
+            return void res.status(403).json({ error: "Only contractors and admins can acknowledge HOA requests" });
           }
         }
         if (data.status) {
@@ -643,9 +643,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const allowedStatuses = validTransitions[currentStatus];
           if (!allowedStatuses || !allowedStatuses.includes(newStatus)) {
             if (newStatus === "completed") {
-              return res.status(400).json({ error: "HOA requests must be completed via the completion form, not status update" });
+              return void res.status(400).json({ error: "HOA requests must be completed via the completion form, not status update" });
             }
-            return res.status(400).json({ error: `Invalid HOA request status transition: ${currentStatus} → ${newStatus}` });
+            return void res.status(400).json({ error: `Invalid HOA request status transition: ${currentStatus} → ${newStatus}` });
           }
         }
       }
@@ -666,7 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.updateTask(req.params.id as string, version, data);
       if (!updated) {
         const latest = await storage.getTaskById(req.params.id as string);
-        return res.status(409).json({
+        return void res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
           latestTask: latest,
@@ -693,7 +693,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const task = await storage.getTaskById(req.params.id as string);
       if (!task) {
-        return res.status(404).json({ error: "Task not found" });
+        return void res.status(404).json({ error: "Task not found" });
       }
       await storage.deleteTask(req.params.id as string);
       res.json({ message: "Task deleted" });
@@ -707,23 +707,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { allowed, task: existingTask } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!existingTask) {
-        return res.status(404).json({ error: "Task not found" });
+        return void res.status(404).json({ error: "Task not found" });
       }
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
 
       if (existingTask.origin === "HOA" && existingTask.status !== "acknowledged" && existingTask.status !== "in_progress") {
-        return res.status(400).json({ error: "HOA requests must be acknowledged or in progress before completing" });
+        return void res.status(400).json({ error: "HOA requests must be acknowledged or in progress before completing" });
       }
 
       const parsed = completeTaskSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
       if (existingTask.version !== parsed.data.version) {
-        return res.status(409).json({
+        return void res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
           latestTask: existingTask,
@@ -740,7 +740,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const startDate = new Date(wsVal + 'T00:00:00');
         const endDate = new Date(weVal + 'T00:00:00');
         if (today < startDate || today > endDate) {
-          return res.status(400).json({
+          return void res.status(400).json({
             error: "This task can only be completed within its execution window.",
             code: "OUTSIDE_EXECUTION_WINDOW",
             windowStart: existingTask.windowStart,
@@ -754,7 +754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       if (!updated) {
         const latest = await storage.getTaskById(req.params.id as string);
-        return res.status(409).json({
+        return void res.status(409).json({
           error: "Conflict: task was modified by another user.",
           code: "VERSION_CONFLICT",
           latestTask: latest,
@@ -785,30 +785,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taskId = req.params.id as string;
       const { allowed } = await storage.canUserAccessTask(req.session.userId!, taskId);
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const { taskCompletionId, uploadURL, idempotencyKey } = req.body;
       if (!uploadURL || !idempotencyKey) {
-        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
+        return void res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
       }
 
       const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
       if (strictValidation) {
         const parsed = parseUploadURL(uploadURL);
         if (!parsed.valid) {
-          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+          return void res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
         }
       }
 
       if (taskCompletionId) {
         const existing = await storage.getAttachmentByIdempotencyKey(taskCompletionId, idempotencyKey);
         if (existing) {
-          return res.status(200).json(existing);
+          return void res.status(200).json(existing);
         }
       } else {
         const existing = await storage.getAttachmentByTaskIdAndIdempotencyKey(taskId, idempotencyKey);
         if (existing) {
-          return res.status(200).json(existing);
+          return void res.status(200).json(existing);
         }
       }
 
@@ -822,7 +822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
       } catch (error) {
         if (strictValidation && error instanceof ObjectNotFoundError) {
-          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+          return void res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
         }
         throw error;
       }
@@ -848,15 +848,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const completionId = req.params.id as string;
       const completion = await storage.getCompletionById(completionId);
       if (!completion) {
-        return res.status(404).json({ error: "Completion not found" });
+        return void res.status(404).json({ error: "Completion not found" });
       }
       const { allowed } = await storage.canUserAccessTask(req.session.userId!, completion.taskId);
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task completion" });
+        return void res.status(403).json({ error: "You do not have access to this task completion" });
       }
       const { fileRef, url, idempotencyKey } = req.body;
       if (!fileRef || !url || !idempotencyKey) {
-        return res.status(400).json({ error: "fileRef, url, and idempotencyKey are required" });
+        return void res.status(400).json({ error: "fileRef, url, and idempotencyKey are required" });
       }
 
       const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
@@ -866,7 +866,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (candidateUrl) {
           const parsed = parseUploadURL(candidateUrl);
           if (!parsed.valid) {
-            return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+            return void res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
           }
           validatedHttpsUrl = candidateUrl;
         }
@@ -874,7 +874,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const existing = await storage.getAttachmentByIdempotencyKey(completionId, idempotencyKey);
       if (existing) {
-        return res.status(200).json(existing);
+        return void res.status(200).json(existing);
       }
 
       if (strictValidation && validatedHttpsUrl) {
@@ -885,7 +885,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await objectStorageService.getObjectEntityFile(normalizedPath);
           } catch (error) {
             if (error instanceof ObjectNotFoundError) {
-              return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+              return void res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
             }
             throw error;
           }
@@ -921,11 +921,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const completionId = req.params.id as string;
       const completion = await storage.getCompletionById(completionId);
       if (!completion) {
-        return res.status(404).json({ error: "Completion not found" });
+        return void res.status(404).json({ error: "Completion not found" });
       }
       const { allowed } = await storage.canUserAccessTask(req.session.userId!, completion.taskId);
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task completion" });
+        return void res.status(403).json({ error: "You do not have access to this task completion" });
       }
       const atts = await storage.getAttachmentsByCompletion(completionId);
       res.json(atts);
@@ -939,7 +939,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { allowed } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const completions = await storage.getTaskCompletions(req.params.id as string);
       const completionsWithAttachments = await Promise.all(
@@ -960,7 +960,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taskId = req.params.id as string;
       const { allowed } = await storage.canUserAccessTask(req.session.userId!, taskId);
       if (!allowed) {
-        return res.status(403).json({ error: "You do not have access to this task" });
+        return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const atts = await storage.getAttachmentsByTaskId(taskId);
       res.json(atts);
@@ -985,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const now = Date.now();
       if (adminDashboardCache && adminDashboardCache.expiresAt > now) {
-        return res.json(adminDashboardCache.data);
+        return void res.json(adminDashboardCache.data);
       }
       const data = await storage.getAdminDashboard();
       adminDashboardCache = { data, expiresAt: now + 60_000 };
@@ -1000,7 +1000,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.query.communityId as string;
       if (!communityId) {
-        return res.status(400).json({ error: "communityId is required" });
+        return void res.status(400).json({ error: "communityId is required" });
       }
       const completedTasks = await storage.getCompletedTasksWithDetails(communityId);
       res.json(completedTasks);
@@ -1076,7 +1076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } = req.body;
 
       if (!recordName || typeof recordName !== "string" || !recordName.trim()) {
-        return res.status(400).json({ error: "recordName is required" });
+        return void res.status(400).json({ error: "recordName is required" });
       }
 
       const [record] = await db
@@ -1125,7 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: "Record not found" });
+        return void res.status(404).json({ error: "Record not found" });
       }
 
       const updateData: Record<string, any> = { updatedAt: new Date() };
@@ -1178,7 +1178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: "Record not found" });
+        return void res.status(404).json({ error: "Record not found" });
       }
 
       const src = existing[0];
@@ -1217,11 +1217,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: "Record not found" });
+        return void res.status(404).json({ error: "Record not found" });
       }
 
       if (existing[0].status !== "draft") {
-        return res.status(400).json({ error: "Only draft records can be permanently deleted" });
+        return void res.status(400).json({ error: "Only draft records can be permanently deleted" });
       }
 
       await db.delete(plannerRecords).where(eq(plannerRecords.id, id));
@@ -1251,7 +1251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.log.info({ communityId, assetsFound: bluegrassAssets.length }, "xeriscape polygons: bluegrass assets found");
 
       if (bluegrassAssets.length === 0) {
-        return res.json({ type: "FeatureCollection", features: [], assetsFound: 0, featuresResolved: 0 });
+        return void res.json({ type: "FeatureCollection", features: [], assetsFound: 0, featuresResolved: 0 });
       }
 
       const assetIds = bluegrassAssets.map((a: any) => a.id);
@@ -1385,7 +1385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { packetTitle, packetSummaryText, narrativeIntro, narrativeRecommendation, narrativeNextSteps } = req.body;
 
       if (!packetTitle || typeof packetTitle !== "string" || !packetTitle.trim()) {
-        return res.status(400).json({ error: "packetTitle is required" });
+        return void res.status(400).json({ error: "packetTitle is required" });
       }
 
       // Verify the planning record exists and is in a reviewable state
@@ -1396,12 +1396,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: "Planning record not found" });
+        return void res.status(404).json({ error: "Planning record not found" });
       }
 
       const record = existing[0];
       if (record.status !== "reviewed" && record.status !== "selected_for_estimate") {
-        return res.status(400).json({ error: "Packet can only be created for reviewed or selected_for_estimate records" });
+        return void res.status(400).json({ error: "Packet can only be created for reviewed or selected_for_estimate records" });
       }
 
       // Supersede any existing active packets for this record
@@ -1448,7 +1448,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .limit(1);
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: "Packet not found" });
+        return void res.status(404).json({ error: "Packet not found" });
       }
 
       const updateData: Record<string, any> = { updatedAt: new Date() };
@@ -1475,21 +1475,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contractors", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "User not found" });
+      if (!actor) return void res.status(401).json({ error: "User not found" });
       if (actor.role !== "admin" && actor.role !== "property_manager") {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
       const communityId = req.query.communityId as string | undefined;
       let contractors: Awaited<ReturnType<typeof storage.getAllContractors>>;
       if (communityId) {
         if (actor.role === "property_manager") {
           const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
-          if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+          if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
         }
         contractors = await storage.getContractorsForCommunity(communityId);
       } else {
         if (actor.role !== "admin") {
-          return res.status(400).json({ error: "communityId is required" });
+          return void res.status(400).json({ error: "communityId is required" });
         }
         contractors = await storage.getAllContractors();
       }
@@ -1503,7 +1503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/users", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       /* Super Admin: return all users */
       if (actor.role === "admin") {
@@ -1512,28 +1512,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (roleFilter) {
           allUsers = allUsers.filter(u => u.role === roleFilter);
         }
-        return res.json(allUsers.map(({ password: _, ...u }) => u));
+        return void res.json(allUsers.map(({ password: _, ...u }) => u));
       }
 
       /* PM and HOA Admin: community-scoped */
       if (actor.role === "property_manager" || actor.role === "hoa_admin") {
         const communityId = req.query.communityId as string | undefined;
         if (!communityId) {
-          return res.status(400).json({ error: "communityId is required for this role" });
+          return void res.status(400).json({ error: "communityId is required for this role" });
         }
         if (actor.role === "property_manager") {
           const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
-          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+          if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
         } else if (actor.role === "hoa_admin") {
           if (actor.hoaCommunityId !== communityId) {
-            return res.status(403).json({ error: "Access denied" });
+            return void res.status(403).json({ error: "Access denied" });
           }
         }
         const communityUsers = await storage.getUsersByCommunity(communityId);
-        return res.json(communityUsers.map(({ password: _, ...u }) => u));
+        return void res.json(communityUsers.map(({ password: _, ...u }) => u));
       }
 
-      return res.status(403).json({ error: "Not authorized" });
+      return void res.status(403).json({ error: "Not authorized" });
     } catch (error) {
       console.error("Get users error:", error);
       res.status(500).json({ error: "Failed to fetch users" });
@@ -1545,23 +1545,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { role, hoaCommunityId } = req.body;
       const validRoles = userRoleEnum.enumValues;
       if (!validRoles.includes(role as (typeof validRoles)[number])) {
-        return res.status(400).json({ error: "Invalid role" });
+        return void res.status(400).json({ error: "Invalid role" });
       }
       if (req.params.id === req.session.userId) {
-        return res.status(400).json({ error: "Cannot change your own role" });
+        return void res.status(400).json({ error: "Cannot change your own role" });
       }
       if (isHoaRole(role) && !hoaCommunityId) {
-        return res.status(400).json({ error: "HOA roles require a community assignment" });
+        return void res.status(400).json({ error: "HOA roles require a community assignment" });
       }
       if (isHoaRole(role) && hoaCommunityId) {
         const limitCheck = await checkHoaLimits(hoaCommunityId, role, req.params.id as string);
         if (limitCheck) {
-          return res.status(400).json({ error: limitCheck });
+          return void res.status(400).json({ error: limitCheck });
         }
       }
       const updated = await storage.updateUserRole(req.params.id as string, role, isHoaRole(role) ? hoaCommunityId : null);
       if (!updated) {
-        return res.status(404).json({ error: "User not found" });
+        return void res.status(404).json({ error: "User not found" });
       }
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
@@ -1575,30 +1575,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { username, password, displayName, role, hoaCommunityId, organizationId } = req.body;
       if (!username || !password) {
-        return res.status(400).json({ error: "username and password are required" });
+        return void res.status(400).json({ error: "username and password are required" });
       }
       const validRoles = userRoleEnum.enumValues;
       if (role && !validRoles.includes(role as (typeof validRoles)[number])) {
-        return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+        return void res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
       }
       if (isHoaRole(role) && !hoaCommunityId) {
-        return res.status(400).json({ error: "HOA roles require a community assignment" });
+        return void res.status(400).json({ error: "HOA roles require a community assignment" });
       }
       if (isHoaRole(role) && hoaCommunityId) {
         const limitCheck = await checkHoaLimits(hoaCommunityId, role);
         if (limitCheck) {
-          return res.status(400).json({ error: limitCheck });
+          return void res.status(400).json({ error: limitCheck });
         }
       }
       if (isClientRole(role) && !organizationId) {
-        return res.status(400).json({ error: "client_admin role requires an organizationId" });
+        return void res.status(400).json({ error: "client_admin role requires an organizationId" });
       }
       if (!isClientRole(role) && organizationId) {
-        return res.status(400).json({ error: "organizationId is only valid for client_admin role" });
+        return void res.status(400).json({ error: "organizationId is only valid for client_admin role" });
       }
       const existing = await storage.getUserByUsername(username);
       if (existing) {
-        return res.status(409).json({ error: "Username already taken" });
+        return void res.status(409).json({ error: "Username already taken" });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await storage.createUser({
@@ -1629,30 +1629,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (displayName !== undefined) {
         if (typeof displayName !== "string" || displayName.trim().length === 0) {
-          return res.status(400).json({ error: "Display name cannot be empty" });
+          return void res.status(400).json({ error: "Display name cannot be empty" });
         }
         updates.displayName = displayName.trim();
       }
 
       if (newPassword !== undefined) {
         if (typeof newPassword !== "string" || newPassword.length < 6) {
-          return res.status(400).json({ error: "New password must be at least 6 characters" });
+          return void res.status(400).json({ error: "New password must be at least 6 characters" });
         }
         updates.password = await bcrypt.hash(newPassword, 10);
       }
 
       if (Object.keys(updates).length === 0) {
-        return res.status(400).json({ error: "No changes provided" });
+        return void res.status(400).json({ error: "No changes provided" });
       }
 
       const existing = await storage.getUserById(userId);
       if (!existing) {
-        return res.status(404).json({ error: "User not found" });
+        return void res.status(404).json({ error: "User not found" });
       }
 
       const updated = await storage.updateUserProfile(userId, updates);
       if (!updated) {
-        return res.status(500).json({ error: "Failed to update user" });
+        return void res.status(500).json({ error: "Failed to update user" });
       }
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
@@ -1666,11 +1666,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.params.id as string;
       if (userId === req.session.userId) {
-        return res.status(400).json({ error: "Cannot delete yourself" });
+        return void res.status(400).json({ error: "Cannot delete yourself" });
       }
       const user = await storage.getUserById(userId);
       if (!user) {
-        return res.status(404).json({ error: "User not found" });
+        return void res.status(404).json({ error: "User not found" });
       }
       await storage.deleteUser(userId);
       res.json({ message: "User deleted" });
@@ -1694,42 +1694,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/users/:id/status", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       const allowedActorRoles = ["admin", "property_manager", "hoa_admin"];
       if (!allowedActorRoles.includes(actor.role)) {
-        return res.status(403).json({ error: "Not authorized" });
+        return void res.status(403).json({ error: "Not authorized" });
       }
 
       const targetUser = await storage.getUserById(req.params.id as string);
-      if (!targetUser) return res.status(404).json({ error: "User not found" });
+      if (!targetUser) return void res.status(404).json({ error: "User not found" });
 
       if (req.params.id === req.session.userId) {
-        return res.status(400).json({ error: "Cannot change your own status" });
+        return void res.status(400).json({ error: "Cannot change your own status" });
       }
 
       /* Scope check for PM and HOA Admin */
       if (actor.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId || '');
         if (!targetUser.hoaCommunityId || !isMember) {
-          return res.status(403).json({ error: "User is not in your community" });
+          return void res.status(403).json({ error: "User is not in your community" });
         }
       } else if (actor.role === "hoa_admin") {
         if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
-          return res.status(403).json({ error: "User is not in your community" });
+          return void res.status(403).json({ error: "User is not in your community" });
         }
         if (targetUser.role !== "hoa_member") {
-          return res.status(403).json({ error: "HOA Admins can only manage HOA Members" });
+          return void res.status(403).json({ error: "HOA Admins can only manage HOA Members" });
         }
       }
 
       const { isActive } = req.body;
       if (typeof isActive !== "boolean") {
-        return res.status(400).json({ error: "isActive (boolean) is required" });
+        return void res.status(400).json({ error: "isActive (boolean) is required" });
       }
 
       const updated = await storage.updateUserStatus(req.params.id as string, isActive);
-      if (!updated) return res.status(404).json({ error: "User not found" });
+      if (!updated) return void res.status(404).json({ error: "User not found" });
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
     } catch (error) {
@@ -1742,20 +1742,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/portal/users", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
 
       if (actor.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       } else if (actor.role === "hoa_admin") {
         if (actor.hoaCommunityId !== communityId) {
-          return res.status(403).json({ error: "Access denied" });
+          return void res.status(403).json({ error: "Access denied" });
         }
       } else {
-        return res.status(403).json({ error: "Not authorized" });
+        return void res.status(403).json({ error: "Not authorized" });
       }
 
       const communityUsers = await storage.getUsersByCommunity(communityId);
@@ -1770,40 +1770,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/portal/users", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       const allowedActorRoles = ["property_manager", "hoa_admin"];
       if (!allowedActorRoles.includes(actor.role)) {
-        return res.status(403).json({ error: "Not authorized" });
+        return void res.status(403).json({ error: "Not authorized" });
       }
 
       const { username, password, displayName, role, communityId } = req.body;
       if (!username || !password || !communityId) {
-        return res.status(400).json({ error: "username, password, and communityId are required" });
+        return void res.status(400).json({ error: "username, password, and communityId are required" });
       }
       if (password.length < 6) {
-        return res.status(400).json({ error: "Password must be at least 6 characters" });
+        return void res.status(400).json({ error: "Password must be at least 6 characters" });
       }
 
       /* Role restrictions */
       if (actor.role === "hoa_admin") {
         if (role !== "hoa_member") {
-          return res.status(403).json({ error: "HOA Admins can only create HOA Member users" });
+          return void res.status(403).json({ error: "HOA Admins can only create HOA Member users" });
         }
         if (communityId !== actor.hoaCommunityId) {
-          return res.status(403).json({ error: "Access denied" });
+          return void res.status(403).json({ error: "Access denied" });
         }
       } else if (actor.role === "property_manager") {
         const allowedRoles = ["hoa_admin", "hoa_member"];
         if (!allowedRoles.includes(role)) {
-          return res.status(403).json({ error: "Property Managers can only create HOA Admin or HOA Member users" });
+          return void res.status(403).json({ error: "Property Managers can only create HOA Admin or HOA Member users" });
         }
         const isMember = await storage.isUserMemberOfCommunity(actor.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
 
       const existing = await storage.getUserByUsername(username);
-      if (existing) return res.status(409).json({ error: "Username already taken" });
+      if (existing) return void res.status(409).json({ error: "Username already taken" });
 
       const validPortalRoles = ["hoa_admin", "hoa_member"] as const;
       type PortalRole = typeof validPortalRoles[number];
@@ -1830,33 +1830,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/portal/users/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       const allowedActorRoles = ["property_manager", "hoa_admin"];
       if (!allowedActorRoles.includes(actor.role)) {
-        return res.status(403).json({ error: "Not authorized" });
+        return void res.status(403).json({ error: "Not authorized" });
       }
 
       const targetUser = await storage.getUserById(req.params.id as string);
-      if (!targetUser) return res.status(404).json({ error: "User not found" });
+      if (!targetUser) return void res.status(404).json({ error: "User not found" });
 
       if (req.params.id === req.session.userId) {
-        return res.status(400).json({ error: "Cannot edit yourself" });
+        return void res.status(400).json({ error: "Cannot edit yourself" });
       }
 
       if (actor.role === "hoa_admin") {
         if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
-          return res.status(403).json({ error: "User is not in your community" });
+          return void res.status(403).json({ error: "User is not in your community" });
         }
         if (targetUser.role !== "hoa_member") {
-          return res.status(403).json({ error: "HOA Admins can only edit HOA Members" });
+          return void res.status(403).json({ error: "HOA Admins can only edit HOA Members" });
         }
       } else if (actor.role === "property_manager") {
         if (!targetUser.hoaCommunityId) {
-          return res.status(403).json({ error: "User has no community assignment" });
+          return void res.status(403).json({ error: "User has no community assignment" });
         }
         const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId);
-        if (!isMember) return res.status(403).json({ error: "User is not in your community" });
+        if (!isMember) return void res.status(403).json({ error: "User is not in your community" });
       }
 
       const { role, isActive } = req.body;
@@ -1864,12 +1864,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (role !== undefined) {
         if (actor.role === "hoa_admin" && role !== "hoa_member") {
-          return res.status(403).json({ error: "HOA Admins can only assign HOA Member role" });
+          return void res.status(403).json({ error: "HOA Admins can only assign HOA Member role" });
         }
         if (actor.role === "property_manager") {
           const allowedRoles = ["hoa_admin", "hoa_member"];
           if (!allowedRoles.includes(role)) {
-            return res.status(403).json({ error: "Property Managers can only assign HOA Admin or HOA Member roles" });
+            return void res.status(403).json({ error: "Property Managers can only assign HOA Admin or HOA Member roles" });
           }
         }
         const r = await storage.updateUserRole(req.params.id as string, role, targetUser.hoaCommunityId);
@@ -1893,33 +1893,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/portal/users/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
-      if (!actor) return res.status(401).json({ error: "Not authenticated" });
+      if (!actor) return void res.status(401).json({ error: "Not authenticated" });
 
       const allowedActorRoles = ["property_manager", "hoa_admin"];
       if (!allowedActorRoles.includes(actor.role)) {
-        return res.status(403).json({ error: "Not authorized" });
+        return void res.status(403).json({ error: "Not authorized" });
       }
 
       const targetUser = await storage.getUserById(req.params.id as string);
-      if (!targetUser) return res.status(404).json({ error: "User not found" });
+      if (!targetUser) return void res.status(404).json({ error: "User not found" });
 
       if (req.params.id === req.session.userId) {
-        return res.status(400).json({ error: "Cannot remove yourself" });
+        return void res.status(400).json({ error: "Cannot remove yourself" });
       }
 
       if (actor.role === "hoa_admin") {
         if (targetUser.hoaCommunityId !== actor.hoaCommunityId) {
-          return res.status(403).json({ error: "User is not in your community" });
+          return void res.status(403).json({ error: "User is not in your community" });
         }
         if (targetUser.role !== "hoa_member") {
-          return res.status(403).json({ error: "HOA Admins can only remove HOA Members" });
+          return void res.status(403).json({ error: "HOA Admins can only remove HOA Members" });
         }
       } else if (actor.role === "property_manager") {
         if (!targetUser.hoaCommunityId) {
-          return res.status(403).json({ error: "User has no community" });
+          return void res.status(403).json({ error: "User has no community" });
         }
         const isMember = await storage.isUserMemberOfCommunity(actor.id, targetUser.hoaCommunityId);
-        if (!isMember) return res.status(403).json({ error: "User is not in your community" });
+        if (!isMember) return void res.status(403).json({ error: "User is not in your community" });
       }
 
       /* Unlink from community (remove hoaCommunityId and community_members row), do NOT delete account */
@@ -1940,14 +1940,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = registerPushTokenSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const deviceId = parsed.data.deviceId;
       const newToken = parsed.data.token;
       const now = Date.now();
       const lastReg = pushTokenLastReg.get(deviceId);
       if (lastReg && lastReg.token === newToken && now - lastReg.ts < PUSH_TOKEN_RATE_LIMIT_MS) {
-        return res.status(200).json({ rateLimited: true });
+        return void res.status(200).json({ rateLimited: true });
       }
       const pushToken = await storage.registerPushToken(
         req.session.userId!,
@@ -1980,7 +1980,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } else {
-        return res.status(400).json({ error: "token or deviceId is required" });
+        return void res.status(400).json({ error: "token or deviceId is required" });
       }
       res.json({ message: "Push token removed" });
     } catch (error) {
@@ -2003,10 +2003,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.params.communityId as string;
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       const type = req.query.type as string | undefined;
       const includeArchived = req.query.includeArchived === "true";
@@ -2022,12 +2022,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.query.communityId as string;
       const featureRef = req.query.featureRef as string;
-      if (!communityId || !featureRef) return res.status(400).json({ error: "communityId and featureRef are required" });
+      if (!communityId || !featureRef) return void res.status(400).json({ error: "communityId and featureRef are required" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
       const asset = await storage.getAssetByFeatureRef(communityId, featureRef);
       if (!asset) {
@@ -2044,10 +2044,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { assetIds, key, value, mode } = req.body;
       if (!Array.isArray(assetIds) || assetIds.length === 0) {
-        return res.status(400).json({ error: "assetIds must be a non-empty array" });
+        return void res.status(400).json({ error: "assetIds must be a non-empty array" });
       }
       if (!key || typeof key !== "string" || !value || typeof value !== "string") {
-        return res.status(400).json({ error: "key and value are required strings" });
+        return void res.status(400).json({ error: "key and value are required strings" });
       }
       const validMode = mode === "overwrite" ? "overwrite" : "set_if_missing";
       const result = await storage.bulkUpsertAssetProperty(assetIds, key.trim(), value.trim(), validMode);
@@ -2061,12 +2061,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assets/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const asset = await storage.getAssetById(req.params.id as string);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You do not have access to this asset" });
+        if (!isMember) return void res.status(403).json({ error: "You do not have access to this asset" });
       }
       const properties = await storage.getAssetProperties(asset.id);
       const missingRequiredKeys = getMissingRequiredKeys(asset.assetType, properties);
@@ -2090,12 +2090,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assets/:id/history", requireAuth, async (req: Request, res: Response) => {
     try {
       const asset = await storage.getAssetById(req.params.id as string);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You do not have access to this asset's history" });
+        if (!isMember) return void res.status(403).json({ error: "You do not have access to this asset's history" });
       }
       const history = await storage.getAssetWorkHistory(asset.id);
       res.json(history);
@@ -2108,12 +2108,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assets/:id/notes", requireAuth, async (req: Request, res: Response) => {
     try {
       const asset = await storage.getAssetById(req.params.id as string);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
       const notes = await storage.getAssetNotes(asset.id);
       res.json(notes);
@@ -2127,15 +2127,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = insertAssetNoteSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const asset = await storage.getAssetById(req.params.id as string);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
       const note = await storage.createAssetNote({
         assetId: asset.id,
@@ -2155,12 +2155,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { assetId, noteId } = req.params as { assetId: string; noteId: string };
       const note = await storage.getAssetNoteById(noteId);
-      if (!note) return res.status(404).json({ error: "Note not found" });
-      if (note.assetId !== assetId) return res.status(404).json({ error: "Note not found" });
+      if (!note) return void res.status(404).json({ error: "Note not found" });
+      if (note.assetId !== assetId) return void res.status(404).json({ error: "Note not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin" && note.createdBy !== user.id) {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
       await storage.deleteAssetNote(noteId);
       res.json({ success: true });
@@ -2174,28 +2174,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { locked } = req.body;
       if (typeof locked !== "boolean") {
-        return res.status(400).json({ error: "locked (boolean) is required" });
+        return void res.status(400).json({ error: "locked (boolean) is required" });
       }
       const currentUser = (req as any).currentUser;
       const communityId = req.params.id as string;
 
       if (!locked && isMapCreatorRole(currentUser.role)) {
-        return res.status(403).json({ error: "Only admins can unlock a community." });
+        return void res.status(403).json({ error: "Only admins can unlock a community." });
       }
 
       if (isMapCreatorRole(currentUser.role)) {
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
 
       const community = await storage.getCommunityById(communityId);
-      if (!community) return res.status(404).json({ error: "Community not found" });
+      if (!community) return void res.status(404).json({ error: "Community not found" });
 
       const updated = locked
         ? await storage.lockCommunityForMapCreator(communityId, currentUser.id)
         : await storage.unlockCommunityForMapCreator(communityId);
 
-      if (!updated) return res.status(404).json({ error: "Community not found" });
+      if (!updated) return void res.status(404).json({ error: "Community not found" });
       res.json({
         id: updated.id,
         name: updated.name,
@@ -2214,7 +2214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const reqUser = await storage.getUserById(req.session.userId!);
-      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (!reqUser) return void res.status(401).json({ error: "User not found" });
 
       const communityId = req.query.communityId as string | undefined;
       const sortRaw = req.query.sort as string | undefined;
@@ -2231,17 +2231,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasAccuracy, underCanopy, minAccuracyM, sort,
       });
 
-      return res.json(rows);
+      return void res.json(rows);
     } catch (error) {
       req.log.error({ error }, "GET /api/assets error");
-      return res.status(500).json({ error: "Failed to fetch assets" });
+      return void res.status(500).json({ error: "Failed to fetch assets" });
     }
   });
 
   app.post("/api/assets", requireAdminOrMapCreator, async (req: Request, res: Response) => {
     try {
       const reqUser = await storage.getUserById(req.session.userId!);
-      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (!reqUser) return void res.status(401).json({ error: "User not found" });
 
       // Map creator GPS-pin path: communityId + assetType + lat/lng (label optional)
       if (isMapCreatorRole(reqUser.role)) {
@@ -2266,12 +2266,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Authz: communityId required → membership → lock check
         const communityIdForPin = req.body?.communityId as string | undefined;
-        if (!communityIdForPin) return res.status(400).json({ error: "communityId is required" });
+        if (!communityIdForPin) return void res.status(400).json({ error: "communityId is required" });
         const isMemberForPin = await storage.isUserMemberOfCommunity(reqUser.id, communityIdForPin);
-        if (!isMemberForPin) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMemberForPin) return void res.status(403).json({ error: "You are not a member of this community" });
         const communityForPin = await storage.getCommunityById(communityIdForPin);
         if (communityForPin?.isMapCreatorLocked) {
-          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+          return void res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
         }
 
         const pinSchema = z.object({
@@ -2289,7 +2289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const parsed = pinSchema.safeParse(req.body);
         if (!parsed.success) {
-          return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+          return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
         }
 
         const {
@@ -2299,7 +2299,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } = parsed.data;
 
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not authorized to create assets in this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not authorized to create assets in this community" });
 
         const layerDef = MC_LAYER_MAP_LOCAL[assetType];
         const featureRef = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2358,28 +2358,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         } catch (createErr: any) {
           if (createErr?.code === '23505' || createErr?.message?.includes('duplicate') || createErr?.message?.includes('unique')) {
-            return res.status(409).json({ error: "A pin with this reference already exists in this community/layer." });
+            return void res.status(409).json({ error: "A pin with this reference already exists in this community/layer." });
           }
           throw createErr;
         }
 
         const { geojsonData: _geo, ...layerMeta } = layer;
-        return res.status(201).json({ asset, layerId: layer.id, feature: newFeature, isNewLayer, layer: layerMeta });
+        return void res.status(201).json({ asset, layerId: layer.id, feature: newFeature, isNewLayer, layer: layerMeta });
       }
 
       // Admin path: full insertAssetSchema validation
       if (reqUser.role !== "admin") {
-        return res.status(403).json({ error: "Forbidden" });
+        return void res.status(403).json({ error: "Forbidden" });
       }
       const parsed = insertAssetSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
       if (reqUser.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, parsed.data.communityId);
         if (!isMember) {
-          return res.status(403).json({ error: "You are not a member of this community" });
+          return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
 
@@ -2423,7 +2423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       } catch (err: any) {
         if (err?.code === "23505") {
-          return res.status(409).json({ error: "A pin with this ID already exists. Please try again.", code: "DUPLICATE_FEATURE_REF" });
+          return void res.status(409).json({ error: "A pin with this ID already exists. Please try again.", code: "DUPLICATE_FEATURE_REF" });
         }
         throw err;
       }
@@ -2439,31 +2439,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const assetId = req.params.id as string;
       const asset = await storage.getAssetById(assetId);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
 
       const reqUser = await storage.getUserById(req.session.userId!);
-      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (!reqUser) return void res.status(401).json({ error: "User not found" });
       if (reqUser.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
 
       const { uploadURL, idempotencyKey, capturedAt } = req.body;
       if (!uploadURL || !idempotencyKey) {
-        return res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
+        return void res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
       }
 
       const strictValidation = process.env.STRICT_UPLOAD_URL_VALIDATION !== "false";
       if (strictValidation) {
         const parsed = parseUploadURL(uploadURL);
         if (!parsed.valid) {
-          return res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
+          return void res.status(400).json({ error: parsed.reason, code: "INVALID_UPLOAD_URL" });
         }
       }
 
       const existing = await storage.getAssetAttachmentByIdempotencyKey(assetId, idempotencyKey);
       if (existing) {
-        return res.status(200).json(existing);
+        return void res.status(200).json(existing);
       }
 
       const aclPolicy = buildCommunityAclPolicy(req.session.userId!, asset.communityId);
@@ -2473,7 +2473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
       } catch (error) {
         if (strictValidation && error instanceof ObjectNotFoundError) {
-          return res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
+          return void res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
         }
         throw error;
       }
@@ -2499,13 +2499,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const assetId = req.params.id as string;
       const asset = await storage.getAssetById(assetId);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
 
       const reqUser = await storage.getUserById(req.session.userId!);
-      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (!reqUser) return void res.status(401).json({ error: "User not found" });
       if (reqUser.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
 
       const assetAttachmentsList = await storage.getAssetAttachments(assetId);
@@ -2522,17 +2522,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const attachmentId = req.params.attachmentId as string;
 
       const asset = await storage.getAssetById(assetId);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
 
       const reqUser = await storage.getUserById(req.session.userId!);
-      if (!reqUser) return res.status(401).json({ error: "User not found" });
+      if (!reqUser) return void res.status(401).json({ error: "User not found" });
       if (reqUser.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
 
       const deleted = await storage.deleteAssetAttachment(assetId, attachmentId);
-      if (!deleted) return res.status(404).json({ error: "Attachment not found" });
+      if (!deleted) return void res.status(404).json({ error: "Attachment not found" });
       res.status(204).send();
     } catch (error) {
       req.log.error({ error }, "Delete asset attachment error");
@@ -2544,19 +2544,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = updateAssetSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
       const currentUser = (req as any).currentUser;
       if (currentUser.role !== "admin") {
         const asset = await storage.getAssetById(req.params.id as string);
-        if (!asset) return res.status(404).json({ error: "Asset not found" });
+        if (!asset) return void res.status(404).json({ error: "Asset not found" });
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
         if (isMapCreatorRole(currentUser.role)) {
           const community = await storage.getCommunityById(asset.communityId);
           if (community?.isMapCreatorLocked) {
-            return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+            return void res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
           }
         }
       }
@@ -2570,8 +2570,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       if (!updated) {
         const latest = await storage.getAssetById(req.params.id as string);
-        if (!latest) return res.status(404).json({ error: "Asset not found" });
-        return res.status(409).json({
+        if (!latest) return void res.status(404).json({ error: "Asset not found" });
+        return void res.status(409).json({
           error: "Conflict: asset was modified. Please refresh and try again.",
           code: "VERSION_CONFLICT",
           latestAsset: latest,
@@ -2588,22 +2588,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = upsertAssetPropertiesSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const asset = await storage.getAssetById(req.params.id as string);
-      if (!asset) return res.status(404).json({ error: "Asset not found" });
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
 
       const currentUser = (req as any).currentUser;
       if (currentUser.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       if (isMapCreatorRole(currentUser.role)) {
         const isMember = await storage.isUserMemberOfCommunity(currentUser.id, asset.communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
         const community = await storage.getCommunityById(asset.communityId);
         if (community?.isMapCreatorLocked) {
-          return res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
+          return void res.status(423).json({ error: "This customer is marked complete by the map creator. Ask an admin to unlock." });
         }
       }
 
@@ -2620,12 +2620,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = setTaskLinkSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const task = await storage.getTaskById(req.params.id as string);
-      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (!task) return void res.status(404).json({ error: "Task not found" });
       if (task.version !== parsed.data.version) {
-        return res.status(409).json({
+        return void res.status(409).json({
           error: "Conflict: task was modified. Please refresh and try again.",
           code: "VERSION_CONFLICT",
           latestTask: task,
@@ -2643,8 +2643,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/tasks/:id/link", requireAuth, async (req: Request, res: Response) => {
     try {
       const { allowed, task } = await storage.canUserAccessTask(req.session.userId!, req.params.id as string);
-      if (!task) return res.status(404).json({ error: "Task not found" });
-      if (!allowed) return res.status(403).json({ error: "You do not have access to this task" });
+      if (!task) return void res.status(404).json({ error: "Task not found" });
+      if (!allowed) return void res.status(403).json({ error: "You do not have access to this task" });
       const link = await storage.getTaskLink(task.id);
       res.json(link);
     } catch (error) {
@@ -2656,11 +2656,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/map-layers", requireAuth, async (req: Request, res: Response) => {
     try {
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
       const user = await storage.getUserById(req.session.userId!);
       if (user?.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
       const layerKey = req.query.layerKey as string | undefined;
       const layers = await storage.getMapLayersByCommunity(communityId, layerKey);
@@ -2675,13 +2675,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/map-layers/:id/geojson", requireAuth, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
       const reqUser = await storage.getUserById(req.session.userId!);
       if (reqUser?.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(req.session.userId!, layer.communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
-      if (!layer.geojsonData) return res.json(null);
+      if (!layer.geojsonData) return void res.json(null);
       res.setHeader("Content-Type", "application/json");
       res.send(layer.geojsonData);
     } catch (error) {
@@ -2697,10 +2697,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/map-layers", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertMapLayerSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const keyValidation = validateLayerKeys(parsed.data.layerKey, parsed.data.subLayerKey);
-      if (!keyValidation.valid) return res.status(400).json({ error: keyValidation.error });
+      if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
 
       if (!parsed.data.color) {
         const count = (await storage.getMapLayersByCommunity(parsed.data.communityId, parsed.data.layerKey)).length;
@@ -2721,7 +2721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json({ ...rest, featureCount, syncResult });
     } catch (error: any) {
       if (error?.constraint === "map_layers_community_layer_sub_idx") {
-        return res.status(409).json({ error: "A layer with that key combination already exists" });
+        return void res.status(409).json({ error: "A layer with that key combination already exists" });
       }
       console.error("Create map layer error:", error);
       res.status(500).json({ error: "Failed to create map layer" });
@@ -2732,7 +2732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, layerKey, subLayerKey, geojsonData } = req.body;
       if (!communityId || !layerKey || !subLayerKey) {
-        return res.status(400).json({ error: "communityId, layerKey, subLayerKey are required" });
+        return void res.status(400).json({ error: "communityId, layerKey, subLayerKey are required" });
       }
 
       const existingLayers = await storage.getMapLayersByCommunity(communityId, layerKey);
@@ -2740,7 +2740,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (matchingLayer) {
         const result = await previewSyncFromLayer(communityId, matchingLayer.id, layerKey, subLayerKey, geojsonData || null);
-        return res.json(result);
+        return void res.json(result);
       }
 
       let featureCount = 0;
@@ -2768,11 +2768,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, layerKey, subLayerKey, displayName } = req.body;
       if (!communityId || !layerKey || !subLayerKey || !displayName) {
-        return res.status(400).json({ error: "communityId, layerKey, subLayerKey, and displayName are required" });
+        return void res.status(400).json({ error: "communityId, layerKey, subLayerKey, and displayName are required" });
       }
 
       const keyValidation = validateLayerKeys(layerKey, subLayerKey);
-      if (!keyValidation.valid) return res.status(400).json({ error: keyValidation.error });
+      if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
 
       let geojsonData: string;
       let sourceFormat: "kml" | "geojson" = "geojson";
@@ -2795,7 +2795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const result = normalizeGeojsonFeatureIds(raw);
         geojsonData = JSON.stringify(result.geojson);
       } else {
-        return res.status(400).json({ error: "No file or GeoJSON data provided" });
+        return void res.status(400).json({ error: "No file or GeoJSON data provided" });
       }
 
       const featureCount = JSON.parse(geojsonData).features?.length || 0;
@@ -2810,14 +2810,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           geojsonData,
         });
         if (!updated) {
-          return res.status(409).json({
+          return void res.status(409).json({
             error: "Conflict: layer was modified. Please refresh and try again.",
             code: "VERSION_CONFLICT",
           });
         }
         const syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = updated;
-        return res.json({ ...rest, featureCount, syncResult });
+        return void res.json({ ...rest, featureCount, syncResult });
       } else {
         const uploadCount = (await storage.getMapLayersByCommunity(communityId, layerKey)).length;
         const autoColor = getDefaultLayerColor(subLayerKey, uploadCount);
@@ -2832,11 +2832,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
         const { geojsonData: _, ...rest } = layer;
-        return res.status(201).json({ ...rest, featureCount, syncResult });
+        return void res.status(201).json({ ...rest, featureCount, syncResult });
       }
     } catch (error: any) {
       if (error?.constraint === "map_layers_community_layer_sub_idx") {
-        return res.status(409).json({ error: "A layer with that key combination already exists for this community" });
+        return void res.status(409).json({ error: "A layer with that key combination already exists for this community" });
       }
       console.error("Map layer upload error:", error);
       res.status(500).json({ error: error.message || "Failed to process upload" });
@@ -2847,24 +2847,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, displayName } = req.body;
       if (!communityId) {
-        return res.status(400).json({ error: "communityId is required" });
+        return void res.status(400).json({ error: "communityId is required" });
       }
 
       if (!req.file) {
-        return res.status(400).json({ error: "KML file is required" });
+        return void res.status(400).json({ error: "KML file is required" });
       }
 
       const fileContent = req.file.buffer.toString("utf-8");
       const fileName = (req.file.originalname || "").toLowerCase();
 
       if (!fileName.endsWith(".kml")) {
-        return res.status(400).json({ error: "Only KML files are supported for irrigation controller+zone upload" });
+        return void res.status(400).json({ error: "Only KML files are supported for irrigation controller+zone upload" });
       }
 
       const parseResult = parseIrrigationKml(fileContent);
 
       if (parseResult.controllers.length === 0) {
-        return res.status(400).json({
+        return void res.status(400).json({
           error: "No controller/zone data found in this KML file. Make sure the file contains controller folders with zone placemarks.",
           warnings: parseResult.warnings,
         });
@@ -2945,13 +2945,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/map-layers/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = updateMapLayerSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const { version, ...data } = parsed.data;
       const updated = await storage.updateMapLayer(req.params.id as string, version, data);
       if (!updated) {
         const existing = await storage.getMapLayerById(req.params.id as string);
-        if (!existing) return res.status(404).json({ error: "Layer not found" });
-        return res.status(409).json({
+        if (!existing) return void res.status(404).json({ error: "Layer not found" });
+        return void res.status(409).json({
           error: "Conflict: layer was modified. Please refresh and try again.",
           code: "VERSION_CONFLICT",
           latestLayer: { ...existing, geojsonData: undefined },
@@ -2977,7 +2977,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/map-layers/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const deleted = await storage.deleteMapLayer(req.params.id as string);
-      if (!deleted) return res.status(404).json({ error: "Layer not found" });
+      if (!deleted) return void res.status(404).json({ error: "Layer not found" });
       res.json({ success: true });
     } catch (error) {
       console.error("Delete map layer error:", error);
@@ -2988,7 +2988,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/map-layers/:id/sync-assets", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
       const result = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
       res.json(result);
     } catch (error) {
@@ -3000,8 +3000,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/map-layers/:id/validate", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
-      if (!layer.geojsonData) return res.json({ featureCount: 0, geometryCounts: { points: 0, lines: 0, polygons: 0, other: 0 }, missingIdCount: 0, missingIdSamples: [], duplicateIdCount: 0, duplicateIdSamples: [], invalidGeometryCount: 0, invalidGeometrySamples: [], warnings: [], errors: ["No GeoJSON data in this layer"], valid: false });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
+      if (!layer.geojsonData) return void res.json({ featureCount: 0, geometryCounts: { points: 0, lines: 0, polygons: 0, other: 0 }, missingIdCount: 0, missingIdSamples: [], duplicateIdCount: 0, duplicateIdSamples: [], invalidGeometryCount: 0, invalidGeometrySamples: [], warnings: [], errors: ["No GeoJSON data in this layer"], valid: false });
       const geojson = JSON.parse(layer.geojsonData);
       const result = validateLayerGeoJSON(geojson, { layerKey: layer.layerKey, subLayerKey: layer.subLayerKey });
       res.json(result);
@@ -3014,7 +3014,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/map-layers/:id/sync-preview", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
       const geojsonData = req.body?.geojsonData || layer.geojsonData;
       const result = await previewSyncFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, geojsonData);
       res.json(result);
@@ -3027,7 +3027,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/map-layers/:id/unlinked-features", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
       const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
       const unlinked = getUnlinkedFeatures(layer.geojsonData, existingAssets);
       res.json(unlinked);
@@ -3040,10 +3040,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/map-layers/:id/create-missing-assets", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
 
       const assetType = resolveAssetType(layer.layerKey, layer.subLayerKey);
-      if (!assetType) return res.status(400).json({ error: "Cannot resolve asset type for this layer" });
+      if (!assetType) return void res.status(400).json({ error: "Cannot resolve asset type for this layer" });
 
       const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
       const unlinked = getUnlinkedFeatures(layer.geojsonData, existingAssets);
@@ -3111,7 +3111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/map-layers/:id/collisions", requireAdmin, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
       const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
       const collisions = getGeoJsonCollisions(layer.geojsonData, existingAssets);
       res.json(collisions);
@@ -3124,7 +3124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/map-layers/:id/summary", requireAuth, async (req: Request, res: Response) => {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
-      if (!layer) return res.status(404).json({ error: "Layer not found" });
+      if (!layer) return void res.status(404).json({ error: "Layer not found" });
 
       let featureCount = 0;
       if (layer.geojsonData) {
@@ -3193,10 +3193,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/search", requireAuth, async (req: Request, res: Response) => {
     try {
       const q = (req.query.q as string || '').trim();
-      if (!q) return res.json([]);
+      if (!q) return void res.json([]);
 
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
 
       const isAdmin = user.role === "admin";
       let communityIds: string[] = [];
@@ -3205,10 +3205,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (communityId) {
         if (!isAdmin) {
           const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+          if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
           // Non-admin users cannot search commercial branches (organizationId IS NOT NULL)
           const comm = await storage.getCommunityById(communityId);
-          if (comm?.organizationId) return res.status(403).json({ error: "Not a member of this community" });
+          if (comm?.organizationId) return void res.status(403).json({ error: "Not a member of this community" });
         }
         communityIds = [communityId];
       } else {
@@ -3244,13 +3244,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.params.communityId as string;
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       const pack = await storage.getLatestOfflinePack(communityId);
-      if (!pack) return res.json(null);
+      if (!pack) return void res.json(null);
       res.json({
         id: pack.id,
         communityId: pack.communityId,
@@ -3267,12 +3267,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/offline-packs", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertOfflinePackSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const pack = await storage.createOfflinePack(parsed.data);
       res.status(201).json(pack);
     } catch (error: any) {
       if (error?.constraint === "offline_packs_community_version_idx") {
-        return res.status(409).json({ error: "A pack with that version already exists for this community" });
+        return void res.status(409).json({ error: "A pack with that version already exists for this community" });
       }
       console.error("Create offline pack error:", error);
       res.status(500).json({ error: "Failed to create offline pack" });
@@ -3282,12 +3282,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/offline-packs/:id/download-urls", requireAuth, async (req: Request, res: Response) => {
     try {
       const pack = await storage.getOfflinePackById(req.params.id as string);
-      if (!pack) return res.status(404).json({ error: "Pack not found" });
+      if (!pack) return void res.status(404).json({ error: "Pack not found" });
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, pack.communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       res.json({
         mbtilesRef: pack.mbtilesRef,
@@ -3305,7 +3305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/offline-packs", requireAdmin, async (req: Request, res: Response) => {
     try {
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId query parameter is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId query parameter is required" });
       const packs = await storage.listOfflinePacks(communityId);
       res.json(packs);
     } catch (error) {
@@ -3317,7 +3317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/offline-packs/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const deleted = await storage.deleteOfflinePack(req.params.id as string);
-      if (!deleted) return res.status(404).json({ error: "Pack not found" });
+      if (!deleted) return void res.status(404).json({ error: "Pack not found" });
       res.json({ success: true });
     } catch (error) {
       console.error("Delete offline pack error:", error);
@@ -3329,7 +3329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.params.communityId as string;
       const community = await storage.getCommunityById(communityId);
-      if (!community) return res.status(404).json({ error: "Community not found" });
+      if (!community) return void res.status(404).json({ error: "Community not found" });
 
       const existingPack = await storage.getLatestOfflinePack(communityId);
       const newVersion = existingPack ? existingPack.packVersion + 1 : 1;
@@ -3365,14 +3365,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const communityId = req.params.communityId as string;
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role !== "admin") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "You are not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
 
       const pack = await storage.getLatestOfflinePack(communityId);
-      if (!pack) return res.status(404).json({ error: "No offline pack available for this community" });
+      if (!pack) return void res.status(404).json({ error: "No offline pack available for this community" });
 
       const isAdmin = user.role === 'admin';
       const [manifest, assetIndex, geojsonBundle, workHistorySnapshot, searchIndex] = await Promise.all([
@@ -3418,7 +3418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = insertTaskTemplateSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const template = await storage.createTaskTemplate({
         ...parsed.data,
@@ -3440,10 +3440,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = insertTaskTemplateSchema.partial().safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const updated = await storage.updateTaskTemplate(req.params.id as string, parsed.data);
-      if (!updated) return res.status(404).json({ error: "Template not found" });
+      if (!updated) return void res.status(404).json({ error: "Template not found" });
       res.json(updated);
     } catch (error) {
       console.error("Update task template error:", error);
@@ -3465,15 +3465,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/task-templates/:id/preview", requireAdmin, async (req: Request, res: Response) => {
     try {
       const template = await storage.getTaskTemplateById(req.params.id as string);
-      if (!template) return res.status(404).json({ error: "Template not found" });
+      if (!template) return void res.status(404).json({ error: "Template not found" });
 
       const parsed = generateFromTemplateSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const { communityId, includeArchivedAssets, limit: assetLimit } = parsed.data;
 
       if (template.targetType === 'none') {
-        return res.json({ taskCount: 1, assets: [] });
+        return void res.json({ taskCount: 1, assets: [] });
       }
 
       const targetAssets = await storage.getTargetAssets(
@@ -3496,10 +3496,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/task-templates/:id/generate", requireAdmin, async (req: Request, res: Response) => {
     try {
       const template = await storage.getTaskTemplateById(req.params.id as string);
-      if (!template) return res.status(404).json({ error: "Template not found" });
+      if (!template) return void res.status(404).json({ error: "Template not found" });
 
       const parsed = generateFromTemplateSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const { communityId, dueDate: dueDateStr, assignToUserId, includeArchivedAssets, limit: assetLimit } = parsed.data;
 
@@ -3578,7 +3578,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { taskIds, assignedTo } = req.body;
       if (!Array.isArray(taskIds) || taskIds.length === 0 || !assignedTo) {
-        return res.status(400).json({ error: "taskIds[] and assignedTo are required" });
+        return void res.status(400).json({ error: "taskIds[] and assignedTo are required" });
       }
       const count = await storage.bulkAssignTasks(taskIds, assignedTo);
       res.json({ updated: count });
@@ -3596,16 +3596,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mode = req.body.mode || "preview"; // "preview" or "commit"
 
       if (!communityId) {
-        return res.status(400).json({ error: "communityId is required" });
+        return void res.status(400).json({ error: "communityId is required" });
       }
 
       const community = await storage.getCommunityById(communityId);
       if (!community) {
-        return res.status(404).json({ error: "Community not found" });
+        return void res.status(404).json({ error: "Community not found" });
       }
 
       if (!req.file) {
-        return res.status(400).json({ error: "CSV file is required" });
+        return void res.status(400).json({ error: "CSV file is required" });
       }
 
       const csvContent = req.file.buffer.toString("utf-8");
@@ -3620,7 +3620,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (records.length === 0) {
-        return res.status(400).json({ error: "CSV file is empty" });
+        return void res.status(400).json({ error: "CSV file is empty" });
       }
 
       const priorityMap: Record<string, string> = {
@@ -3688,7 +3688,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invalidRows = rows.filter(r => !r.valid);
 
       if (mode === "preview") {
-        return res.json({
+        return void res.json({
           mode: "preview",
           totalRows: rows.length,
           validCount: validRows.length,
@@ -3755,7 +3755,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = insertTaskScheduleSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const { communityId, templateId, frequency, daysOfWeek, dayOfMonth, timezone, startDate: startDateStr, endDate: endDateStr, assignToUserId, isEnabled } = parsed.data;
 
@@ -3790,11 +3790,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/task-schedules/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const existing = await storage.getTaskScheduleById(req.params.id as string);
-      if (!existing) return res.status(404).json({ error: "Schedule not found" });
+      if (!existing) return void res.status(404).json({ error: "Schedule not found" });
 
       const parsed = insertTaskScheduleSchema.partial().safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
       const updates: any = {};
@@ -3862,7 +3862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, dateFrom, dateTo, assetType, contractorId, status, includePhotosZip } = req.body;
       if (!communityId || !dateFrom || !dateTo) {
-        return res.status(400).json({ error: "communityId, dateFrom, and dateTo are required" });
+        return void res.status(400).json({ error: "communityId, dateFrom, and dateTo are required" });
       }
 
       const filters = {
@@ -3938,7 +3938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(exportsTable.id, req.params.id as string));
 
       if (!exportRow) {
-        return res.status(404).json({ error: "Export not found" });
+        return void res.status(404).json({ error: "Export not found" });
       }
 
       res.json(exportRow);
@@ -3956,7 +3956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(exportsTable.id, req.params.id as string));
 
       if (!exportRow || !exportRow.pdfFileRef) {
-        return res.status(404).json({ error: "PDF not found" });
+        return void res.status(404).json({ error: "PDF not found" });
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -3979,7 +3979,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(exportsTable.id, req.params.id as string));
 
       if (!exportRow || !exportRow.photosZipRef) {
-        return res.status(404).json({ error: "ZIP not found" });
+        return void res.status(404).json({ error: "ZIP not found" });
       }
 
       const objectStorageService = new ObjectStorageService();
@@ -4011,7 +4011,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         communityId: req.params.communityId,
       });
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
       }
       const schedule = await storage.createServiceSchedule(parsed.data);
       res.status(201).json(schedule);
@@ -4025,11 +4025,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = updateServiceScheduleSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
       }
       const schedule = await storage.updateServiceSchedule(req.params.id as string, parsed.data);
       if (!schedule) {
-        return res.status(404).json({ error: "Service schedule not found" });
+        return void res.status(404).json({ error: "Service schedule not found" });
       }
       res.json(schedule);
     } catch (error) {
@@ -4042,7 +4042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const deleted = await storage.deleteServiceSchedule(req.params.id as string);
       if (!deleted) {
-        return res.status(404).json({ error: "Service schedule not found" });
+        return void res.status(404).json({ error: "Service schedule not found" });
       }
       res.json({ success: true });
     } catch (error) {
@@ -4077,11 +4077,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const parsed = logServiceVisitSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
       }
       const schedule = await storage.getServiceScheduleById(req.params.scheduleId as string);
       if (!schedule) {
-        return res.status(404).json({ error: "Service schedule not found" });
+        return void res.status(404).json({ error: "Service schedule not found" });
       }
       const visit = await storage.upsertServiceVisit({
         scheduleId: schedule.id,
@@ -4102,7 +4102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/import/contract-tasks/parse", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ error: "No file uploaded" });
+        return void res.status(400).json({ error: "No file uploaded" });
       }
       const sheetName = req.body?.sheetName || undefined;
       const result = parseFile(req.file.buffer, req.file.originalname, sheetName);
@@ -4117,10 +4117,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, mappings, mowingConfig, defaultPriority, importMode, parsedData } = req.body;
       if (!communityId || !mappings || !mowingConfig || !parsedData) {
-        return res.status(400).json({ error: "Missing required fields" });
+        return void res.status(400).json({ error: "Missing required fields" });
       }
       if (!mappings.title || !mappings.windowStart || !mappings.windowEnd) {
-        return res.status(400).json({ error: "Title, Window Start, and Window End mappings are required" });
+        return void res.status(400).json({ error: "Title, Window Start, and Window End mappings are required" });
       }
       const result = await generatePreview(
         parsedData,
@@ -4141,7 +4141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityId, tasksPreview, mowingSchedulePreview, defaultPriority } = req.body;
       if (!communityId || !tasksPreview) {
-        return res.status(400).json({ error: "Missing required fields" });
+        return void res.status(400).json({ error: "Missing required fields" });
       }
       const result = await commitImport(
         tasksPreview,
@@ -4161,10 +4161,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
-        return res.status(401).json({ error: "User not found" });
+        return void res.status(401).json({ error: "User not found" });
       }
       if (!isHoaRole(user.role) || !user.hoaCommunityId) {
-        return res.status(403).json({ error: "This endpoint is only available to HOA users" });
+        return void res.status(403).json({ error: "This endpoint is only available to HOA users" });
       }
       const data = await storage.getHoaDashboardData(user.hoaCommunityId);
       res.json(data);
@@ -4178,10 +4178,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
-        return res.status(401).json({ error: "User not found" });
+        return void res.status(401).json({ error: "User not found" });
       }
       if (!isHoaRole(user.role) || !user.hoaCommunityId) {
-        return res.status(403).json({ error: "This endpoint is only available to HOA users" });
+        return void res.status(403).json({ error: "This endpoint is only available to HOA users" });
       }
       const requests = await storage.getHoaRequests(user.hoaCommunityId);
       res.json(requests);
@@ -4195,26 +4195,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const task = await storage.getTaskById(req.params.id as string);
       if (!task) {
-        return res.status(404).json({ error: "Request not found" });
+        return void res.status(404).json({ error: "Request not found" });
       }
       if (task.origin !== "HOA") {
-        return res.status(404).json({ error: "Request not found" });
+        return void res.status(404).json({ error: "Request not found" });
       }
 
       const user = await storage.getUserById(req.session.userId!);
       if (!user) {
-        return res.status(401).json({ error: "User not found" });
+        return void res.status(401).json({ error: "User not found" });
       }
 
       if (isHoaRole(user.role)) {
         if (user.hoaCommunityId !== task.communityId) {
-          return res.status(403).json({ error: "Access denied" });
+          return void res.status(403).json({ error: "Access denied" });
         }
       } else if (user.role === "admin") {
       } else {
         const { allowed } = await storage.canUserAccessTask(user.id, task.id);
         if (!allowed) {
-          return res.status(403).json({ error: "Access denied" });
+          return void res.status(403).json({ error: "Access denied" });
         }
       }
 
@@ -4269,13 +4269,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await storage.getUserById(userId);
       console.log(`[HOA Request] getUserById done (${Date.now() - startTime}ms), role=${user?.role}, hoaCommunityId=${user?.hoaCommunityId}`);
       if (!user || user.role !== "hoa_admin") {
-        return res.status(403).json({ error: "Only HOA Admins can create requests" });
+        return void res.status(403).json({ error: "Only HOA Admins can create requests" });
       }
 
       const communityId = user.hoaCommunityId || req.session.hoaCommunityId;
       if (!communityId) {
         console.error(`[HOA Request] No communityId: user.hoaCommunityId=${user.hoaCommunityId}, session=${req.session.hoaCommunityId}`);
-        return res.status(400).json({ error: "No HOA community associated with this user" });
+        return void res.status(400).json({ error: "No HOA community associated with this user" });
       }
       if (!user.hoaCommunityId && req.session.hoaCommunityId) {
         console.warn(`[HOA Request] Using session fallback for communityId=${communityId}`);
@@ -4284,7 +4284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsed = createHoaRequestSchema.safeParse(req.body);
       if (!parsed.success) {
         console.error("[HOA Request] Validation failed:", parsed.error.flatten());
-        return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
 
       const { title, description, priority, category, assetId, assignedTo, pinLat, pinLng } = parsed.data;
@@ -4299,10 +4299,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const asset = await storage.getAssetById(assetId);
         console.log(`[HOA Request] getAssetById done (${Date.now() - startTime}ms), found=${!!asset}`);
         if (!asset) {
-          return res.status(404).json({ error: "Asset not found" });
+          return void res.status(404).json({ error: "Asset not found" });
         }
         if (asset.communityId !== communityId) {
-          return res.status(403).json({ error: "Asset does not belong to your community" });
+          return void res.status(403).json({ error: "Asset does not belong to your community" });
         }
         latitude = asset.latitude ?? undefined;
         longitude = asset.longitude ?? undefined;
@@ -4312,7 +4312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           latitude = pinLat;
           longitude = pinLng;
         } else if ((pinLat != null) !== (pinLng != null)) {
-          return res.status(400).json({ error: "Both pinLat and pinLng must be provided together, or omit both" });
+          return void res.status(400).json({ error: "Both pinLat and pinLng must be provided together, or omit both" });
         }
       }
 
@@ -4323,7 +4323,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[HOA Request] getCommunityMembers done (${Date.now() - startTime}ms), count=${members.length}`);
         const match = members.find((m: any) => m.userId === assignedTo && (m.user.role === 'contractor' || m.user.role === 'admin'));
         if (!match) {
-          return res.status(400).json({ error: "Selected contractor is not a member of this community" });
+          return void res.status(400).json({ error: "Selected contractor is not a member of this community" });
         }
         validatedAssignedTo = assignedTo;
       }
@@ -4412,7 +4412,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!user) return void res.status(401).json({ error: "Not authenticated" });
 
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = parseInt(req.query.offset as string) || 0;
@@ -4427,7 +4427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!user) return void res.status(401).json({ error: "Not authenticated" });
 
       const count = await storage.getUnreadNotificationCount(user.id);
       res.json({ count });
@@ -4450,7 +4450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       const notif = await storage.markNotificationRead((req.params.id as string), req.session.userId!);
-      if (!notif) return res.status(404).json({ error: "Notification not found" });
+      if (!notif) return void res.status(404).json({ error: "Notification not found" });
       res.json(notif);
     } catch (error) {
       console.error("Mark read error:", error);
@@ -4464,26 +4464,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/invoices", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
-      if (user.role === 'contractor') return res.status(403).json({ error: "Access denied" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
+      if (user.role === 'contractor') return void res.status(403).json({ error: "Access denied" });
 
       if (user.role === 'admin') {
         const communityId = req.query.communityId as string | undefined;
         const rows = await storage.getInvoices(communityId || undefined);
-        return res.json(rows);
+        return void res.json(rows);
       }
 
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         const rows = await storage.getInvoices(user.hoaCommunityId);
-        return res.json(rows);
+        return void res.json(rows);
       }
 
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
       const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-      if (!isMember) return res.status(403).json({ error: "Access denied" });
+      if (!isMember) return void res.status(403).json({ error: "Access denied" });
       const rows = await storage.getInvoices(communityId);
-      return res.json(rows);
+      return void res.json(rows);
     } catch (error) {
       console.error("Get invoices error:", error);
       res.status(500).json({ error: "Failed to fetch invoices" });
@@ -4493,18 +4493,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/invoices/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
-      if (user.role === 'contractor') return res.status(403).json({ error: "Access denied" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
+      if (user.role === 'contractor') return void res.status(403).json({ error: "Access denied" });
 
       const invoice = await storage.getInvoiceById((req.params.id as string));
-      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      if (!invoice) return void res.status(404).json({ error: "Invoice not found" });
 
       if (user.role !== 'admin') {
         if (isHoaRole(user.role) && user.hoaCommunityId) {
-          if (invoice.communityId !== user.hoaCommunityId) return res.status(403).json({ error: "Access denied" });
+          if (invoice.communityId !== user.hoaCommunityId) return void res.status(403).json({ error: "Access denied" });
         } else {
           const isMember = await storage.isUserMemberOfCommunity(user.id, invoice.communityId);
-          if (!isMember) return res.status(403).json({ error: "Access denied" });
+          if (!isMember) return void res.status(403).json({ error: "Access denied" });
         }
       }
 
@@ -4518,11 +4518,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/invoices", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertInvoiceSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       if (parsed.data.attachmentLayerId) {
         const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
         if (!layer || layer.communityId !== parsed.data.communityId) {
-          return res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
+          return void res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
         }
       }
       const invoice = await storage.createInvoice(parsed.data);
@@ -4536,14 +4536,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const existing = await storage.getInvoiceById((req.params.id as string));
-      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      if (!existing) return void res.status(404).json({ error: "Invoice not found" });
       const parsed = updateInvoiceSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const targetCommunityId = (parsed.data as any).communityId || existing.communityId;
       if (parsed.data.attachmentLayerId) {
         const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
         if (!layer || layer.communityId !== targetCommunityId) {
-          return res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
+          return void res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
         }
       }
       const updated = await storage.updateInvoice((req.params.id as string), parsed.data);
@@ -4557,7 +4557,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const existing = await storage.getInvoiceById((req.params.id as string));
-      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      if (!existing) return void res.status(404).json({ error: "Invoice not found" });
       await storage.deleteInvoice((req.params.id as string));
       res.status(204).send();
     } catch (error) {
@@ -4588,7 +4588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/water-usage", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user || !reportReadRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!user || !reportReadRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
       const communityId = await resolveReportCommunityId(user, req.query.communityId as string | undefined, res);
       if (!communityId) return;
 
@@ -4606,7 +4606,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/tree-inventory", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user || !reportReadRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!user || !reportReadRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
       const communityId = await resolveReportCommunityId(user, req.query.communityId as string | undefined, res);
       if (!communityId) return;
 
@@ -4633,14 +4633,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/reports/invoices/monthly", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user || !reportReadRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!user || !reportReadRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
       const communityId = await resolveReportCommunityId(user, req.query.communityId as string | undefined, res);
       if (!communityId) return;
 
       const month = parseInt(req.query.month as string, 10);
       const year = parseInt(req.query.year as string, 10);
       if (!month || !year || month < 1 || month > 12) {
-        return res.status(400).json({ error: "Valid month (1-12) and year are required" });
+        return void res.status(400).json({ error: "Valid month (1-12) and year are required" });
       }
 
       const rows = await pool.query(
@@ -4682,17 +4682,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contracts", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (!['admin', 'property_manager'].includes(user.role)) {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
       const communityId = req.query.communityId as string | undefined;
       const contractorUserId = req.query.contractorUserId as string | undefined;
 
       if (user.role === 'property_manager') {
-        if (!communityId) return res.status(400).json({ error: "communityId is required" });
+        if (!communityId) return void res.status(400).json({ error: "communityId is required" });
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
 
       let rows = await storage.getContracts(communityId || undefined, contractorUserId || undefined);
@@ -4721,16 +4721,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contracts/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       if (!['admin', 'property_manager'].includes(user.role)) {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
       const contract = await storage.getContractById((req.params.id as string));
-      if (!contract) return res.status(404).json({ error: "Contract not found" });
+      if (!contract) return void res.status(404).json({ error: "Contract not found" });
 
       if (user.role === 'property_manager') {
         const isMember = await storage.isUserMemberOfCommunity(user.id, contract.communityId);
-        if (!isMember) return res.status(403).json({ error: "Access denied" });
+        if (!isMember) return void res.status(403).json({ error: "Access denied" });
       }
 
       res.json(contract);
@@ -4743,15 +4743,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/contracts", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertContractSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       if (parsed.data.startDate && parsed.data.endDate && parsed.data.endDate < parsed.data.startDate) {
-        return res.status(400).json({ error: "End date must be on or after start date" });
+        return void res.status(400).json({ error: "End date must be on or after start date" });
       }
 
       const contractorUser = await storage.getUserById(parsed.data.contractorUserId);
       if (!contractorUser || contractorUser.role !== 'contractor') {
-        return res.status(400).json({ error: "Selected user is not a contractor" });
+        return void res.status(400).json({ error: "Selected user is not a contractor" });
       }
 
       const contract = await storage.createContract(parsed.data);
@@ -4765,20 +4765,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const existing = await storage.getContractById((req.params.id as string));
-      if (!existing) return res.status(404).json({ error: "Contract not found" });
+      if (!existing) return void res.status(404).json({ error: "Contract not found" });
       const parsed = updateContractSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const startDate = parsed.data.startDate || existing.startDate;
       const endDate = parsed.data.endDate || existing.endDate;
       if (endDate < startDate) {
-        return res.status(400).json({ error: "End date must be on or after start date" });
+        return void res.status(400).json({ error: "End date must be on or after start date" });
       }
 
       if (parsed.data.contractorUserId) {
         const contractorUser = await storage.getUserById(parsed.data.contractorUserId);
         if (!contractorUser || contractorUser.role !== 'contractor') {
-          return res.status(400).json({ error: "Selected user is not a contractor" });
+          return void res.status(400).json({ error: "Selected user is not a contractor" });
         }
       }
 
@@ -4793,7 +4793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const existing = await storage.getContractById((req.params.id as string));
-      if (!existing) return res.status(404).json({ error: "Contract not found" });
+      if (!existing) return void res.status(404).json({ error: "Contract not found" });
       await storage.deleteContract((req.params.id as string));
       res.status(204).send();
     } catch (error) {
@@ -4829,7 +4829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveReadRoles);
       if (!user) return;
       const communityId = req.query.communityId as string;
-      if (!communityId) return res.status(400).json({ error: "communityId is required" });
+      if (!communityId) return void res.status(400).json({ error: "communityId is required" });
       if (!(await checkCommunityAccess(user, communityId, res))) return;
       const folderId = (req.query.folderId as string) || null;
       const [folders, files] = await Promise.all([
@@ -4848,12 +4848,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const parsed = insertDriveFolderSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
       if (!(await checkCommunityAccess(user, parsed.data.communityId, res))) return;
       if (parsed.data.parentId) {
         const parentFolder = await storage.getDriveFolder(parsed.data.parentId);
         if (!parentFolder || parentFolder.communityId !== parsed.data.communityId) {
-          return res.status(400).json({ error: "Parent folder not found or belongs to a different community" });
+          return void res.status(400).json({ error: "Parent folder not found or belongs to a different community" });
         }
       }
       const folder = await storage.createDriveFolder({ ...parsed.data, createdBy: user.id });
@@ -4869,10 +4869,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const folder = await storage.getDriveFolder((req.params.id as string));
-      if (!folder) return res.status(404).json({ error: "Folder not found" });
+      if (!folder) return void res.status(404).json({ error: "Folder not found" });
       if (!(await checkCommunityAccess(user, folder.communityId, res))) return;
       const parsed = updateDriveFolderSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
       const updated = await storage.updateDriveFolder((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
@@ -4886,13 +4886,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const folder = await storage.getDriveFolder((req.params.id as string));
-      if (!folder) return res.status(404).json({ error: "Folder not found" });
+      if (!folder) return void res.status(404).json({ error: "Folder not found" });
       if (!(await checkCommunityAccess(user, folder.communityId, res))) return;
       await storage.deleteDriveFolder((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       if (error instanceof Error && error.message === "FOLDER_NOT_EMPTY") {
-        return res.status(409).json({ error: "Cannot delete a folder that contains files or subfolders. Please remove its contents first." });
+        return void res.status(409).json({ error: "Cannot delete a folder that contains files or subfolders. Please remove its contents first." });
       }
       console.error("Delete drive folder error:", error);
       res.status(500).json({ error: "Failed to delete folder" });
@@ -4904,14 +4904,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const parsed = insertDriveFileSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
       if (!parsed.data.fileRef.startsWith('/objects/')) {
-        return res.status(400).json({ error: "Invalid file reference" });
+        return void res.status(400).json({ error: "Invalid file reference" });
       }
       if (parsed.data.folderId) {
         const parentFolder = await storage.getDriveFolder(parsed.data.folderId);
         if (!parentFolder || parentFolder.communityId !== parsed.data.communityId) {
-          return res.status(400).json({ error: "Folder not found or belongs to a different community" });
+          return void res.status(400).json({ error: "Folder not found or belongs to a different community" });
         }
       }
       if (!(await checkCommunityAccess(user, parsed.data.communityId, res))) return;
@@ -4928,10 +4928,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const file = await storage.getDriveFile((req.params.id as string));
-      if (!file) return res.status(404).json({ error: "File not found" });
+      if (!file) return void res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const parsed = updateDriveFileSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
       const updated = await storage.updateDriveFile((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
@@ -4945,7 +4945,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
       const file = await storage.getDriveFile((req.params.id as string));
-      if (!file) return res.status(404).json({ error: "File not found" });
+      if (!file) return void res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const objectStorageService = new ObjectStorageService();
       await objectStorageService.deleteObject(file.fileRef);
@@ -4962,7 +4962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = await requireDriveAccess(req, res, driveReadRoles);
       if (!user) return;
       const file = await storage.getDriveFile((req.params.id as string));
-      if (!file) return res.status(404).json({ error: "File not found" });
+      if (!file) return void res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(file.fileRef);
@@ -4970,7 +4970,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await objectStorageService.downloadObject(objectFile, res);
     } catch (error) {
       if (error instanceof ObjectNotFoundError) {
-        return res.status(404).json({ error: "File not found in storage" });
+        return void res.status(404).json({ error: "File not found in storage" });
       }
       console.error("Drive file download error:", error);
       res.status(500).json({ error: "Failed to download file" });
@@ -4982,36 +4982,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/contacts", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
 
       if (user.role === "admin") {
         const communityId = req.query.communityId as string | undefined;
         const results = await storage.getContacts(communityId || undefined);
-        return res.json(results);
+        return void res.json(results);
       }
 
       if (user.role === "property_manager") {
         const communityId = req.query.communityId as string | undefined;
         if (communityId) {
           const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-          if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+          if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
           const results = await storage.getContacts(communityId);
-          return res.json(results);
+          return void res.json(results);
         }
         // No communityId filter: return contacts for all PM's authorized communities
         const pmCommunities = await storage.getUserCommunitiesList(user.id);
         const pmCommunityIds = pmCommunities.map(c => c.id);
-        if (pmCommunityIds.length === 0) return res.json([]);
+        if (pmCommunityIds.length === 0) return void res.json([]);
         const results = await storage.getContactsForCommunities(pmCommunityIds);
-        return res.json(results);
+        return void res.json(results);
       }
 
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         const results = await storage.getContacts(user.hoaCommunityId);
-        return res.json(results);
+        return void res.json(results);
       }
 
-      return res.status(403).json({ error: "Access denied" });
+      return void res.status(403).json({ error: "Access denied" });
     } catch (err) {
       console.error("Get contacts error:", err);
       res.status(500).json({ error: "Failed to fetch contacts" });
@@ -5021,22 +5021,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/contacts", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
-      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!contactsWriteRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
 
       const parsed = insertContactSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const { communityId } = parsed.data;
 
       if (user.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
 
       if (isHoaRole(user.role) && user.hoaCommunityId && communityId !== user.hoaCommunityId) {
-        return res.status(403).json({ error: "Cannot create contacts for other communities" });
+        return void res.status(403).json({ error: "Cannot create contacts for other communities" });
       }
 
       const contact = await storage.createContact({
@@ -5059,39 +5059,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/contacts/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
-      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!contactsWriteRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
 
       const contact = await storage.getContactById((req.params.id as string));
-      if (!contact) return res.status(404).json({ error: "Contact not found" });
+      if (!contact) return void res.status(404).json({ error: "Contact not found" });
 
       if (user.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, contact.communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
 
       if (user.role === "hoa_admin" && user.hoaCommunityId && contact.communityId !== user.hoaCommunityId) {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
 
       const parsed = updateContactSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       // Validate communityId changes are authorized
       if (parsed.data.communityId && parsed.data.communityId !== contact.communityId) {
         if (user.role === "hoa_admin") {
-          return res.status(403).json({ error: "Cannot move contacts to another community" });
+          return void res.status(403).json({ error: "Cannot move contacts to another community" });
         }
         if (user.role === "property_manager") {
           const isMember = await storage.isUserMemberOfCommunity(user.id, parsed.data.communityId);
-          if (!isMember) return res.status(403).json({ error: "Not a member of the target community" });
+          if (!isMember) return void res.status(403).json({ error: "Not a member of the target community" });
         }
         // admin: unrestricted
       }
 
       const updated = await storage.updateContact((req.params.id as string), parsed.data);
-      if (!updated) return res.status(404).json({ error: "Contact not found" });
+      if (!updated) return void res.status(404).json({ error: "Contact not found" });
       res.json(updated);
     } catch (err) {
       console.error("Update contact error:", err);
@@ -5102,20 +5102,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/contacts/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);
-      if (!user) return res.status(401).json({ error: "User not found" });
+      if (!user) return void res.status(401).json({ error: "User not found" });
       const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
-      if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
+      if (!contactsWriteRoles.includes(user.role)) return void res.status(403).json({ error: "Access denied" });
 
       const contact = await storage.getContactById((req.params.id as string));
-      if (!contact) return res.status(404).json({ error: "Contact not found" });
+      if (!contact) return void res.status(404).json({ error: "Contact not found" });
 
       if (user.role === "property_manager") {
         const isMember = await storage.isUserMemberOfCommunity(user.id, contact.communityId);
-        if (!isMember) return res.status(403).json({ error: "Not a member of this community" });
+        if (!isMember) return void res.status(403).json({ error: "Not a member of this community" });
       }
 
       if (user.role === "hoa_admin" && user.hoaCommunityId && contact.communityId !== user.hoaCommunityId) {
-        return res.status(403).json({ error: "Access denied" });
+        return void res.status(403).json({ error: "Access denied" });
       }
 
       await storage.deleteContact((req.params.id as string));
@@ -5132,11 +5132,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = (req as any).currentUser;
       const orgId = user?.organizationId ?? req.session.organizationId;
       if (!orgId) {
-        return res.status(403).json({ error: "No organization assigned to this user" });
+        return void res.status(403).json({ error: "No organization assigned to this user" });
       }
       const portfolio = await storage.getPortfolioForOrg(orgId);
       if (!portfolio) {
-        return res.status(404).json({ error: "Organization not found" });
+        return void res.status(404).json({ error: "Organization not found" });
       }
       res.json(portfolio);
     } catch (error) {
@@ -5169,13 +5169,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const t0 = Date.now();
     try {
       const resolved = resolvePortfolioOrg(req);
-      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
       const data = await storage.getPortfolioDashboard(resolved.orgId);
       console.log(`[GET /api/portfolio/dashboard] org=${resolved.orgId} (${Date.now() - t0}ms)`);
-      return res.json(data);
+      return void res.json(data);
     } catch (error) {
       console.error("Portfolio dashboard error:", error);
-      return res.status(500).json({ error: "Failed to fetch portfolio dashboard" });
+      return void res.status(500).json({ error: "Failed to fetch portfolio dashboard" });
     }
   });
 
@@ -5183,13 +5183,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const t0 = Date.now();
     try {
       const resolved = resolvePortfolioOrg(req);
-      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
       const data = await storage.getPortfolioBranches(resolved.orgId);
       console.log(`[GET /api/portfolio/branches] org=${resolved.orgId} count=${data.length} (${Date.now() - t0}ms)`);
-      return res.json(data);
+      return void res.json(data);
     } catch (error) {
       console.error("Portfolio branches error:", error);
-      return res.status(500).json({ error: "Failed to fetch portfolio branches" });
+      return void res.status(500).json({ error: "Failed to fetch portfolio branches" });
     }
   });
 
@@ -5197,18 +5197,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const t0 = Date.now();
     try {
       const resolved = resolvePortfolioOrg(req);
-      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
       const communityId = req.params.communityId as string;
       const data = await storage.getPortfolioBranchDetail(resolved.orgId, communityId);
       if (!data) {
         // null means community not found or doesn't belong to this org
-        return res.status(403).json({ error: "Branch not found or does not belong to this organization" });
+        return void res.status(403).json({ error: "Branch not found or does not belong to this organization" });
       }
       console.log(`[GET /api/portfolio/branches/:communityId] org=${resolved.orgId} branch=${communityId} (${Date.now() - t0}ms)`);
-      return res.json(data);
+      return void res.json(data);
     } catch (error) {
       console.error("Portfolio branch detail error:", error);
-      return res.status(500).json({ error: "Failed to fetch branch detail" });
+      return void res.status(500).json({ error: "Failed to fetch branch detail" });
     }
   });
 
@@ -5216,13 +5216,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const t0 = Date.now();
     try {
       const resolved = resolvePortfolioOrg(req);
-      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
       const data = await storage.getPortfolioGroups(resolved.orgId);
       console.log(`[GET /api/portfolio/groups] org=${resolved.orgId} count=${data.length} (${Date.now() - t0}ms)`);
-      return res.json(data);
+      return void res.json(data);
     } catch (error) {
       console.error("Portfolio groups error:", error);
-      return res.status(500).json({ error: "Failed to fetch portfolio groups" });
+      return void res.status(500).json({ error: "Failed to fetch portfolio groups" });
     }
   });
 
@@ -5232,7 +5232,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { name, kind, contactName, contactEmail } = req.body;
       if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ error: "name is required" });
+        return void res.status(400).json({ error: "name is required" });
       }
       const org = await storage.createOrganization({
         name: name.trim(),
@@ -5260,7 +5260,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/organizations/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const org = await storage.getOrganizationById(req.params.id as string);
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (!org) return void res.status(404).json({ error: "Organization not found" });
       res.json(org);
     } catch (error) {
       console.error("Get organization error:", error);
@@ -5277,7 +5277,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (contactName !== undefined) updates.contactName = contactName;
       if (contactEmail !== undefined) updates.contactEmail = contactEmail;
       const org = await storage.updateOrganization(req.params.id as string, updates as any);
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (!org) return void res.status(404).json({ error: "Organization not found" });
       res.json(org);
     } catch (error) {
       console.error("Update organization error:", error);
@@ -5290,10 +5290,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const id = req.params.id as string;
       const hasBranches = await storage.orgHasBranches(id);
       if (hasBranches) {
-        return res.status(409).json({ error: "Organization still has branches — reassign or delete them first" });
+        return void res.status(409).json({ error: "Organization still has branches — reassign or delete them first" });
       }
       const deleted = await storage.deleteOrganization(id);
-      if (!deleted) return res.status(404).json({ error: "Organization not found" });
+      if (!deleted) return void res.status(404).json({ error: "Organization not found" });
       res.status(204).send();
     } catch (error) {
       console.error("Delete organization error:", error);
@@ -5304,7 +5304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/organizations/:id/portfolio", requireAdmin, async (req: Request, res: Response) => {
     try {
       const portfolio = await storage.getPortfolioForOrg(req.params.id as string);
-      if (!portfolio) return res.status(404).json({ error: "Organization not found" });
+      if (!portfolio) return void res.status(404).json({ error: "Organization not found" });
       res.json(portfolio);
     } catch (error) {
       console.error("Admin portfolio error:", error);
@@ -5328,14 +5328,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { name, code, address, city, description } = req.body;
       if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ error: "name is required" });
+        return void res.status(400).json({ error: "name is required" });
       }
       if (!code || typeof code !== "string" || code.trim().length === 0) {
-        return res.status(400).json({ error: "code is required" });
+        return void res.status(400).json({ error: "code is required" });
       }
       const orgId = req.params.id as string;
       const org = await storage.getOrganizationById(orgId);
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (!org) return void res.status(404).json({ error: "Organization not found" });
 
       try {
         const branch = await storage.createBranch({
@@ -5350,12 +5350,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (err: any) {
         // Catch unique constraint on (organization_id, code)
         if (err?.code === "23505" || err?.message?.includes("duplicate")) {
-          return res.status(409).json({ error: `A branch with code '${code}' already exists in this organization` });
+          return void res.status(409).json({ error: `A branch with code '${code}' already exists in this organization` });
         }
         throw err;
       }
     } catch (error) {
-      if ((error as any)?.statusCode === 409) return res.status(409).json(error);
+      if ((error as any)?.statusCode === 409) return void res.status(409).json(error);
       console.error("Create branch error:", error);
       res.status(500).json({ error: "Failed to create branch" });
     }
@@ -5371,7 +5371,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
       const branch = await storage.updateBranch(req.params.communityId as string, updates as any);
-      if (!branch) return res.status(404).json({ error: "Branch not found" });
+      if (!branch) return void res.status(404).json({ error: "Branch not found" });
       res.json(branch);
     } catch (error) {
       console.error("Update branch error:", error);
@@ -5395,11 +5395,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { name, color, sortOrder } = req.body;
       if (!name || typeof name !== "string" || name.trim().length === 0) {
-        return res.status(400).json({ error: "name is required" });
+        return void res.status(400).json({ error: "name is required" });
       }
       const orgId = req.params.id as string;
       const org = await storage.getOrganizationById(orgId);
-      if (!org) return res.status(404).json({ error: "Organization not found" });
+      if (!org) return void res.status(404).json({ error: "Organization not found" });
       const group = await storage.createBranchGroup(orgId, {
         name: name.trim(),
         color: color ?? undefined,
@@ -5420,22 +5420,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (color !== undefined) updates.color = color;
       if (sortOrder !== undefined) updates.sortOrder = sortOrder;
       const group = await storage.updateBranchGroup(req.params.groupId as string, updates as any);
-      if (!group) return res.status(404).json({ error: "Branch group not found" });
-      return res.json(group);
+      if (!group) return void res.status(404).json({ error: "Branch group not found" });
+      return void res.json(group);
     } catch (error) {
       console.error("Update branch group error:", error);
-      return res.status(500).json({ error: "Failed to update branch group" });
+      return void res.status(500).json({ error: "Failed to update branch group" });
     }
   });
 
   app.delete("/api/admin/groups/:groupId", requireAdmin, async (req: Request, res: Response) => {
     try {
       const deleted = await storage.deleteBranchGroup(req.params.groupId as string);
-      if (!deleted) return res.status(404).json({ error: "Branch group not found" });
-      return res.status(204).send();
+      if (!deleted) return void res.status(404).json({ error: "Branch group not found" });
+      return void res.status(204).send();
     } catch (error) {
       console.error("Delete branch group error:", error);
-      return res.status(500).json({ error: "Failed to delete branch group" });
+      return void res.status(500).json({ error: "Failed to delete branch group" });
     }
   });
 
@@ -5443,13 +5443,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { communityIds } = req.body;
       if (!Array.isArray(communityIds)) {
-        return res.status(400).json({ error: "communityIds must be an array" });
+        return void res.status(400).json({ error: "communityIds must be an array" });
       }
       await storage.setBranchGroupMembers(req.params.groupId as string, communityIds as string[]);
-      return res.json({ ok: true });
+      return void res.json({ ok: true });
     } catch (error) {
       console.error("Set branch group members error:", error);
-      return res.status(500).json({ error: "Failed to set branch group members" });
+      return void res.status(500).json({ error: "Failed to set branch group members" });
     }
   });
 

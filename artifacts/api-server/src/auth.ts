@@ -59,14 +59,14 @@ export function isClientRole(role: string): boolean {
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Not authenticated" });
+    return void res.status(401).json({ message: "Not authenticated" });
   }
   next();
 }
 
 export function enforceHoaScoping(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Not authenticated" });
+    return void res.status(401).json({ message: "Not authenticated" });
   }
   const hoaCommunityId = req.session.hoaCommunityId;
   if (!hoaCommunityId) {
@@ -77,18 +77,18 @@ export function enforceHoaScoping(req: Request, res: Response, next: NextFunctio
     req.query.communityId ||
     req.body?.communityId;
   if (communityId && communityId !== hoaCommunityId) {
-    return res.status(403).json({ message: "Access denied: HOA users can only access their assigned community" });
+    return void res.status(403).json({ message: "Access denied: HOA users can only access their assigned community" });
   }
   next();
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Not authenticated" });
+    return void res.status(401).json({ message: "Not authenticated" });
   }
   storage.getUserById(req.session.userId).then((user) => {
     if (!user || user.role !== "admin") {
-      return res.status(403).json({ message: "Admin access required" });
+      return void res.status(403).json({ message: "Admin access required" });
     }
     next();
   }).catch(() => {
@@ -159,11 +159,11 @@ export async function enforceOrgScoping(req: Request, res: Response, next: NextF
 
 export function requireAdminOrMapCreator(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
-    return res.status(401).json({ message: "Not authenticated" });
+    return void res.status(401).json({ message: "Not authenticated" });
   }
   storage.getUserById(req.session.userId).then((user) => {
     if (!user || (user.role !== "admin" && !isMapCreatorRole(user.role))) {
-      return res.status(403).json({ message: "Admin or map creator access required" });
+      return void res.status(403).json({ message: "Admin or map creator access required" });
     }
     (req as any).currentUser = user;
     next();
@@ -217,12 +217,12 @@ export function registerAuthRoutes(app: any) {
     try {
       const parsed = insertUserSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
+        return void res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
       }
 
       const existing = await storage.getUserByUsername(parsed.data.username);
       if (existing) {
-        return res.status(409).json({ message: "Username already taken" });
+        return void res.status(409).json({ message: "Username already taken" });
       }
 
       const hashedPassword = await bcrypt.hash(parsed.data.password, 10);
@@ -250,17 +250,17 @@ export function registerAuthRoutes(app: any) {
     try {
       const parsed = loginSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid input" });
+        return void res.status(400).json({ message: "Invalid input" });
       }
 
       const user = await storage.getUserByUsername(parsed.data.username);
       if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return void res.status(401).json({ message: "Invalid credentials" });
       }
 
       const valid = await bcrypt.compare(parsed.data.password, user.password);
       if (!valid) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return void res.status(401).json({ message: "Invalid credentials" });
       }
 
       req.session.userId = user.id;
@@ -293,7 +293,7 @@ export function registerAuthRoutes(app: any) {
     }
     req.session.destroy((err) => {
       if (err) {
-        return res.status(500).json({ message: "Logout failed" });
+        return void res.status(500).json({ message: "Logout failed" });
       }
       res.json({ message: "Logged out" });
     });
@@ -304,15 +304,15 @@ export function registerAuthRoutes(app: any) {
       const userId = req.session.userId!;
       const { currentPassword } = req.body;
       if (!currentPassword || typeof currentPassword !== "string") {
-        return res.status(400).json({ message: "Current password is required" });
+        return void res.status(400).json({ message: "Current password is required" });
       }
       const user = await storage.getUserById(userId);
       if (!user) {
-        return res.status(401).json({ message: "User not found" });
+        return void res.status(401).json({ message: "User not found" });
       }
       const valid = await bcrypt.compare(currentPassword, user.password);
       if (!valid) {
-        return res.status(400).json({ message: "Current password is incorrect" });
+        return void res.status(400).json({ message: "Current password is incorrect" });
       }
       res.json({ verified: true });
     } catch (error) {
@@ -327,23 +327,23 @@ export function registerAuthRoutes(app: any) {
       const { displayName, currentPassword, newPassword, avatarUrl } = req.body;
 
       if (displayName !== undefined && (typeof displayName !== "string" || displayName.trim().length === 0)) {
-        return res.status(400).json({ message: "Display name cannot be empty" });
+        return void res.status(400).json({ message: "Display name cannot be empty" });
       }
 
       const user = await storage.getUserById(userId);
       if (!user) {
-        return res.status(401).json({ message: "User not found" });
+        return void res.status(401).json({ message: "User not found" });
       }
 
       const updates: { displayName?: string; password?: string; avatarUrl?: string | null } = {};
 
       if (displayName !== undefined) {
         if (!currentPassword || typeof currentPassword !== "string") {
-          return res.status(400).json({ message: "Current password is required to update your display name" });
+          return void res.status(400).json({ message: "Current password is required to update your display name" });
         }
         const valid = await bcrypt.compare(currentPassword, user.password);
         if (!valid) {
-          return res.status(400).json({ message: "Current password is incorrect" });
+          return void res.status(400).json({ message: "Current password is incorrect" });
         }
         updates.displayName = displayName.trim();
       }
@@ -352,7 +352,7 @@ export function registerAuthRoutes(app: any) {
         if (avatarUrl === null || avatarUrl === "") {
           updates.avatarUrl = null;
         } else if (typeof avatarUrl !== "string") {
-          return res.status(400).json({ message: "Invalid avatar URL" });
+          return void res.status(400).json({ message: "Invalid avatar URL" });
         } else {
           try {
             const objectStorageService = new ObjectStorageService();
@@ -361,33 +361,33 @@ export function registerAuthRoutes(app: any) {
               visibility: "public",
             });
             if (!normalized.startsWith("/objects/")) {
-              return res.status(400).json({ message: "Invalid avatar URL" });
+              return void res.status(400).json({ message: "Invalid avatar URL" });
             }
             updates.avatarUrl = normalized;
           } catch (err) {
             console.error("Avatar ACL error:", err);
-            return res.status(400).json({ message: "Failed to save avatar" });
+            return void res.status(400).json({ message: "Failed to save avatar" });
           }
         }
       }
 
       if (newPassword !== undefined) {
         if (!currentPassword) {
-          return res.status(400).json({ message: "Current password is required to set a new password" });
+          return void res.status(400).json({ message: "Current password is required to set a new password" });
         }
         if (typeof newPassword !== "string" || newPassword.length < 6) {
-          return res.status(400).json({ message: "New password must be at least 6 characters" });
+          return void res.status(400).json({ message: "New password must be at least 6 characters" });
         }
         const valid = await bcrypt.compare(currentPassword, user.password);
         if (!valid) {
-          return res.status(400).json({ message: "Current password is incorrect" });
+          return void res.status(400).json({ message: "Current password is incorrect" });
         }
         updates.password = await bcrypt.hash(newPassword, 10);
       }
 
       if (Object.keys(updates).length === 0) {
         const { password: _, ...safeUser } = user;
-        return res.json(safeUser);
+        return void res.json(safeUser);
       }
 
       const [updated] = await db
@@ -397,7 +397,7 @@ export function registerAuthRoutes(app: any) {
         .returning();
 
       if (!updated) {
-        return res.status(500).json({ message: "Failed to update user" });
+        return void res.status(500).json({ message: "Failed to update user" });
       }
 
       const { password: _, ...safeUser } = updated;
@@ -410,11 +410,11 @@ export function registerAuthRoutes(app: any) {
 
   app.get("/api/auth/me", async (req: Request, res: Response) => {
     if (!req.session.userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return void res.status(401).json({ message: "Not authenticated" });
     }
     const user = await storage.getUserById(req.session.userId);
     if (!user) {
-      return res.status(401).json({ message: "User not found" });
+      return void res.status(401).json({ message: "User not found" });
     }
     const { password: _, ...safeUser } = user;
 
