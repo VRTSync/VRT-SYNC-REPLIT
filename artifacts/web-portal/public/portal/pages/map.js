@@ -47,13 +47,22 @@ PortalRouter.register('map', async function (container) {
 
   let activeCategory = 'community';
   let sublayerState = {};
+  let populated = {};          // populated[cat][subKey] = true when layer has ≥1 feature
+  let populatedCategories = [];
   let selectedAsset = null;
   let detailTab = 'details';
   let mapLayers = [];
   let iframeReady = false;
+  let _mapDataReady = false; // true once all GeoJSON and controller data have loaded
   let pendingCmds = [];
   let renderGeneration = 0;
   let controllerData = [];
+  // Per-sublayer suppression flags, set once at data-load time.
+  // A GeoJSON sublayer is suppressed only when EVERY one of its features has a
+  // positioned marker replacing it — never when only some do.
+  // These never change on sub-layer toggles or color updates.
+  let suppressControllerGeo = false;
+  let suppressZoneGeo = false;
   let activeColorPicker = null;
   let sessionColorOverrides = {};
   let _outlineGeojson = null;
@@ -64,10 +73,12 @@ PortalRouter.register('map', async function (container) {
     window._portalMapCleanup();
   }
 
+  // Initialise all sub-layers to off; loadMapData() will turn on populated ones
+  // after the GeoJSON has been fetched and the populated index is built.
   Object.keys(LAYER_HIERARCHY).forEach(cat => {
     sublayerState[cat] = {};
     LAYER_HIERARCHY[cat].forEach(sub => {
-      sublayerState[cat][sub.key] = (cat === 'community' || cat === 'irrigation');
+      sublayerState[cat][sub.key] = false;
     });
   });
 
@@ -82,6 +93,11 @@ PortalRouter.register('map', async function (container) {
       </div>
       <div class="map-canvas-wrap">
         <iframe id="map-iframe" src="/leaflet-map.html" class="map-iframe" allowfullscreen></iframe>
+        <div class="map-toolbar-overlay">
+          <button class="map-basemap-toggle" id="map-basemap-toggle" title="Switch basemap">
+            <span id="map-basemap-label">Satellite</span>
+          </button>
+        </div>
       </div>
       <div class="map-detail-panel" id="map-detail-panel">
         <div class="mdp-empty" id="mdp-empty">
@@ -98,6 +114,7 @@ PortalRouter.register('map', async function (container) {
   renderCategories();
   renderSublayers();
   setupIframe();
+  setupSatelliteToggle();
   loadMapData();
 
   document.addEventListener('click', dismissColorPicker, true);
@@ -114,6 +131,32 @@ PortalRouter.register('map', async function (container) {
       activeColorPicker.remove();
       activeColorPicker = null;
     }
+  }
+
+  function setupSatelliteToggle() {
+    const btn = document.getElementById('map-basemap-toggle');
+    const label = document.getElementById('map-basemap-label');
+    if (!btn || !label) return;
+
+    let isSatellite = false;
+    try {
+      isSatellite = localStorage.getItem('vrt_map_basemap') === 'satellite';
+    } catch (_) {}
+
+    function applySatellite(on) {
+      isSatellite = on;
+      label.textContent = on ? 'Map' : 'Satellite';
+      btn.classList.toggle('map-basemap-toggle--active', on);
+      cmdToIframe('setSatellite', on);
+      try {
+        localStorage.setItem('vrt_map_basemap', on ? 'satellite' : 'map');
+      } catch (_) {}
+    }
+
+    // Apply saved preference once the iframe is ready (cmd will be queued if not yet ready)
+    applySatellite(isSatellite);
+
+    btn.addEventListener('click', () => applySatellite(!isSatellite));
   }
 
   function renderCategories() {
@@ -156,7 +199,30 @@ PortalRouter.register('map', async function (container) {
       </label>
     ` : '';
 
+    // Check if the active category has any populated sub-layers at all
+    const catPopulated = populated[activeCategory] || {};
+    const anyPopulated = subs.some(sub => catPopulated[sub.key]);
+
+    if (!anyPopulated && populatedCategories.length > 0) {
+      // Data has loaded but this category has nothing mapped yet
+      const catLabel = activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1);
+      el.innerHTML = `<div class="mlp-empty-state">No ${esc(catLabel.toLowerCase())} data mapped for this community yet.</div>`;
+      return;
+    }
+
     el.innerHTML = outlineRow + subs.map(sub => {
+      const isPopulated = !!catPopulated[sub.key];
+      if (!isPopulated) {
+        // Render unpopulated sub-layers as disabled with a muted "no data" label
+        const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
+        return `
+          <label class="mlp-sublayer-row mlp-sublayer-row--disabled" title="No data available">
+            <input type="checkbox" disabled data-cat="${activeCategory}" data-key="${sub.key}">
+            <span class="mlp-sub-dot" style="background:${dotColor};opacity:0.35"></span>
+            <span class="mlp-sub-label" style="color:var(--gray-300)">${esc(sub.label)} <span class="mlp-no-data-tag">no data</span></span>
+          </label>
+        `;
+      }
       const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
       const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
       const swatchBtn = isAdmin
@@ -418,11 +484,16 @@ PortalRouter.register('map', async function (container) {
   async function loadCommunity(communityId) {
     selectedAsset = null;
     renderDetailPanel();
+    // activeCategory, sublayerState, and suppression flags are all set
+    // data-driven in loadMapData() once GeoJSON has loaded; fall back to
+    // 'community'/false here only until data arrives.
     activeCategory = 'community';
+    suppressControllerGeo = false;
+    suppressZoneGeo = false;
     Object.keys(LAYER_HIERARCHY).forEach(cat => {
       sublayerState[cat] = {};
       LAYER_HIERARCHY[cat].forEach(sub => {
-        sublayerState[cat][sub.key] = (cat === 'community' || cat === 'irrigation');
+        sublayerState[cat][sub.key] = false;
       });
     });
     renderCategories();
@@ -437,6 +508,12 @@ PortalRouter.register('map', async function (container) {
       }
     } catch (err) {
       console.error('Failed to load community bounds:', err);
+    }
+
+    // If data already loaded before the iframe became ready, apply it now.
+    // Otherwise loadMapData() will call applyDataDrivenState() when it finishes.
+    if (_mapDataReady) {
+      applyDataDrivenState();
     }
   }
 
@@ -457,14 +534,120 @@ PortalRouter.register('map', async function (container) {
           }
         } catch (_) {}
       }
-      pushLayersToIframe();
-      pushIrrigationToIframe();
-      syncVisibleLayers();
-      loadCommunityOutline();
-      renderSublayers();
+
+      // --- Build populated index ---
+      // populated[cat][subKey] = true when the layer exists, is enabled,
+      // and its GeoJSON has at least one feature.
+      populated = {};
+      Object.keys(LAYER_HIERARCHY).forEach(cat => { populated[cat] = {}; });
+
+      mapLayers.forEach(layer => {
+        const cat = layer.layerKey;
+        const sub = layer.subLayerKey;
+        if (!cat || !sub || layer.isEnabled === false) return;
+        if (populated[cat] === undefined) return; // unknown category
+        const features = layer._geojson && layer._geojson.features;
+        if (features && features.length > 0) {
+          populated[cat][sub] = true;
+        }
+      });
+
+      // Per-sublayer suppression: only suppress a GeoJSON sublayer when EVERY
+      // feature in that sublayer has a confirmed positioned marker replacing it.
+      // We cross-reference actual GeoJSON feature refs against positioned asset
+      // records — not asset records against each other — so imported/unmatched
+      // geometry always retains its raw layer.
+      //
+      // Returns the array of string refs from a GeoJSON feature collection, or
+      // null if any feature has no resolvable ref (can't verify → don't suppress).
+      function geoJsonFeatureRefs(geojson) {
+        if (!geojson || !geojson.features || geojson.features.length === 0) return null;
+        const refs = [];
+        for (const f of geojson.features) {
+          const p = f.properties || {};
+          const ref = (f.id != null && f.id !== '' ? String(f.id) : null)
+            || p.featureId || p.id || p.featureRef || p.name || null;
+          if (!ref) return null; // unresolvable ref → cannot confirm full coverage
+          refs.push(String(ref));
+        }
+        return refs;
+      }
+
+      const positionedCtrlRefs = new Set(
+        controllerData
+          .filter(c => c.latitude != null && c.longitude != null && c.featureRef)
+          .map(c => String(c.featureRef))
+      );
+      const positionedZoneRefs = new Set(
+        controllerData.flatMap(c => c.zones || [])
+          .filter(z => z.latitude != null && z.longitude != null && z.featureRef)
+          .map(z => String(z.featureRef))
+      );
+
+      // A sublayer's GeoJSON is suppressed only when every one of its features
+      // has a resolved ref AND that ref is covered by a positioned marker.
+      function allFeaturesPositioned(subLayerKey, positionedRefs) {
+        const layers = mapLayers.filter(l => l.subLayerKey === subLayerKey && l._geojson);
+        if (layers.length === 0) return false;
+        return layers.every(layer => {
+          const refs = geoJsonFeatureRefs(layer._geojson);
+          return refs !== null && refs.length > 0 &&
+            refs.every(ref => positionedRefs.has(ref));
+        });
+      }
+
+      suppressControllerGeo = allFeaturesPositioned('controller', positionedCtrlRefs);
+      suppressZoneGeo = allFeaturesPositioned('zone', positionedZoneRefs);
+
+      // Irrigation markers count as populating controller/zone sub-layers even
+      // when GeoJSON geometry is absent — pre-populate based on controller data.
+      if (controllerData && controllerData.length > 0) {
+        if (populated.irrigation === undefined) populated.irrigation = {};
+        populated.irrigation.controller = true;
+        if (controllerData.some(c => (c.zones || []).length > 0)) {
+          populated.irrigation.zone = true;
+        }
+      }
+
+      // List categories (in LAYER_HIERARCHY order) that have at least one populated sub-layer
+      populatedCategories = Object.keys(LAYER_HIERARCHY).filter(cat =>
+        Object.values(populated[cat] || {}).some(Boolean)
+      );
+
+      // --- Set data-driven initial category ---
+      // Pick the first populated category; fall back to 'community' when none are populated.
+      activeCategory = populatedCategories[0] || 'community';
+
+      // --- Set data-driven sub-layer state ---
+      // Every populated sub-layer starts on; every unpopulated one starts off.
+      Object.keys(LAYER_HIERARCHY).forEach(cat => {
+        sublayerState[cat] = {};
+        LAYER_HIERARCHY[cat].forEach(sub => {
+          sublayerState[cat][sub.key] = !!(populated[cat] && populated[cat][sub.key]);
+        });
+      });
+
+      _mapDataReady = true;
+      // If the iframe is already ready, apply now.
+      // If not, loadCommunity() will apply once mapReady fires.
+      if (iframeReady) {
+        applyDataDrivenState();
+      }
     } catch (err) {
       console.error('Failed to load map layers:', err);
     }
+  }
+
+  // Called once both data and the iframe are ready — whichever arrives second
+  // triggers this.  Safe to call multiple times; always uses the latest data.
+  function applyDataDrivenState() {
+    renderCategories();
+    pushLayersToIframe();
+    pushIrrigationToIframe();
+    loadCommunityOutline();
+    renderSublayers();
+    // Fit the viewport to the initial category's visible content
+    syncVisibleLayers(true);
   }
 
   function buildOutlineStyle(layer) {
@@ -487,7 +670,9 @@ PortalRouter.register('map', async function (container) {
       if (_showCommunityOutline) {
         cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
       }
-      cmdToIframe('fitToOutline');
+      // No fitToOutline here — fitVisibleContent() (called from syncVisibleLayers)
+      // uses fitToOutline as a fallback only when no visible content has bounds,
+      // preventing the outline from overriding an already-framed category view.
     } else {
       _outlineGeojson = null;
       _outlineStyle = null;
@@ -521,10 +706,12 @@ PortalRouter.register('map', async function (container) {
     const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
     const ctrlColorMap = buildControllerColorMap(ctrlOverride);
     const storedZoneColor = getStoredZoneColor();
-    const hasControllerData = controllerData && controllerData.length > 0;
+    // Geometry is only withheld when a confirmed non-empty marker set replaced it.
+    // Each sublayer is suppressed independently — only when every feature has a marker.
     const layerData = mapLayers.filter(l => {
       if (!l._geojson || l.layerKey === 'outline') return false;
-      if (hasControllerData && (l.subLayerKey === 'controller' || l.subLayerKey === 'zone')) return false;
+      if (l.subLayerKey === 'controller' && suppressControllerGeo) return false;
+      if (l.subLayerKey === 'zone' && suppressZoneGeo) return false;
       return true;
     }).map(l => {
       let colorMap = {};
@@ -565,12 +752,14 @@ PortalRouter.register('map', async function (container) {
   }
 
   function syncVisibleLayers(fitMap) {
-    const hasControllerData = controllerData && controllerData.length > 0;
     const visibleIds = [];
     mapLayers.forEach(layer => {
       const cat = layer.layerKey;
       const sub = layer.subLayerKey;
-      if (hasControllerData && (sub === 'controller' || sub === 'zone')) return;
+      // Geometry is only withheld when a confirmed non-empty marker set replaced it,
+      // checked independently per sublayer so unpositioned assets keep their geometry.
+      if (sub === 'controller' && suppressControllerGeo) return;
+      if (sub === 'zone' && suppressZoneGeo) return;
       if (cat === activeCategory && sublayerState[cat] && sublayerState[cat][sub]) {
         visibleIds.push(layer.id);
       }
@@ -582,7 +771,68 @@ PortalRouter.register('map', async function (container) {
     cmdToIframe('showControllers', !!showControllers);
     cmdToIframe('showZones', !!showZones);
     if (fitMap) {
-      cmdToIframe('fitToContent');
+      fitVisibleContent();
+    }
+  }
+
+  // Compute bounds entirely on the portal side from the data already loaded, then
+  // send a single fitBounds command. This avoids any dependency on iframe-side
+  // geoLayers state and eliminates timing races with showLayerIds.
+  // Falls back to fitToOutline only when no visible content bounds can be derived.
+  function fitVisibleContent() {
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+
+    function extendWith(lat, lng) {
+      if (lat == null || lng == null || isNaN(+lat) || isNaN(+lng)) return;
+      minLat = Math.min(minLat, +lat);
+      maxLat = Math.max(maxLat, +lat);
+      minLng = Math.min(minLng, +lng);
+      maxLng = Math.max(maxLng, +lng);
+    }
+
+    // Walk GeoJSON coordinates; handles Point, LineString, Polygon, Multi*, Collection.
+    function walkCoords(coords) {
+      if (!Array.isArray(coords)) return;
+      if (typeof coords[0] === 'number') {
+        extendWith(coords[1], coords[0]); // GeoJSON is [lng, lat]
+      } else {
+        coords.forEach(walkCoords);
+      }
+    }
+
+    // Active-category GeoJSON layers (only the ones currently toggled on)
+    mapLayers.forEach(layer => {
+      if (layer.layerKey !== activeCategory) return;
+      const sub = layer.subLayerKey;
+      if (sub === 'controller' && suppressControllerGeo) return;
+      if (sub === 'zone' && suppressZoneGeo) return;
+      if (!sublayerState[activeCategory] || !sublayerState[activeCategory][sub]) return;
+      if (!layer._geojson || !layer._geojson.features) return;
+      layer._geojson.features.forEach(f => {
+        if (f.geometry && f.geometry.coordinates) walkCoords(f.geometry.coordinates);
+      });
+    });
+
+    // Irrigation markers for the active category (positioned assets replace geometry)
+    if (activeCategory === 'irrigation') {
+      const state = sublayerState.irrigation || {};
+      controllerData.forEach(c => {
+        if (state.controller && c.latitude != null && c.longitude != null) {
+          extendWith(c.latitude, c.longitude);
+        }
+        (c.zones || []).forEach(z => {
+          if (state.zone && z.latitude != null && z.longitude != null) {
+            extendWith(z.latitude, z.longitude);
+          }
+        });
+      });
+    }
+
+    if (minLat <= maxLat && minLng <= maxLng) {
+      cmdToIframe('fitBounds', [[minLat, minLng], [maxLat, maxLng]]);
+    } else if (_outlineGeojson) {
+      // Nothing visible in the active category — fall back to community outline
+      cmdToIframe('fitToOutline');
     }
   }
 
