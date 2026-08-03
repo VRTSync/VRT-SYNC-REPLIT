@@ -80,6 +80,10 @@ AdminRouter.register('dashboard', async function(container) {
           <div class="dash-panel-title">Platform Users</div>
           <div class="loading-spinner" style="padding:20px 0">Loading…</div>
         </div>
+        <div class="dash-panel" id="dash-migrations-panel">
+          <div class="dash-panel-title">Migrations</div>
+          <div class="loading-spinner" style="padding:20px 0">Loading…</div>
+        </div>
       </div>
     </div>
   `;
@@ -370,6 +374,67 @@ AdminRouter.register('dashboard', async function(container) {
     `;
   }
 
+  function renderMigrations(mig) {
+    const panel = document.getElementById('dash-migrations-panel');
+    if (!panel) return;
+
+    if (!mig) {
+      panel.innerHTML = `
+        <div class="dash-panel-title">Migrations</div>
+        <div class="text-muted text-sm" style="padding:8px 0">Migration status unavailable</div>
+      `;
+      return;
+    }
+
+    const appliedCount = Array.isArray(mig.applied) ? mig.applied.length : 0;
+    const pendingCount = Array.isArray(mig.pending) ? mig.pending.length : 0;
+    const driftCount = Array.isArray(mig.drift) ? mig.drift.length : 0;
+    const inSync = !!mig.inSync;
+
+    const statusBadge = inSync
+      ? `<span style="color:var(--green);font-weight:600">✓ In sync</span>`
+      : `<span style="color:var(--red);font-weight:600">⚠ Out of sync</span>`;
+
+    const pendingLines = pendingCount > 0
+      ? mig.pending.map(tag => `
+          <div class="dash-stat-line" style="padding-left:12px">
+            <span class="dash-stat-label" style="color:var(--red);font-size:12px">↳ ${esc(tag)}</span>
+          </div>
+        `).join('')
+      : '';
+
+    const driftLines = driftCount > 0
+      ? mig.drift.map(d => `
+          <div class="dash-stat-line" style="padding-left:12px">
+            <span class="dash-stat-label" style="color:var(--amber);font-size:12px">↳ unknown row id=${esc(String(d.id))}</span>
+          </div>
+        `).join('')
+      : '';
+
+    panel.innerHTML = `
+      <div class="dash-panel-title">Migrations</div>
+      <div class="dash-stat-line">
+        <span class="dash-stat-label">Status</span>
+        <span class="dash-stat-value">${statusBadge}</span>
+      </div>
+      <div class="dash-stat-line">
+        <span class="dash-stat-label">Applied</span>
+        <span class="dash-stat-value">${esc(String(appliedCount))}</span>
+      </div>
+      <div class="dash-stat-line">
+        <span class="dash-stat-label">Pending</span>
+        <span class="dash-stat-value" style="${pendingCount > 0 ? 'color:var(--red);font-weight:600' : ''}">${esc(String(pendingCount))}</span>
+      </div>
+      ${pendingLines}
+      ${driftCount > 0 ? `
+      <div class="dash-stat-line">
+        <span class="dash-stat-label">Drift rows</span>
+        <span class="dash-stat-value" style="color:var(--amber);font-weight:600">${esc(String(driftCount))}</span>
+      </div>
+      ${driftLines}` : ''}
+    `;
+  }
+
   function renderData(data) {
     renderKPI(data);
     renderExceptions(data);
@@ -415,9 +480,13 @@ AdminRouter.register('dashboard', async function(container) {
 
   async function loadDashboard() {
     try {
-      const data = await apiFetchWithRetry('/api/admin/dashboard');
+      const [data, migData] = await Promise.all([
+        apiFetchWithRetry('/api/admin/dashboard'),
+        apiFetchWithRetry('/api/admin/migrations').catch(() => null),
+      ]);
       lastFetch = Date.now();
       renderData(data);
+      renderMigrations(migData);
       updateAgeLabel();
 
       // Start auto-refresh; clear any prior interval first (defensive)
@@ -430,10 +499,14 @@ AdminRouter.register('dashboard', async function(container) {
           return;
         }
         updateAgeLabel();
-        apiFetchWithRetry('/api/admin/dashboard').then(freshData => {
+        Promise.all([
+          apiFetchWithRetry('/api/admin/dashboard'),
+          apiFetchWithRetry('/api/admin/migrations').catch(() => null),
+        ]).then(([freshData, freshMig]) => {
           if (AdminRouter.getCurrentRoute() !== 'dashboard') return;
           lastFetch = Date.now();
           renderData(freshData);
+          renderMigrations(freshMig);
           updateAgeLabel();
         }).catch(() => {
           // Silent fail on background refresh — keep showing stale data

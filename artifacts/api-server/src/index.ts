@@ -149,7 +149,13 @@ process.on("unhandledRejection", (reason) => {
       `applied ${appliedCount} migrations in ${Date.now() - migrationsStart}ms`
     );
   } catch (err) {
-    logger.error({ err, elapsedMs: Date.now() - migrationsStart }, "Drizzle migrations failed — continuing without schema update");
+    const elapsedMs = Date.now() - migrationsStart;
+    if (process.env["NODE_ENV"] === "production") {
+      logger.fatal({ err, elapsedMs }, "FATAL: Drizzle migrations failed — exiting to prevent serving against a stale schema");
+      process.exit(1);
+    } else {
+      logger.error({ err, elapsedMs }, "⚠️  MIGRATION FAILURE ⚠️  Drizzle migrations failed — server continuing in development mode");
+    }
   }
 
   // Layer 2: Additive ALTER TABLE safety net for lagging environments
