@@ -1,0 +1,84 @@
+# Task #393: Fix map layer upload — conflict detection, replace/merge, and error leakage
+
+## What & Why
+
+Uploading a map layer through the generic "Upload Map Layer File" modal fails confusingly:
+
+1. The route never checks whether a layer already exists at `(communityId, layerKey, subLayerKey)`. It attempts an insert and lets the unique index `map_layers_community_layer_sub_idx` throw. Replace only works when the caller passes `layerId` — which the generic modal never does (only the outline flow does).
+2. The duplicate handler never fires: Drizzle wraps the Postgres error (`DrizzleQueryError` — "Failed query: insert into …"), so `error.constraint` is undefined; the real error is on `error.cause`. The friendly 409 is skipped.
+3. The fallback returns `error.message` to the browser, dumping raw SQL **and the entire GeoJSON payload** into a toast. This happens on every upload failure.
+
+Observed in production while importing PNC snow layers: two different KML files both mapped to `snow / hand_shovel`, the first insert succeeded, the UI showed a wall of SQL, and the layers were present after a refresh.
+
+**Decision:** keep one layer per `(community, layerKey, subLayerKey)`. On conflict, the user chooses **Replace** or **Merge** — no schema change.
+
+## Done looks like
+
+- Uploading to an occupied `(layerKey, subLayerKey)` shows an inline conflict panel in the modal — existing layer name, feature count, last updated — with **Replace**, **Merge features**, and **Cancel**. File selection is preserved.
+- **Replace** overwrites the existing layer's geometry and display name (version-checked, same path the outline flow uses).
+- **Merge** appends the uploaded features to the existing layer's FeatureCollection, de-duplicating by feature id, and reports how many were added vs. skipped.
+- No upload response ever contains raw SQL, a stack trace, or GeoJSON. Server logs keep the detail.
+- A genuine unique-constraint violation (any remaining race) returns a clean 409 with a human message.
+- Existing outline and irrigation upload flows keep working unchanged.
+
+## Out of scope
+
+- Removing or altering the unique index (decision: keep one layer per key).
+- Any change to asset syncing behavior beyond re-running it after replace/merge.
+- The portfolio portal, mobile app, or other admin pages.
+
+## Steps
+
+### 1. Error unwrapping + leak fix — `artifacts/api-server/src/routes/routes.ts`
+
+- Add a small helper near the other route utilities:
+  ```ts
+  function pgErrorOf(err: any) { return err?.cause ?? err; }   // Drizzle wraps pg errors
+  function isUniqueViolation(err: any, constraint?: string) {
+    const e = pgErrorOf(err);
+    return e?.code === "23505" && (!constraint || e?.constraint === constraint);
+  }
+  ```
+- In **every** `/api/map-layers/*` upload/create route (`upload`, `upload-validate`, `upload-irrigation`, `POST /api/map-layers`), replace the current `error?.constraint === …` check with `isUniqueViolation(error, "map_layers_community_layer_sub_idx")` → 409.
+- In those same routes, the 500 path must log server-side (`req.log.error({ error }, …)`) and return a **generic** message: `{ error: "Failed to process upload" }`. Never `error.message`.
+- Audit the rest of `routes.ts` for other handlers returning `error.message` on 500 and list them in the implementation notes — **do not fix them in this task**, just report.
+
+### 2. Conflict pre-check endpoint behavior — `POST /api/map-layers/upload`
+
+- Before inserting, look up the existing layer by `(communityId, layerKey, subLayerKey)` (add `storage.getMapLayerByKeys(...)` if it doesn't exist).
+- If one exists **and** the request did not specify an intent, respond **409** with a structured body — not an error string:
+  ```json
+  { "code": "LAYER_EXISTS",
+    "existing": { "id": "...", "displayName": "...", "featureCount": 12, "updatedAt": "...", "version": 3 } }
+  ```
+- Accept a new form field `mode` on the request: `"replace" | "merge"`.
+  - `replace` → existing update path (version-checked), then re-run `syncAssetsFromLayer`.
+  - `merge` → parse both FeatureCollections, append incoming features, **de-duplicate by feature `id`** (the KML converter already normalizes ids via `normalizeGeojsonFeatureIds`); persist the combined collection with a version bump; re-run `syncAssetsFromLayer`. Response includes `{ featuresAdded, featuresSkipped, featureCount }`.
+- If no existing layer: current insert path, unchanged.
+
+### 3. Modal UX — `artifacts/web-portal/public/admin/pages/map-layers.js`
+
+- On upload, if the response is 409 with `code === "LAYER_EXISTS"`, render an inline conflict panel **inside the modal** (do not close it, do not lose the selected file):
+  - "A layer already exists at `snow / hand_shovel`: **Hand Shovel** — 12 features, updated Aug 1, 2026."
+  - Buttons: **Replace** (re-submits with `mode=replace`), **Merge features** (re-submits with `mode=merge`), **Cancel**.
+- On success, toast the outcome: `Replaced — 14 features` / `Merged — 6 added, 2 duplicates skipped` / `Uploaded — 14 features`.
+- Use the existing `err.status` / `err.data` support added to `api.js` in a prior task so the structured 409 body is reachable.
+
+### 4. Verify
+
+- Upload a KML to an empty key pair → succeeds, assets sync as before.
+- Upload a second, different KML to the same key pair → conflict panel appears inline with the existing layer's real name/feature count; file selection retained.
+  - Choose **Replace** → layer geometry is the new file's; feature count matches the new file; assets re-synced.
+  - Choose **Merge** → combined feature count = union; duplicates skipped count is accurate when re-uploading the same file twice (second merge should add 0).
+  - Choose **Cancel** → nothing changes server-side.
+- Force a server error (e.g. malformed KML) → UI shows a generic message; the server log contains the detail; **no SQL or GeoJSON appears in the browser**.
+- Outline upload and irrigation upload flows still work end to end.
+- Re-import the PNC snow layers that triggered the original bug and confirm clean behavior.
+
+## Relevant files
+
+- `artifacts/api-server/src/routes/routes.ts` (`/api/map-layers/upload` ~2832, `upload-irrigation` ~2911, `POST /api/map-layers` ~2762)
+- `artifacts/api-server/src/storage.ts` (`getMapLayersByCommunity`, `updateMapLayer`, add `getMapLayerByKeys`)
+- `artifacts/api-server/src/kmlConverter.ts` (`normalizeGeojsonFeatureIds` — feature id source for de-dup)
+- `artifacts/web-portal/public/admin/pages/map-layers.js` (generic upload modal ~1500s, outline flow ~270 for the existing replace pattern)
+- `artifacts/web-portal/public/admin/api.js` (`err.status` / `err.data`)
