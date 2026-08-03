@@ -142,7 +142,11 @@ export async function enforceOrgScoping(req: Request, res: Response, next: NextF
     const communityId = req.params.id || (req.params as any).communityId || req.query.communityId || req.body?.communityId;
     if (communityId) {
       const community = await storage.getCommunityById(communityId as string);
-      if (community && community.organizationId && community.organizationId !== userOrgId) {
+      if (!community) {
+        res.status(404).json({ message: "Community not found" });
+        return;
+      }
+      if (community.organizationId !== userOrgId) {
         res.status(403).json({ message: "Access denied: community belongs to a different organization" });
         return;
       }
