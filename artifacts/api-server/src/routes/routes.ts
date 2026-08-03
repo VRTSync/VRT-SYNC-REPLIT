@@ -5426,8 +5426,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/admin/branches/:communityId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const result = await storage.deleteBranch(req.params.communityId as string);
+      if (result.notABranch) return void res.status(403).json({ error: "Not an organization branch" });
+      if (result.conflict) return void res.status(409).json({ error: result.conflict });
+      if (!result.deleted) return void res.status(404).json({ error: "Branch not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete branch error:", error);
+      res.status(500).json({ error: "Failed to delete branch" });
+    }
+  });
+
   app.patch("/api/admin/branches/:communityId", requireAdmin, async (req: Request, res: Response) => {
     try {
+      // Guard: only allow editing organization-owned branches, not HOA communities
+      const orgId = await storage.getBranchOrgId(req.params.communityId as string);
+      if (orgId === undefined) return void res.status(404).json({ error: "Branch not found" });
+      if (orgId === null) return void res.status(403).json({ error: "Not an organization branch" });
+
       const { code, address, city, name, description } = req.body;
       const updates: Record<string, unknown> = {};
       if (code !== undefined) updates.code = code;
@@ -5435,9 +5453,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (city !== undefined) updates.city = city;
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
-      const branch = await storage.updateBranch(req.params.communityId as string, updates as any);
-      if (!branch) return void res.status(404).json({ error: "Branch not found" });
-      res.json(branch);
+      try {
+        const branch = await storage.updateBranch(req.params.communityId as string, updates as any);
+        if (!branch) return void res.status(404).json({ error: "Branch not found" });
+        res.json(branch);
+      } catch (err: any) {
+        if (err?.code === "23505" || err?.message?.includes("duplicate")) {
+          return void res.status(409).json({ error: `A branch with code '${code}' already exists in this organization` });
+        }
+        throw err;
+      }
     } catch (error) {
       console.error("Update branch error:", error);
       res.status(500).json({ error: "Failed to update branch" });
@@ -5448,7 +5473,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/admin/organizations/:id/groups", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const groups = await storage.listBranchGroups(req.params.id as string);
+      const groups = await storage.listBranchGroupsWithMembers(req.params.id as string);
       res.json(groups);
     } catch (error) {
       console.error("List branch groups error:", error);
@@ -5515,6 +5540,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Set branch group members error:", error);
       return void res.status(500).json({ error: "Failed to set branch group members" });
+    }
+  });
+
+  // ── Admin: Organization users ─────────────────────────────────────────────
+
+  app.get("/api/admin/organizations/:id/users", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const orgId = req.params.id as string;
+      const users = await storage.getClientUsersByOrg(orgId);
+      res.json(users);
+    } catch (error) {
+      console.error("List org users error:", error);
+      res.status(500).json({ error: "Failed to list organization users" });
     }
   });
 

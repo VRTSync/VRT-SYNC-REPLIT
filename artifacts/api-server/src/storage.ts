@@ -379,6 +379,23 @@ export async function getUsersByCommunity(communityId: string): Promise<User[]> 
     .orderBy(users.displayName);
 }
 
+export async function getClientUsersByOrg(organizationId: string): Promise<{
+  id: string; username: string; displayName: string | null; role: string;
+  isActive: boolean | null; createdAt: Date | null; organizationId: string | null;
+}[]> {
+  return db.select({
+    id: users.id,
+    username: users.username,
+    displayName: users.displayName,
+    role: users.role,
+    isActive: users.isActive,
+    createdAt: users.createdAt,
+    organizationId: users.organizationId,
+  }).from(users)
+    .where(and(eq(users.role, "client_admin"), eq(users.organizationId, organizationId)))
+    .orderBy(users.username);
+}
+
 export async function updateUserProfile(
   userId: string,
   updates: { displayName?: string; password?: string },
@@ -3722,17 +3739,71 @@ export async function createBranch(data: {
   city?: string;
   description?: string;
 }): Promise<Community> {
-  const community = await createCommunity({ name: data.name, description: data.description });
-  const [updated] = await db.update(communities)
-    .set({
-      organizationId: data.organizationId,
-      code: data.code,
-      address: data.address ?? null,
-      city: data.city ?? null,
-    })
-    .where(eq(communities.id, community.id))
-    .returning();
-  return updated;
+  // Single atomic insert so a duplicate-code unique violation leaves no orphaned community row
+  const [branch] = await db.insert(communities).values({
+    name: data.name,
+    description: data.description ?? null,
+    organizationId: data.organizationId,
+    code: data.code,
+    address: data.address ?? null,
+    city: data.city ?? null,
+  }).returning();
+  return branch;
+}
+
+export async function getBranchOrgId(communityId: string): Promise<string | null | undefined> {
+  // Returns undefined if not found, null if found but not a branch (no organizationId)
+  const [row] = await db.select({ organizationId: communities.organizationId })
+    .from(communities).where(eq(communities.id, communityId));
+  if (!row) return undefined;
+  return row.organizationId ?? null;
+}
+
+export async function deleteBranch(communityId: string): Promise<{
+  deleted: boolean; notABranch?: boolean; conflict?: string;
+}> {
+  // Only delete communities that belong to an organization (i.e. commercial branches)
+  const [existing] = await db.select({ id: communities.id, organizationId: communities.organizationId })
+    .from(communities).where(eq(communities.id, communityId));
+  if (!existing) return { deleted: false };
+  if (!existing.organizationId) return { deleted: false, notABranch: true };
+
+  // Preflight: exhaustively check every community-scoped cascade-FK table using a single raw
+  // SQL query. Raw SQL avoids TypeScript column-type issues and naturally covers ALL tables
+  // (tasks, assets, members, layers, notes, template_runs, task_schedules, export_jobs,
+  //  service_schedules, service_visits, asset_attachments, contacts, notifications,
+  //  drive_folders, drive_files, invoices, contracts, offline_packs).
+  const preflightSQL = `
+    SELECT tbl, cnt FROM (VALUES
+      ('tasks',            (SELECT COUNT(*) FROM tasks            WHERE community_id = $1)),
+      ('assets',           (SELECT COUNT(*) FROM assets           WHERE community_id = $1)),
+      ('members',          (SELECT COUNT(*) FROM community_members WHERE community_id = $1)),
+      ('map layers',       (SELECT COUNT(*) FROM map_layers       WHERE community_id = $1)),
+      ('asset notes',      (SELECT COUNT(*) FROM asset_notes      WHERE community_id = $1)),
+      ('template runs',    (SELECT COUNT(*) FROM template_runs    WHERE community_id = $1)),
+      ('task schedules',   (SELECT COUNT(*) FROM task_schedules   WHERE community_id = $1)),
+      ('export jobs',      (SELECT COUNT(*) FROM exports          WHERE community_id = $1)),
+      ('service schedules',(SELECT COUNT(*) FROM service_schedules WHERE community_id = $1)),
+      ('service visits',   (SELECT COUNT(*) FROM service_visits   WHERE community_id = $1)),
+      ('asset attachments',(SELECT COUNT(*) FROM asset_attachments WHERE community_id = $1)),
+      ('contacts',         (SELECT COUNT(*) FROM contacts         WHERE community_id = $1)),
+      ('notifications',    (SELECT COUNT(*) FROM notifications    WHERE community_id = $1)),
+      ('drive folders',    (SELECT COUNT(*) FROM drive_folders    WHERE community_id = $1)),
+      ('drive files',      (SELECT COUNT(*) FROM drive_files      WHERE community_id = $1)),
+      ('invoices',         (SELECT COUNT(*) FROM invoices         WHERE community_id = $1)),
+      ('contracts',        (SELECT COUNT(*) FROM contracts        WHERE community_id = $1)),
+      ('offline packs',    (SELECT COUNT(*) FROM offline_packs    WHERE community_id = $1))
+    ) AS t(tbl, cnt)
+    WHERE cnt > 0
+  `;
+  const { rows: conflictRows } = await pool.query(preflightSQL, [communityId]);
+  if (conflictRows.length > 0) {
+    const parts = conflictRows.map((r: { tbl: string; cnt: string }) => `${r.cnt} ${r.tbl}`);
+    return { deleted: false, conflict: `Branch still has ${parts.join(', ')} — remove them first` };
+  }
+
+  const result = await db.delete(communities).where(eq(communities.id, communityId)).returning();
+  return { deleted: result.length > 0 };
 }
 
 export async function updateBranch(communityId: string, data: {
@@ -3766,6 +3837,27 @@ export async function listBranchGroups(orgId: string): Promise<BranchGroup[]> {
   return db.select().from(branchGroups)
     .where(eq(branchGroups.organizationId, orgId))
     .orderBy(branchGroups.sortOrder, branchGroups.name);
+}
+
+export async function listBranchGroupsWithMembers(
+  orgId: string,
+): Promise<(BranchGroup & { memberIds: string[]; memberCount: number })[]> {
+  const groups = await listBranchGroups(orgId);
+  if (groups.length === 0) return [];
+  const groupIds = groups.map(g => g.id);
+  const memberRows = await db.select({
+    groupId: branchGroupMembers.groupId,
+    communityId: branchGroupMembers.communityId,
+  }).from(branchGroupMembers).where(inArray(branchGroupMembers.groupId, groupIds));
+  const membersByGroup = new Map<string, string[]>();
+  for (const row of memberRows) {
+    if (!membersByGroup.has(row.groupId)) membersByGroup.set(row.groupId, []);
+    membersByGroup.get(row.groupId)!.push(row.communityId);
+  }
+  return groups.map(g => {
+    const ids = membersByGroup.get(g.id) ?? [];
+    return { ...g, memberIds: ids, memberCount: ids.length };
+  });
 }
 
 export async function updateBranchGroup(id: string, data: Partial<NewBranchGroup>): Promise<BranchGroup | undefined> {

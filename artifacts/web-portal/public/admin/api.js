@@ -35,7 +35,10 @@ window.AdminAPI = (function() {
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         const msg = errData.error || errData.message || `Request failed (${res.status})`;
-        throw new Error(msg);
+        const err = new Error(msg);
+        err.status = res.status;
+        err.data = errData;
+        throw err;
       }
       if (res.status === 204) return null;
       return await res.json();

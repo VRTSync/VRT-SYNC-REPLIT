@@ -1197,6 +1197,125 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+/* Organizations */
+.org-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.org-detail-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.org-section {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--gray-100);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.org-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--gray-100);
+  background: var(--gray-50);
+}
+
+.org-section-header h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy);
+  margin: 0;
+}
+
+.org-section .table-container {
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+}
+
+.org-section .empty-state {
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--gray-400);
+}
+
+/* Branch / Group list rows */
+.org-groups-list {
+  padding: 8px 0;
+}
+
+.org-group-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--gray-50);
+}
+
+.org-group-row:last-child { border-bottom: none; }
+
+.org-group-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.org-group-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.org-group-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Org name chip on community cards */
+.community-org-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--blue-light);
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+/* Breadcrumb */
+.breadcrumb-link {
+  color: var(--teal-dark);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.breadcrumb-link:hover { text-decoration: underline; }
+
+.breadcrumb-sep {
+  color: var(--gray-400);
+  margin: 0 6px;
+  font-size: 14px;
+}
+
+.breadcrumb-current {
+  color: var(--gray-600);
+  font-size: 14px;
+  font-weight: 500;
+}
+
 /* Skeleton placeholders */
 .dash-skeleton {
   pointer-events: none;
