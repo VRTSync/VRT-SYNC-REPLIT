@@ -1,0 +1,122 @@
+# Task #407: Irrigation KML parser — multi-zone valve boxes, unmapped zones, and sibling asset folders
+
+## What & Why
+
+Real irrigation maps put **several zone valves in one box**, and HP's Google Earth files reflect that: a single placemark named `Zone 5( pop ups)/ 6 (pop ups)/ 7(pop ups)/ 8 (pop ups)`.
+
+Today `parseZoneName()` matches `/zone\s+(\d+)\s*(.*)/i` — it takes **the first number only**. That placemark imports as one zone (5) whose "type" is the literal string `( pop ups)/ 6 (pop ups)/ 7(pop ups)/ 8 (pop ups)`. **Zones 6, 7, and 8 do not exist in the system**: no history, no way to log a repair against them, and zone counts are wrong.
+
+The parser also treats **every top-level folder as a controller**, so HP's sibling folders (`Gate Valves`, `Quick Connect`, `Backflow`, `Wire Splices`) would each import as a bogus controller.
+
+Reference file (attached): `136th and Colorado - Irrigation (1).kml` — the agreed house format.
+
+## The house KML format (what the parser must support)
+
+```
+Document
+├── Folder "Controller A"                 ← controller folder
+│   ├── Placemark "Controller A"          ← the controller (Point)
+│   └── Folder "Zones"
+│       ├── Placemark "zone 1 (pop ups)/ 2 (rotors)/ 3 (rotors)/ 4 (rotors)"
+│       ├── Placemark "Zone 25/26/27/28 rotors"
+│       └── …
+├── Folder "Gate Valves"      → isolation_valve
+├── Folder "Quick Connect"    → quick_connect
+├── Folder "Backflow"         → backflow
+└── Folder "Wire Splices"     → splice   (new type — see step 1)
+```
+
+**Controller-folder test:** a top-level folder is a controller if it contains a subfolder whose name includes "zone", OR its own name matches `/controller|clock/i`. Everything else is matched against the folder→type table. Unrecognized folder names import nothing and produce a warning listing the folder and its placemark count — never silently dropped.
+
+## Zone-name grammar (validated against all 15 real placemarks)
+
+1. Strip a leading `zone`/`zones` keyword (case-insensitive).
+2. Split on `/`.
+3. Per segment: first integer = zone number; the remainder, stripped of parens/stray punctuation/whitespace, = zone type.
+4. **If only the final segment carries a type, apply it to every zone in the placemark** (`Zone 25/26/27/28 rotors` → 25,26,27,28 all "rotors").
+5. Tolerate messy spacing (`5( pop ups)`, `11(rotors)`, `12( rotors)`) and stray closing parens (`14 rotors)`).
+6. A segment with no parseable integer → warning naming the placemark; do not guess.
+
+Must parse correctly (regression fixtures — use these exact strings):
+
+| Input | Expected |
+|---|---|
+| `zone 1 (pop ups)/ 2 (rotors)/ 3 (rotors)/ 4 (rotors)` | 1 pop ups · 2 rotors · 3 rotors · 4 rotors |
+| `Zone 5( pop ups)/ 6 (pop ups)/ 7(pop ups)/ 8 (pop ups)` | 5,6,7,8 all pop ups |
+| `zone 34 drip` | 34 drip |
+| `Zone 25/26/27/28 rotors` | 25,26,27,28 all rotors |
+| `Zone 13 (rotors) / 14 rotors)` | 13 rotors · 14 rotors |
+| `Zone 33 high pops/36 drip` | 33 high pops · 36 drip |
+| `Zone 21 pops/ 23 pops/ 24 pops` | 21,23,24 pops |
+
+## Valve boxes
+
+- **One placemark = one valve box.** Group by placemark, never by coordinate proximity — two boxes 2 ft apart (`zone 34 drip` and `Zone 5/6/7/8`) must stay distinct.
+- Every zone from a placemark gets:
+  - `valveBoxRef` = the placemark's KML id (stable across re-imports)
+  - `valveBoxLabel` = the placemark's original name (for display/debugging)
+  - the placemark's coordinates
+  - **`featureRef` = `<placemarkId>#z<zoneNumber>`** — unique per zone and stable across re-imports so service history stays attached. Do not use array index.
+
+## Unmapped zones
+
+- Determine the controller's total zone count from, in priority order: (a) `zones: N` in the controller placemark's **description**, (b) a **"Total zones" field in the import UI** (pre-filled with the highest number parsed), (c) fallback = highest number parsed.
+- Any number in `1..N` with no placemark becomes an **unmapped zone**: a real zone record with **null latitude/longitude** and `valveBoxRef` null. For this file that yields zones 9, 16, 22, 35.
+- Null coordinates is the canonical signal for "unmapped" — do **not** add a boolean column.
+- The import summary must report mapped vs unmapped counts.
+
+## Steps
+
+### 1. Schema — add the `splice` asset type (additive migration)
+
+- Add `splice` to `assetTypeEnum` via a new migration using `ALTER TYPE … ADD VALUE IF NOT EXISTS`, following `0007`'s pattern. Update `meta/_journal.json` with the correct current timestamp.
+- Add `wire_splice` to the irrigation sub-layer keys in `artifacts/api-server/src/layerValidation.ts` (Point geometry), and to the `LAYER_HIERARCHY` irrigation list in **both** `artifacts/web-portal/public/portal/pages/map.js` and `artifacts/vrtsync-mobile/app/(tabs)/map.tsx` / `(hoa-tabs)/map.tsx`, with a color.
+- No other schema change. Unmapped zones need none (null coords).
+
+### 2. Parser — `artifacts/api-server/src/kmlIrrigationParser.ts`
+
+- Replace `parseZoneName()` with a `parseZoneNames()` returning an array per the grammar above; keep the old single-zone behavior as the one-element case.
+- Emit one `ParsedZone` per zone with `valveBoxRef`, `valveBoxLabel`, and the `#z<n>` featureRef.
+- Add the controller-folder test and the folder→type table; return sibling-folder assets in a new `ParsedOtherAssets` collection (type, name, featureRef, lat, lng, description).
+- Parse `zones: N` from the controller description when present.
+- Generate unmapped zones after parsing all placemarks for that controller.
+- Extend `warnings[]` for: unparseable segments, unknown folders, duplicate zone numbers within a controller (**import both and flag — do not block**), and zones above the declared total.
+
+### 3. Asset sync — `syncAssetsFromLayer` / irrigation upload route
+
+- Create/update one asset per zone (including unmapped ones) keyed on `featureRef`.
+- Store `valve_box_ref`, `valve_box_label`, and `zone_type` as `asset_properties` (existing mechanism, no schema change).
+- Create assets for sibling-folder items with the mapped asset types; `Wire Splices` → `splice`.
+- Re-import must be **idempotent**: same file twice = no duplicates, no orphans, existing history preserved (this is why featureRef must be deterministic).
+
+### 4. Import UI — `artifacts/web-portal/public/admin/pages/map-layers.js`
+
+- After parse, before commit, show a **preview**: controllers found, zones parsed (mapped/unmapped), boxes with multiple zones listed explicitly, other assets by type, and all warnings.
+- Include the editable "Total zones" field described above.
+- Nothing is written until the user confirms.
+
+### 5. Verify — using the attached file
+
+- 15 zone placemarks → **35 mapped zones** across 15 boxes, plus **4 unmapped** (9, 16, 22, 35) if total is 39.
+- `Zone 5/6/7/8` produces 4 zones sharing one `valveBoxRef`; `zone 34 drip` is a **separate** box despite being ~2 ft away.
+- Three `GV` placemarks import as 3 distinct isolation valves (unique KML ids, no collision).
+- `backflow A`, `quick connect`, `splice` import to their types.
+- Re-import the same file → zero duplicates; asset ids unchanged.
+- A zone with a logged completion survives re-import with its history intact.
+
+## Out of scope
+
+- Map display of boxes (one pin per box, zone list on tap) — **task #408**, next.
+- Changing the generic (non-irrigation) layer upload.
+- Mobile Map Creator capture flow.
+
+## Relevant files
+
+- `136th and Colorado - Irrigation (1).kml` (**attach** — house format reference and test fixture)
+- `artifacts/api-server/src/kmlIrrigationParser.ts` (`parseZoneName` ~352, folder walk ~48–120, `extractPlacemarkId` ~304)
+- `artifacts/api-server/src/routes/routes.ts` (`/api/map-layers/upload-irrigation` ~2911)
+- `artifacts/api-server/src/assetSync.ts` (asset creation from layers)
+- `artifacts/api-server/src/layerValidation.ts`
+- `lib/db/src/schema/schema.ts` (`assetTypeEnum` ~190) + new migration
+- `artifacts/web-portal/public/admin/pages/map-layers.js` (irrigation upload modal ~1550)
+- `artifacts/web-portal/public/portal/pages/map.js`, `artifacts/vrtsync-mobile/app/(tabs)/map.tsx`, `(hoa-tabs)/map.tsx` (`LAYER_HIERARCHY`)
