@@ -1,0 +1,77 @@
+# Task #404: Mobile — irrigation geometry must render when marker data is absent
+
+## What & Why
+
+Companion to #403 (same bug, web side). Both mobile map screens drop irrigation **geometry** whenever any controller records exist, on the assumption that controller/zone **markers** will be drawn instead:
+
+`artifacts/vrtsync-mobile/app/(tabs)/map.tsx` (~362–385) and `app/(hoa-tabs)/map.tsx` (~287–292):
+
+```ts
+.filter((l) => {
+  if (controllers.length > 0) {
+    if (l.subLayerKey === 'controller' || l.subLayerKey === 'zone') return false;
+  }
+  return true;
+})
+```
+
+But markers can be empty even when `controllers.length > 0` — for example when controller or zone records have `latitude`/`longitude` of `null` (never captured, or imported without coordinates). In that case geometry was withheld and markers never appeared: **the irrigation layer renders nothing in the field.**
+
+This is the screen HP's crews use daily, so it matters more here than on web.
+
+## The rule to implement (read carefully — user toggles must NOT re-enable geometry)
+
+Suppression must be based on whether **marker data exists**, not on whether markers are currently *displayed*.
+
+The existing `controllerMarkers` / `zoneMarkers` memos return `[]` for several reasons — wrong category, user toggled the sub-layer off (`showControllerLayer` / `showZoneLayer`), no controllers, or no enabled controllers. Keying suppression off those arrays would make geometry reappear the moment a user unchecks a sub-layer, which is a new bug.
+
+Instead compute two independent flags from the raw data:
+
+```ts
+const hasControllerMarkerData = controllers.some(c => c.latitude != null && c.longitude != null);
+const hasZoneMarkerData = controllers.some(c => (c.zones || []).some(z => z.latitude != null && z.longitude != null));
+```
+
+Then:
+
+- Withhold `controller` geometry **only if** `hasControllerMarkerData`.
+- Withhold `zone` geometry **only if** `hasZoneMarkerData`.
+- Evaluate the two independently — a community may have positioned controllers but unpositioned zones, and the zone geometry must still render.
+
+## Done looks like
+
+- Irrigation with controllers that have coordinates → markers render as today; geometry for those sub-layers stays hidden (no change in behavior).
+- Irrigation whose controllers/zones lack coordinates → **raw layer geometry renders** instead of an empty map.
+- Mixed case (controllers positioned, zones not) → controller markers + zone geometry.
+- Toggling a sub-layer off hides it and does **not** cause geometry to reappear.
+- Both `(tabs)/map.tsx` (crew) and `(hoa-tabs)/map.tsx` (HOA) fixed identically.
+- Comment added at both sites: *Geometry is only withheld when marker data actually exists to replace it.*
+- No other mobile map behavior changes.
+
+## Out of scope
+
+- The web portal fix (#403).
+- Basemap/tile provider change (#399) and satellite persistence.
+- Map Creator drawing/capture logic, offline packs, API or schema changes.
+- Any change to how markers themselves are built or styled.
+
+## Steps
+
+1. **`app/(tabs)/map.tsx`** — add the two `has*MarkerData` computations (memoized on `controllers`), then replace the `controllers.length > 0` condition inside the `activeLayers` filter with the per-sub-layer checks described above.
+2. **`app/(hoa-tabs)/map.tsx`** — apply the identical change at ~287–292. Keep the two files' logic textually consistent so the next reader sees they're the same rule.
+3. **Check `mc-workspace/[id].tsx`** — Map Creator uses `LeafletMap` too; confirm whether it has the same filter. If it does, apply the same fix; if it doesn't, note that in the implementation notes and change nothing there.
+4. **Verify on device/simulator**, crew and HOA maps:
+   - Community whose controllers have coordinates → unchanged (markers, no duplicate geometry).
+   - Community whose controllers/zones lack coordinates → irrigation geometry visible.
+   - Toggle controller and zone sub-layers off → they hide; geometry does not reappear.
+   - Switch categories away and back → state consistent.
+   - Offline mode (cached pack) → same behavior, no crash when `controllers` is empty.
+5. **Report** in the implementation notes: for the PNC/HP communities currently in the system, whether controller records have coordinates — this tells us which rendering path production actually takes today.
+
+## Relevant files
+
+- `artifacts/vrtsync-mobile/app/(tabs)/map.tsx` (`controllerMarkers` ~320, `zoneMarkers` ~336, `activeLayers` filter ~362–385)
+- `artifacts/vrtsync-mobile/app/(hoa-tabs)/map.tsx` (~90 enabled-controllers guard, ~287–292 filter)
+- `artifacts/vrtsync-mobile/app/mc-workspace/[id].tsx` (check only)
+- `artifacts/vrtsync-mobile/components/LeafletMap.tsx` (marker/layer props — reference only)
+- `docs/portal-map-audit-2026-08-03.md` (Symptom 2)
