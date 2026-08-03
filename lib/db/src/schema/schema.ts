@@ -10,6 +10,8 @@ export const scheduleFrequencyEnum = pgEnum("schedule_frequency", ["weekly", "mo
 export const scheduleRunStatusEnum = pgEnum("schedule_run_status", ["success", "failure"]);
 export const exportStatusEnum = pgEnum("export_status", ["queued", "running", "complete", "failed"]);
 export const serviceTypeEnum = pgEnum("service_type", ["mowing_visit"]);
+export const serviceVisitStatusEnum = pgEnum("service_visit_status", ["scheduled", "completed", "skipped", "missed"]);
+export const invoiceStatusEnum = pgEnum("invoice_status", ["draft", "submitted", "approved", "paid", "void"]);
 
 export const organizations = pgTable("organizations", {
   id: varchar("id")
@@ -432,10 +434,13 @@ export const serviceVisits = pgTable("service_visits", {
   completedBy: varchar("completed_by").references(() => users.id),
   employeeSignOffName: text("employee_sign_off_name").notNull().default(''),
   notes: text("notes"),
+  status: serviceVisitStatusEnum("status").notNull().default("scheduled"),
+  skipReason: text("skip_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("service_visits_schedule_date_idx").on(table.scheduleId, table.serviceDate),
+  index("service_visits_community_date_idx").on(table.communityId, table.serviceDate),
 ]);
 
 export const exportsRelations = relations(exportJobs, ({ one }) => ({
@@ -843,6 +848,8 @@ export const logServiceVisitSchema = z.object({
   employeeSignOffName: z.string().default(''),
   notes: z.string().nullable().optional(),
   completedAt: z.string().nullable().optional(),
+  status: z.enum(["scheduled", "completed", "skipped", "missed"]).optional(),
+  skipReason: z.string().nullable().optional(),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -954,11 +961,16 @@ export const invoices = pgTable("invoices", {
   pdfObjectKey: text("pdf_object_key"),
   attachmentLabel: text("attachment_label"),
   attachmentLayerId: varchar("attachment_layer_id").references(() => mapLayers.id, { onDelete: 'set null' }),
+  status: invoiceStatusEnum("status"),
+  invoiceNumber: varchar("invoice_number"),
+  dueDate: date("due_date"),
+  paidAt: timestamp("paid_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("invoices_community_idx").on(table.communityId),
   index("invoices_completion_date_idx").on(table.completionDate),
+  index("invoices_status_idx").on(table.status),
 ]);
 
 export type Invoice = typeof invoices.$inferSelect;
@@ -973,6 +985,10 @@ export const insertInvoiceSchema = z.object({
   pdfObjectKey: z.string().optional().nullable(),
   attachmentLabel: z.string().optional().nullable(),
   attachmentLayerId: z.string().optional().nullable(),
+  status: z.enum(["draft", "submitted", "approved", "paid", "void"]).optional().nullable(),
+  invoiceNumber: z.string().optional().nullable(),
+  dueDate: z.string().optional().nullable(),
+  paidAt: z.string().optional().nullable(),
 });
 
 export const updateInvoiceSchema = z.object({
@@ -984,6 +1000,10 @@ export const updateInvoiceSchema = z.object({
   pdfObjectKey: z.string().optional().nullable(),
   attachmentLabel: z.string().optional().nullable(),
   attachmentLayerId: z.string().optional().nullable(),
+  status: z.enum(["draft", "submitted", "approved", "paid", "void"]).optional().nullable(),
+  invoiceNumber: z.string().optional().nullable(),
+  dueDate: z.string().optional().nullable(),
+  paidAt: z.string().optional().nullable(),
 });
 
 export const invoicesRelations = relations(invoices, ({ one }) => ({

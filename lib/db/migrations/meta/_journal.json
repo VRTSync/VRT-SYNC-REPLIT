@@ -43,6 +43,13 @@
       "when": 1754092800000,
       "tag": "0005_commercial_tier_phase1",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785628800000,
+      "tag": "0006_service_and_invoice_status",
+      "breakpoints": true
     }
   ]
 }
