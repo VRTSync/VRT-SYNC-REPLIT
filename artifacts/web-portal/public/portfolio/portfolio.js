@@ -125,6 +125,94 @@
       if (userAvatar)  userAvatar.textContent  = name ? name.charAt(0).toUpperCase() : '?';
       if (userRole)    userRole.textContent     = user.role === 'admin' ? 'Admin (preview)' : 'Client Admin';
     }
+
+    // Make the user block interactive (popup menu)
+    var sideUser = document.getElementById('side-user');
+    if (sideUser) {
+      // Wrap content in a button
+      var userBtn = document.getElementById('user-menu-btn');
+      if (!userBtn) {
+        sideUser.style.cursor = 'pointer';
+        sideUser.setAttribute('role', 'button');
+        sideUser.setAttribute('aria-haspopup', 'true');
+        sideUser.setAttribute('aria-expanded', 'false');
+        sideUser.setAttribute('tabindex', '0');
+        sideUser.id = 'side-user'; // keep id
+
+        // Create popup menu if it doesn't exist
+        if (!document.getElementById('user-popup-menu')) {
+          var menu = document.createElement('div');
+          menu.id = 'user-popup-menu';
+          menu.className = 'user-popup-menu';
+          menu.setAttribute('role', 'menu');
+          menu.innerHTML =
+            '<button class="upm-item" id="upm-account" role="menuitem">Account</button>' +
+            '<button class="upm-item upm-signout" id="upm-signout" role="menuitem">Sign out</button>';
+          sideUser.style.position = 'relative';
+          sideUser.appendChild(menu);
+
+          // Account nav
+          document.getElementById('upm-account').addEventListener('click', function (e) {
+            e.stopPropagation();
+            closeUserMenu();
+            var search = window.location.search;
+            history.pushState({ route: 'account', params: {} }, '', '/web/portfolio/account' + search);
+            PortfolioRouter.render('account', {});
+          });
+
+          // Sign out
+          var signOutBtn = document.getElementById('upm-signout');
+          signOutBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            signOutBtn.disabled = true;
+            signOutBtn.textContent = 'Signing out…';
+            fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+              .then(function () { window.location.href = '/web/login'; })
+              .catch(function () { window.location.href = '/web/login'; });
+          });
+        }
+
+        function openUserMenu() {
+          var m = document.getElementById('user-popup-menu');
+          if (m) m.classList.add('open');
+          sideUser.setAttribute('aria-expanded', 'true');
+        }
+        function closeUserMenu() {
+          var m = document.getElementById('user-popup-menu');
+          if (m) m.classList.remove('open');
+          sideUser.setAttribute('aria-expanded', 'false');
+        }
+        function toggleUserMenu() {
+          var m = document.getElementById('user-popup-menu');
+          if (m && m.classList.contains('open')) { closeUserMenu(); } else { openUserMenu(); }
+        }
+
+        // Expose closeUserMenu globally for use by the account page
+        window._portfolioCloseUserMenu = closeUserMenu;
+
+        sideUser.addEventListener('click', function (e) {
+          // Don't toggle if click originated inside menu buttons (handled above)
+          if (e.target.closest && e.target.closest('.user-popup-menu')) return;
+          toggleUserMenu();
+        });
+
+        sideUser.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleUserMenu(); }
+          if (e.key === 'Escape') { closeUserMenu(); }
+        });
+
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') { closeUserMenu(); }
+        });
+
+        document.addEventListener('click', function (e) {
+          var m = document.getElementById('user-popup-menu');
+          if (m && m.classList.contains('open') && !sideUser.contains(e.target)) {
+            closeUserMenu();
+          }
+        });
+      }
+    }
   }
 
   // ── Org picker (admin with no ?org= param) ────────────────────────────────
