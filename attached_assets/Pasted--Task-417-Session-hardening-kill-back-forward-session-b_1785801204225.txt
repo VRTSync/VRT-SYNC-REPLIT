@@ -1,0 +1,96 @@
+# Task #417: Session hardening — kill back/forward session bleed
+
+## What & Why
+
+Audit: `docs/auth-session-audit-2026-08-03.md` (attach it).
+
+Observed: after signing out (or switching users), browser back/forward restores the previous user's portal view. Root causes, verified in code:
+
+1. **No `Cache-Control` on authenticated HTML or API JSON** — the four portal shells and every `/api/*` response are cacheable, so back/forward can be served from bfcache/HTTP cache with **zero server contact**, bypassing `requireRole` entirely. (Only `/leaflet-map.html` and `/pin-picker.html` set `no-store` today.)
+2. **`session.regenerate()` is never called on login** — session fixation, and stale-context bleed when switching users in one browser.
+3. **No SPA re-validates on bfcache restore** — nothing listens for `pageshow` with `event.persisted`.
+
+Note: logout **does** destroy the server session correctly (`req.session.destroy`). What users see after back-navigation is cached content, not a live session — the fix is cache discipline + revalidation, not the logout handler.
+
+## Done looks like
+
+- Sign out → back button → **login page** (or an immediate redirect to it). No stale portal content, any portal, any browser.
+- Sign in as user B after user A on the same browser → no page, tab, or back-entry shows A's data.
+- Forward-navigation after logout cannot re-enter the app.
+- Login gets a **fresh session id** every time (verify: `connect.sid` cookie value changes across login).
+- All `/api/*` responses carry `Cache-Control: no-store`.
+- All authenticated shells carry `Cache-Control: no-store`.
+- Static assets (`/*-static/*`) remain cacheable (they contain no user data; `?v=` stamping handles staleness).
+- No behavioral change to session lifetime, mobile app, or login flow beyond the above.
+
+## Steps
+
+### 1. `no-store` on authenticated shells — `artifacts/web-portal/src/server.ts`
+
+Add `res.setHeader("Cache-Control", "no-store");` to the admin, contractor, hoa, pm, and portfolio shell routes (the five `app.get(/^\/web\/…/, requireRole(…))` handlers) and to `/web/login`. Match the exact pattern already used at the `/leaflet-map.html` route (~407).
+
+### 2. Global `no-store` on the API — `artifacts/api-server/src/app.ts`
+
+One middleware, registered before routes:
+
+```ts
+app.use("/api", (_req, res, next) => { res.setHeader("Cache-Control", "no-store"); next(); });
+```
+
+Do not exempt anything for now — every `/api` response is user- or session-scoped. (Attachment/object streaming under `/objects` should be checked: if it already sets its own caching for signed URLs, leave that path as-is and note it.)
+
+### 3. Regenerate session on login — `artifacts/api-server/src/auth.ts`
+
+In **both** the register (~232) and login (~264) handlers, wrap the session writes:
+
+```ts
+await new Promise<void>((resolve, reject) =>
+  req.session.regenerate((err) => (err ? reject(err) : resolve()))
+);
+req.session.userId = user.id;
+// …existing hoaCommunityId / organizationId writes…
+await new Promise<void>((resolve, reject) =>
+  req.session.save((err) => (err ? reject(err) : resolve()))
+);
+```
+
+Keep the existing `session.save` that the login path already does. Failure → 500, do not proceed half-logged-in.
+
+### 4. bfcache guard in every portal boot
+
+In `admin/admin.js`, `portal/portal.js`, and `portfolio/portfolio.js` (one line each, near boot):
+
+```js
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) window.location.reload();
+});
+```
+
+With step 1 in place, the reload hits the server, `requireRole` runs, and an ended session bounces to login.
+
+### 5. History discipline on logout
+
+Everywhere logout is triggered (admin `admin.js` ~43, portfolio user menu from #416, portal equivalent): after awaiting the logout POST, use `window.location.replace('/web/login')` (not `href =`) so the authenticated page is replaced in history rather than left as a forward entry.
+
+### 6. Verify — run in Chrome, Safari, and Firefox (bfcache behavior differs)
+
+- Login as A (any portal) → browse 3 pages → sign out → **Back**: login page or redirect, never A's content. **Forward**: same.
+- Login as A → sign out → login as B (different role) → Back through history: no A content, and B cannot reach A's portal paths (server redirects per role).
+- DevTools → Network: shell and API responses show `Cache-Control: no-store`; `/portfolio-static/*.js` still cacheable.
+- Application → Cookies: `connect.sid` value changes between two consecutive logins.
+- Mobile app: login/logout still works (session regeneration must not break the RN fetch flow — it shares these endpoints).
+- Leaflet iframe and pin-picker still load (their routes already had `no-store`; confirm no double-header conflict).
+
+## Out of scope
+
+- Session lifetime policy changes (30-day maxAge, rolling refresh) — separate decision.
+- "Log out other devices" / destroy-sessions-on-password-change — candidate follow-up.
+- Any change to `requireRole`, scoping middleware, or the login UI.
+
+## Relevant files
+
+- `artifacts/web-portal/src/server.ts` (five shell routes + `/web/login`; `no-store` precedent at ~407)
+- `artifacts/api-server/src/app.ts` (API-wide middleware)
+- `artifacts/api-server/src/auth.ts` (register ~232, login ~264)
+- `artifacts/web-portal/public/admin/admin.js` (~43 logout), `public/portal/portal.js`, `public/portfolio/portfolio.js`
+- `docs/auth-session-audit-2026-08-03.md` (**attach**)
