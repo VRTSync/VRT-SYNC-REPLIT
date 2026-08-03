@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VRTSync — Branch Portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/portfolio-static/portfolio.css">
+  <script>
+    window.PORTAL_CONFIG = {
+      base:         '/web/portfolio',
+      allowedRoles: ['client_admin', 'admin'],
+      label:        'Branch Portfolio'
+    };
+  </script>
+</head>
+<body>
+  <div id="app">
+
+    <nav id="sidebar">
+      <div class="side-brand">
+        <span class="brand-vrt">VRT</span><span class="brand-sync">Sync</span>
+      </div>
+      <div class="side-sub">Branch Portfolio</div>
+      <div id="org-name-area" class="side-org"></div>
+      <div class="side-nav" id="nav-links">
+        <!-- Rendered by portfolio.js -->
+      </div>
+      <div class="side-note" id="side-note-area"></div>
+      <div class="side-user" id="side-user">
+        <div class="avatar" id="user-avatar">?</div>
+        <div>
+          <div id="user-display" style="font-weight:600;font-size:13px;"></div>
+          <div id="user-role-label" style="font-size:11px;opacity:0.6;"></div>
+        </div>
+      </div>
+    </nav>
+
+    <main id="main">
+      <div id="page-content">
+        <div class="pf-spinner">Loading…</div>
+      </div>
+    </main>
+
+  </div>
+
+  <script src="/common-static/utils.js"></script>
+  <script src="/portfolio-static/portfolio-router.js"></script>
+  <script src="/portfolio-static/pages/dashboard.js"></script>
+  <script src="/portfolio-static/portfolio.js"></script>
+</body>
+</html>

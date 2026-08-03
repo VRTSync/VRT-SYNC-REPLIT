@@ -59,7 +59,7 @@ const STATIC_VERSION = Date.now().toString(36);
 
 function stampHtml(html: string): string {
   return html.replace(
-    /(\/(?:admin|portal|common)-static\/[^"'?]+\.(?:css|js))/g,
+    /(\/(?:admin|portal|common|portfolio)-static\/[^"'?]+\.(?:css|js))/g,
     `$1?v=${STATIC_VERSION}`
   );
 }
@@ -108,9 +108,10 @@ app.use(
 );
 
 // ── Static asset mounts ──────────────────────────────────────────────────────
-app.use("/admin-static", express.static(path.join(PUBLIC_ROOT, "admin")));
-app.use("/portal-static", express.static(path.join(PUBLIC_ROOT, "portal")));
-app.use("/common-static", express.static(path.join(PUBLIC_ROOT, "common")));
+app.use("/admin-static",     express.static(path.join(PUBLIC_ROOT, "admin")));
+app.use("/portal-static",    express.static(path.join(PUBLIC_ROOT, "portal")));
+app.use("/common-static",    express.static(path.join(PUBLIC_ROOT, "common")));
+app.use("/portfolio-static", express.static(path.join(PUBLIC_ROOT, "portfolio")));
 
 // ── Load HTML shells ─────────────────────────────────────────────────────────
 const adminShell = stampHtml(
@@ -124,6 +125,9 @@ const hoaShell = stampHtml(
 );
 const pmShell = stampHtml(
   fs.readFileSync(path.join(TEMPLATES_ROOT, "pm-shell.html"), "utf-8")
+);
+const portfolioShell = stampHtml(
+  fs.readFileSync(path.join(TEMPLATES_ROOT, "portfolio-shell.html"), "utf-8")
 );
 
 // ── Login page (inline) ───────────────────────────────────────────────────────
@@ -223,7 +227,7 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
 </div>
 <footer>&copy; 2026 VRTSync</footer>
 <script>
-const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard'};
+const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard',client_admin:'/web/portfolio/dashboard'};
 document.getElementById('btn').addEventListener('click',doLogin);
 document.getElementById('u').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('p').focus()}});
 document.getElementById('p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
@@ -290,6 +294,7 @@ const roleDashboard: Record<string, string> = {
   contractor: "/web/contractor/dashboard",
   hoa_admin: "/web/hoa/dashboard",
   hoa_member: "/web/hoa/dashboard",
+  client_admin: "/web/portfolio/dashboard",
 };
 
 function requireRole(allowed: string[]) {
@@ -363,6 +368,16 @@ app.get("/web/pm", (_req: Request, res: Response) =>
 app.get(/^\/web\/pm\/.*$/, requireRole(["property_manager"]), (_req: Request, res: Response) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(pmShell);
+});
+
+// Portfolio routes (client_admin + admin)
+app.get("/web/portfolio", (_req: Request, res: Response) =>
+  res.redirect("/web/portfolio/dashboard")
+);
+
+app.get(/^\/web\/portfolio\/.*$/, requireRole(["client_admin", "admin"]), (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(portfolioShell);
 });
 
 // Leaflet map
