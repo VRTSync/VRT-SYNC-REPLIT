@@ -172,6 +172,28 @@ export function requireAdminOrMapCreator(req: Request, res: Response, next: Next
   });
 }
 
+/**
+ * requireClientOrAdmin — passes for admin OR client_admin roles.
+ * Sets req.currentUser in both cases. Do not modify requireClient or enforceOrgScoping.
+ */
+export async function requireClientOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!req.session.userId) {
+    res.status(401).json({ message: "Not authenticated" });
+    return;
+  }
+  try {
+    const user = await storage.getUserById(req.session.userId);
+    if (!user || (user.role !== "admin" && !isClientRole(user.role))) {
+      res.status(403).json({ message: "Client admin or admin access required" });
+      return;
+    }
+    (req as any).currentUser = user;
+    next();
+  } catch {
+    res.status(500).json({ message: "Internal error" });
+  }
+}
+
 // Rate limiters for auth endpoints
 // Verification: send 11 rapid POSTs to /api/auth/login — the 11th returns 429.
 const loginLimiter = rateLimit({

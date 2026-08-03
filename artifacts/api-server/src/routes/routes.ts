@@ -3,7 +3,7 @@ import { createServer, type Server } from "node:http";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
+import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, requireClientOrAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
@@ -1016,7 +1016,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const path = await import("path");
       const kmlPath = path.join(process.cwd(), "server/public/admin/data/huntington-trails-xeriscape.kml");
       const kmlText = await fs.readFile(kmlPath, "utf-8");
+      // @ts-ignore – compiled JS modules, no declaration files
       const { convertKmlToGeojson } = await import("./kmlConverter");
+      // @ts-ignore
       const { computeAreaSqFt } = await import("./assetSync");
       const { geojson } = convertKmlToGeojson(kmlText);
       const polygonFeatures = geojson.features.filter((f: any) =>
@@ -1233,7 +1235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Xeriscape Community Polygons ────────────────────────────────────────────
   app.get("/api/admin/xeriscape/community/:communityId/polygons", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { communityId } = req.params;
+      const { communityId } = req.params as { communityId: string };
 
       const bluegrassAssets = await db
         .select()
@@ -1364,7 +1366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Xeriscape Packet CRUD ───────────────────────────────────────────────────
   app.get("/api/admin/xeriscape/records/:recordId/packets", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { recordId } = req.params;
+      const { recordId } = req.params as { recordId: string };
       const packets = await db
         .select()
         .from(xeriscapePackets)
@@ -1379,7 +1381,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/xeriscape/records/:recordId/packets", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { recordId } = req.params;
+      const { recordId } = req.params as { recordId: string };
       const { packetTitle, packetSummaryText, narrativeIntro, narrativeRecommendation, narrativeNextSteps } = req.body;
 
       if (!packetTitle || typeof packetTitle !== "string" || !packetTitle.trim()) {
@@ -1436,7 +1438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/admin/xeriscape/records/:recordId/packets/:packetId", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { recordId, packetId } = req.params;
+      const { recordId, packetId } = req.params as { recordId: string; packetId: string };
       const { packetTitle, packetSummaryText, narrativeIntro, narrativeRecommendation, narrativeNextSteps, packetStatus } = req.body;
 
       const existing = await db
@@ -1606,7 +1608,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: role || "contractor",
         hoaCommunityId: isHoaRole(role) ? hoaCommunityId : undefined,
         organizationId: isClientRole(role) ? organizationId : undefined,
-      });
+      } as any);
       if (isHoaRole(role) && hoaCommunityId) {
         await storage.addCommunityMembers(hoaCommunityId, [user.id]);
       }
@@ -2413,7 +2415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ...parsed.data,
             createdBy: reqUser.id,
             updatedBy: reqUser.id,
-          });
+          } as any);
           const properties = Object.entries(bodyProps).map(([key, value]) => ({ key, value }));
           if (properties.length > 0) {
             await storage.upsertAssetProperties(asset.id, properties);
@@ -3633,7 +3635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const rows: any[] = [];
       for (let i = 0; i < records.length; i++) {
-        const r = records[i];
+        const r = records[i] as any;
         const title = r["Ticket Title"] || r["Title"] || r["title"] || "";
         const ticketType = r["Ticket Type"] || r["Type"] || r["ticket_type"] || "";
         const rawPriority = (r["Priority"] || r["priority"] || "medium").toLowerCase();
@@ -4447,7 +4449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
-      const notif = await storage.markNotificationRead(req.params.id, req.session.userId!);
+      const notif = await storage.markNotificationRead((req.params.id as string), req.session.userId!);
       if (!notif) return res.status(404).json({ error: "Notification not found" });
       res.json(notif);
     } catch (error) {
@@ -4494,7 +4496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return res.status(401).json({ error: "User not found" });
       if (user.role === 'contractor') return res.status(403).json({ error: "Access denied" });
 
-      const invoice = await storage.getInvoiceById(req.params.id);
+      const invoice = await storage.getInvoiceById((req.params.id as string));
       if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
       if (user.role !== 'admin') {
@@ -4533,18 +4535,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const existing = await storage.getInvoiceById(req.params.id);
+      const existing = await storage.getInvoiceById((req.params.id as string));
       if (!existing) return res.status(404).json({ error: "Invoice not found" });
       const parsed = updateInvoiceSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-      const targetCommunityId = parsed.data.communityId || existing.communityId;
+      const targetCommunityId = (parsed.data as any).communityId || existing.communityId;
       if (parsed.data.attachmentLayerId) {
         const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
         if (!layer || layer.communityId !== targetCommunityId) {
           return res.status(400).json({ error: "Attachment layer does not belong to the selected community" });
         }
       }
-      const updated = await storage.updateInvoice(req.params.id, parsed.data);
+      const updated = await storage.updateInvoice((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
       console.error("Update invoice error:", error);
@@ -4554,9 +4556,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const existing = await storage.getInvoiceById(req.params.id);
+      const existing = await storage.getInvoiceById((req.params.id as string));
       if (!existing) return res.status(404).json({ error: "Invoice not found" });
-      await storage.deleteInvoice(req.params.id);
+      await storage.deleteInvoice((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Delete invoice error:", error);
@@ -4723,7 +4725,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!['admin', 'property_manager'].includes(user.role)) {
         return res.status(403).json({ error: "Access denied" });
       }
-      const contract = await storage.getContractById(req.params.id);
+      const contract = await storage.getContractById((req.params.id as string));
       if (!contract) return res.status(404).json({ error: "Contract not found" });
 
       if (user.role === 'property_manager') {
@@ -4762,7 +4764,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const existing = await storage.getContractById(req.params.id);
+      const existing = await storage.getContractById((req.params.id as string));
       if (!existing) return res.status(404).json({ error: "Contract not found" });
       const parsed = updateContractSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
@@ -4780,7 +4782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const updated = await storage.updateContract(req.params.id, parsed.data);
+      const updated = await storage.updateContract((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
       console.error("Update contract error:", error);
@@ -4790,9 +4792,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/contracts/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const existing = await storage.getContractById(req.params.id);
+      const existing = await storage.getContractById((req.params.id as string));
       if (!existing) return res.status(404).json({ error: "Contract not found" });
-      await storage.deleteContract(req.params.id);
+      await storage.deleteContract((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Delete contract error:", error);
@@ -4866,12 +4868,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
-      const folder = await storage.getDriveFolder(req.params.id);
+      const folder = await storage.getDriveFolder((req.params.id as string));
       if (!folder) return res.status(404).json({ error: "Folder not found" });
       if (!(await checkCommunityAccess(user, folder.communityId, res))) return;
       const parsed = updateDriveFolderSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
-      const updated = await storage.updateDriveFolder(req.params.id, parsed.data);
+      const updated = await storage.updateDriveFolder((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
       console.error("Update drive folder error:", error);
@@ -4883,10 +4885,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
-      const folder = await storage.getDriveFolder(req.params.id);
+      const folder = await storage.getDriveFolder((req.params.id as string));
       if (!folder) return res.status(404).json({ error: "Folder not found" });
       if (!(await checkCommunityAccess(user, folder.communityId, res))) return;
-      await storage.deleteDriveFolder(req.params.id);
+      await storage.deleteDriveFolder((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       if (error instanceof Error && error.message === "FOLDER_NOT_EMPTY") {
@@ -4925,12 +4927,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
-      const file = await storage.getDriveFile(req.params.id);
+      const file = await storage.getDriveFile((req.params.id as string));
       if (!file) return res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const parsed = updateDriveFileSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid data" });
-      const updated = await storage.updateDriveFile(req.params.id, parsed.data);
+      const updated = await storage.updateDriveFile((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
       console.error("Update drive file error:", error);
@@ -4942,12 +4944,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await requireDriveAccess(req, res, driveMutateRoles);
       if (!user) return;
-      const file = await storage.getDriveFile(req.params.id);
+      const file = await storage.getDriveFile((req.params.id as string));
       if (!file) return res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const objectStorageService = new ObjectStorageService();
       await objectStorageService.deleteObject(file.fileRef);
-      await storage.deleteDriveFile(req.params.id);
+      await storage.deleteDriveFile((req.params.id as string));
       res.status(204).send();
     } catch (error) {
       console.error("Delete drive file error:", error);
@@ -4959,7 +4961,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = await requireDriveAccess(req, res, driveReadRoles);
       if (!user) return;
-      const file = await storage.getDriveFile(req.params.id);
+      const file = await storage.getDriveFile((req.params.id as string));
       if (!file) return res.status(404).json({ error: "File not found" });
       if (!(await checkCommunityAccess(user, file.communityId, res))) return;
       const objectStorageService = new ObjectStorageService();
@@ -5061,7 +5063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
       if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
 
-      const contact = await storage.getContactById(req.params.id);
+      const contact = await storage.getContactById((req.params.id as string));
       if (!contact) return res.status(404).json({ error: "Contact not found" });
 
       if (user.role === "property_manager") {
@@ -5088,7 +5090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // admin: unrestricted
       }
 
-      const updated = await storage.updateContact(req.params.id, parsed.data);
+      const updated = await storage.updateContact((req.params.id as string), parsed.data);
       if (!updated) return res.status(404).json({ error: "Contact not found" });
       res.json(updated);
     } catch (err) {
@@ -5104,7 +5106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const contactsWriteRoles = ["admin", "property_manager", "hoa_admin"];
       if (!contactsWriteRoles.includes(user.role)) return res.status(403).json({ error: "Access denied" });
 
-      const contact = await storage.getContactById(req.params.id);
+      const contact = await storage.getContactById((req.params.id as string));
       if (!contact) return res.status(404).json({ error: "Contact not found" });
 
       if (user.role === "property_manager") {
@@ -5116,7 +5118,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      await storage.deleteContact(req.params.id);
+      await storage.deleteContact((req.params.id as string));
       res.status(204).send();
     } catch (err) {
       console.error("Delete contact error:", err);
@@ -5140,6 +5142,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Portfolio me error:", error);
       res.status(500).json({ error: "Failed to fetch portfolio" });
+    }
+  });
+
+  // ── Portfolio Phase 2b: read endpoints (requireClientOrAdmin) ────────────
+  //
+  // Org resolution helper (inline):
+  //   admin → uses ?organizationId= query param (400 if absent)
+  //   client_admin → uses session.organizationId (ignores any param)
+  // enforceOrgScoping already blocks client_admin cross-org param abuse.
+  function resolvePortfolioOrg(req: Request): { orgId: string | null; status: number; error: string } | { orgId: string } {
+    const user = (req as any).currentUser;
+    if (user?.role === "admin") {
+      const orgId = req.query.organizationId as string | undefined;
+      if (!orgId) return { orgId: null, status: 400, error: "organizationId query param is required for admin" };
+      return { orgId };
+    }
+    // client_admin: use currentUser.organizationId (fresh from DB) first, session is fallback only.
+    // This ensures a reassigned client admin can't continue reading their old org after session expiry.
+    const orgId = user?.organizationId ?? req.session.organizationId;
+    if (!orgId) return { orgId: null, status: 403, error: "No organization assigned to this account" };
+    return { orgId };
+  }
+
+  app.get("/api/portfolio/dashboard", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getPortfolioDashboard(resolved.orgId);
+      console.log(`[GET /api/portfolio/dashboard] org=${resolved.orgId} (${Date.now() - t0}ms)`);
+      return res.json(data);
+    } catch (error) {
+      console.error("Portfolio dashboard error:", error);
+      return res.status(500).json({ error: "Failed to fetch portfolio dashboard" });
+    }
+  });
+
+  app.get("/api/portfolio/branches", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getPortfolioBranches(resolved.orgId);
+      console.log(`[GET /api/portfolio/branches] org=${resolved.orgId} count=${data.length} (${Date.now() - t0}ms)`);
+      return res.json(data);
+    } catch (error) {
+      console.error("Portfolio branches error:", error);
+      return res.status(500).json({ error: "Failed to fetch portfolio branches" });
+    }
+  });
+
+  app.get("/api/portfolio/branches/:communityId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const communityId = req.params.communityId as string;
+      const data = await storage.getPortfolioBranchDetail(resolved.orgId, communityId);
+      if (!data) {
+        // null means community not found or doesn't belong to this org
+        return res.status(403).json({ error: "Branch not found or does not belong to this organization" });
+      }
+      console.log(`[GET /api/portfolio/branches/:communityId] org=${resolved.orgId} branch=${communityId} (${Date.now() - t0}ms)`);
+      return res.json(data);
+    } catch (error) {
+      console.error("Portfolio branch detail error:", error);
+      return res.status(500).json({ error: "Failed to fetch branch detail" });
+    }
+  });
+
+  app.get("/api/portfolio/groups", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getPortfolioGroups(resolved.orgId);
+      console.log(`[GET /api/portfolio/groups] org=${resolved.orgId} count=${data.length} (${Date.now() - t0}ms)`);
+      return res.json(data);
+    } catch (error) {
+      console.error("Portfolio groups error:", error);
+      return res.status(500).json({ error: "Failed to fetch portfolio groups" });
     }
   });
 

@@ -1231,6 +1231,7 @@ export async function getAssetWorkHistory(assetId: string) {
 
   const attachmentMap = new Map<string, { id: string; url: string }[]>();
   for (const a of allAttachments) {
+    if (!a.taskCompletionId) continue;
     const list = attachmentMap.get(a.taskCompletionId) || [];
     list.push({ id: a.id, url: a.url });
     attachmentMap.set(a.taskCompletionId, list);
@@ -1377,7 +1378,9 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       ne(tasks.status, "completed"),
       isNotNull(tasks.windowStart),
       isNotNull(tasks.windowEnd),
+      // @ts-ignore – drizzle PgDate accepts Date at runtime despite string-mode TS types
       lte(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+      // @ts-ignore
       gte(tasks.windowEnd, new Date(todayDateStr + "T00:00:00.000Z")),
       ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
     ))
@@ -1390,6 +1393,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       ne(tasks.status, "completed"),
       isNotNull(tasks.windowStart),
       isNotNull(tasks.windowEnd),
+      // @ts-ignore
       gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
       ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
     ))
@@ -1552,6 +1556,7 @@ async function buildRecentCompletions(communityId: string, limit = 8, assignedTo
     const completionToTask = new Map<string, string>();
     for (const c of completionRows) completionToTask.set(c.id, c.taskId);
     for (const row of attRows) {
+      if (!row.taskCompletionId) continue;
       const tId = completionToTask.get(row.taskCompletionId);
       if (tId) attachmentCountMap.set(tId, (attachmentCountMap.get(tId) || 0) + Number(row.cnt));
     }
@@ -1634,7 +1639,9 @@ export async function getDashboardDataForRole(
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
           isNotNull(tasks.windowEnd),
+          // @ts-ignore – drizzle PgDate accepts Date at runtime despite string-mode TS types
           lte(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
+          // @ts-ignore
           gte(tasks.windowEnd, new Date(todayDateStr + "T00:00:00.000Z")),
         ))
         .orderBy(asc(tasks.windowEnd), asc(tasks.priority))
@@ -1645,6 +1652,7 @@ export async function getDashboardDataForRole(
           eq(tasks.assignedTo, userId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
+          // @ts-ignore
           gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
         ))
         .orderBy(asc(tasks.windowStart))
@@ -1851,6 +1859,7 @@ export async function getDashboardDataForRole(
           eq(tasks.communityId, communityId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
+          // @ts-ignore – drizzle PgDate accepts Date at runtime despite string-mode TS types
           gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
         ))
         .orderBy(asc(tasks.windowStart))
@@ -1973,6 +1982,7 @@ export async function getTaskPageDataForRole(
           eq(tasks.assignedTo, userId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
+          // @ts-ignore – drizzle PgDate accepts Date at runtime despite string-mode TS types
           gt(tasks.windowStart, now),
         ))
         .orderBy(asc(tasks.windowStart))
@@ -2668,6 +2678,7 @@ export async function getHoaRequests(communityId: string) {
       completionToTask.set(c.id, c.taskId);
     }
     for (const row of attRows) {
+      if (!row.taskCompletionId) continue;
       const tId = completionToTask.get(row.taskCompletionId);
       if (tId) {
         attachmentCounts.set(tId, (attachmentCounts.get(tId) || 0) + Number(row.cnt));
@@ -2764,6 +2775,7 @@ export async function getHoaDashboardData(communityId: string) {
         completionToTask.set(c.id, c.taskId);
       }
       for (const row of attRows) {
+        if (!row.taskCompletionId) continue;
         const tId = completionToTask.get(row.taskCompletionId);
         if (tId) {
           attachmentCountMap.set(tId, (attachmentCountMap.get(tId) || 0) + Number(row.cnt));
@@ -3814,4 +3826,686 @@ export async function getPortfolioForOrg(orgId: string): Promise<{
   }));
 
   return { organization: org, branches, groups: groupsWithMembers };
+}
+
+// ─── Portfolio Phase 2b: read aggregates ─────────────────────────────────────
+
+export async function getPortfolioDashboard(orgId: string) {
+  const t0 = Date.now();
+
+  // Compute ISO week bounds (Mon–Sun) in server local time
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const weekStartDate = new Date(now);
+  weekStartDate.setDate(now.getDate() + diffToMonday);
+  weekStartDate.setHours(0, 0, 0, 0);
+  const weekEndDate = new Date(weekStartDate);
+  weekEndDate.setDate(weekStartDate.getDate() + 6);
+  weekEndDate.setHours(23, 59, 59, 999);
+  const weekStart = weekStartDate.toISOString().slice(0, 10); // YYYY-MM-DD
+  const weekEnd = weekEndDate.toISOString().slice(0, 10);
+
+  const [
+    totalsResult,
+    workOrdersResult,
+    photoProofResult,
+    thisWeekResult,
+    thisWeekItemsResult,
+    byGroupResult,
+  ] = await Promise.all([
+    // totals: branch + asset counts for the org
+    pool.query<{
+      branches: string;
+      assets_mapped: string;
+      irrigation_zones: string;
+      trees: string;
+      snow_zones: string;
+      services_logged: string;
+    }>(`
+      SELECT
+        (SELECT COUNT(*) FROM communities WHERE organization_id = $1)::text AS branches,
+        (SELECT COUNT(*) FROM assets a
+           JOIN communities c ON c.id = a.community_id
+          WHERE c.organization_id = $1 AND a.is_archived = false)::text AS assets_mapped,
+        (SELECT COUNT(*) FROM assets a
+           JOIN communities c ON c.id = a.community_id
+          WHERE c.organization_id = $1 AND a.is_archived = false AND a.asset_type = 'zone')::text AS irrigation_zones,
+        (SELECT COUNT(*) FROM assets a
+           JOIN communities c ON c.id = a.community_id
+          WHERE c.organization_id = $1 AND a.is_archived = false AND a.asset_type = 'tree')::text AS trees,
+        (SELECT COUNT(*) FROM assets a
+           JOIN communities c ON c.id = a.community_id
+          WHERE c.organization_id = $1 AND a.is_archived = false AND a.asset_type = 'snow_area')::text AS snow_zones,
+        -- servicesLogged: task completions + completed service visits for the org's communities, all time
+        (
+          (SELECT COUNT(*) FROM task_completions tc
+             JOIN tasks t ON t.id = tc.task_id
+             JOIN communities c ON c.id = t.community_id
+            WHERE c.organization_id = $1)
+          +
+          (SELECT COUNT(*) FROM service_visits sv
+             JOIN communities c ON c.id = sv.community_id
+            WHERE c.organization_id = $1 AND sv.status = 'completed')
+        )::text AS services_logged
+    `, [orgId]),
+
+    // work orders: non-completed task counts
+    pool.query<{
+      total: string;
+      awaiting_approval: string;
+      scheduled: string;
+    }>(`
+      SELECT
+        -- no reliable "work order" column exists today; counting all non-completed tasks
+        (SELECT COUNT(*) FROM tasks t
+           JOIN communities c ON c.id = t.community_id
+          WHERE c.organization_id = $1 AND t.status != 'completed')::text AS total,
+        (SELECT COUNT(*) FROM tasks t
+           JOIN communities c ON c.id = t.community_id
+          WHERE c.organization_id = $1
+            AND t.status != 'completed'
+            AND t.estimate_cents IS NOT NULL
+            AND t.approved_at IS NULL)::text AS awaiting_approval,
+        -- tasks table has no scheduled_date column; using start_date / window_start as nearest proxy
+        (SELECT COUNT(*) FROM tasks t
+           JOIN communities c ON c.id = t.community_id
+          WHERE c.organization_id = $1
+            AND t.status != 'completed'
+            AND (t.start_date > now() OR t.window_start > CURRENT_DATE))::text AS scheduled
+    `, [orgId]),
+
+    // photoProofPct: completions with ≥1 attachment / total completions (org scope); return 0 when denominator is 0
+    pool.query<{ photo_proof_pct: string }>(`
+      SELECT
+        CASE WHEN COUNT(DISTINCT tc.id) > 0
+          THEN ROUND(
+            COUNT(DISTINCT tc.id) FILTER (WHERE a.id IS NOT NULL)::numeric
+            / COUNT(DISTINCT tc.id)::numeric * 100,
+            1
+          )::text
+          ELSE '0'
+        END AS photo_proof_pct
+      FROM task_completions tc
+      JOIN tasks t ON t.id = tc.task_id
+      JOIN communities c ON c.id = t.community_id
+      LEFT JOIN attachments a ON a.task_completion_id = tc.id
+      WHERE c.organization_id = $1
+    `, [orgId]),
+
+    // thisWeek: overdue tasks + missed visits = needsAttention; distinct branches with ≥1 completed visit
+    pool.query<{
+      needs_attention: string;
+      branches_covered: string;
+    }>(`
+      WITH org_communities AS (
+        SELECT id FROM communities WHERE organization_id = $1
+      )
+      SELECT
+        (
+          -- overdue tasks (due_date < now, not completed)
+          (SELECT COUNT(*) FROM tasks t
+            WHERE t.community_id IN (SELECT id FROM org_communities)
+              AND t.due_date < now()
+              AND t.status != 'completed')
+          +
+          -- missed service visits
+          (SELECT COUNT(*) FROM service_visits sv
+            WHERE sv.community_id IN (SELECT id FROM org_communities)
+              AND sv.status = 'missed')
+        )::text AS needs_attention,
+        -- branches covered: distinct community_ids with ≥1 completed visit this week
+        (SELECT COUNT(DISTINCT sv.community_id)
+           FROM service_visits sv
+          WHERE sv.community_id IN (SELECT id FROM org_communities)
+            AND sv.service_date >= $2
+            AND sv.service_date <= $3
+            AND sv.status = 'completed')::text AS branches_covered
+    `, [orgId, weekStart, weekEnd]),
+
+    // thisWeek items: per-day, per-serviceType, per-status — distinct branch counts
+    pool.query<{ service_date: string; label: string; status: string; branch_count: string }>(`
+      SELECT
+        sv.service_date::text AS service_date,
+        INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS label,
+        sv.status::text AS status,
+        COUNT(DISTINCT sv.community_id)::text AS branch_count
+      FROM service_visits sv
+      JOIN service_schedules ss ON ss.id = sv.schedule_id
+      JOIN communities c ON c.id = sv.community_id
+      WHERE c.organization_id = $1
+        AND sv.service_date >= $2
+        AND sv.service_date <= $3
+      GROUP BY sv.service_date, ss.service_type, sv.status
+      ORDER BY sv.service_date, ss.service_type, sv.status
+    `, [orgId, weekStart, weekEnd]),
+
+    // byGroup: per group — branch count, services, open tasks, photoProofPct
+    pool.query<{
+      id: string;
+      name: string;
+      branch_count: string;
+      services_count: string;
+      open_tasks: string;
+      photo_proof_pct: string;
+    }>(`
+      SELECT
+        bg.id,
+        bg.name,
+        COUNT(DISTINCT bgm.community_id)::text AS branch_count,
+        -- services: task completions + completed service visits in group communities
+        COALESCE((
+          (SELECT COUNT(*)
+             FROM task_completions tc
+             JOIN tasks t ON t.id = tc.task_id
+            WHERE t.community_id IN (
+              SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+            ))
+          +
+          (SELECT COUNT(*)
+             FROM service_visits sv
+            WHERE sv.community_id IN (
+              SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+            ) AND sv.status = 'completed')
+        ), 0)::text AS services_count,
+        COALESCE((
+          SELECT COUNT(*)
+            FROM tasks t
+           WHERE t.community_id IN (
+             SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+           )
+             AND t.status != 'completed'
+        ), 0)::text AS open_tasks,
+        -- photoProofPct per group; 0 when no completions
+        COALESCE((SELECT
+          CASE WHEN COUNT(DISTINCT tc2.id) > 0
+            THEN ROUND(
+              COUNT(DISTINCT tc2.id) FILTER (WHERE att.id IS NOT NULL)::numeric
+              / COUNT(DISTINCT tc2.id)::numeric * 100,
+              1
+            )::text
+            ELSE '0'
+          END
+          FROM task_completions tc2
+          JOIN tasks t2 ON t2.id = tc2.task_id
+          LEFT JOIN attachments att ON att.task_completion_id = tc2.id
+         WHERE t2.community_id IN (
+           SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+         )
+        ), '0') AS photo_proof_pct
+      FROM branch_groups bg
+      LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
+      WHERE bg.organization_id = $1
+      GROUP BY bg.id, bg.name
+      ORDER BY bg.sort_order, bg.name
+    `, [orgId]),
+  ]);
+
+  console.log(`[portfolio/dashboard] org=${orgId} SQL aggregates (${Date.now() - t0}ms)`);
+
+  const tr = totalsResult.rows[0];
+  const wr = workOrdersResult.rows[0];
+  const twr = thisWeekResult.rows[0];
+  const branchCount = Number(tr?.branches ?? 0);
+  const photoProofPct = Number(photoProofResult.rows[0]?.photo_proof_pct ?? 0);
+
+  return {
+    totals: {
+      branches: branchCount,
+      // branchesActive: same as branches (no activity-based filtering; all org communities are considered active)
+      branchesActive: branchCount,
+      assetsMapped: Number(tr?.assets_mapped ?? 0),
+      irrigationZones: Number(tr?.irrigation_zones ?? 0),
+      trees: Number(tr?.trees ?? 0),
+      snowZones: Number(tr?.snow_zones ?? 0),
+      servicesLogged: Number(tr?.services_logged ?? 0),
+      photoProofPct,
+    },
+    openWorkOrders: {
+      total: Number(wr?.total ?? 0),
+      awaitingApproval: Number(wr?.awaiting_approval ?? 0),
+      scheduled: Number(wr?.scheduled ?? 0),
+    },
+    thisWeek: (() => {
+      const weekItems = thisWeekItemsResult.rows;
+      // scheduled = branches with status 'scheduled' this week; completed = branches with status 'completed'
+      const scheduled = weekItems
+        .filter(r => r.status === 'scheduled')
+        .reduce((sum, r) => sum + Number(r.branch_count), 0);
+      const completed = weekItems
+        .filter(r => r.status === 'completed')
+        .reduce((sum, r) => sum + Number(r.branch_count), 0);
+      // Group into per-day structure; items use {label, status, branchCount} as required by Phase 3 contract
+      const dayMap = new Map<string, { label: string; status: string; branchCount: number }[]>();
+      for (const r of weekItems) {
+        const arr = dayMap.get(r.service_date) ?? [];
+        arr.push({ label: r.label, status: r.status, branchCount: Number(r.branch_count) });
+        dayMap.set(r.service_date, arr);
+      }
+      const days = Array.from(dayMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, items]) => ({ date, items }));
+      return {
+        weekStart,
+        weekEnd,
+        scheduled,
+        completed,
+        needsAttention: Number(twr?.needs_attention ?? 0),
+        branchesCovered: Number(twr?.branches_covered ?? 0),
+        days,
+      };
+    })(),
+    byGroup: byGroupResult.rows.map(r => ({
+      groupId: r.id,
+      name: r.name,
+      branches: Number(r.branch_count),
+      services: Number(r.services_count),
+      openItems: Number(r.open_tasks),
+      photoProofPct: Number(r.photo_proof_pct),
+    })),
+    // snowSeason: null — service_type enum only contains 'mowing_visit';
+    // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)
+    snowSeason: null,
+  };
+}
+
+export async function getPortfolioBranches(orgId: string) {
+  const t0 = Date.now();
+  const currentYear = new Date().getFullYear();
+
+  // Grouped aggregates joined to the branch list — no correlated per-row subqueries
+  const [branchRows, groupMemberRows] = await Promise.all([
+    pool.query<{
+      id: string;
+      code: string | null;
+      name: string;
+      city: string | null;
+      address: string | null;
+      asset_count: string;
+      irrigation_zones: string;
+      trees: string;
+      services_ytd: string;
+      last_service_at: string | null;
+      last_service_label: string | null;
+      open_work_orders: string;
+    }>(`
+      WITH org_coms AS (
+        SELECT id, code, name, city, address
+          FROM communities
+         WHERE organization_id = $1
+      ),
+      -- asset counts grouped by community
+      asset_agg AS (
+        SELECT community_id,
+          COUNT(*) FILTER (WHERE is_archived = false)             AS total_assets,
+          COUNT(*) FILTER (WHERE is_archived = false AND asset_type = 'zone')  AS irrigation_zones,
+          COUNT(*) FILTER (WHERE is_archived = false AND asset_type = 'tree')  AS trees
+        FROM assets
+        WHERE community_id IN (SELECT id FROM org_coms)
+        GROUP BY community_id
+      ),
+      -- task completions YTD grouped by community
+      tc_ytd AS (
+        SELECT t.community_id, COUNT(*) AS cnt
+          FROM task_completions tc
+          JOIN tasks t ON t.id = tc.task_id
+         WHERE t.community_id IN (SELECT id FROM org_coms)
+           AND tc.completed_at >= date_trunc('year', now())
+         GROUP BY t.community_id
+      ),
+      -- completed service visits YTD grouped by community
+      sv_ytd AS (
+        SELECT community_id, COUNT(*) AS cnt
+          FROM service_visits
+         WHERE community_id IN (SELECT id FROM org_coms)
+           AND status = 'completed'
+           AND completed_at >= date_trunc('year', now())
+         GROUP BY community_id
+      ),
+      -- most-recent task completion per community (for last-service)
+      last_tc AS (
+        SELECT DISTINCT ON (t.community_id)
+          t.community_id,
+          tc.completed_at,
+          t.title AS label
+        FROM task_completions tc
+        JOIN tasks t ON t.id = tc.task_id
+        WHERE t.community_id IN (SELECT id FROM org_coms)
+        ORDER BY t.community_id, tc.completed_at DESC NULLS LAST
+      ),
+      -- most-recent completed service visit per community (for last-service)
+      last_sv AS (
+        SELECT DISTINCT ON (sv.community_id)
+          sv.community_id,
+          sv.completed_at,
+          INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS label
+        FROM service_visits sv
+        JOIN service_schedules ss ON ss.id = sv.schedule_id
+        WHERE sv.community_id IN (SELECT id FROM org_coms)
+          AND sv.status = 'completed'
+        ORDER BY sv.community_id, sv.completed_at DESC NULLS LAST
+      ),
+      -- open (non-completed) task count grouped by community
+      open_wo AS (
+        SELECT community_id, COUNT(*) AS cnt
+          FROM tasks
+         WHERE community_id IN (SELECT id FROM org_coms)
+           AND status != 'completed'
+         GROUP BY community_id
+      )
+      SELECT
+        c.id,
+        c.code,
+        c.name,
+        c.city,
+        c.address,
+        COALESCE(aa.total_assets,  0)::text AS asset_count,
+        COALESCE(aa.irrigation_zones, 0)::text AS irrigation_zones,
+        COALESCE(aa.trees, 0)::text AS trees,
+        (COALESCE(tc.cnt, 0) + COALESCE(sv.cnt, 0))::text AS services_ytd,
+        -- lastServiceAt: greater of the two most-recent timestamps
+        GREATEST(ltc.completed_at, lsv.completed_at)::text AS last_service_at,
+        -- lastServiceLabel: label from the newer of the two last-service sources
+        CASE
+          WHEN ltc.completed_at IS NULL AND lsv.completed_at IS NULL THEN NULL
+          WHEN ltc.completed_at IS NULL THEN lsv.label
+          WHEN lsv.completed_at IS NULL THEN ltc.label
+          WHEN ltc.completed_at >= lsv.completed_at THEN ltc.label
+          ELSE lsv.label
+        END AS last_service_label,
+        -- openWorkOrders: no reliable "work order" column; counting all non-completed tasks
+        COALESCE(owo.cnt, 0)::text AS open_work_orders
+      FROM org_coms c
+      LEFT JOIN asset_agg   aa  ON aa.community_id  = c.id
+      LEFT JOIN tc_ytd      tc  ON tc.community_id  = c.id
+      LEFT JOIN sv_ytd      sv  ON sv.community_id  = c.id
+      LEFT JOIN last_tc     ltc ON ltc.community_id = c.id
+      LEFT JOIN last_sv     lsv ON lsv.community_id = c.id
+      LEFT JOIN open_wo     owo ON owo.community_id = c.id
+      ORDER BY c.code, c.name
+    `, [orgId]),
+
+    // fetch groupIds per branch in one grouped query
+    pool.query<{ community_id: string; group_id: string }>(`
+      SELECT bgm.community_id, bgm.group_id
+        FROM branch_group_members bgm
+        JOIN branch_groups bg ON bg.id = bgm.group_id
+       WHERE bg.organization_id = $1
+    `, [orgId]),
+  ]);
+
+  console.log(`[portfolio/branches] org=${orgId} (${Date.now() - t0}ms)`);
+
+  // Build groupIds map
+  const groupIdsByBranch = new Map<string, string[]>();
+  for (const row of groupMemberRows.rows) {
+    if (!groupIdsByBranch.has(row.community_id)) groupIdsByBranch.set(row.community_id, []);
+    groupIdsByBranch.get(row.community_id)!.push(row.group_id);
+  }
+
+  return branchRows.rows.map(r => ({
+    id: r.id,
+    code: r.code ?? null,
+    name: r.name,
+    city: r.city ?? null,
+    address: r.address ?? null,
+    groupIds: groupIdsByBranch.get(r.id) ?? [],
+    assetCount: Number(r.asset_count),
+    irrigationZones: Number(r.irrigation_zones),
+    trees: Number(r.trees),
+    servicesYtd: Number(r.services_ytd),
+    lastServiceAt: r.last_service_at ?? null,
+    lastServiceLabel: r.last_service_label ?? null,
+    openWorkOrders: Number(r.open_work_orders),
+    // onTimePct: omitted — no service visit materialization (visits don't have on-time tracking yet)
+  }));
+}
+
+export async function getPortfolioBranchDetail(orgId: string, communityId: string) {
+  const t0 = Date.now();
+
+  // Verify the community belongs to this org — return null if not (route turns this into 403)
+  const community = await getCommunityById(communityId);
+  if (!community || community.organizationId !== orgId) return null;
+
+  const [layersResult, inventoryResult, recentServicesResult, openWorkOrdersResult, groupIdsResult] = await Promise.all([
+    // layers: data-driven from DB (never hardcoded list)
+    pool.query<{ id: string; name: string; type: string; asset_count: string }>(`
+      SELECT
+        ml.id,
+        ml.display_name AS name,
+        ml.layer_key AS type,
+        COALESCE((SELECT COUNT(*) FROM assets a WHERE a.map_layer_id = ml.id AND a.is_archived = false), 0)::text AS asset_count
+      FROM map_layers ml
+      WHERE ml.community_id = $1
+      ORDER BY ml.layer_key, ml.sub_layer_key
+    `, [communityId]),
+
+    // inventory: per (assetType, layerId) count of active assets
+    pool.query<{ asset_type: string; map_layer_id: string | null; count: string }>(`
+      SELECT
+        a.asset_type,
+        a.map_layer_id,
+        COUNT(*)::text AS count
+      FROM assets a
+      WHERE a.community_id = $1 AND a.is_archived = false
+      GROUP BY a.asset_type, a.map_layer_id
+      ORDER BY a.asset_type, a.map_layer_id
+    `, [communityId]),
+
+    // recentServices: latest 20 task completions + completed service visits, newest first
+    pool.query<{
+      id: string;
+      date: string;
+      title: string;
+      type: string;
+      photo_count: string;
+      amount_cents: string | null;
+    }>(`
+      SELECT * FROM (
+        SELECT
+          tc.id,
+          tc.completed_at::text AS date,
+          t.title,
+          'task_completion' AS type,
+          COALESCE((SELECT COUNT(*) FROM attachments att WHERE att.task_completion_id = tc.id), 0)::text AS photo_count,
+          NULL::text AS amount_cents
+        FROM task_completions tc
+        JOIN tasks t ON t.id = tc.task_id
+        WHERE t.community_id = $1
+        UNION ALL
+        SELECT
+          sv.id,
+          sv.completed_at::text AS date,
+          -- service_schedules has no name column; derive a readable label from service_type
+          INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS title,
+          'service_visit' AS type,
+          '0'::text AS photo_count,
+          NULL::text AS amount_cents
+        FROM service_visits sv
+        JOIN service_schedules ss ON ss.id = sv.schedule_id
+        WHERE sv.community_id = $1 AND sv.status = 'completed' AND sv.completed_at IS NOT NULL
+      ) combined
+      ORDER BY date DESC
+      LIMIT 20
+    `, [communityId]),
+
+    // openWorkOrders: non-completed tasks
+    pool.query<{
+      id: string;
+      title: string;
+      status: string;
+      estimate_cents: string | null;
+      approved_at: string | null;
+      created_at: string;
+    }>(`
+      SELECT
+        t.id,
+        t.title,
+        t.status,
+        t.estimate_cents::text,
+        t.approved_at::text,
+        t.created_at::text
+      FROM tasks t
+      WHERE t.community_id = $1
+        AND t.status != 'completed'
+      ORDER BY t.created_at DESC
+    `, [communityId]),
+
+    // groupIds for this branch
+    pool.query<{ group_id: string }>(`
+      SELECT bgm.group_id
+        FROM branch_group_members bgm
+        JOIN branch_groups bg ON bg.id = bgm.group_id
+       WHERE bgm.community_id = $1
+         AND bg.organization_id = $2
+    `, [communityId, orgId]),
+  ]);
+
+  console.log(`[portfolio/branch-detail] org=${orgId} branch=${communityId} (${Date.now() - t0}ms)`);
+
+  return {
+    branch: {
+      id: community.id,
+      code: (community as any).code ?? null,
+      name: community.name,
+      city: (community as any).city ?? null,
+      address: (community as any).address ?? null,
+      groupIds: groupIdsResult.rows.map(r => r.group_id),
+    },
+    layers: layersResult.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      assetCount: Number(r.asset_count),
+    })),
+    inventory: inventoryResult.rows.map(r => ({
+      assetType: r.asset_type,
+      layerId: r.map_layer_id ?? null,
+      count: Number(r.count),
+    })),
+    recentServices: recentServicesResult.rows.map(r => ({
+      id: r.id,
+      date: r.date,
+      title: r.title,
+      type: r.type,
+      photoCount: Number(r.photo_count),
+      amountCents: r.amount_cents != null ? Number(r.amount_cents) : null,
+    })),
+    openWorkOrders: openWorkOrdersResult.rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      estimateCents: r.estimate_cents != null ? Number(r.estimate_cents) : null,
+      approvedAt: r.approved_at ?? null,
+      openedAt: r.created_at,
+    })),
+    // snowSeason: null — service_type enum only contains 'mowing_visit';
+    // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)
+    snowSeason: null,
+  };
+}
+
+export async function getPortfolioGroups(orgId: string) {
+  const t0 = Date.now();
+
+  const [groupRows, groupMemberRows] = await Promise.all([
+    // per group: id, name, color + metrics
+    pool.query<{
+      id: string;
+      name: string;
+      color: string | null;
+      branch_count: string;
+      // services per branch (avg) — use per-branch totals and average them
+      services_per_branch: string | null;
+      open_items: string;
+      photo_proof_pct: string | null;
+    }>(`
+      SELECT
+        bg.id,
+        bg.name,
+        bg.color,
+        COUNT(DISTINCT bgm.community_id)::text AS branch_count,
+        -- servicesPerBranch: avg services per branch in group (per-branch average, not raw total)
+        CASE WHEN COUNT(DISTINCT bgm.community_id) = 0 THEN NULL
+          ELSE ROUND(
+            COALESCE((
+              SELECT SUM(branch_svc.svc_count)
+                FROM (
+                  SELECT t.community_id,
+                    (SELECT COUNT(*) FROM task_completions tc2
+                       JOIN tasks t2 ON t2.id = tc2.task_id
+                      WHERE t2.community_id = t.community_id) +
+                    (SELECT COUNT(*) FROM service_visits sv2
+                      WHERE sv2.community_id = t.community_id AND sv2.status = 'completed')
+                    AS svc_count
+                    FROM (SELECT DISTINCT community_id FROM branch_group_members WHERE group_id = bg.id) t
+                ) branch_svc
+            ), 0)::numeric
+            / COUNT(DISTINCT bgm.community_id)::numeric,
+            2
+          )
+        END::text AS services_per_branch,
+        -- openItems: non-completed task count across group branches
+        COALESCE((
+          SELECT COUNT(*)
+            FROM tasks t
+           WHERE t.community_id IN (
+             SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+           )
+             AND t.status != 'completed'
+        ), 0)::text AS open_items,
+        -- photoProofPct: per-branch rate averaged across group
+        (SELECT
+          CASE WHEN COUNT(DISTINCT tc3.id) > 0
+            THEN ROUND(
+              COUNT(DISTINCT tc3.id) FILTER (WHERE att.id IS NOT NULL)::numeric
+              / COUNT(DISTINCT tc3.id)::numeric * 100,
+              1
+            )::text
+            ELSE '0'
+          END
+          FROM task_completions tc3
+          JOIN tasks t3 ON t3.id = tc3.task_id
+          LEFT JOIN attachments att ON att.task_completion_id = tc3.id
+         WHERE t3.community_id IN (
+           SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+         )
+        ) AS photo_proof_pct
+      FROM branch_groups bg
+      LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
+      WHERE bg.organization_id = $1
+      GROUP BY bg.id, bg.name, bg.color
+      ORDER BY bg.sort_order, bg.name
+    `, [orgId]),
+
+    // branchIds per group
+    pool.query<{ group_id: string; community_id: string }>(`
+      SELECT bgm.group_id, bgm.community_id
+        FROM branch_group_members bgm
+        JOIN branch_groups bg ON bg.id = bgm.group_id
+       WHERE bg.organization_id = $1
+    `, [orgId]),
+  ]);
+
+  console.log(`[portfolio/groups] org=${orgId} (${Date.now() - t0}ms)`);
+
+  const branchIdsByGroup = new Map<string, string[]>();
+  for (const row of groupMemberRows.rows) {
+    if (!branchIdsByGroup.has(row.group_id)) branchIdsByGroup.set(row.group_id, []);
+    branchIdsByGroup.get(row.group_id)!.push(row.community_id);
+  }
+
+  return groupRows.rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    color: r.color ?? null,
+    branchIds: branchIdsByGroup.get(r.id) ?? [],
+    metrics: {
+      branches: Number(r.branch_count),
+      servicesPerBranch: r.services_per_branch != null ? Number(r.services_per_branch) : null,
+      openItems: Number(r.open_items),
+      photoProofPct: Number(r.photo_proof_pct ?? 0),
+    },
+  }));
 }

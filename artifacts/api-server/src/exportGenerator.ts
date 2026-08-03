@@ -162,6 +162,7 @@ async function queryCompletions(filters: ExportFilters): Promise<CompletionRow[]
 
   const attachmentMap = new Map<string, typeof allAttachments>();
   for (const att of allAttachments) {
+    if (!att.taskCompletionId) continue;
     const list = attachmentMap.get(att.taskCompletionId) || [];
     list.push(att);
     attachmentMap.set(att.taskCompletionId, list);
