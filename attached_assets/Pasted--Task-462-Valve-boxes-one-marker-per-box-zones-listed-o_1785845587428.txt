@@ -1,0 +1,53 @@
+# Task #462: Valve boxes — one marker per box, zones listed on tap
+
+## What & Why
+
+Irrigation boxes commonly hold several zone valves. The KML parser (#415) handles this correctly: a placemark named `Zone 5 / 6 / 7 / 8 (pop ups)` becomes four zone assets sharing one `valveBoxRef` (the placemark id) and one set of coordinates.
+
+**The map never learned about it.** `grep valveBoxRef` across the web portal and leaflet template returns nothing, so four zones in one box still render as four markers stacked on the same point — unclickable individually, and visually misleading about how many boxes exist.
+
+**Depends on #460** (shared map renderer) so this is implemented once and appears on every surface.
+
+## Open questions — defaults chosen, change if wrong
+
+1. **Marker style for a multi-zone box.** Default: the existing zone-ring marker in the controller's color, with a **count badge** ("4") in the corner. Single-zone boxes render exactly as today (no badge), so nothing changes for the common case.
+2. **What tapping a box does.** Default: opens a popup listing each zone in the box — zone number, type (pop-ups/rotors/drip), and status — with each row clickable through to that zone's asset detail. One tap to see what's in the box, two to get to a specific valve.
+3. **Zones in the same box but different controllers.** Possible in messy data. Default: the box marker uses the controller color of its **lowest-numbered** zone, and the popup shows each zone's own controller. Flag such boxes in the popup so the mapping team can review.
+4. **Unmapped zones** (no coordinates, from #415). Default: not on the map at all — they appear in the branch's zone inventory with an "Unmapped" chip. Do not place them at a default location.
+
+If any default is wrong, adjust before building rather than after.
+
+## Done looks like
+
+- A box holding multiple zones renders as **one marker** with a count badge; a single-zone box renders as it does today.
+- Tapping a box popup lists its zones with number, type, and status; each row navigates to that zone's asset detail.
+- Zone counts elsewhere (layer tab badges, inventory tables) still count **zones**, not boxes — the map groups; the data does not.
+- Toggling the Zones sub-layer off hides box markers; toggling on restores them.
+- Works identically on the portal map (HOA/PM/contractor) and the portfolio branch map, because both render through the shared module.
+- Mobile: note whether the same grouping is needed there and whether the shared leaflet template change covers it automatically — do not modify mobile screens in this task, but report what you found.
+
+## Steps
+
+1. **API**: ensure zone assets expose `valveBoxRef` and `valveBoxLabel` in the payloads used for map rendering (they live in `asset_properties` from #415). Add them to the controllers/zones response used by `setZoneMarkers` so grouping can happen client-side without extra requests.
+2. **Grouping** in `common/map-render.js`: before pushing zone markers, group by `valveBoxRef` (null/absent = its own group, keyed by feature id so nothing collapses accidentally). Build one marker per group with the zone list attached.
+3. **Rendering** in `lib/leaflet-template/src/index.ts`: extend `setZoneMarkers` to accept a `zones[]` array per marker and a count. Render the badge when `zones.length > 1`; render the multi-zone popup listing each zone. Keep the single-zone rendering byte-identical to today so existing communities look unchanged.
+4. **Popup interaction**: reuse the existing `viewDetail` popup-action mechanism so tapping a zone row opens the asset detail panel on web (and would do the same on mobile through the shared template).
+5. **Verify** against FB02 (real data — 15 boxes, 35 mapped zones across them, 4 unmapped):
+   - `Zone 5/6/7/8` renders as **one** marker with badge "4"; popup lists all four with their types.
+   - `zone 34 drip` renders as its **own** marker despite being ~2 ft away (grouping is by box reference, never by proximity).
+   - Total distinct zone markers = 15 (boxes), while the Zones sub-layer badge still reads 39.
+   - Tapping a zone row in a popup opens that zone's detail.
+   - A Miramonte-style community with one zone per box looks exactly as before.
+
+## Out of scope
+
+- Changing the parser or `valveBoxRef` data model (already correct).
+- Mobile screen changes (report only).
+- Clustering unrelated markers by proximity — this task groups by box reference only.
+
+## Relevant files
+
+- `artifacts/web-portal/public/common/map-render.js` (from #460)
+- `lib/leaflet-template/src/index.ts` (`setZoneMarkers` ~443, popup action handling ~756)
+- `artifacts/api-server/src/routes/routes.ts` (controllers/zones payloads)
+- `artifacts/api-server/src/kmlIrrigationParser.ts` (reference — where `valveBoxRef` originates)

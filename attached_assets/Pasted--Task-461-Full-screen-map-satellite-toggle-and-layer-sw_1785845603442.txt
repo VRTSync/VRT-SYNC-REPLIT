@@ -1,0 +1,50 @@
+# Task #461: Full-screen map — satellite toggle and layer switching while expanded
+
+## What & Why
+
+The expand-in-place full-screen map from #457 works, but once expanded it's a dead end: no satellite toggle, and no way to change category or sub-layers without collapsing. Full screen is exactly when someone wants to explore layers.
+
+Also: **no web map surface has a satellite control at all**, despite `mapBridge.setSatellite(on)` existing and the mobile app having had the toggle for a long time.
+
+**Depends on #460** (shared map renderer). Build these controls **once, in the shared module**, so every surface gets them — do not implement per page.
+
+## Done looks like
+
+- A **Map / Satellite** toggle sits next to the expand button on every web map surface (portfolio branch detail, Portfolio Map, and the HOA/PM/contractor portal map).
+- The choice persists in `localStorage` under `vrt_map_basemap` and is restored on load, across pages and sessions.
+- While expanded, floating overlays let the user:
+  - switch **main category** (Site Grounds / Irrigation / Snow / Trees — sourced from the same data as the tabs, never hardcoded)
+  - toggle **sub-layers** within the active category
+  - toggle **satellite**
+  - see the **legend**
+- Collapsing preserves whatever category/sub-layer state was chosen while expanded — the page tabs and toggles reflect it, no reset.
+- Escape and a close button both collapse. `invalidateSize` fires after the transition on both expand and collapse (already established in #457).
+- Overlays don't obscure the map on small windows: they collapse to a compact control that opens on click below ~900px width.
+
+## Steps
+
+1. **Satellite control** in the shared renderer (`common/map-render.js`): a `setSatellite(bool)` passthrough plus a rendered toggle the host page can mount. Persist to `localStorage`; read on init and apply before first fit.
+2. **Expanded overlays**: when the host page enters expanded state, the module renders category + sub-layer controls as floating panels over the map (top-left), and the legend (bottom-left, next to Leaflet's attribution — do not cover it; attribution must remain visible for Mapbox terms).
+3. **State sync**: overlay controls and page controls read/write the same state object in the module, so changes in either are reflected in both.
+4. **Responsive**: below ~900px, overlays collapse into a single "Layers" button that opens a panel.
+5. **Apply to all surfaces**: portfolio branch detail, Portfolio Map page, and the portal map (which currently has neither expand nor satellite — add both).
+6. **Verify**
+   - Toggle satellite on the portal map, navigate away and back → still satellite. Same on portfolio.
+   - Expand branch map → switch from Irrigation to Trees → sub-layers update → collapse → page tabs show Trees selected.
+   - Attribution stays visible in expanded mode.
+   - Escape collapses from any state; tiles render edge-to-edge after both transitions.
+   - Narrow window → overlays collapse to the compact control.
+
+## Out of scope
+
+- Mobile app (already has satellite; persistence handled in #404).
+- New basemap styles beyond the existing street/satellite pair.
+- Valve-box grouping.
+
+## Relevant files
+
+- `artifacts/web-portal/public/common/map-render.js` (from #460)
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js`, `pages/map.js`
+- `artifacts/web-portal/public/portal/pages/map.js`
+- `artifacts/web-portal/public/portfolio/portfolio.css`, `public/portal/portal-ext.css`
+- `lib/leaflet-template/src/index.ts` (`setSatellite` ~517, `invalidateSize` ~781 — unchanged)
