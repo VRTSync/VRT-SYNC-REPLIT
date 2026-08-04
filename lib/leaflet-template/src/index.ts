@@ -53,6 +53,20 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     border: 3px solid #fff; background: transparent;
     box-shadow: 0 1px 3px rgba(0,0,0,0.25);
   }
+  .zone-ring--multi {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid #fff; background: transparent;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .zone-ring-badge {
+    font-size: 10px; font-weight: 700; color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.4);
+    line-height: 1;
+  }
+  .popup-zone-row { margin: 4px 0 2px; }
+  .popup-zone-label { font-size: 12px; font-weight: 600; color: #0C1D31; }
+  .popup-zone-type { font-size: 11px; color: #7a8a9e; margin-left: 3px; }
   .user-loc {
     width: 14px; height: 14px; border-radius: 50%;
     background: #4285F4; border: 3px solid #fff;
@@ -197,6 +211,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
   var ctrlLayer = L.layerGroup();
   var pendingPinsLayer = L.layerGroup().addTo(map);
   var controllerClusterGroups = {};
+  var _zonesVisible = false;
   var userLocMarker = null;
   var targetMarker = null;
   var mapTapEnabled = false;
@@ -443,23 +458,70 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     setZoneMarkers: function(markers) {
       clearAllClusterGroups();
       markers.forEach(function(z) {
+        var zones = z.zones && z.zones.length > 0 ? z.zones : null;
+        var isMulti = zones && zones.length > 1;
+
+        var iconHtml, iconSize, iconAnchor;
+        if (isMulti) {
+          iconSize   = [24, 24];
+          iconAnchor = [12, 12];
+          iconHtml   = '<div class="zone-ring zone-ring--multi" style="background:'+escHtml(z.controllerColor)+';"><span class="zone-ring-badge">'+zones.length+'</span></div>';
+        } else {
+          iconSize   = [16, 16];
+          iconAnchor = [8, 8];
+          iconHtml   = '<div class="zone-ring" style="background:'+z.controllerColor+';"></div>';
+        }
+
         var m = L.marker([z.latitude, z.longitude], {
           icon: L.divIcon({
-            html: '<div class="zone-ring" style="background:'+z.controllerColor+';"></div>',
-            className: '', iconSize: [16,16], iconAnchor: [8,8]
+            html: iconHtml,
+            className: '', iconSize: iconSize, iconAnchor: iconAnchor
           })
         });
-        var popupHtml = '<div class="popup-card"><div class="popup-bar" style="background:'+z.controllerColor+';"></div><div class="popup-body">';
-        popupHtml += '<span class="popup-type" style="background:'+z.controllerColor+';">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + '</span>';
-        popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
-        popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+z.controllerColor+';"></span> ' + escHtml(z.controllerLabel) + '</div></div>';
-        popupHtml += '<div class="popup-divider"></div>';
-        popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(z.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(z.label)+'" data-asset-type="zone" data-layer-name="'+escHtml(z.controllerLabel || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
-        popupHtml += '</div></div>';
+
+        var popupHtml;
+        if (isMulti) {
+          popupHtml  = '<div class="popup-card"><div class="popup-bar" style="background:'+escHtml(z.controllerColor)+';"></div><div class="popup-body">';
+          popupHtml += '<span class="popup-type" style="background:'+escHtml(z.controllerColor)+';">Valve Box · '+zones.length+' Zones</span>';
+          if (z.boxLabel) {
+            popupHtml += '<div class="popup-title">'+escHtml(z.boxLabel)+'</div>';
+          }
+          zones.forEach(function(zone, idx) {
+            var zoneColor = zone.controllerColor || z.controllerColor;
+            popupHtml += '<div class="popup-divider"></div>';
+            popupHtml += '<div class="popup-zone-row"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+escHtml(zoneColor)+';"></span>';
+            popupHtml += '<span class="popup-zone-label">Zone'+(zone.zoneNumber ? ' #'+zone.zoneNumber : '')+'</span>';
+            if (zone.zoneType) { popupHtml += '<span class="popup-zone-type">'+escHtml(zone.zoneType)+'</span>'; }
+            popupHtml += '</div></div>';
+            popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(zone.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(zone.label)+'" data-asset-type="zone" data-layer-name="'+escHtml(zone.controllerLabel || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> '+escHtml(zone.label)+'</div>';
+          });
+          if (z.mixedController) {
+            popupHtml += '<div class="popup-divider"></div>';
+            popupHtml += '<div style="font-size:11px;color:#e67e22;padding:4px 0;">&#9888; Multiple controllers — please review</div>';
+          }
+          popupHtml += '</div></div>';
+        } else {
+          // Single zone — existing rendering path, byte-identical behaviour
+          popupHtml  = '<div class="popup-card"><div class="popup-bar" style="background:'+z.controllerColor+';"></div><div class="popup-body">';
+          popupHtml += '<span class="popup-type" style="background:'+z.controllerColor+';">Zone' + (z.zoneNumber ? ' #' + z.zoneNumber : '') + '</span>';
+          popupHtml += '<div class="popup-title">' + escHtml(z.label) + '</div>';
+          popupHtml += '<div class="popup-meta"><div class="popup-meta-row"><span class="popup-meta-icon" style="background:'+z.controllerColor+';"></span> ' + escHtml(z.controllerLabel) + '</div></div>';
+          popupHtml += '<div class="popup-divider"></div>';
+          popupHtml += '<div class="popup-action" data-action="viewDetail" data-ref="'+escHtml(z.featureRef)+'" data-layer="irrigation" data-label="'+escHtml(z.label)+'" data-asset-type="zone" data-layer-name="'+escHtml(z.controllerLabel || '')+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> View Details</div>';
+          popupHtml += '</div></div>';
+        }
+
         m.bindPopup(popupHtml, { closeButton: true, minWidth: 180 });
         var group = getOrCreateClusterGroup(z.controllerFeatureRef || z.controllerKey || z.controllerColor, z.controllerColor);
         group.addLayer(m);
       });
+      // If zones were visible before the reset, re-add all newly created groups now.
+      if (_zonesVisible) {
+        Object.keys(controllerClusterGroups).forEach(function(id) {
+          var cg = controllerClusterGroups[id];
+          if (!map.hasLayer(cg)) map.addLayer(cg);
+        });
+      }
     },
 
     clearIrrigation: function() {
@@ -541,6 +603,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     },
 
     showZones: function(show) {
+      _zonesVisible = !!show;
       Object.keys(controllerClusterGroups).forEach(function(id) {
         var cg = controllerClusterGroups[id];
         if (show) { if (!map.hasLayer(cg)) map.addLayer(cg); }

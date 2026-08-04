@@ -294,32 +294,75 @@ PortalRouter.register('map', async function (container) {
         };
       });
 
-    const fallbackZoneColor = getLayerEffectiveColor('irrigation', 'zone');
-    const zoneMarkers = controllerData.flatMap(c => {
+    // Group zones by valveBoxRef so each physical valve box gets one marker.
+    // Zones without a valveBoxRef each form their own singleton group.
+    const boxGroups = new Map(); // boxKey → { latitude, longitude, controllerColor, controllerFeatureRef, controllerKey, boxLabel, zones[] }
+    const boxOrder  = [];        // insertion-order keys
+
+    for (const c of controllerData) {
       const perCtrlColor = ctrlColorOverride !== null
         ? ctrlColorOverride
         : (c.controllerColor || fallbackCtrlColor);
       const zColor = zoneColorOverride !== null ? zoneColorOverride : perCtrlColor;
-      return (c.zones || [])
-        .filter(z => z.latitude != null && z.longitude != null)
-        .map(z => ({
-          id: z.id,
-          label: z.label || z.zoneLabelShort || `Zone ${z.zoneNumber || ''}`,
-          featureRef: z.featureRef,
-          zoneNumber: z.zoneNumber,
-          controllerColor: zColor,
-          controllerLabel: c.label || c.controllerKey || 'Controller',
-          latitude: z.latitude,
-          longitude: z.longitude,
-        }));
+      for (const z of (c.zones || [])) {
+        if (z.latitude == null || z.longitude == null) continue;
+        const boxKey = z.valveBoxRef || z.featureRef;
+        if (!boxGroups.has(boxKey)) {
+          boxGroups.set(boxKey, {
+            latitude:             z.latitude,
+            longitude:            z.longitude,
+            controllerColor:      zColor,
+            controllerFeatureRef: c.featureRef || c.controllerKey || zColor,
+            controllerKey:        c.controllerKey || '',
+            boxLabel:             z.valveBoxLabel || null,
+            zones:                [],
+          });
+          boxOrder.push(boxKey);
+        }
+        boxGroups.get(boxKey).zones.push({
+          id:                   z.id,
+          featureRef:           z.featureRef,
+          zoneNumber:           z.zoneNumber,
+          zoneType:             z.zoneType || null,
+          label:                z.label || z.zoneLabelShort || `Zone ${z.zoneNumber || ''}`,
+          controllerColor:      zColor,
+          controllerLabel:      c.label || c.controllerKey || 'Controller',
+          controllerFeatureRef: c.featureRef || c.controllerKey || zColor,
+        });
+      }
+    }
+
+    const zoneMarkers = boxOrder.map(bk => {
+      const group = boxGroups.get(bk);
+      // Sort by zone number; use lowest-numbered zone's colour for the group
+      group.zones.sort((a, b) => (a.zoneNumber || 999) - (b.zoneNumber || 999));
+      group.controllerColor      = group.zones[0].controllerColor;
+      group.controllerFeatureRef = group.zones[0].controllerFeatureRef;
+
+      const mixedController = group.zones.some(
+        z => z.controllerFeatureRef !== group.zones[0].controllerFeatureRef
+      );
+      const first = group.zones[0];
+      return {
+        id:                   first.id,
+        label:                first.label,
+        featureRef:           first.featureRef,
+        zoneNumber:           first.zoneNumber,
+        controllerColor:      group.controllerColor,
+        controllerLabel:      first.controllerLabel,
+        controllerFeatureRef: group.controllerFeatureRef,
+        controllerKey:        group.controllerKey,
+        latitude:             group.latitude,
+        longitude:            group.longitude,
+        boxLabel:             group.boxLabel,
+        zones:                group.zones,
+        mixedController:      mixedController,
+      };
     });
 
-    if (ctrlMarkers.length > 0) {
-      cmdToIframe('setControllerMarkers', ctrlMarkers);
-    }
-    if (zoneMarkers.length > 0) {
-      cmdToIframe('setZoneMarkers', zoneMarkers);
-    }
+    // Always send both arrays (even empty) so stale markers are cleared.
+    cmdToIframe('setControllerMarkers', ctrlMarkers);
+    cmdToIframe('setZoneMarkers', zoneMarkers);
   }
 
   async function persistLayerColor(cat, subKey, newColor) {

@@ -238,7 +238,11 @@
         });
       }
 
-      var zoneMarkers = [];
+      // Group zones by valveBoxRef — one marker per physical valve box.
+      // Zones without a valveBoxRef each form their own singleton group.
+      var boxGroups = {}; // boxKey → { latitude, longitude, controllerColor, controllerFeatureRef, controllerKey, boxLabel, zones[] }
+      var boxOrder  = []; // insertion-order keys for deterministic output
+
       for (var ii = 0; ii < _controllerData.length; ii++) {
         var ctrl = _controllerData[ii];
         var perCtrlColor2 = ctrlColorOverride !== null
@@ -249,21 +253,77 @@
         for (var jj = 0; jj < zones.length; jj++) {
           var z = zones[jj];
           if (z.latitude == null || z.longitude == null) continue;
-          zoneMarkers.push({
-            id:              z.id,
-            label:           z.label || z.zoneLabelShort || ('Zone ' + (z.zoneNumber || '')),
-            featureRef:      z.featureRef,
-            zoneNumber:      z.zoneNumber,
-            controllerColor: zColor,
-            controllerLabel: ctrl.label || ctrl.controllerKey || 'Controller',
-            latitude:        z.latitude,
-            longitude:       z.longitude,
+          // Key: valveBoxRef when present, otherwise the zone's own featureRef
+          var boxKey = z.valveBoxRef || z.featureRef;
+          if (!boxGroups[boxKey]) {
+            boxGroups[boxKey] = {
+              latitude:            z.latitude,
+              longitude:           z.longitude,
+              controllerColor:     zColor,
+              controllerFeatureRef: ctrl.featureRef || ctrl.controllerKey || zColor,
+              controllerKey:       ctrl.controllerKey || '',
+              boxLabel:            z.valveBoxLabel || null,
+              zones:               [],
+            };
+            boxOrder.push(boxKey);
+          }
+          boxGroups[boxKey].zones.push({
+            id:                   z.id,
+            featureRef:           z.featureRef,
+            zoneNumber:           z.zoneNumber,
+            zoneType:             z.zoneType || null,
+            label:                z.label || z.zoneLabelShort || ('Zone ' + (z.zoneNumber || '')),
+            controllerColor:      zColor,
+            controllerLabel:      ctrl.label || ctrl.controllerKey || 'Controller',
+            controllerFeatureRef: ctrl.featureRef || ctrl.controllerKey || zColor,
           });
         }
       }
 
-      if (ctrlMarkers.length > 0) _cmd('setControllerMarkers', ctrlMarkers);
-      if (zoneMarkers.length > 0)  _cmd('setZoneMarkers',      zoneMarkers);
+      var zoneMarkers = [];
+      for (var bk = 0; bk < boxOrder.length; bk++) {
+        var bKey  = boxOrder[bk];
+        var group = boxGroups[bKey];
+        var zonesArr = group.zones;
+
+        // Sort zones within each box by zone number
+        zonesArr.sort(function(a, b) { return (a.zoneNumber || 999) - (b.zoneNumber || 999); });
+
+        // Use the lowest-numbered zone's controller colour for the group marker
+        group.controllerColor = zonesArr[0].controllerColor;
+        group.controllerFeatureRef = zonesArr[0].controllerFeatureRef;
+
+        // Detect mixed-controller boxes
+        var mixedController = false;
+        var firstCtrlRef = zonesArr[0].controllerFeatureRef;
+        for (var mk = 1; mk < zonesArr.length; mk++) {
+          if (zonesArr[mk].controllerFeatureRef !== firstCtrlRef) {
+            mixedController = true;
+            break;
+          }
+        }
+
+        var firstZone = zonesArr[0];
+        zoneMarkers.push({
+          id:                   firstZone.id,
+          label:                firstZone.label,
+          featureRef:           firstZone.featureRef,
+          zoneNumber:           firstZone.zoneNumber,
+          controllerColor:      group.controllerColor,
+          controllerLabel:      firstZone.controllerLabel,
+          controllerFeatureRef: group.controllerFeatureRef,
+          controllerKey:        group.controllerKey,
+          latitude:             group.latitude,
+          longitude:            group.longitude,
+          boxLabel:             group.boxLabel,
+          zones:                zonesArr,
+          mixedController:      mixedController,
+        });
+      }
+
+      // Always send both arrays (even empty) so stale markers are cleared.
+      _cmd('setControllerMarkers', ctrlMarkers);
+      _cmd('setZoneMarkers',       zoneMarkers);
     }
 
     // ── GeoJSON layer pushing ─────────────────────────────────────────────────

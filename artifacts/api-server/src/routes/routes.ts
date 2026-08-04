@@ -352,6 +352,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 zoneType: zProps.zoneType || null,
                 zoneLabelShort: zProps.zoneLabelShort || null,
                 zoneColor: zProps.zoneColor || null,
+                valveBoxRef: zProps.valveBoxRef || null,
+                valveBoxLabel: zProps.valveBoxLabel || null,
                 latitude: z.latitude,
                 longitude: z.longitude,
               };
@@ -5784,6 +5786,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 zoneType: zProps.zoneType || null,
                 zoneLabelShort: zProps.zoneLabelShort || null,
                 zoneColor: zProps.zoneColor || null,
+                valveBoxRef: zProps.valveBoxRef || null,
+                valveBoxLabel: zProps.valveBoxLabel || null,
                 latitude: z.latitude,
                 longitude: z.longitude,
               };
