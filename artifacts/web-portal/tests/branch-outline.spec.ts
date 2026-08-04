@@ -9,9 +9,12 @@
  * • The real branch-detail.js is loaded from the running dev server.
  * • All API calls and the Leaflet iframe are intercepted via page.route() so
  *   the test is fully deterministic — no database, no session, no Mapbox token.
- * • The mock iframe records every postMessage it receives from the parent page
- *   in window.receivedCmds.  After each tab click we evaluate that array inside
- *   the iframe frame and assert that the setCommunityOutline count has grown.
+ * • Command tracking uses TWO levels:
+ *   - Parent frame (_pageCmds): tracks all postMessages sent by branch-detail.js
+ *     to the iframe's contentWindow.  Survives iframe reloads/reparenting because
+ *     it lives in the parent page.  Used for cross-tab assertions.
+ *   - Iframe frame (receivedCmds): confirms the iframe actually received the
+ *     command.  Used only for the initial Summary tab (before any tab switch).
  */
 
 import { test, expect, type Page, type FrameLocator } from '@playwright/test';
@@ -80,11 +83,10 @@ const BRANCH_NO_OUTLINE = {
   ],
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Mock iframe ───────────────────────────────────────────────────────────────
 
 /**
- * Inline HTML served as a mock replacement for leaflet-map.html.
- *
+ * Minimal Leaflet iframe replacement.
  * Records every `cmd` postMessage from the parent page in window.receivedCmds.
  * Fires mapReady back to the parent after a short delay so branch-detail.js
  * flushes its pending command queue and begins loading geometry.
@@ -111,10 +113,11 @@ setTimeout(function () {
 /**
  * Test harness HTML page.
  *
- * Sets up the minimal global environment that branch-detail.js expects, then
- * immediately invokes its registered render function with a test branch id.
- * The script tag loads the REAL branch-detail.js from the dev server so the
- * test exercises the production code path without modifications.
+ * Includes a parent-page level _pageCmds interceptor that captures every
+ * postMessage sent by branch-detail.js to the iframe's contentWindow.  This
+ * survives iframe reloads/reparenting because it lives in the parent page that
+ * never navigates.  The interceptor wraps iframe.contentWindow.postMessage via
+ * the HTMLIFrameElement.prototype contentWindow getter.
  */
 const HARNESS_HTML = `<!DOCTYPE html>
 <html>
@@ -123,6 +126,38 @@ const HARNESS_HTML = `<!DOCTYPE html>
 <div id="page-content"></div>
 
 <script>
+/* ── Parent-level command capture ────────────────────────────────────────
+ * Intercept every postMessage sent to the Leaflet iframe so cross-tab
+ * assertions work even when the iframe reloads or is moved between DOM slots.
+ */
+window._pageCmds = [];
+
+(function () {
+  var origDescriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+  if (!origDescriptor) return;
+  Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+    get: function () {
+      var cw = origDescriptor.get.call(this);
+      if (cw && !cw._vrt_patched) {
+        try {
+          var origPM = cw.postMessage.bind(cw);
+          cw.postMessage = function (msg, target) {
+            var parsed = msg;
+            if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) {} }
+            if (parsed && parsed.type === 'cmd') {
+              window._pageCmds.push({ fn: parsed.fn, args: JSON.parse(JSON.stringify(parsed.args || [])) });
+            }
+            return origPM(msg, target);
+          };
+          cw._vrt_patched = true;
+        } catch (_) {}
+      }
+      return cw;
+    },
+    configurable: true,
+  });
+})();
+
 /* Minimal PortfolioRouter stub */
 window.PortfolioRouter = {
   _pages: {},
@@ -141,9 +176,7 @@ window.PortfolioState = {
 <script src="/portfolio-static/pages/branch-detail.js"></script>
 
 <script>
-/* Kick off the page render once the script above has registered itself.
-   By the time this inline script runs (blocking parse order), branch-detail.js
-   has already called PortfolioRouter.register(), and #page-content is in the DOM. */
+/* Kick off the page render once the script above has registered itself. */
 (function () {
   var fn = window.PortfolioRouter._pages['branch-detail'];
   if (fn) fn(document.getElementById('page-content'), { id: 'test-branch' });
@@ -152,8 +185,26 @@ window.PortfolioState = {
 </body>
 </html>`;
 
-/** Returns the count of setCommunityOutline calls recorded in the iframe. */
-async function outlineCallCount(iframeLocator: FrameLocator): Promise<number> {
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Count setCommunityOutline calls in the PARENT page's _pageCmds array.
+ * This count survives iframe reloads and DOM reparenting.
+ */
+async function parentOutlineCallCount(page: Page): Promise<number> {
+  return page.evaluate(
+    () =>
+      ((window as unknown as { _pageCmds: { fn: string }[] })._pageCmds ?? []).filter(
+        (c) => c.fn === 'setCommunityOutline',
+      ).length,
+  );
+}
+
+/**
+ * Count setCommunityOutline calls recorded inside the iframe itself.
+ * Only reliable before the iframe is moved between DOM slots (initial load).
+ */
+async function iframeOutlineCallCount(iframeLocator: FrameLocator): Promise<number> {
   return iframeLocator
     .locator('body')
     .evaluate(
@@ -209,32 +260,41 @@ test.describe('Community boundary outline — branch detail tab switching', () =
     // ── 1. Initial load: Summary tab ──────────────────────────────────────
     // After mapReady fires (≈40 ms), branch-detail.js fetches GeoJSON for
     // all layers and then calls _pushOutline() → setCommunityOutline.
+    // Use parent-level counting for consistency across all assertions.
     await expect
-      .poll(() => outlineCallCount(iframe), {
+      .poll(() => parentOutlineCallCount(page), {
         timeout: 10_000,
         message: 'Expected setCommunityOutline to be sent on the initial Summary tab load',
       })
       .toBeGreaterThan(0);
 
-    const afterSummaryLoad = await outlineCallCount(iframe);
+    // Also confirm the iframe actually received the command (bridge receipt check).
+    await expect
+      .poll(() => iframeOutlineCallCount(iframe), {
+        timeout: 5_000,
+        message: 'Expected the iframe to have received setCommunityOutline on initial load',
+      })
+      .toBeGreaterThan(0);
+
+    const afterSummaryLoad = await parentOutlineCallCount(page);
 
     // ── 2. Switch to the Irrigation (service layer) tab ───────────────────
     await page.click('[data-tab-idx="1"]');
 
     await expect
-      .poll(() => outlineCallCount(iframe), {
+      .poll(() => parentOutlineCallCount(page), {
         timeout: 8_000,
         message: 'Expected setCommunityOutline after switching to the Irrigation tab',
       })
       .toBeGreaterThan(afterSummaryLoad);
 
-    const afterLayerTab = await outlineCallCount(iframe);
+    const afterLayerTab = await parentOutlineCallCount(page);
 
     // ── 3. Switch back to Summary ─────────────────────────────────────────
     await page.click('[data-tab-idx="0"]');
 
     await expect
-      .poll(() => outlineCallCount(iframe), {
+      .poll(() => parentOutlineCallCount(page), {
         timeout: 8_000,
         message: 'Expected setCommunityOutline after switching back to Summary',
       })
@@ -259,16 +319,22 @@ test.describe('Community boundary outline — branch detail tab switching', () =
     await page.waitForSelector('#branch-tab-bar');
     await expect(page.locator('iframe.branch-map-iframe')).toBeVisible({ timeout: 10_000 });
 
-    // Wait for mapReady + initial load to settle
-    const iframe = page.frameLocator('iframe.branch-map-iframe');
+    // Wait for mapReady + initial load to settle (addLayers should fire, outline should not)
     await expect
-      .poll(() => outlineCallCount(iframe), { timeout: 6_000 })
-      // 0 is the expected value — poll just lets async fetch settle
-      .toBe(0);
+      .poll(() => page.evaluate(
+        () => ((window as unknown as { _pageCmds: { fn: string }[] })._pageCmds ?? [])
+          .filter(c => c.fn === 'addLayers' || c.fn === 'showLayerIds').length
+      ), { timeout: 8_000 })
+      .toBeGreaterThan(0);
+
+    // setCommunityOutline must not have been dispatched at any point
+    expect(
+      await parentOutlineCallCount(page),
+      'setCommunityOutline must not be dispatched when there is no outline layer',
+    ).toBe(0);
 
     // Switch to Irrigation tab
     await page.click('[data-tab-idx="1"]');
-    // Brief settle period; nothing async depends on outline here
     await page.waitForTimeout(1_500);
 
     // Switch back to Summary
@@ -278,9 +344,9 @@ test.describe('Community boundary outline — branch detail tab switching', () =
     // No JavaScript errors should have occurred
     expect(jsErrors, 'No JS errors expected when outline layer is absent').toHaveLength(0);
 
-    // setCommunityOutline must never have been dispatched
+    // setCommunityOutline must still never have been dispatched
     expect(
-      await outlineCallCount(iframe),
+      await parentOutlineCallCount(page),
       'setCommunityOutline must not be sent when there is no outline layer',
     ).toBe(0);
   });
