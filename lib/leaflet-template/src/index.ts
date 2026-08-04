@@ -601,6 +601,22 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       }
     },
 
+    /**
+     * Compute and store communityBounds from the supplied GeoJSON without
+     * moving the viewport.  Call this before fitToContent when outline geometry
+     * is the only fallback available (e.g. all service sub-layers are unchecked
+     * or have no geometry), so fitToContent can use the outline bounds as its
+     * fallback rather than leaving the map at the default zoom level.
+     */
+    setOutlineBounds: function(geojson) {
+      if (!geojson) return;
+      try {
+        var tmpLayer = L.geoJSON(geojson);
+        var b = tmpLayer.getBounds();
+        if (b && b.isValid()) { communityBounds = b; }
+      } catch(e) {}
+    },
+
     updateLayerColor: function(layerId, newColor) {
       var geoLayer = layerCache[layerId];
       if (!geoLayer) return;

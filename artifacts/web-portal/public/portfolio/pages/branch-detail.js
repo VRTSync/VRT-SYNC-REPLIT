@@ -236,27 +236,42 @@
       allIds.forEach(function (id) {
         _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
       });
+      // setCommunityOutline renders the border polygon; setOutlineBounds stores
+      // communityBounds from the same GeoJSON so fitToContent can fall back to the
+      // outline extent when no service layers are currently visible.
+      // Both must arrive at the iframe before fitToContent.
+      if (_bMap.outlineLayer && gmap[_bMap.outlineLayer.id]) {
+        _bCmd('setCommunityOutline', gmap[_bMap.outlineLayer.id]);
+        _bCmd('setOutlineBounds',    gmap[_bMap.outlineLayer.id]);
+      } else {
+        _pushOutline();
+      }
       _bCmd('fitToContent', [], null);
-      // Always re-send the outline so it remains visible on the summary view
-      _pushOutline();
     });
   }
 
   /**
-   * Show a category tab: lazily fetch all layers in the category, push new ones to
-   * the iframe, then show only the checked sub-layers at their full colours.
-   * Layers from other categories remain in the iframe's cache but are hidden via
-   * showLayerIds.  The outline is always re-sent as context.
+   * Show a category tab: lazily fetch all layers in the category (plus the outline
+   * layer) in one parallel batch, push new service layers to the iframe, then show
+   * only the checked sub-layers.  The outline is included in the same Promise.all so
+   * setCommunityOutline is always dispatched synchronously—from the resolved
+   * result—before fitToContent, regardless of whether the cache is warm or cold.
    */
   function _showCategoryTab(categoryKey) {
     var layers = (_bMap.categoryGroups && _bMap.categoryGroups[categoryKey]) || [];
     if (layers.length === 0) { _showNoGeometry('bmap-cat-' + categoryKey); return; }
 
-    Promise.all(layers.map(function (l) {
+    // Always include the outline in the fetch list so its GeoJSON is resolved
+    // inside this .then() and can be sent before fitToContent in every code path.
+    var outline  = _bMap.outlineLayer;
+    var fetchList = outline ? layers.concat([outline]) : layers;
+
+    Promise.all(fetchList.map(function (l) {
       return _fetchLayer(l).then(function (g) { return { id: l.id, layer: l, g: g }; });
     })).then(function (results) {
       var gmap = {};
       results.forEach(function (r) { gmap[r.id] = r.g; });
+      // _pushNewLayers skips the outline type internally — safe to pass the full gmap.
       _pushNewLayers(layers, gmap);
 
       // Ensure iframe is in the category map slot
@@ -283,8 +298,15 @@
       });
 
       _bCmd('showLayerIds', checkedIds);
+      // setCommunityOutline renders the border polygon; setOutlineBounds stores
+      // communityBounds so fitToContent can fall back to the outline extent when
+      // no service sub-layers are currently checked/visible.
+      // gmap[outline.id] comes from the parallel fetch above — always synchronous.
+      if (outline && gmap[outline.id]) {
+        _bCmd('setCommunityOutline', gmap[outline.id]);
+        _bCmd('setOutlineBounds',    gmap[outline.id]);
+      }
       _bCmd('fitToContent', [], null);
-      _pushOutline();
     });
   }
 
@@ -1080,6 +1102,19 @@
         });
 
         _bCmd('showLayerIds', checkedIds);
+        // setCommunityOutline renders the border; setOutlineBounds stores
+        // communityBounds so fitToContent can fall back to the outline extent
+        // when all service sub-layers are unchecked.  The category tab must
+        // have been visited before toggles can fire, so the outline GeoJSON is
+        // always in geojsonCache by this point.
+        var toggleOutline = _bMap.outlineLayer;
+        var toggleOutlineGeo = toggleOutline && _bMap.geojsonCache
+          ? _bMap.geojsonCache.get(toggleOutline.id)
+          : undefined;
+        if (toggleOutlineGeo) {
+          _bCmd('setCommunityOutline', toggleOutlineGeo);
+          _bCmd('setOutlineBounds',    toggleOutlineGeo);
+        }
         _bCmd('fitToContent', [], null);
       });
     });
