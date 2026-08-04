@@ -13,7 +13,7 @@ import * as Crypto from 'expo-crypto';
 import { getQueryFn, apiRequest } from '@/lib/query-client';
 import { useOffline, type PendingAssetNote } from '@/client/contexts/OfflineContext';
 import { useOfflinePack } from '@/client/contexts/OfflinePackContext';
-import { ASSET_FIELD_TEMPLATES, getRequiredFieldsMissing, getTemplateKeys } from '@/shared/assetFieldTemplates';
+import { useAssetTypes, deriveLabel } from '@/client/contexts/AssetTypeContext';
 import { useAuth } from '@/client/contexts/AuthContext';
 import CreateRequestSheet from '@/components/CreateRequestSheet';
 import Toast from '@/components/Toast';
@@ -64,11 +64,6 @@ type AssetNoteItem = {
 
 type Tab = 'details' | 'history' | 'notes';
 
-const ASSET_TYPE_LABELS: Record<string, string> = {
-  controller: 'Controller', backflow: 'Backflow', zone: 'Zone', tree: 'Tree',
-  pet_station: 'Pet Station', landscape_bed: 'Landscape Bed', bluegrass_area: 'Bluegrass Area',
-  native_area: 'Native Area', snow_area: 'Snow Area',
-};
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -198,14 +193,18 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
 
   const [rawPropsExpanded, setRawPropsExpanded] = useState(false);
 
+  const { getLabel, getRequiredKeys, getOptionalKeys } = useAssetTypes();
   const sqFtProp = asset?.properties.find(p => p.key === 'sqFt');
   const hasTags = asset?.tags && asset.tags.length > 0;
   const hasAudit = asset?.createdByName || asset?.updatedByName;
-  const template = asset ? ASSET_FIELD_TEMPLATES[asset.assetType] : undefined;
-  const missingInfo = asset ? getRequiredFieldsMissing(asset.assetType, asset.properties) : { count: 0, fields: [] };
   const isPolygon = asset?.geometryType === 'polygon' || asset?.geometryType === 'multipolygon';
-  const templateKeys = asset ? getTemplateKeys(asset.assetType) : new Set<string>();
+  const assetTypeLabel = asset ? getLabel(asset.assetType) : '';
+  const requiredKeys = asset ? getRequiredKeys(asset.assetType) : [];
+  const optionalKeys = asset ? getOptionalKeys(asset.assetType) : [];
+  const templateKeys = new Set([...requiredKeys, ...optionalKeys]);
   const rawProps = asset?.properties.filter(p => !templateKeys.has(p.key)) || [];
+  const missingFields = asset ? requiredKeys.filter(k => !asset.properties.some(p => p.key === k && p.value?.trim())) : [];
+  const missingInfo = { count: missingFields.length, fields: missingFields };
 
   const getPropValue = (key: string): string | null => {
     const prop = asset?.properties.find(p => p.key === key);
@@ -231,7 +230,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Type</Text>
-          <Text style={styles.detailValue}>{template?.displayName || ASSET_TYPE_LABELS[asset?.assetType || ''] || asset?.assetType}</Text>
+          <Text style={styles.detailValue}>{assetTypeLabel}</Text>
         </View>
         {asset?.featureRef && (
           <View style={styles.detailRow}>
@@ -275,32 +274,39 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
         </View>
       )}
 
-      {template && template.sections.map((section) => (
-        <View key={section.title} style={styles.card}>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          {section.fields.map((field) => {
-            const value = getPropValue(field.key);
-            const isMissing = field.required && !value;
+      {(requiredKeys.length > 0 || optionalKeys.length > 0) && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Details</Text>
+          {requiredKeys.map((key) => {
+            const value = getPropValue(key);
             return (
-              <View key={field.key} style={styles.detailRow}>
+              <View key={key} style={styles.detailRow}>
                 <View style={styles.fieldLabelRow}>
-                  <Text style={styles.detailLabel}>{field.label}</Text>
-                  {field.required && (
-                    <Text style={styles.requiredStar}>*</Text>
-                  )}
+                  <Text style={styles.detailLabel}>{deriveLabel(key)}</Text>
+                  <Text style={styles.requiredStar}>*</Text>
                 </View>
-                {isMissing ? (
+                {!value ? (
                   <View style={styles.missingBadge}>
                     <Text style={styles.missingBadgeText}>Missing</Text>
                   </View>
                 ) : (
-                  <Text style={styles.detailValue}>{value || '—'}</Text>
+                  <Text style={styles.detailValue}>{value}</Text>
                 )}
               </View>
             );
           })}
+          {optionalKeys.map((key) => {
+            const value = getPropValue(key);
+            if (!value) return null;
+            return (
+              <View key={key} style={styles.detailRow}>
+                <Text style={styles.detailLabel}>{deriveLabel(key)}</Text>
+                <Text style={styles.detailValue}>{value}</Text>
+              </View>
+            );
+          })}
         </View>
-      ))}
+      )}
 
       {hasTags && (
         <View style={styles.card}>
@@ -740,7 +746,7 @@ export default function AssetDetailPanel({ assetId, onClose }: Props) {
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle} numberOfLines={1}>{asset.label}</Text>
             <Text style={styles.headerSubtitle}>
-              {ASSET_TYPE_LABELS[asset.assetType] || asset.assetType}
+              {assetTypeLabel}
             </Text>
           </View>
           {!isOnline && (

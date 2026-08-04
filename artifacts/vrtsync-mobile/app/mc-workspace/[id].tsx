@@ -20,7 +20,8 @@ import MapCreatorOverlay from '@/components/MapCreatorOverlay';
 import MapCreatorChrome from '@/components/MapCreatorChrome';
 import ControllerPicker, { type ControllerRow } from '@/components/ControllerPicker';
 import PinDropSheet from '@/components/PinDropSheet';
-import { MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
+import { getTypeIcon, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
+import { useAssetTypes, deriveLabel } from '@/client/contexts/AssetTypeContext';
 import { usePinQueue } from '@/client/contexts/PinQueueContext';
 import { type PendingPinEntry } from '@/lib/pinCreationQueue';
 import LockPinSheet from '@/components/LockPinSheet';
@@ -280,7 +281,7 @@ export default function McWorkspaceScreen() {
 
   // ─── MC4: map / GPS state + MC6: Controller→Zone creation state ──────────
 
-  const [activeLayer, setActiveLayer] = useState<McLayerKey>('trees');
+  const [activeLayer, setActiveLayer] = useState<string>('trees');
   const [armedType, setArmedType] = useState<string | null>(null);
   const [lockPinFix, setLockPinFix] = useState<Fix | null>(null);
   const [savedRing, setSavedRing] = useState<{ latitude: number; longitude: number; accuracyM: number } | null>(null);
@@ -567,14 +568,12 @@ export default function McWorkspaceScreen() {
     return { latitude: gps.fix.latitude, longitude: gps.fix.longitude };
   }, [gps.fix]);
 
+  const { assetTypes } = useAssetTypes();
   const armedTypeDef = useMemo(() => {
     if (!armedType) return null;
-    for (const layerKey of Object.keys(MC_LAYER_MAP) as McLayerKey[]) {
-      const found = MC_LAYER_MAP[layerKey].types.find((t) => t.key === armedType);
-      if (found) return found;
-    }
-    return null;
-  }, [armedType]);
+    const t = assetTypes.find(at => at.key === armedType);
+    return { key: armedType, label: t?.label ?? deriveLabel(armedType), icon: getTypeIcon(armedType) };
+  }, [armedType, assetTypes]);
 
   const existingZoneNumbers = useMemo(() => {
     if (!controllers.length || !selectedController) return [];

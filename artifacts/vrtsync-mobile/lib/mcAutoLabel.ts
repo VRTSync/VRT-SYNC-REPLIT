@@ -3,11 +3,18 @@
  * All functions are pure and unit-testable.
  */
 
-import { ASSET_FIELD_TEMPLATES } from '@/shared/assetFieldTemplates';
-
-function prettyLabel(assetType: string): string {
-  const template = ASSET_FIELD_TEMPLATES[assetType];
-  if (template) return template.displayName;
+/**
+ * Derives a human-readable label from an asset type key.
+ * Works for any key, including future types not in the static list:
+ *   "parking_sweep" → "Parking Sweep"
+ *   "backflow"      → "Backflow"
+ *   "snow_area"     → "Snow Area"
+ *
+ * Callers may pass an optional resolved label from the API catalogue to
+ * override this derivation.
+ */
+export function prettyLabel(assetType: string, resolvedLabel?: string): string {
+  if (resolvedLabel) return resolvedLabel;
   return assetType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
@@ -47,6 +54,8 @@ function extractControllerKey(label: string): string | null {
 export function generateAutoLabel(opts: {
   assetType: string;
   existingLabels: string[];
+  /** Optional resolved label from the asset_types catalogue for unknown types. */
+  resolvedLabel?: string;
 }): string {
   const { assetType, existingLabels } = opts;
 
@@ -63,7 +72,7 @@ export function generateAutoLabel(opts: {
     return `Controller ${indexToControllerKey(idx)}`;
   }
 
-  const prefix = prettyLabel(assetType) + ' ';
+  const prefix = prettyLabel(assetType, opts.resolvedLabel) + ' ';
   const usedNums = new Set<number>();
   for (const l of existingLabels) {
     if (l.startsWith(prefix)) {

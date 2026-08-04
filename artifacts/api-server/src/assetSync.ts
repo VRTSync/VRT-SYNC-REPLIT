@@ -2,6 +2,7 @@ import { eq, and, notInArray, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { assets, assetProperties, type Asset } from "@workspace/db";
 import turfArea from "@turf/area";
+import { resolveAssetType as resolveAssetTypeFromCache, getAssetTypeTemplate } from "./assetTypeCache";
 
 export function computeAreaSqFt(feature: any): number | null {
   const geom = feature?.geometry;
@@ -15,124 +16,12 @@ export function computeAreaSqFt(feature: any): number | null {
   }
 }
 
-export const ASSET_TYPE_TEMPLATES: Record<string, {
-  requiredKeys: string[];
-  optionalKeys: string[];
-}> = {
-  backflow: {
-    requiredKeys: ["brand", "serialNumber", "size"],
-    optionalKeys: [],
-  },
-  controller: {
-    requiredKeys: ["brand"],
-    optionalKeys: ["installDate", "seasonalAdjustment", "controllerKey", "controllerColor"],
-  },
-  zone: {
-    requiredKeys: ["zoneNumber", "runTime"],
-    optionalKeys: ["controllerFeatureRef", "controllerLabel", "zoneType", "zoneLabelShort", "valveBoxRef", "valveBoxLabel"],
-  },
-  tree: {
-    requiredKeys: ["species"],
-    optionalKeys: ["plantedDate"],
-  },
-  pet_station: {
-    requiredKeys: [],
-    optionalKeys: ["serviceFrequency"],
-  },
-  landscape_bed: {
-    requiredKeys: [],
-    optionalKeys: ["name", "sqFt"],
-  },
-  bluegrass_area: {
-    requiredKeys: [],
-    optionalKeys: ["name", "sqFt"],
-  },
-  native_area: {
-    requiredKeys: [],
-    optionalKeys: ["name", "sqFt"],
-  },
-  snow_area: {
-    requiredKeys: [],
-    optionalKeys: ["name", "sqFt"],
-  },
-  master_valve: {
-    requiredKeys: [],
-    optionalKeys: ["brand", "size"],
-  },
-  flow_meter: {
-    requiredKeys: [],
-    optionalKeys: ["brand", "size"],
-  },
-  pump: {
-    requiredKeys: [],
-    optionalKeys: ["brand", "model"],
-  },
-  quick_connect: {
-    requiredKeys: [],
-    optionalKeys: ["size"],
-  },
-  isolation_valve: {
-    requiredKeys: [],
-    optionalKeys: ["size"],
-  },
-  splice: {
-    requiredKeys: [],
-    optionalKeys: ["notes"],
-  },
-  plow: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-  atv: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-  hand_shovel: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-  ice_melt: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-  slicer: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-  storage_area: {
-    requiredKeys: [],
-    optionalKeys: ["surface", "priority", "equipment", "notes"],
-  },
-};
-
-export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
-  "irrigation/backflow": "backflow",
-  "irrigation/controller": "controller",
-  "irrigation/zone": "zone",
-  "irrigation/master_valve": "master_valve",
-  "irrigation/flow_meter": "flow_meter",
-  "irrigation/pump": "pump",
-  "irrigation/quick_connect": "quick_connect",
-  "irrigation/isolation_valve": "isolation_valve",
-  "irrigation/wire_splice": "splice",
-  "trees/tree": "tree",
-  "community/pet_station": "pet_station",
-  "community/landscape_bed": "landscape_bed",
-  "community/bluegrass_area": "bluegrass_area",
-  "community/native_area": "native_area",
-  "snow/plow": "plow",
-  "snow/atv": "atv",
-  "snow/hand_shovel": "hand_shovel",
-  "snow/ice_melt": "ice_melt",
-  "snow/slicer": "slicer",
-  "snow/storage_area": "storage_area",
-  "snow/snow_area": "snow_area",
-};
-
-export function resolveAssetType(layerKey: string, subLayerKey: string): string | null {
-  const compositeKey = `${layerKey}/${subLayerKey}`;
-  return SUB_LAYER_TO_ASSET_TYPE[compositeKey] || null;
-}
+/**
+ * Resolves (layerKey, subLayerKey) to an asset type key via the DB-backed cache.
+ * Returns null for "outline" layers and unknown/inactive mappings.
+ * Re-exported so callers that import from assetSync keep working unchanged.
+ */
+export { resolveAssetTypeFromCache as resolveAssetType };
 
 function extractFeatureId(feature: any, index: number): string {
   if (feature.id != null && feature.id !== "") return String(feature.id);
@@ -222,7 +111,7 @@ export async function syncAssetsFromLayer(
     return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0, failed: 0, failures: [] };
   }
 
-  const assetType = resolveAssetType(layerKey, subLayerKey);
+  const assetType = await resolveAssetTypeFromCache(layerKey, subLayerKey);
   if (!assetType) {
     return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0, failed: 0, failures: [] };
   }
@@ -367,8 +256,8 @@ export async function syncAssetsFromLayer(
   return { created, updated, archived, skippedMissingId: 0, total: features.length, failed, failures };
 }
 
-export function getMissingRequiredKeys(assetType: string, properties: { key: string; value: string }[]): string[] {
-  const template = ASSET_TYPE_TEMPLATES[assetType];
+export async function getMissingRequiredKeys(assetType: string, properties: { key: string; value: string }[]): Promise<string[]> {
+  const template = await getAssetTypeTemplate(assetType);
   if (!template) return [];
   const existingKeys = new Set(properties.map(p => p.key));
   return template.requiredKeys.filter(k => !existingKeys.has(k));
@@ -397,7 +286,7 @@ export async function previewSyncFromLayer(
     return { featureCount: 0, wouldCreateCount: 0, wouldUpdateCount: 0, wouldArchiveCount: 0, wouldSkipCount: 0, wouldCreateSamples: [], wouldArchiveSamples: [] };
   }
 
-  const assetType = resolveAssetType(layerKey, subLayerKey);
+  const assetType = await resolveAssetTypeFromCache(layerKey, subLayerKey);
   if (!assetType) {
     return { featureCount: 0, wouldCreateCount: 0, wouldUpdateCount: 0, wouldArchiveCount: 0, wouldSkipCount: 0, wouldCreateSamples: [], wouldArchiveSamples: [] };
   }

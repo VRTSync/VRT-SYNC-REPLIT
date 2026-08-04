@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,18 +10,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  MC_LAYERS,
-  IRRIGATION_GROUP_CONTROLLERS,
-  IRRIGATION_GROUP_VALVES,
+  IRRIGATION_CONTROLLERS_ZONE_KEYS,
+  getTypeIcon,
   type McLayerKey,
   type McAssetType,
 } from '@/lib/mcAssetTypeCatalog';
+import { useAssetTypes } from '@/client/contexts/AssetTypeContext';
 
 type Props = {
   visible: boolean;
-  activeLayer: McLayerKey;
+  activeLayer: string;
   hasControllers: boolean;
-  lastUsedByLayer: Record<McLayerKey, string | null>;
+  lastUsedByLayer: Record<string, string | null>;
   onSelect: (typeKey: string) => void;
   onClose: () => void;
   onArmController?: () => void;
@@ -37,7 +37,19 @@ export default function AssetPickerSheet({
   onArmController,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const layerDef = MC_LAYERS.find((l) => l.key === activeLayer);
+  const { assetTypes } = useAssetTypes();
+  const layerTypes: McAssetType[] = useMemo(
+    () => assetTypes
+      .filter(t => t.layerKey === activeLayer)
+      .map(t => ({ key: t.key, label: t.label, icon: getTypeIcon(t.key) })),
+    [assetTypes, activeLayer],
+  );
+  const layerLabel = useMemo(() => {
+    const LAYER_LABELS: Record<string, string> = {
+      trees: 'Trees', community: 'Community', irrigation: 'Irrigation', snow: 'Snow',
+    };
+    return LAYER_LABELS[activeLayer] ?? (activeLayer.charAt(0).toUpperCase() + activeLayer.slice(1));
+  }, [activeLayer]);
   const highlighted = lastUsedByLayer[activeLayer] ?? null;
 
   const renderTile = (type: McAssetType, disabled = false) => {
@@ -73,52 +85,56 @@ export default function AssetPickerSheet({
     );
   };
 
-  const renderIrrigationContent = () => (
-    <>
-      <Text style={styles.groupHeader}>Controllers & Zones</Text>
-      <View style={styles.tileRow}>
-        {IRRIGATION_GROUP_CONTROLLERS.map((type) => {
-          if (type.key === 'zone') {
-            const disabled = !hasControllers;
-            return (
-              <View key={type.key} style={styles.tileWrap}>
-                {renderTile(type, disabled)}
-                {disabled && (
-                  <TouchableOpacity
-                    style={styles.armControllerCta}
-                    onPress={() => { onArmController?.(); onClose(); }}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="radio-button-on-outline" size={11} color="#fff" />
-                    <Text style={styles.armControllerCtaText}>Arm Controller First</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          }
-          return <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>;
-        })}
-      </View>
-
-      <Text style={styles.groupHeader}>Valves, Meters & Fittings</Text>
-      <View style={styles.tileRow}>
-        {IRRIGATION_GROUP_VALVES.map((type) => (
-          <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>
-        ))}
-      </View>
-    </>
-  );
-
-  const renderFlatContent = () => {
-    const types = layerDef?.types ?? [];
+  const renderIrrigationContent = () => {
+    const ctrlZoneTypes = layerTypes.filter(t => IRRIGATION_CONTROLLERS_ZONE_KEYS.has(t.key));
+    const otherTypes = layerTypes.filter(t => !IRRIGATION_CONTROLLERS_ZONE_KEYS.has(t.key));
     return (
-      <View style={styles.tileRow}>
-        {types.map((type) => (
-          <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>
-        ))}
-      </View>
+      <>
+        <Text style={styles.groupHeader}>Controllers & Zones</Text>
+        <View style={styles.tileRow}>
+          {ctrlZoneTypes.map((type) => {
+            if (type.key === 'zone') {
+              const disabled = !hasControllers;
+              return (
+                <View key={type.key} style={styles.tileWrap}>
+                  {renderTile(type, disabled)}
+                  {disabled && (
+                    <TouchableOpacity
+                      style={styles.armControllerCta}
+                      onPress={() => { onArmController?.(); onClose(); }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="radio-button-on-outline" size={11} color="#fff" />
+                      <Text style={styles.armControllerCtaText}>Arm Controller First</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            }
+            return <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>;
+          })}
+        </View>
+        {otherTypes.length > 0 && (
+          <>
+            <Text style={styles.groupHeader}>Valves, Meters & Fittings</Text>
+            <View style={styles.tileRow}>
+              {otherTypes.map((type) => (
+                <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>
+              ))}
+            </View>
+          </>
+        )}
+      </>
     );
   };
+
+  const renderFlatContent = () => (
+    <View style={styles.tileRow}>
+      {layerTypes.map((type) => (
+        <View key={type.key} style={styles.tileWrap}>{renderTile(type)}</View>
+      ))}
+    </View>
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -128,7 +144,7 @@ export default function AssetPickerSheet({
           <View style={styles.handle} />
           <View style={styles.headerRow}>
             <Text style={styles.title}>
-              {layerDef?.label ?? 'Select Asset Type'}
+              {layerLabel}
             </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={22} color="#6b7280" />

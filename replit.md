@@ -70,7 +70,7 @@ _Populate as encountered._
 ## Gotchas
 
 - Always externalize `pdfkit`, `fontkit`, `@swc/helpers` in `build.mjs` — bundling them causes `@swc/helpers/cjs/_define_property.cjs` not found at runtime.
-- `artifacts/vrtsync-mobile/shared/` must stay in sync with `artifacts/api-server/src/shared/` manually — Metro can't reach outside its project root.
+- `artifacts/vrtsync-mobile/shared/` was previously a manual copy of server-side files. The `assetFieldTemplates.ts` duplicate was removed in favour of the `/api/asset-types` endpoint; only non-API shared utilities remain. Metro still can't reach outside its project root, so any new shared pure-logic files still need to be copied manually.
 - `registerRoutes` returns a `http.Server` (via WebSocket upgrade); call `.listen()` on the returned server, not on `app`.
 - Mobile workflow restart required (not just HMR) when adding new top-level directories — Metro's watcher won't pick them up otherwise.
 - **Never name a schema export `exports`**: drizzle-kit's CJS loader treats `export const exports = pgTable(...)` as a CJS reserved-word conflict and fails to transform the file. Use a distinct name (e.g. `exportJobs`) and keep the DB table name in the string argument.

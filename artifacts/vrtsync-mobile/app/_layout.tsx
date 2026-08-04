@@ -18,6 +18,7 @@ import { OfflineProvider } from "@/client/contexts/OfflineContext";
 import { OfflinePackProvider } from "@/client/contexts/OfflinePackContext";
 import { MapFilterProvider } from "@/client/contexts/MapFilterContext";
 import { PinQueueProvider } from "@/client/contexts/PinQueueContext";
+import { AssetTypeProvider } from "@/client/contexts/AssetTypeContext";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -225,15 +226,17 @@ export default function RootLayout() {
             <KeyboardProvider>
               <AuthProvider>
                 <CommunityProvider>
-                  <OfflineProvider>
-                    <PinQueueProvider>
-                      <OfflinePackProvider>
-                        <MapFilterProvider>
-                          {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
-                        </MapFilterProvider>
-                      </OfflinePackProvider>
-                    </PinQueueProvider>
-                  </OfflineProvider>
+                  <AssetTypeProvider>
+                    <OfflineProvider>
+                      <PinQueueProvider>
+                        <OfflinePackProvider>
+                          <MapFilterProvider>
+                            {cacheRestored ? <AuthNavigator /> : <LoadingScreen />}
+                          </MapFilterProvider>
+                        </OfflinePackProvider>
+                      </PinQueueProvider>
+                    </OfflineProvider>
+                  </AssetTypeProvider>
                 </CommunityProvider>
               </AuthProvider>
             </KeyboardProvider>

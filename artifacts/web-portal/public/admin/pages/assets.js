@@ -48,15 +48,19 @@ window._renderAssets = async function(container, communityId) {
   `;
 
   try {
-    templates = await apiFetch('/api/asset-type-templates');
+    const typeList = await apiFetch('/api/asset-types');
+    if (Array.isArray(typeList)) {
+      templates = {};
+      typeList.forEach(t => { templates[t.key] = t; });
+    }
   } catch {}
 
   const typeOptions = Object.keys(templates);
   const typeSelect = document.getElementById('filter-type');
-  typeOptions.forEach(t => {
+  typeOptions.forEach(k => {
     const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t.replace(/_/g, ' ');
+    opt.value = k;
+    opt.textContent = templates[k]?.label || k.replace(/_/g, ' ');
     typeSelect.appendChild(opt);
   });
 

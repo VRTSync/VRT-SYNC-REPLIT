@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
 import { db, pool } from "./db";
+import { getAssetTypeCache, getAssetTypeTemplate } from "./assetTypeCache";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
@@ -514,10 +515,11 @@ export async function getAdminSummary(communityId?: string) {
       propsByAsset.set(p.assetId, existing);
     });
 
-    const { ASSET_TYPE_TEMPLATES } = await import("./assetSync");
+    const allTypes = await getAssetTypeCache();
+    const typeMap = new Map(allTypes.map(t => [t.key, t]));
     for (const asset of allActiveAssets) {
-      const template = ASSET_TYPE_TEMPLATES[asset.assetType as keyof typeof ASSET_TYPE_TEMPLATES];
-      const required = template?.requiredKeys || [];
+      const template = typeMap.get(asset.assetType);
+      const required: string[] = template?.requiredKeys ?? [];
       const propKeys = propsByAsset.get(asset.id) || [];
       if (required.some((k: string) => !propKeys.includes(k))) {
         incompleteAssetsCount++;
@@ -867,12 +869,12 @@ export async function getIncompleteAssets(
     .where(and(...conditions))
     .orderBy(assets.label);
 
-  const { getMissingRequiredKeys } = await import("./assetSync");
-
   const results: (Asset & { missingRequiredKeys: string[] })[] = [];
   for (const asset of allAssets) {
     const props = await getAssetProperties(asset.id);
-    const missing = getMissingRequiredKeys(asset.assetType, props);
+    const tpl = await getAssetTypeTemplate(asset.assetType);
+    const propKeySet = new Set(props.map(p => p.key));
+    const missing = tpl ? tpl.requiredKeys.filter(k => !propKeySet.has(k)) : [];
     if (missing.length === 0) continue;
     if (missingKey && !missing.includes(missingKey)) continue;
     results.push({ ...asset, missingRequiredKeys: missing });
@@ -970,14 +972,13 @@ export async function getMapLayerSummary(mapLayerId: string, communityId: string
   const archived = allLayerAssets.filter(a => a.isArchived);
   
   let incompleteCount = 0;
-  const { ASSET_TYPE_TEMPLATES } = await import("./assetSync");
   for (const asset of active) {
-    const template = ASSET_TYPE_TEMPLATES[asset.assetType];
-    if (template && template.requiredKeys.length > 0) {
+    const tpl = await getAssetTypeTemplate(asset.assetType);
+    if (tpl && tpl.requiredKeys.length > 0) {
       const props = await db.select().from(assetProperties)
         .where(eq(assetProperties.assetId, asset.id));
       const propKeys = new Set(props.map(p => p.key));
-      const missing = template.requiredKeys.filter(k => !propKeys.has(k));
+      const missing = tpl.requiredKeys.filter(k => !propKeys.has(k));
       if (missing.length > 0) incompleteCount++;
     }
   }
@@ -3462,7 +3463,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const t0 = Date.now();
 
   // ── Load all active assets + properties once; used for multiple metrics ───
-  const { ASSET_TYPE_TEMPLATES: tmpl } = await import("./assetSync");
+  const allTypeRows = await getAssetTypeCache();
+  const typeTemplateMap = new Map(allTypeRows.map(t => [t.key, t]));
   const allActiveAssets = await db
     .select({ id: assets.id, assetType: assets.assetType, communityId: assets.communityId })
     .from(assets)
@@ -3491,8 +3493,8 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
   for (const asset of allActiveAssets) {
     const cid = asset.communityId;
     totalCountByCommunity.set(cid, (totalCountByCommunity.get(cid) ?? 0) + 1);
-    const template = tmpl[asset.assetType as keyof typeof tmpl];
-    const required: string[] = template?.requiredKeys || [];
+    const template = typeTemplateMap.get(asset.assetType);
+    const required: string[] = template?.requiredKeys ?? [];
     const propKeys = propKeysByAsset.get(asset.id) ?? new Set<string>();
     const isComplete = required.every(k => propKeys.has(k));
     if (isComplete) {

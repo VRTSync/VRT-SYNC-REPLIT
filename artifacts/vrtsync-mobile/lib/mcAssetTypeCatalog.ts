@@ -1,18 +1,21 @@
 /**
- * Map Creator asset type catalog.
- * Defines the three layer pills and the tile grid entries for each.
+ * Map Creator asset type icon helpers.
+ *
+ * All layer/type lists now come from AssetTypeContext (API-backed), so adding
+ * a new type in the Admin Hub immediately makes it available in the MC pin-drop
+ * flow with no code change.  This file is kept for static icon mappings only.
  *
  * Icon names are from @expo/vector-icons Ionicons:
- *   tree            → leaf-outline            (foliage)
- *   pet_station     → business-outline        (community amenity)
- *   controller      → hardware-chip-outline   (electrical/control)
- *   backflow        → link-outline            (pipe connection)
- *   pump            → git-pull-request-outline (flow circuit)
- *   master_valve    → lock-closed-outline     (master shutoff)
- *   flow_meter      → analytics-outline       (measurement)
- *   quick_connect   → flash-outline           (quick water access)
- *   isolation_valve → git-branch-outline      (isolation shutoff)
- *   zone            → grid-outline            (irrigation zone)
+ *   tree            → leaf-outline
+ *   pet_station     → business-outline
+ *   controller      → hardware-chip-outline
+ *   backflow        → link-outline
+ *   pump            → git-pull-request-outline
+ *   master_valve    → lock-closed-outline
+ *   flow_meter      → analytics-outline
+ *   quick_connect   → flash-outline
+ *   isolation_valve → git-branch-outline
+ *   zone            → grid-outline
  */
 
 import type { ComponentProps } from 'react';
@@ -20,7 +23,8 @@ import type { Ionicons } from '@expo/vector-icons';
 
 export type IoniconName = ComponentProps<typeof Ionicons>['name'];
 
-export type McLayerKey = 'trees' | 'community' | 'irrigation';
+/** Open string — any catalogue layer key is valid. */
+export type McLayerKey = string;
 
 export type McAssetType = {
   key: string;
@@ -29,56 +33,58 @@ export type McAssetType = {
 };
 
 export type McLayerDef = {
-  key: McLayerKey;
+  key: string;
   label: string;
   icon: IoniconName;
   types: McAssetType[];
 };
 
-export const IRRIGATION_GROUP_CONTROLLERS: McAssetType[] = [
-  { key: 'controller', label: 'Controller', icon: 'hardware-chip-outline' },
-  { key: 'zone',       label: 'Zone',       icon: 'grid-outline' },
-];
-
-export const IRRIGATION_GROUP_VALVES: McAssetType[] = [
-  { key: 'backflow',        label: 'Backflow',        icon: 'link-outline' },
-  { key: 'pump',            label: 'Pump',            icon: 'git-pull-request-outline' },
-  { key: 'master_valve',    label: 'Master Valve',    icon: 'lock-closed-outline' },
-  { key: 'flow_meter',      label: 'Flow Meter',      icon: 'analytics-outline' },
-  { key: 'quick_connect',   label: 'Quick Connect',   icon: 'flash-outline' },
-  { key: 'isolation_valve', label: 'Isolation Valve', icon: 'git-branch-outline' },
-];
-
-export const MC_LAYERS: McLayerDef[] = [
-  {
-    key: 'trees',
-    label: 'Trees',
-    icon: 'leaf-outline',
-    types: [
-      { key: 'tree', label: 'Tree', icon: 'leaf-outline' },
-    ],
-  },
-  {
-    key: 'community',
-    label: 'Community',
-    icon: 'business-outline',
-    types: [
-      { key: 'pet_station', label: 'Pet Station', icon: 'business-outline' },
-    ],
-  },
-  {
-    key: 'irrigation',
-    label: 'Irrigation',
-    icon: 'water-outline',
-    types: [
-      ...IRRIGATION_GROUP_CONTROLLERS,
-      ...IRRIGATION_GROUP_VALVES,
-    ],
-  },
-];
-
-export const MC_LAYER_MAP: Record<McLayerKey, McLayerDef> = {
-  trees: MC_LAYERS[0],
-  community: MC_LAYERS[1],
-  irrigation: MC_LAYERS[2],
+/** Icon per asset-type key — falls back to 'cube-outline' for unknown types. */
+export const TYPE_ICON_MAP: Record<string, IoniconName> = {
+  tree:            'leaf-outline',
+  pet_station:     'business-outline',
+  controller:      'hardware-chip-outline',
+  backflow:        'link-outline',
+  pump:            'git-pull-request-outline',
+  master_valve:    'lock-closed-outline',
+  flow_meter:      'analytics-outline',
+  quick_connect:   'flash-outline',
+  isolation_valve: 'git-branch-outline',
+  zone:            'grid-outline',
+  wire_splice:     'git-merge-outline',
+  landscape_bed:   'map-outline',
+  bluegrass_area:  'color-fill-outline',
+  native_area:     'flower-outline',
+  plow:            'snow-outline',
+  atv:             'bicycle-outline',
+  hand_shovel:     'hammer-outline',
+  ice_melt:        'thermometer-outline',
+  slicer:          'cut-outline',
+  storage_area:    'cube-outline',
+  snow_area:       'cloud-outline',
 };
+
+/** Icon per layer key — falls back to 'layers-outline'. */
+export const LAYER_ICON_MAP: Record<string, IoniconName> = {
+  trees:      'leaf-outline',
+  community:  'business-outline',
+  irrigation: 'water-outline',
+  snow:       'snow-outline',
+};
+
+/** Returns the Ionicon name for an asset-type key, falling back to 'cube-outline'. */
+export function getTypeIcon(key: string): IoniconName {
+  return TYPE_ICON_MAP[key] ?? 'cube-outline';
+}
+
+/** Returns the Ionicon name for a layer key, falling back to 'layers-outline'. */
+export function getLayerIcon(key: string): IoniconName {
+  return LAYER_ICON_MAP[key] ?? 'layers-outline';
+}
+
+/**
+ * In the irrigation AssetPickerSheet, these type keys get their own
+ * "Controllers & Zones" group header.  All other irrigation types fall under
+ * "Valves, Meters & Fittings".
+ */
+export const IRRIGATION_CONTROLLERS_ZONE_KEYS = new Set(['controller', 'zone']);

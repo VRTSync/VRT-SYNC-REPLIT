@@ -45,7 +45,7 @@ function extractFeatureIdRaw(feature: any): string | null {
 
 export function validateLayerGeoJSON(
   geojson: any,
-  options: { layerKey: string; subLayerKey: string }
+  options: { layerKey: string; subLayerKey: string; allowedGeometry?: string[] | null }
 ): ValidationResult {
   const result: ValidationResult = {
     featureCount: 0,
@@ -86,7 +86,11 @@ export function validateLayerGeoJSON(
 
   const compositeKey = `${options.layerKey}/${options.subLayerKey}`;
   const assetType = options.subLayerKey;
-  const expectedGeomTypes = EXPECTED_GEOMETRY[assetType] || null;
+  // Prefer catalogue-supplied allowedGeometry; fall back to the hardcoded map.
+  const expectedGeomTypes =
+    options.allowedGeometry != null
+      ? options.allowedGeometry
+      : (EXPECTED_GEOMETRY[assetType] || null);
 
   const idCounts = new Map<string, number>();
 

@@ -1,0 +1,1 @@
+- [Asset Types Catalogue](asset-types-catalogue.md) — asset_types DB table is source of truth; resolveAssetType and getMissingRequiredKeys are now async; lib/db dist must be rebuilt after schema changes.

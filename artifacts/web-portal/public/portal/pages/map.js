@@ -10,7 +10,7 @@ PortalRouter.register('map', async function (container) {
     return;
   }
 
-  const LAYER_HIERARCHY = {
+  let LAYER_HIERARCHY = {
     community: [
       { key: 'bluegrass_area', label: 'Bluegrass', color: '#2E8B57' },
       { key: 'native_area', label: 'Native Area', color: '#8F9779' },
@@ -522,6 +522,32 @@ PortalRouter.register('map', async function (container) {
 
   async function loadMapData() {
     try {
+      // Rebuild LAYER_HIERARCHY from the DB-backed catalogue every load so that
+      // new types appear and deactivated types disappear without a deploy.
+      try {
+        const assetTypesData = await apiFetch('/api/asset-types');
+        if (Array.isArray(assetTypesData) && assetTypesData.length > 0) {
+          const newHierarchy = {};
+          for (const t of assetTypesData) {
+            if (!t.isActive) continue;
+            if (!newHierarchy[t.layerKey]) newHierarchy[t.layerKey] = [];
+            newHierarchy[t.layerKey].push({ key: t.subLayerKey, label: t.label, color: t.defaultColor || '#888888' });
+          }
+          // Merge sublayerState: preserve existing on/off choices; init new entries to false.
+          for (const [cat, subs] of Object.entries(newHierarchy)) {
+            if (!sublayerState[cat]) sublayerState[cat] = {};
+            for (const sub of subs) {
+              if (sublayerState[cat][sub.key] === undefined) {
+                sublayerState[cat][sub.key] = false;
+              }
+            }
+          }
+          LAYER_HIERARCHY = newHierarchy;
+        }
+      } catch (assetTypesErr) {
+        console.warn('[map] Failed to load asset types catalogue — using hardcoded fallback:', assetTypesErr);
+      }
+
       const [layers, controllers] = await Promise.all([
         apiFetch(`/api/map-layers?communityId=${community.id}`),
         apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),

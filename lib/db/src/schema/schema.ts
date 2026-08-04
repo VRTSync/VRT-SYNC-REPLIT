@@ -195,6 +195,28 @@ export const assetTypeEnum = pgEnum("asset_type", [
   "plow", "atv", "hand_shovel", "ice_melt", "slicer", "storage_area",
 ]);
 
+// Data-driven asset type catalogue — replaces the hardcoded ASSET_TYPE_TEMPLATES
+// and SUB_LAYER_TO_ASSET_TYPE maps that previously lived in assetSync.ts.
+// The old enum above is kept (not dropped) so the column-type revert stays safe.
+export const assetTypes = pgTable("asset_types", {
+  key: varchar("key").primaryKey(),
+  label: text("label").notNull(),
+  layerKey: text("layer_key").notNull(),
+  subLayerKey: text("sub_layer_key").notNull(),
+  allowedGeometry: jsonb("allowed_geometry").$type<string[]>(),
+  defaultColor: text("default_color"),
+  requiredKeys: jsonb("required_keys").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  optionalKeys: jsonb("optional_keys").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("asset_types_layer_sub_idx").on(table.layerKey, table.subLayerKey),
+]);
+
+export type AssetType = typeof assetTypes.$inferSelect;
+export type NewAssetType = typeof assetTypes.$inferInsert;
+
 export const assetNotes = pgTable("asset_notes", {
   id: varchar("id")
     .primaryKey()
@@ -221,7 +243,7 @@ export const assets = pgTable("assets", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
-  assetType: assetTypeEnum("asset_type").notNull(),
+  assetType: varchar("asset_type").notNull().references(() => assetTypes.key, { onUpdate: "cascade" }),
   label: text("label").notNull(),
   featureRef: text("feature_ref"),
   mapLayerId: varchar("map_layer_id").references(() => mapLayers.id, { onDelete: 'cascade' }),
@@ -712,7 +734,7 @@ export const ASSET_TYPES = [
 
 export const insertAssetSchema = z.object({
   communityId: z.string().min(1),
-  assetType: z.enum(ASSET_TYPES),
+  assetType: z.string().min(1),
   label: z.string().min(1),
   featureRef: z.string().optional(),
   mapLayerId: z.string().optional(),

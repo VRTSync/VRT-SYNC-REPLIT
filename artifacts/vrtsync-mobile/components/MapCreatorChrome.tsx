@@ -10,7 +10,7 @@
  *  - Progress ring + countdown during capture
  *  - Canopy-mode suggestion: one-time toast after 20 s yellow lock or 2 strict timeout aborts
  */
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,14 +21,16 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MC_LAYERS, MC_LAYER_MAP, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
+import { getTypeIcon, getLayerIcon, type McLayerKey } from '@/lib/mcAssetTypeCatalog';
+import { useAssetTypes, deriveLabel } from '@/client/contexts/AssetTypeContext';
 import type { CaptureMode, LockState, Fix } from '@/hooks/useHighAccuracyLocation';
 import AssetPickerSheet from './AssetPickerSheet';
 
-const LAYER_COLORS: Record<McLayerKey, string> = {
+const LAYER_COLORS: Record<string, string> = {
   trees: '#22c55e',
   community: '#3b82f6',
   irrigation: '#25C1AC',
+  snow: '#6A9BD1',
 };
 
 function getCaptureColor(mode: CaptureMode, lockState: LockState): string {
@@ -93,8 +95,8 @@ export type CaptureResult = {
 };
 
 export type MapCreatorChromeProps = {
-  activeLayer: McLayerKey;
-  onLayerChange: (layer: McLayerKey) => void;
+  activeLayer: string;
+  onLayerChange: (layer: string) => void;
   armedType: string | null;
   onArmType: (type: string | null) => void;
   lockState: LockState;
@@ -143,11 +145,7 @@ export default function MapCreatorChrome({
 }: MapCreatorChromeProps) {
   const insets = useSafeAreaInsets();
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [lastUsedByLayer, setLastUsedByLayer] = useState<Record<McLayerKey, string | null>>({
-    trees: null,
-    community: null,
-    irrigation: null,
-  });
+  const [lastUsedByLayer, setLastUsedByLayer] = useState<Record<string, string | null>>({});
   const yellowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasShownCanopySuggestRef = useRef(false);
 
@@ -180,17 +178,38 @@ export default function MapCreatorChrome({
     }
   }, [captureTimeoutCount, captureMode, onCanopySuggest]);
 
-  const layerColor = LAYER_COLORS[activeLayer];
-  const armedTypeDef = armedType
-    ? MC_LAYER_MAP[activeLayer]?.types.find((t) => t.key === armedType) ??
-      Object.values(MC_LAYER_MAP)
-        .flatMap((l) => l.types)
-        .find((t) => t.key === armedType) ?? null
-    : null;
+  const { assetTypes } = useAssetTypes();
+
+  const catalogueLayers = useMemo(() => {
+    const seen = new Set<string>();
+    const LAYER_LABELS: Record<string, string> = {
+      trees: 'Trees', community: 'Community', irrigation: 'Irrigation', snow: 'Snow',
+    };
+    const result: { key: string; label: string; icon: ReturnType<typeof getLayerIcon> }[] = [];
+    for (const t of assetTypes) {
+      if (!seen.has(t.layerKey)) {
+        seen.add(t.layerKey);
+        result.push({
+          key: t.layerKey,
+          label: LAYER_LABELS[t.layerKey] ?? (t.layerKey.charAt(0).toUpperCase() + t.layerKey.slice(1)),
+          icon: getLayerIcon(t.layerKey),
+        });
+      }
+    }
+    return result;
+  }, [assetTypes]);
+
+  const armedTypeDef = useMemo(() => {
+    if (!armedType) return null;
+    const t = assetTypes.find(at => at.key === armedType);
+    return { key: armedType, label: t?.label ?? deriveLabel(armedType), icon: getTypeIcon(armedType) };
+  }, [armedType, assetTypes]);
+
+  const layerColor = LAYER_COLORS[activeLayer] ?? '#888888';
 
   const canCapture = !isLocked && !!armedType && lockState === 'green';
 
-  const handleLayerSelect = (key: McLayerKey) => {
+  const handleLayerSelect = (key: string) => {
     onLayerChange(key);
     onArmType(null);
   };
@@ -214,14 +233,14 @@ export default function MapCreatorChrome({
       {/* Layer pill bar */}
       <View style={[styles.pillBar, { top: 8 }]}>
         <View style={styles.pillGroup}>
-          {MC_LAYERS.map((layer) => {
+          {catalogueLayers.map((layer) => {
             const active = layer.key === activeLayer;
-            const color = LAYER_COLORS[layer.key];
+            const color = LAYER_COLORS[layer.key] ?? '#888888';
             return (
               <TouchableOpacity
                 key={layer.key}
                 style={[styles.pill, active && { backgroundColor: color, borderColor: color }]}
-                onPress={() => handleLayerSelect(layer.key as McLayerKey)}
+                onPress={() => handleLayerSelect(layer.key)}
                 activeOpacity={0.8}
               >
                 <Ionicons

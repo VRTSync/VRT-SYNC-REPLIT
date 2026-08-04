@@ -11,7 +11,8 @@ import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../ob
 import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
 import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "../pushNotifications";
-import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, ASSET_TYPE_TEMPLATES, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "../assetSync";
+import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "../assetSync";
+import { getAssetTypeCache, invalidateAssetTypeCache, validateLayerKeysFromCatalogue } from "../assetTypeCache";
 import { parseIrrigationKml } from "../kmlIrrigationParser";
 import { validateLayerGeoJSON } from "../layerValidation";
 import { validateLayerKeys, CANONICAL_LAYER_HIERARCHY } from "../layerKeys";
@@ -33,7 +34,7 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypeEnum } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray } from "drizzle-orm";
 
@@ -63,24 +64,16 @@ function isUniqueViolation(error: any, constraint?: string): boolean {
 }
 
 /**
- * Validates that (layerKey, subLayerKey) resolves to a known asset type present
- * in the database enum. Returns null on success, or an error message string on failure.
+ * Validates that (layerKey, subLayerKey) resolves to an active asset type in the
+ * asset_types catalogue. Returns null on success, or an error message on failure.
  * Layers that legitimately produce no assets (e.g. "outline") are exempt.
  */
-function validateAssetTypeMapping(layerKey: string, subLayerKey: string): string | null {
-  // "outline" layers never produce assets — exempt from asset-type validation.
+async function validateAssetTypeMapping(layerKey: string, subLayerKey: string): Promise<string | null> {
   if (layerKey === "outline") return null;
-
-  const resolvedType = resolveAssetType(layerKey, subLayerKey);
+  const resolvedType = await resolveAssetType(layerKey, subLayerKey);
   if (!resolvedType) {
-    return `No asset type mapping found for layer "${layerKey}/${subLayerKey}". Upload rejected to prevent silent data loss.`;
+    return `No asset type mapping found for layer "${layerKey}/${subLayerKey}". Upload rejected to prevent silent data loss. Add this sub-layer to the asset_types catalogue first.`;
   }
-
-  const validEnumValues: readonly string[] = assetTypeEnum.enumValues;
-  if (!validEnumValues.includes(resolvedType)) {
-    return `Asset type "${resolvedType}" (mapped from "${layerKey}/${subLayerKey}") is not a valid enum value. Upload rejected to prevent silent data loss.`;
-  }
-
   return null;
 }
 
@@ -2178,7 +2171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!isMember) return void res.status(403).json({ error: "You do not have access to this asset" });
       }
       const properties = await storage.getAssetProperties(asset.id);
-      const missingRequiredKeys = getMissingRequiredKeys(asset.assetType, properties);
+      const missingRequiredKeys = await getMissingRequiredKeys(asset.assetType, properties);
       let createdByName: string | null = null;
       let updatedByName: string | null = null;
       if (asset.createdBy) {
@@ -2354,25 +2347,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Map creator GPS-pin path: communityId + assetType + lat/lng (label optional)
       if (isMapCreatorRole(reqUser.role)) {
-        const MC_ASSET_TYPES = [
-          "tree", "pet_station", "controller", "backflow", "pump",
-          "master_valve", "flow_meter", "quick_connect", "isolation_valve", "zone",
-        ] as const;
-        type McAssetType = typeof MC_ASSET_TYPES[number];
-
-        const MC_LAYER_MAP_LOCAL: Record<McAssetType, { layerKey: string; subLayerKey: string; displayName: string }> = {
-          tree:            { layerKey: "trees",      subLayerKey: "tree",            displayName: "Trees" },
-          pet_station:     { layerKey: "community",  subLayerKey: "pet_station",     displayName: "Pet Stations" },
-          controller:      { layerKey: "irrigation", subLayerKey: "controller",      displayName: "Controllers" },
-          backflow:        { layerKey: "irrigation", subLayerKey: "backflow",        displayName: "Backflows" },
-          pump:            { layerKey: "irrigation", subLayerKey: "pump",            displayName: "Pumps" },
-          master_valve:    { layerKey: "irrigation", subLayerKey: "master_valve",    displayName: "Master Valves" },
-          flow_meter:      { layerKey: "irrigation", subLayerKey: "flow_meter",      displayName: "Flow Meters" },
-          quick_connect:   { layerKey: "irrigation", subLayerKey: "quick_connect",   displayName: "Quick Connects" },
-          isolation_valve: { layerKey: "irrigation", subLayerKey: "isolation_valve", displayName: "Isolation Valves" },
-          zone:            { layerKey: "irrigation", subLayerKey: "zone",            displayName: "Zones" },
-        };
-
         // Authz: communityId required → membership → lock check
         const communityIdForPin = req.body?.communityId as string | undefined;
         if (!communityIdForPin) return void res.status(400).json({ error: "communityId is required" });
@@ -2385,7 +2359,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const pinSchema = z.object({
           communityId:          z.string().min(1),
-          assetType:            z.enum(MC_ASSET_TYPES),
+          assetType:            z.string().min(1),
           latitude:             z.number(),
           longitude:            z.number(),
           label:                z.string().optional(),
@@ -2407,10 +2381,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           capturedDeviceModel, capturedUnderCanopy,
         } = parsed.data;
 
+        // Validate assetType against the live catalogue
+        const catalogueTypes = await getAssetTypeCache();
+        const typeDef = catalogueTypes.find(t => t.isActive && t.key === assetType);
+        if (!typeDef) {
+          const allowed = catalogueTypes.filter(t => t.isActive).map(t => t.key).join(", ");
+          return void res.status(400).json({ error: `Unknown asset type "${assetType}". Allowed: ${allowed}` });
+        }
+
         const isMember = await storage.isUserMemberOfCommunity(reqUser.id, communityId);
         if (!isMember) return void res.status(403).json({ error: "You are not authorized to create assets in this community" });
 
-        const layerDef = MC_LAYER_MAP_LOCAL[assetType];
+        const layerDef = {
+          layerKey: typeDef.layerKey,
+          subLayerKey: typeDef.subLayerKey,
+          displayName: typeDef.label,
+        };
         const featureRef = `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const pinLabel = label || `${layerDef.displayName.replace(/s$/, "")} ${featureRef.slice(-4).toUpperCase()}`;
 
@@ -2800,7 +2786,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/layer-hierarchy", requireAuth, async (_req: Request, res: Response) => {
-    res.json(CANONICAL_LAYER_HIERARCHY);
+    try {
+      const types = await getAssetTypeCache();
+      // Return catalogue-derived hierarchy grouped by layerKey, sorted by sortOrder.
+      // The outline layer is structural (not in the catalogue) and is appended as-is.
+      const hierarchy: Record<string, string[]> = {};
+      for (const t of types.filter(t => t.isActive).sort((a, b) => a.sortOrder - b.sortOrder)) {
+        if (!hierarchy[t.layerKey]) hierarchy[t.layerKey] = [];
+        hierarchy[t.layerKey].push(t.subLayerKey);
+      }
+      hierarchy.outline = CANONICAL_LAYER_HIERARCHY.outline ?? ["community_boundary"];
+      res.json(hierarchy);
+    } catch (error) {
+      // Fall back to hardcoded hierarchy on DB failure
+      res.json(CANONICAL_LAYER_HIERARCHY);
+    }
   });
 
   app.post("/api/map-layers", requireAdmin, async (req: Request, res: Response) => {
@@ -2808,10 +2808,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const parsed = insertMapLayerSchema.safeParse(req.body);
       if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
-      const keyValidation = validateLayerKeys(parsed.data.layerKey, parsed.data.subLayerKey);
+      const keyValidation = await validateLayerKeysFromCatalogue(parsed.data.layerKey, parsed.data.subLayerKey);
       if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
 
-      const assetTypeError = validateAssetTypeMapping(parsed.data.layerKey, parsed.data.subLayerKey);
+      const assetTypeError = await validateAssetTypeMapping(parsed.data.layerKey, parsed.data.subLayerKey);
       if (assetTypeError) return void res.status(400).json({ error: assetTypeError });
 
       if (!parsed.data.color) {
@@ -2883,10 +2883,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(400).json({ error: "communityId, layerKey, subLayerKey, and displayName are required" });
       }
 
-      const keyValidation = validateLayerKeys(layerKey, subLayerKey);
+      const keyValidation = await validateLayerKeysFromCatalogue(layerKey, subLayerKey);
       if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
 
-      const assetTypeError = validateAssetTypeMapping(layerKey, subLayerKey);
+      const assetTypeError = await validateAssetTypeMapping(layerKey, subLayerKey);
       if (assetTypeError) return void res.status(400).json({ error: assetTypeError });
 
       let geojsonData: string;
@@ -3314,7 +3314,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!layer) return void res.status(404).json({ error: "Layer not found" });
       if (!layer.geojsonData) return void res.json({ featureCount: 0, geometryCounts: { points: 0, lines: 0, polygons: 0, other: 0 }, missingIdCount: 0, missingIdSamples: [], duplicateIdCount: 0, duplicateIdSamples: [], invalidGeometryCount: 0, invalidGeometrySamples: [], warnings: [], errors: ["No GeoJSON data in this layer"], valid: false });
       const geojson = JSON.parse(layer.geojsonData);
-      const result = validateLayerGeoJSON(geojson, { layerKey: layer.layerKey, subLayerKey: layer.subLayerKey });
+      const catalogueEntry = (await getAssetTypeCache()).find(
+        t => t.layerKey === layer.layerKey && t.subLayerKey === layer.subLayerKey
+      );
+      const result = validateLayerGeoJSON(geojson, {
+        layerKey: layer.layerKey,
+        subLayerKey: layer.subLayerKey,
+        allowedGeometry: catalogueEntry?.allowedGeometry ?? null,
+      });
       res.json(result);
     } catch (error) {
       console.error("Validate layer error:", error);
@@ -3353,7 +3360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const layer = await storage.getMapLayerById(req.params.id as string);
       if (!layer) return void res.status(404).json({ error: "Layer not found" });
 
-      const assetType = resolveAssetType(layer.layerKey, layer.subLayerKey);
+      const assetType = await resolveAssetType(layer.layerKey, layer.subLayerKey);
       if (!assetType) return void res.status(400).json({ error: "Cannot resolve asset type for this layer" });
 
       const existingAssets = await storage.getAssetsByMapLayer(layer.communityId, layer.id);
@@ -3468,7 +3475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const missingRequired: { id: string; label: string; assetType: string; missingKeys: string[] }[] = [];
       for (const asset of active) {
         const props = await storage.getAssetProperties(asset.id);
-        const missing = getMissingRequiredKeys(asset.assetType, props);
+        const missing = await getMissingRequiredKeys(asset.assetType, props);
         if (missing.length > 0) {
           missingRequired.push({ id: asset.id, label: asset.label, assetType: asset.assetType, missingKeys: missing });
         }
@@ -3547,8 +3554,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/asset-type-templates", requireAuth, async (_req: Request, res: Response) => {
-    res.json(ASSET_TYPE_TEMPLATES);
+  // ── Asset Types catalogue (data-driven) ──────────────────────────────────
+
+  app.get("/api/asset-types", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const types = await getAssetTypeCache();
+      // Admins can request all types (including inactive) via ?all=true
+      if (req.query.all === "true") {
+        const user = await storage.getUserById(req.session.userId!);
+        if (user?.role === "admin") return void res.json(types);
+      }
+      res.json(types.filter(t => t.isActive));
+    } catch (error) {
+      console.error("Get asset types error:", error);
+      res.status(500).json({ error: "Failed to fetch asset types" });
+    }
+  });
+
+  const createAssetTypeSchema = z.object({
+    key:             z.string().regex(/^[a-z][a-z0-9_]*$/, "key must be lowercase letters, digits, underscores (e.g. parking_sweep)"),
+    label:           z.string().min(1).max(120),
+    layerKey:        z.string().regex(/^[a-z][a-z0-9_]*$/, "layerKey must be lowercase letters, digits, underscores"),
+    subLayerKey:     z.string().regex(/^[a-z][a-z0-9_]*$/, "subLayerKey must be lowercase letters, digits, underscores"),
+    allowedGeometry: z.array(z.string()).nullable().optional(),
+    defaultColor:    z.string().regex(/^#[0-9A-Fa-f]{6}$/, "defaultColor must be a hex colour e.g. #25C1AC").nullable().optional(),
+    requiredKeys:    z.array(z.string()).optional(),
+    optionalKeys:    z.array(z.string()).optional(),
+    sortOrder:       z.number().int().min(0).optional(),
+  });
+
+  const patchAssetTypeSchema = z.object({
+    label:           z.string().min(1).max(120).optional(),
+    layerKey:        z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+    subLayerKey:     z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
+    allowedGeometry: z.array(z.string()).nullable().optional(),
+    defaultColor:    z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
+    requiredKeys:    z.array(z.string()).optional(),
+    optionalKeys:    z.array(z.string()).optional(),
+    sortOrder:       z.number().int().min(0).optional(),
+    isActive:        z.boolean().optional(),
+  });
+
+  app.post("/api/asset-types", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed = createAssetTypeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const { key, label, layerKey, subLayerKey, allowedGeometry, defaultColor, requiredKeys, optionalKeys, sortOrder } = parsed.data;
+      const [row] = await db.insert(assetTypesTable).values({
+        key, label, layerKey, subLayerKey,
+        allowedGeometry: allowedGeometry ?? null,
+        defaultColor: defaultColor ?? null,
+        requiredKeys: requiredKeys ?? [],
+        optionalKeys: optionalKeys ?? [],
+        sortOrder: sortOrder ?? 0,
+        isActive: true,
+      }).returning();
+      invalidateAssetTypeCache();
+      res.status(201).json(row);
+    } catch (error: any) {
+      const pgCode = error?.code ?? error?.cause?.code;
+      if (pgCode === "23505") {
+        return void res.status(409).json({ error: "An asset type with that key or layer/sub-layer combination already exists" });
+      }
+      console.error("Create asset type error:", error);
+      res.status(500).json({ error: "Failed to create asset type" });
+    }
+  });
+
+  app.patch("/api/asset-types/:key", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const key = req.params.key as string;
+      const parsed = patchAssetTypeSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const { label, layerKey, subLayerKey, allowedGeometry, defaultColor, requiredKeys, optionalKeys, sortOrder, isActive } = parsed.data;
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      if (label !== undefined) updates.label = label;
+      if (layerKey !== undefined) updates.layerKey = layerKey;
+      if (subLayerKey !== undefined) updates.subLayerKey = subLayerKey;
+      if (allowedGeometry !== undefined) updates.allowedGeometry = allowedGeometry;
+      if (defaultColor !== undefined) updates.defaultColor = defaultColor;
+      if (requiredKeys !== undefined) updates.requiredKeys = requiredKeys;
+      if (optionalKeys !== undefined) updates.optionalKeys = optionalKeys;
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      if (isActive !== undefined) updates.isActive = isActive;
+      const [row] = await db.update(assetTypesTable).set(updates).where(eq(assetTypesTable.key, key)).returning();
+      if (!row) return void res.status(404).json({ error: "Asset type not found" });
+      invalidateAssetTypeCache();
+      res.json(row);
+    } catch (error: any) {
+      const pgCode = error?.code ?? error?.cause?.code;
+      if (pgCode === "23505") {
+        return void res.status(409).json({ error: "That layer/sub-layer combination is already used by another active type" });
+      }
+      console.error("Update asset type error:", error);
+      res.status(500).json({ error: "Failed to update asset type" });
+    }
+  });
+
+  app.delete("/api/asset-types/:key", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const key = req.params.key as string;
+      // Deactivate instead of hard-delete to avoid FK violations on existing assets
+      const [row] = await db.update(assetTypesTable)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(assetTypesTable.key, key))
+        .returning();
+      if (!row) return void res.status(404).json({ error: "Asset type not found" });
+      invalidateAssetTypeCache();
+      res.json({ message: "Asset type deactivated", key });
+    } catch (error) {
+      console.error("Deactivate asset type error:", error);
+      res.status(500).json({ error: "Failed to deactivate asset type" });
+    }
   });
 
   app.get("/api/communities/:communityId/offline-pack", requireAuth, async (req: Request, res: Response) => {
@@ -3694,6 +3815,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.generateSearchIndex(communityId, user.id, isAdmin),
       ]);
 
+      const assetTypesData = await getAssetTypeCache();
       res.json({
         pack: {
           id: pack.id,
@@ -3707,6 +3829,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         geojsonBundle,
         workHistorySnapshot,
         searchIndex,
+        assetTypes: assetTypesData.filter(t => t.isActive),
       });
     } catch (error) {
       console.error("Get offline pack data error:", error);

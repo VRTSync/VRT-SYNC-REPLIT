@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { MC_LAYERS, type McLayerKey, type McAssetType } from '@/lib/mcAssetTypeCatalog';
+import { getTypeIcon, getLayerIcon, type McLayerKey, type McAssetType } from '@/lib/mcAssetTypeCatalog';
+import { useAssetTypes } from '@/client/contexts/AssetTypeContext';
 
 type Props = {
-  activeLayer: McLayerKey;
-  onLayerChange: (layer: McLayerKey) => void;
+  activeLayer: string;
+  onLayerChange: (layer: string) => void;
   armedType: string | null;
   onArmType: (typeKey: string | null) => void;
   typeCounts: Record<string, number>;
@@ -26,19 +27,44 @@ export default function MapCreatorOverlay({
   typeCounts,
   lockState: _lockState,
 }: Props) {
-  const activeDef = MC_LAYERS.find((l) => l.key === activeLayer);
-  const types: McAssetType[] = activeDef?.types ?? [];
+  const { assetTypes } = useAssetTypes();
+
+  const layers = useMemo(() => {
+    const seen = new Set<string>();
+    const result: { key: string; label: string; icon: ReturnType<typeof getLayerIcon> }[] = [];
+    const LAYER_LABELS: Record<string, string> = {
+      trees: 'Trees', community: 'Community', irrigation: 'Irrigation', snow: 'Snow',
+    };
+    for (const t of assetTypes) {
+      if (!seen.has(t.layerKey)) {
+        seen.add(t.layerKey);
+        result.push({
+          key: t.layerKey,
+          label: LAYER_LABELS[t.layerKey] ?? (t.layerKey.charAt(0).toUpperCase() + t.layerKey.slice(1)),
+          icon: getLayerIcon(t.layerKey),
+        });
+      }
+    }
+    return result;
+  }, [assetTypes]);
+
+  const types: McAssetType[] = useMemo(
+    () => assetTypes
+      .filter(t => t.layerKey === activeLayer)
+      .map(t => ({ key: t.key, label: t.label, icon: getTypeIcon(t.key) })),
+    [assetTypes, activeLayer],
+  );
 
   return (
     <View style={styles.container} pointerEvents="box-none">
       <View style={styles.pillsRow}>
-        {MC_LAYERS.map((layer) => {
+        {layers.map((layer) => {
           const isActive = layer.key === activeLayer;
           return (
             <TouchableOpacity
               key={layer.key}
               style={[styles.layerPill, isActive && styles.layerPillActive]}
-              onPress={() => onLayerChange(layer.key)}
+              onPress={() => onLayerChange(layer.key as McLayerKey)}
               activeOpacity={0.75}
             >
               <Ionicons
