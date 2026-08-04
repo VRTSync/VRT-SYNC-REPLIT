@@ -758,6 +758,12 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     clearAccuracyRing: function() {
       if (this._accuracyRingCircle) { map.removeLayer(this._accuracyRingCircle); this._accuracyRingCircle = null; }
       if (this._accuracyRingTimer) { clearTimeout(this._accuracyRingTimer); this._accuracyRingTimer = null; }
+    },
+
+    // Called by the parent frame after moving this iframe to a new DOM slot so
+    // that Leaflet recalculates its container dimensions and renders correctly.
+    invalidateSize: function() {
+      map.invalidateSize();
     }
   };
 

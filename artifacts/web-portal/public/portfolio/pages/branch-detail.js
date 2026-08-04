@@ -58,10 +58,49 @@
     _bMap.serviceLayers = null; _bMap.outlineLayer = null;
   }
 
-  /** Dot colour → hex for layer styling. */
+  /** Dot colour → hex for layer styling (tab underlines/dots only — not geometry). */
   function _dotHex(accent) {
     var map = { blue: '#3b82f6', green: '#10b981', teal: '#25C1AC', gray: '#9ca3af', lime: '#84cc16', slate: '#64748b' };
     return (accent && map[accent.dot]) || '#25C1AC';
+  }
+
+  /** Return true only for well-formed 3- or 6-digit hex colours (#RGB or #RRGGBB). */
+  var _HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
+  function _isValidHex(s) {
+    return typeof s === 'string' && _HEX_RE.test(s.trim());
+  }
+
+  /**
+   * Return a valid geometry color for a layer.
+   * Accepts the admin-configured color from the API when it is a well-formed hex
+   * value; falls back to the tab-accent palette for null, empty, or malformed values
+   * so geometry always renders even when the database holds a bad string.
+   */
+  function _layerColor(layer) {
+    var raw = layer && layer.color;
+    if (_isValidHex(raw)) return raw.trim();
+    return _dotHex(layerAccent(layer));
+  }
+
+  /**
+   * Derive a dimmed shade from a hex colour for inactive-layer context rendering.
+   * Blends the colour 25% original + 75% white, producing a washed-out tint of
+   * the same hue rather than a generic grey.
+   * Falls back to a safe neutral when the input is not a valid hex colour.
+   */
+  function _dimHex(hex) {
+    if (!_isValidHex(hex)) return '#c8cdd4';
+    try {
+      var h = hex.trim().replace('#', '');
+      if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+      var r = parseInt(h.substr(0,2), 16);
+      var g = parseInt(h.substr(2,2), 16);
+      var b = parseInt(h.substr(4,2), 16);
+      var dr = Math.round(r * 0.25 + 255 * 0.75);
+      var dg = Math.round(g * 0.25 + 255 * 0.75);
+      var db = Math.round(b * 0.25 + 255 * 0.75);
+      return '#' + ('0'+dr.toString(16)).slice(-2) + ('0'+dg.toString(16)).slice(-2) + ('0'+db.toString(16)).slice(-2);
+    } catch (_) { return '#c8cdd4'; }
   }
 
   /**
@@ -101,8 +140,9 @@
       if (layer.type === 'outline') return; // outline is pushed via setCommunityOutline, not addLayers
       var geojson = geojsonMap[layer.id];
       if (!geojson) return;
-      var accent = layerAccent(layer);
-      var color  = _dotHex(accent);
+      // _layerColor validates the API color and falls back to the accent palette for
+      // null, empty, or malformed values so geometry always has a usable hex color.
+      var color  = _layerColor(layer);
       _bMap.layerColors[layer.id] = color; // remember for dimming restore
       toAdd.push({
         id: layer.id,
@@ -191,12 +231,13 @@
       // Collect all layers that have been loaded into the iframe
       var loadedIds = Array.from(_bMap.addedSet);
       _bCmd('showLayerIds', loadedIds);
-      // Active layer: full colour; others: dimmed grey for context
+      // Active layer: full admin colour; others: washed-out tint derived from
+      // each layer's own colour so they stay contextually visible but subdued.
       loadedIds.forEach(function (id) {
         if (id === layer.id) {
           _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
         } else {
-          _bCmd('updateLayerColor', id, '#c8cdd4');
+          _bCmd('updateLayerColor', id, _dimHex(_bMap.layerColors[id] || '#25C1AC'));
         }
       });
       _bCmd('fitToContent', [], null);
@@ -224,6 +265,10 @@
     var slot = _bMap.container.querySelector('#' + slotId);
     if (!slot) return; // this layer has no geometry — no slot was rendered
     slot.appendChild(_bMap.iframe);
+    // invariant: after tab switch, active layer id is in showLayerIds set and map container is sized.
+    // Moving the iframe to a new DOM slot resets its layout box; invalidateSize tells Leaflet to
+    // recalculate its container dimensions so tiles and vectors render at the correct size.
+    _bCmd('invalidateSize');
     if (tabIdx === 0) {
       _showSummaryTab();
     } else {
