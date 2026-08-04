@@ -213,6 +213,7 @@ export const geometryTypeEnum = pgEnum("geometry_type", ["point", "polygon", "li
 
 export const linkTypeEnum = pgEnum("link_type", ["asset", "pin"]);
 export const templateTargetTypeEnum = pgEnum("template_target_type", ["none", "asset_type", "map_layer", "specific_asset"]);
+export const templateScopeEnum = pgEnum("template_scope", ["all", "hoa", "commercial"]);
 
 export const assets = pgTable("assets", {
   id: varchar("id")
@@ -332,6 +333,7 @@ export const taskTemplates = pgTable("task_templates", {
   targetAssetId: varchar("target_asset_id").references(() => assets.id, { onDelete: 'set null' }),
   requireSignOffName: boolean("require_sign_off_name").notNull().default(true),
   allowPhotos: boolean("allow_photos").notNull().default(true),
+  scope: templateScopeEnum("scope").notNull().default("all"),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -803,6 +805,7 @@ export const insertTaskTemplateSchema = z.object({
   targetAssetId: z.string().nullable().optional(),
   requireSignOffName: z.boolean().default(true),
   allowPhotos: z.boolean().default(true),
+  scope: z.enum(["all", "hoa", "commercial"]).default("all"),
 });
 
 export const generateFromTemplateSchema = z.object({

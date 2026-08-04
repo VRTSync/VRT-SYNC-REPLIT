@@ -3687,9 +3687,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Task Templates CRUD
-  app.get("/api/task-templates", requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/task-templates", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const templates = await storage.getTaskTemplates();
+      const communityType = req.query.communityType as 'hoa' | 'commercial' | undefined;
+      const templates = await storage.getTaskTemplates(communityType);
       res.json(templates);
     } catch (error) {
       console.error("Get task templates error:", error);
@@ -3785,6 +3786,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
 
       const { communityId, dueDate: dueDateStr, assignToUserId, includeArchivedAssets, limit: assetLimit } = parsed.data;
+
+      // Enforce template scope against community type
+      if (template.scope !== 'all') {
+        const community = await storage.getCommunityById(communityId);
+        if (!community) return void res.status(404).json({ error: "Community not found" });
+        const communityType = community.organizationId ? 'commercial' : 'hoa';
+        if (template.scope !== communityType) {
+          return void res.status(400).json({
+            error: `This template is scoped to ${template.scope} clients only and cannot be used with this ${communityType} community.`,
+          });
+        }
+      }
 
       let dueDate: Date | undefined;
       if (dueDateStr) {
@@ -4041,6 +4054,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const { communityId, templateId, frequency, daysOfWeek, dayOfMonth, timezone, startDate: startDateStr, endDate: endDateStr, assignToUserId, isEnabled } = parsed.data;
+
+      // Enforce template scope against community type
+      const [schedCommunity, schedTemplate] = await Promise.all([
+        storage.getCommunityById(communityId),
+        storage.getTaskTemplateById(templateId),
+      ]);
+      if (!schedCommunity) return void res.status(404).json({ error: "Community not found" });
+      if (!schedTemplate) return void res.status(404).json({ error: "Template not found" });
+      if (schedTemplate.scope !== 'all') {
+        const communityType = schedCommunity.organizationId ? 'commercial' : 'hoa';
+        if (schedTemplate.scope !== communityType) {
+          return void res.status(400).json({
+            error: `This template is scoped to ${schedTemplate.scope} clients only and cannot be scheduled for this ${communityType} community.`,
+          });
+        }
+      }
 
       const startDate = new Date(startDateStr);
       const endDate = endDateStr ? new Date(endDateStr) : null;

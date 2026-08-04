@@ -6,11 +6,18 @@ AdminRouter.register('templates', async function(container) {
       <h2 style="font-size:16px">Task Templates</h2>
       <button class="btn btn-primary btn-sm" id="add-template-btn">+ New Template</button>
     </div>
+    <div id="hoa-copy-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#fff8e1;border:1px solid #f59e0b;border-radius:8px;color:#92400e;font-size:13px">
+      <strong>⚠ Review needed:</strong> Some templates below contain "HOA" in their name but are scoped to
+      <strong>All clients</strong>. Consider re-scoping them to <strong>HOA only</strong> so they don't appear
+      when generating tasks for commercial branches.
+      <span id="hoa-copy-count"></span>
+    </div>
     <div class="table-container">
       <table>
         <thead><tr>
           <th>Name</th>
           <th>Title</th>
+          <th>Scope</th>
           <th>Priority</th>
           <th>Target Type</th>
           <th>Target Detail</th>
@@ -18,7 +25,7 @@ AdminRouter.register('templates', async function(container) {
           <th class="text-right">Actions</th>
         </tr></thead>
         <tbody id="templates-tbody">
-          <tr><td colspan="7" class="loading-spinner">Loading...</td></tr>
+          <tr><td colspan="8" class="loading-spinner">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -49,20 +56,44 @@ AdminRouter.register('templates', async function(container) {
 
   function renderTemplates() {
     const tbody = document.getElementById('templates-tbody');
+
+    // HOA-copy banner: templates whose scope is 'all' but name/title contains 'hoa'
+    const hoaCopyCandidates = templates.filter(t =>
+      (t.scope === 'all' || !t.scope) &&
+      (/hoa/i.test(t.name) || /hoa/i.test(t.title))
+    );
+    const banner = document.getElementById('hoa-copy-banner');
+    if (hoaCopyCandidates.length > 0) {
+      banner.style.display = 'block';
+      document.getElementById('hoa-copy-count').textContent =
+        ` (${hoaCopyCandidates.length} template${hoaCopyCandidates.length > 1 ? 's' : ''} affected)`;
+    } else {
+      banner.style.display = 'none';
+    }
+
     if (templates.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No templates yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No templates yet</td></tr>';
       return;
     }
+
+    const scopeLabel = { all: 'All clients', hoa: 'HOA only', commercial: 'Commercial only' };
+
     tbody.innerHTML = templates.map(t => {
       const priorityClass = `priority-${t.priority || 'medium'}`;
       let targetDetail = '';
       if (t.targetType === 'asset_type') targetDetail = t.targetAssetType || '';
       else if (t.targetType === 'map_layer') targetDetail = t.targetMapLayerId ? '(layer)' : '';
       else if (t.targetType === 'specific_asset') targetDetail = t.targetAssetId ? '(asset)' : '';
+
+      const scope = t.scope || 'all';
+      const isHoaCopyCandidate = scope === 'all' && (/hoa/i.test(t.name) || /hoa/i.test(t.title));
+      const rowStyle = isHoaCopyCandidate ? ' style="background:#fffbeb"' : '';
+
       return `
-        <tr>
-          <td><strong>${esc(t.name)}</strong></td>
+        <tr${rowStyle}>
+          <td><strong>${esc(t.name)}</strong>${isHoaCopyCandidate ? ' <span title="Contains \'HOA\' but scoped to All clients" style="color:#f59e0b">⚠</span>' : ''}</td>
           <td>${esc(t.title)}</td>
+          <td><span style="font-size:12px;padding:2px 6px;border-radius:4px;background:${scope === 'hoa' ? '#dbeafe' : scope === 'commercial' ? '#dcfce7' : '#f3f4f6'};color:${scope === 'hoa' ? '#1d4ed8' : scope === 'commercial' ? '#15803d' : '#6b7280'}">${esc(scopeLabel[scope] || scope)}</span></td>
           <td><span class="${priorityClass}">${esc(t.priority)}</span></td>
           <td>${esc(t.targetType)}</td>
           <td>${esc(targetDetail)}</td>
@@ -106,6 +137,7 @@ AdminRouter.register('templates', async function(container) {
 
   function showTemplateModal(existing) {
     const isEdit = !!existing;
+    const currentScope = existing?.scope || 'all';
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.innerHTML = `
@@ -138,9 +170,17 @@ AdminRouter.register('templates', async function(container) {
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Due Days Offset</label>
-              <input class="form-input" id="tmpl-due-offset" type="number" value="${existing?.dueDaysOffset ?? ''}" placeholder="e.g. 7">
+              <label class="form-label">Scope</label>
+              <select class="form-select" id="tmpl-scope">
+                <option value="all" ${currentScope === 'all' ? 'selected' : ''}>All clients</option>
+                <option value="hoa" ${currentScope === 'hoa' ? 'selected' : ''}>HOA only</option>
+                <option value="commercial" ${currentScope === 'commercial' ? 'selected' : ''}>Commercial only</option>
+              </select>
             </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Due Days Offset</label>
+            <input class="form-input" id="tmpl-due-offset" type="number" value="${existing?.dueDaysOffset ?? ''}" placeholder="e.g. 7">
           </div>
           <div class="form-group">
             <label class="form-label">Target Type</label>
@@ -248,6 +288,7 @@ AdminRouter.register('templates', async function(container) {
         title,
         description: overlay.querySelector('#tmpl-desc').value.trim() || undefined,
         priority: overlay.querySelector('#tmpl-priority').value,
+        scope: overlay.querySelector('#tmpl-scope').value,
         targetType: tt,
         dueDaysOffset: dueOffset !== '' ? parseInt(dueOffset) : null,
         targetAssetType: tt === 'asset_type' ? assetTypeSelect.value || null : null,
@@ -291,9 +332,10 @@ AdminRouter.register('templates', async function(container) {
             <label class="form-label">Community *</label>
             <select class="form-select" id="gen-community">
               <option value="">Select community...</option>
-              ${communities.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+              ${communities.map(c => `<option value="${c.id}" data-org="${c.organizationId || ''}">${esc(c.name)}</option>`).join('')}
             </select>
           </div>
+          <div id="gen-scope-warning" style="display:none;padding:8px 12px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;color:#dc2626;font-size:13px;margin-bottom:8px"></div>
           <div class="form-group">
             <label class="form-label">Assign To (optional)</label>
             <select class="form-select" id="gen-assign">
@@ -329,8 +371,41 @@ AdminRouter.register('templates', async function(container) {
     overlay.querySelector('#gen-cancel-btn').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
+    const communitySelect = overlay.querySelector('#gen-community');
+    const scopeWarning = overlay.querySelector('#gen-scope-warning');
+    const submitBtn = overlay.querySelector('#gen-submit-btn');
+    const previewBtn = overlay.querySelector('#gen-preview-btn');
+
+    function checkScopeCompatibility() {
+      const selected = communitySelect.options[communitySelect.selectedIndex];
+      if (!communitySelect.value) {
+        scopeWarning.style.display = 'none';
+        submitBtn.disabled = false;
+        previewBtn.disabled = false;
+        return;
+      }
+      const orgId = selected?.dataset?.org || '';
+      const communityType = orgId ? 'commercial' : 'hoa';
+      const templateScope = template.scope || 'all';
+
+      if (templateScope !== 'all' && templateScope !== communityType) {
+        const communityTypeLabel = communityType === 'hoa' ? 'HOA' : 'commercial';
+        const scopeLabel = templateScope === 'hoa' ? 'HOA only' : 'Commercial only';
+        scopeWarning.textContent = `This template is scoped to "${scopeLabel}" and cannot be used with this ${communityTypeLabel} community.`;
+        scopeWarning.style.display = 'block';
+        submitBtn.disabled = true;
+        previewBtn.disabled = true;
+      } else {
+        scopeWarning.style.display = 'none';
+        submitBtn.disabled = false;
+        previewBtn.disabled = false;
+      }
+    }
+
+    communitySelect.addEventListener('change', checkScopeCompatibility);
+
     overlay.querySelector('#gen-preview-btn').addEventListener('click', async () => {
-      const communityId = overlay.querySelector('#gen-community').value;
+      const communityId = communitySelect.value;
       if (!communityId) { showToast('Select a community', 'error'); return; }
       const limitVal = overlay.querySelector('#gen-limit').value;
       try {
@@ -354,7 +429,7 @@ AdminRouter.register('templates', async function(container) {
     });
 
     overlay.querySelector('#gen-submit-btn').addEventListener('click', async () => {
-      const communityId = overlay.querySelector('#gen-community').value;
+      const communityId = communitySelect.value;
       if (!communityId) { showToast('Select a community', 'error'); return; }
       const assignTo = overlay.querySelector('#gen-assign').value;
       const dueDate = overlay.querySelector('#gen-due-date').value;

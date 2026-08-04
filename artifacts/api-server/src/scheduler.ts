@@ -126,6 +126,18 @@ async function runSingleSchedule(schedule: any): Promise<ScheduleRunReport> {
     if (!template) throw new Error(`Template ${schedule.templateId} not found`);
     templateName = template.name;
 
+    // Enforce template scope against community type
+    if (template.scope !== "all") {
+      const schedCommunity = await storage.getCommunityById(schedule.communityId);
+      if (!schedCommunity) throw new Error(`Community ${schedule.communityId} not found`);
+      const communityType = schedCommunity.organizationId ? "commercial" : "hoa";
+      if (template.scope !== communityType) {
+        throw new Error(
+          `Template "${template.name}" is scoped to ${template.scope} clients only and cannot run against this ${communityType} community. Update the schedule or re-scope the template.`
+        );
+      }
+    }
+
     if (template.targetType === "none") {
       const instanceKey = `${schedule.id}:${dateKey}:single`;
       const exists = await storage.taskExistsWithInstanceKey(instanceKey);

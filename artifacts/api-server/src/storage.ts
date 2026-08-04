@@ -2355,7 +2355,17 @@ export async function searchAll(
   return results.slice(0, 30);
 }
 
-export async function getTaskTemplates(): Promise<TaskTemplate[]> {
+export async function getTaskTemplates(communityType?: 'hoa' | 'commercial'): Promise<TaskTemplate[]> {
+  if (communityType === 'hoa') {
+    return db.select().from(taskTemplates)
+      .where(or(eq(taskTemplates.scope, 'all'), eq(taskTemplates.scope, 'hoa')))
+      .orderBy(desc(taskTemplates.createdAt));
+  }
+  if (communityType === 'commercial') {
+    return db.select().from(taskTemplates)
+      .where(or(eq(taskTemplates.scope, 'all'), eq(taskTemplates.scope, 'commercial')))
+      .orderBy(desc(taskTemplates.createdAt));
+  }
   return db.select().from(taskTemplates).orderBy(desc(taskTemplates.createdAt));
 }
 
