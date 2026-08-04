@@ -93,6 +93,7 @@
     var _outlineGeojson   = null;
     var _outlineStyle     = null;
     var _addedLayerIds    = {};   // layerId → true
+    var _hasApplied       = false; // true after the first _applyState fit
     var _layerColors      = {};   // layerId → hex
     var _events           = { ready: [], assetTap: [] };
 
@@ -553,9 +554,12 @@
         _cmd('setCommunityOutline', null);
       }
 
-      // Show active category layers
+      // Show active category layers. Fit only on the very first apply —
+      // a re-applied push cycle (late/replayed ready) must not stomp a
+      // viewport the user has already panned/zoomed.
       var stateForCat = _sublayerState[_activeCategory] || {};
-      _syncToIframe(stateForCat, true);
+      _syncToIframe(stateForCat, !_hasApplied);
+      _hasApplied = true;
 
       _emit('ready', _buildStateSnapshot());
     }
@@ -686,10 +690,13 @@
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    function setActiveCategory(key) {
+    // opts.fit === false suppresses the viewport refit (used by restore
+    // paths that must preserve the user's current zoom/centre). Default is
+    // the historical behaviour: fit to the newly visible content.
+    function setActiveCategory(key, opts) {
       _activeCategory = key;
       var stateForCat = key !== null ? (_sublayerState[key] || {}) : null;
-      _syncToIframe(stateForCat, true);
+      _syncToIframe(stateForCat, !(opts && opts.fit === false));
     }
 
     function setVisibleSubLayers(stateForCat) {
@@ -1019,10 +1026,13 @@
           _checked[cat][lid] = cb.checked;
           var stateForCat = buildStateForCat(cat);
           if (renderer) {
-            // Always sync the renderer's active category before applying sublayer
-            // visibility — the host tab bar may have changed the renderer's category
-            // independently of the overlay while both are visible simultaneously.
-            renderer.setActiveCategory(cat);
+            // Sync the renderer's active category before applying sublayer
+            // visibility — the host tab bar may have changed the renderer's
+            // category independently of the overlay. Only switch (which refits
+            // the viewport) when the category actually differs, so a plain
+            // sub-layer toggle preserves the user's current zoom/centre.
+            var curCat = renderer.getState ? renderer.getState().activeCategory : undefined;
+            if (curCat !== cat) renderer.setActiveCategory(cat);
             renderer.setVisibleSubLayers(stateForCat);
           }
           mapWrapEl.dispatchEvent(new CustomEvent('vrt-overlay-sublayer-change', {

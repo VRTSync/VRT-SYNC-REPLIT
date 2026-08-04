@@ -345,58 +345,96 @@
       window.VRTMapRenderer.renderExpandButton(_bExpBtn, _bPanel, _renderer, 'bmap-panel--expanded');
     }
 
-    _renderer.on('ready', function (state) {
-      // Switch to Summary tab (show all layers)
-      _activeTabIdx = 0;
-      _updateSublayerOverlay(0);
-      _renderer.setActiveCategory(null);
+    // Inject expanded floating overlay + wire panel listeners ONCE per page
+    // render. Layer data (_categoryOrder/_categoryGroups/_checkedSubLayers)
+    // is available synchronously from branch data, so this must NOT live in
+    // the 'ready' handler — a re-emitted 'ready' would attach duplicate
+    // listeners and double-fire every toggle.
+    if (window.VRTMapRenderer && _bPanel) {
+      var _bLayerState = {
+        categoryOrder:    _categoryOrder,
+        categoryGroups:   _categoryGroups,
+        checkedSubLayers: _checkedSubLayers,
+        activeCategory:   null,
+      };
+      window.VRTMapRenderer.renderExpandedOverlays(
+        _bPanel, _renderer, _bLayerState, 'bmap-panel--expanded'
+      );
 
-      // Inject expanded floating overlay now that layer data is loaded
-      if (window.VRTMapRenderer && _bPanel) {
-        var _bLayerState = {
-          categoryOrder:    _categoryOrder,
-          categoryGroups:   _categoryGroups,
-          checkedSubLayers: _checkedSubLayers,
-          activeCategory:   null,
-        };
-        window.VRTMapRenderer.renderExpandedOverlays(
-          _bPanel, _renderer, _bLayerState, 'bmap-panel--expanded'
-        );
+      // Sync expanded overlay → tab bar (real-time category switch)
+      _bPanel.addEventListener('vrt-overlay-category-change', function (e) {
+        var cat = e.detail.activeCategory;
+        var idx = _categoryOrder.indexOf(cat) + 1;
+        if (idx > 0) { _activeTabIdx = idx; _syncTabUI(idx); }
+      });
 
-        // Sync expanded overlay → tab bar (real-time category switch)
-        _bPanel.addEventListener('vrt-overlay-category-change', function (e) {
-          var cat = e.detail.activeCategory;
-          var idx = _categoryOrder.indexOf(cat) + 1;
-          if (idx > 0) { _activeTabIdx = idx; _syncTabUI(idx); }
-        });
+      // Sync expanded overlay → checked sub-layers (real-time toggle)
+      _bPanel.addEventListener('vrt-overlay-sublayer-change', function (e) {
+        var cat = e.detail.cat;
+        var lid = e.detail.layerId;
+        if (cat && lid !== undefined) {
+          if (!_checkedSubLayers[cat]) _checkedSubLayers[cat] = {};
+          _checkedSubLayers[cat][lid] = e.detail.checked;
+          _updateSublayerOverlay(_activeTabIdx);
+        }
+      });
 
-        // Sync expanded overlay → checked sub-layers (real-time toggle)
-        _bPanel.addEventListener('vrt-overlay-sublayer-change', function (e) {
-          var cat = e.detail.cat;
-          var lid = e.detail.layerId;
-          if (cat && lid !== undefined) {
-            if (!_checkedSubLayers[cat]) _checkedSubLayers[cat] = {};
-            _checkedSubLayers[cat][lid] = e.detail.checked;
-            _updateSublayerOverlay(_activeTabIdx);
-          }
-        });
+      // Sync collapsed state → tab bar + sub-layer overlay
+      _bPanel.addEventListener('layer-state-change', function (e) {
+        var detail = e.detail;
+        if (detail.activeCategory) {
+          var idx2 = _categoryOrder.indexOf(detail.activeCategory) + 1;
+          if (idx2 > 0) { _activeTabIdx = idx2; _syncTabUI(idx2); }
+        }
+        if (detail.checkedSubLayers) {
+          Object.keys(detail.checkedSubLayers).forEach(function (cat) {
+            _checkedSubLayers[cat] = {};
+            var src = detail.checkedSubLayers[cat];
+            Object.keys(src).forEach(function (k) { _checkedSubLayers[cat][k] = src[k]; });
+          });
+          _updateSublayerOverlay(_activeTabIdx);
+        }
+      });
+    }
 
-        // Sync collapsed state → tab bar + sub-layer overlay
-        _bPanel.addEventListener('layer-state-change', function (e) {
-          var detail = e.detail;
-          if (detail.activeCategory) {
-            var idx2 = _categoryOrder.indexOf(detail.activeCategory) + 1;
-            if (idx2 > 0) { _activeTabIdx = idx2; _syncTabUI(idx2); }
-          }
-          if (detail.checkedSubLayers) {
-            Object.keys(detail.checkedSubLayers).forEach(function (cat) {
-              _checkedSubLayers[cat] = {};
-              var src = detail.checkedSubLayers[cat];
-              Object.keys(src).forEach(function (k) { _checkedSubLayers[cat][k] = src[k]; });
-            });
-            _updateSublayerOverlay(_activeTabIdx);
-          }
-        });
+    // First-load behaviour ('ready' → Summary, all layers, fit) must be
+    // single-shot per branch. The leaflet iframe posts 'mapReady' with a
+    // retry schedule (up to ~5s), so 'ready' can arrive late or replay after
+    // a re-initialisation — long after the user has switched tabs or toggled
+    // sub-layers. Any ready after the first (or after the user has navigated
+    // off Summary) RESTORES the current selection instead of resetting it.
+    // _initialReadyDone lives in this closure, so it naturally resets when a
+    // new branch is rendered (setupBranchRenderer runs again).
+    var _initialReadyDone = false;
+
+    _renderer.on('ready', function () {
+      var isInitial = !_initialReadyDone;
+      _initialReadyDone = true;
+
+      if (isInitial && _activeTabIdx === 0) {
+        // First load: Summary tab, all layers visible, fit to content.
+        _updateSublayerOverlay(0);
+        _renderer.setActiveCategory(null);
+        return;
+      }
+
+      // Restore the user's current tab, category, and sub-layer selections.
+      // On the first ready this may still fit (the user navigated to a
+      // category before data finished loading — fitting that category is
+      // first-load behaviour). On any replayed ready, never refit: the user
+      // may have panned/zoomed, and their viewport must be preserved.
+      var fitOpts = { fit: isInitial };
+      _updateSublayerOverlay(_activeTabIdx);
+      if (_activeTabIdx === 0) {
+        _renderer.setActiveCategory(null, fitOpts);
+      } else {
+        var restoreCat = _categoryOrder[_activeTabIdx - 1];
+        if (restoreCat) {
+          _renderer.setActiveCategory(restoreCat, fitOpts);
+          _syncCategoryVisibility(restoreCat);
+        } else {
+          _renderer.setActiveCategory(null, fitOpts);
+        }
       }
     });
 

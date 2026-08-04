@@ -173,6 +173,7 @@ window.PortfolioState = {
 </script>
 
 <!-- Load the real production script under test -->
+<script src="/common-static/map-render.js"></script>
 <script src="/portfolio-static/pages/branch-detail.js"></script>
 
 <script>
@@ -277,28 +278,39 @@ test.describe('Community boundary outline — branch detail tab switching', () =
       .toBeGreaterThan(0);
 
     const afterSummaryLoad = await parentOutlineCallCount(page);
+    expect(afterSummaryLoad).toBeGreaterThan(0);
 
     // ── 2. Switch to the Irrigation (service layer) tab ───────────────────
-    await page.click('[data-tab-idx="1"]');
+    // The stable-iframe architecture keeps a single iframe across tab
+    // switches, so the outline persists inside Leaflet — it does NOT need to
+    // be re-sent per tab switch. Assert the switch completes (showLayerIds
+    // fires) and the outline was never cleared (no setCommunityOutline(null)).
+    const showBefore = await page.evaluate(
+      () => ((window as unknown as { _pageCmds: { fn: string }[] })._pageCmds ?? [])
+        .filter((c) => c.fn === 'showLayerIds').length,
+    );
+    await page.click('#branch-tab-bar [data-tab-idx="1"]');
 
     await expect
-      .poll(() => parentOutlineCallCount(page), {
+      .poll(() => page.evaluate(
+        () => ((window as unknown as { _pageCmds: { fn: string }[] })._pageCmds ?? [])
+          .filter((c) => c.fn === 'showLayerIds').length,
+      ), {
         timeout: 8_000,
-        message: 'Expected setCommunityOutline after switching to the Irrigation tab',
+        message: 'Expected showLayerIds after switching to the Irrigation tab',
       })
-      .toBeGreaterThan(afterSummaryLoad);
-
-    const afterLayerTab = await parentOutlineCallCount(page);
+      .toBeGreaterThan(showBefore);
 
     // ── 3. Switch back to Summary ─────────────────────────────────────────
-    await page.click('[data-tab-idx="0"]');
+    await page.click('#branch-tab-bar [data-tab-idx="0"]');
+    await page.waitForTimeout(500);
 
-    await expect
-      .poll(() => parentOutlineCallCount(page), {
-        timeout: 8_000,
-        message: 'Expected setCommunityOutline after switching back to Summary',
-      })
-      .toBeGreaterThan(afterLayerTab);
+    // The outline must never have been cleared (no setCommunityOutline(null))
+    const nullOutlineCalls = await page.evaluate(
+      () => ((window as unknown as { _pageCmds: { fn: string; args: unknown[] }[] })._pageCmds ?? [])
+        .filter((c) => c.fn === 'setCommunityOutline' && c.args[0] === null).length,
+    );
+    expect(nullOutlineCalls, 'Outline must never be cleared during tab switches').toBe(0);
   });
 
   test('no outline layer: tab switches complete without JS errors and never send setCommunityOutline', async ({ page }) => {
@@ -327,27 +339,32 @@ test.describe('Community boundary outline — branch detail tab switching', () =
       ), { timeout: 8_000 })
       .toBeGreaterThan(0);
 
-    // setCommunityOutline must not have been dispatched at any point
+    // No non-null outline may be dispatched. (The shared renderer sends
+    // setCommunityOutline(null) by design to clear any stale outline.)
+    const nonNullOutlines = () => page.evaluate(
+      () => ((window as unknown as { _pageCmds: { fn: string; args: unknown[] }[] })._pageCmds ?? [])
+        .filter((c) => c.fn === 'setCommunityOutline' && c.args[0] != null).length,
+    );
     expect(
-      await parentOutlineCallCount(page),
-      'setCommunityOutline must not be dispatched when there is no outline layer',
+      await nonNullOutlines(),
+      'No non-null setCommunityOutline may be dispatched when there is no outline layer',
     ).toBe(0);
 
     // Switch to Irrigation tab
-    await page.click('[data-tab-idx="1"]');
+    await page.click('#branch-tab-bar [data-tab-idx="1"]');
     await page.waitForTimeout(1_500);
 
     // Switch back to Summary
-    await page.click('[data-tab-idx="0"]');
+    await page.click('#branch-tab-bar [data-tab-idx="0"]');
     await page.waitForTimeout(1_000);
 
     // No JavaScript errors should have occurred
     expect(jsErrors, 'No JS errors expected when outline layer is absent').toHaveLength(0);
 
-    // setCommunityOutline must still never have been dispatched
+    // Still no non-null outline dispatched after tab switches
     expect(
-      await parentOutlineCallCount(page),
-      'setCommunityOutline must not be sent when there is no outline layer',
+      await nonNullOutlines(),
+      'No non-null setCommunityOutline may be sent when there is no outline layer',
     ).toBe(0);
   });
 });

@@ -34,7 +34,9 @@ export default defineConfig({
     // Use the Nix-managed Chromium in Replit where the downloaded playwright
     // binary lacks required system libraries.  Falls back gracefully when the
     // path does not exist (e.g. local dev machines or CI with their own binary).
-    ...(existsSync(NIX_CHROMIUM) ? { executablePath: NIX_CHROMIUM } : {}),
+    // NOTE: executablePath must live under launchOptions — a top-level
+    // use.executablePath is silently ignored by @playwright/test.
+    ...(existsSync(NIX_CHROMIUM) ? { launchOptions: { executablePath: NIX_CHROMIUM } } : {}),
   },
   // Run tests in a single worker to avoid port contention during CI.
   workers: 1,

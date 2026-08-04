@@ -1,2 +1,3 @@
 - [Asset Types Catalogue](asset-types-catalogue.md) — asset_types DB table is source of truth; resolveAssetType and getMissingRequiredKeys are now async; lib/db dist must be rebuilt after schema changes.
 - [Publish diff vs boot migrations](publish-diff-vs-boot-migrations.md) — publish pre-applies dev schema to prod; migrations must not reference columns later migrations drop; seed data never travels via the diff.
+- [Web-portal map testing & ready semantics](web-portal-map-testing.md) — Playwright executablePath must be under launchOptions; map renderer 'ready' can fire late/replayed, never reset UI state in it.

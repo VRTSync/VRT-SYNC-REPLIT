@@ -176,6 +176,7 @@ window.PortfolioState = {
   groups:   []
 };
 </script>
+<script src="/common-static/map-render.js"></script>
 <script src="/portfolio-static/pages/branch-detail.js"></script>
 <script>
 (function () {
@@ -351,7 +352,7 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
     const showBefore = await parentCmdCount(page, 'showLayerIds');
 
     // Click the Trees tab (tab-idx 2: Summary=0, Irrigation=1, Trees=2)
-    await page.click('[data-tab-idx="2"]');
+    await page.click('#branch-tab-bar [data-tab-idx="2"]');
 
     // invalidateSize must be dispatched on every tab switch so Leaflet
     // recalculates its container dimensions after the iframe is relocated.
@@ -370,12 +371,13 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
       })
       .toBeGreaterThan(showBefore);
 
-    // The iframe must be in the Trees map slot (proves _switchToTab ran)
+    // The iframe must remain in the stable slot — the iframe-stability fix
+    // keeps a single iframe in #bmap-stable across tab switches.
     const slot = await iframeSlotId(page);
-    expect(slot, 'Iframe must be in the Trees map slot after clicking Trees tab').toBe('bmap-cat-trees');
+    expect(slot, 'Iframe must stay in the stable map slot after clicking Trees tab').toBe('bmap-stable');
 
     // The Trees tab must have the active class
-    const treesTabActive = await page.locator('[data-tab-idx="2"]').evaluate((el) =>
+    const treesTabActive = await page.locator('#branch-tab-bar [data-tab-idx="2"]').evaluate((el) =>
       el.classList.contains('on'),
     );
     expect(treesTabActive, 'Trees tab must have class "on" after being clicked').toBe(true);
@@ -387,7 +389,7 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
     await loadAndWaitForSummary(page);
 
     // Switch to Irrigation tab
-    await page.click('[data-tab-idx="1"]');
+    await page.click('#branch-tab-bar [data-tab-idx="1"]');
 
     await expect
       .poll(() => parentCmdCount(page, 'invalidateSize'), {
@@ -399,7 +401,7 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
     const showAfterIrrig = await parentCmdCount(page, 'showLayerIds');
 
     // Switch back to Summary
-    await page.click('[data-tab-idx="0"]');
+    await page.click('#branch-tab-bar [data-tab-idx="0"]');
 
     // showLayerIds must fire again for the Summary tab
     await expect
@@ -409,12 +411,12 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
       })
       .toBeGreaterThan(showAfterIrrig);
 
-    // The iframe must be back in the Summary slot
+    // The iframe must remain in the stable slot (never reparented)
     const slot = await iframeSlotId(page);
-    expect(slot, 'Iframe must be back in the Summary map slot').toBe('bmap-summary');
+    expect(slot, 'Iframe must stay in the stable map slot').toBe('bmap-stable');
 
     // The Summary tab must have the active class
-    const summaryTabActive = await page.locator('[data-tab-idx="0"]').evaluate((el) =>
+    const summaryTabActive = await page.locator('#branch-tab-bar [data-tab-idx="0"]').evaluate((el) =>
       el.classList.contains('on'),
     );
     expect(summaryTabActive, 'Summary tab must have class "on" after switching back').toBe(true);
@@ -431,7 +433,7 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
       .toBeGreaterThan(0);
 
     // Navigate to Trees tab so its layer is fetched and pushed if not already
-    await page.click('[data-tab-idx="2"]');
+    await page.click('#branch-tab-bar [data-tab-idx="2"]');
     await expect
       .poll(() => parentCmdCount(page, 'invalidateSize'), { timeout: 8_000 })
       .toBeGreaterThan(0);
@@ -459,5 +461,78 @@ test.describe('Layer-tab maps and admin colour rendering', () => {
       treesLayer?.color,
       `Trees layer colour should be the admin value ${TREES_COLOR}, not a portal accent`,
     ).toBe(TREES_COLOR);
+  });
+
+  test('late ready after a tab click restores the tab instead of resetting to Summary', async ({ page }) => {
+    await setupCommonRoutes(page);
+
+    // Branch data arrives immediately, but GeoJSON is delayed so the
+    // renderer's 'ready' fires well AFTER the user has clicked a tab.
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_DATA) }),
+    );
+    const delayed = (body: unknown) => async (route: import('@playwright/test').Route) => {
+      await new Promise((r) => setTimeout(r, 1_200));
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+    };
+    await page.route('**/layers/layer-outline/geojson', delayed(OUTLINE_GEOJSON));
+    await page.route('**/layers/layer-irrig/geojson', delayed(SERVICE_GEOJSON));
+    await page.route('**/layers/layer-trees/geojson', delayed(SERVICE_GEOJSON));
+
+    await page.goto('/test/layer-tab-maps-harness');
+    await page.waitForSelector('#branch-tab-bar');
+
+    // User clicks the Trees tab BEFORE the map data has loaded
+    await page.click('#branch-tab-bar [data-tab-idx="2"]');
+    await expect(page.locator('#branch-tab-bar [data-tab-idx="2"]')).toHaveClass(/on/);
+
+    // Wait for the (late) ready — addLayers is only dispatched after it
+    await expect
+      .poll(() => parentCmdCount(page, 'addLayers'), { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await page.waitForTimeout(500); // let the ready handler settle
+
+    // The late ready must NOT have reset the page back to Summary
+    await expect(page.locator('#branch-tab-bar [data-tab-idx="2"]')).toHaveClass(/on/);
+    const summaryOn = await page.locator('#branch-tab-bar [data-tab-idx="0"]').evaluate(
+      (el) => el.classList.contains('on'),
+    );
+    expect(summaryOn, 'Summary tab must not be re-activated by a late ready').toBe(false);
+
+    // The Trees sub-layer overlay must be populated (restored, not cleared)
+    const overlayRows = await page.locator('#bmap-sublayer-overlay input[type="checkbox"]').count();
+    expect(overlayRows, 'Sub-layer overlay must show the Trees layers after late ready').toBeGreaterThan(0);
+  });
+
+  test('sub-layer toggle fires exactly once and never refits the viewport', async ({ page }) => {
+    await setupCommonRoutes(page);
+    await setupGeoRoutes(page);
+    await loadAndWaitForSummary(page);
+
+    // Go to the Irrigation tab (idx 1) so the sub-layer overlay renders
+    await page.click('#branch-tab-bar [data-tab-idx="1"]');
+    await expect(page.locator('#bmap-sublayer-overlay input[type="checkbox"]').first())
+      .toBeVisible({ timeout: 8_000 });
+    await page.waitForTimeout(300); // let the tab-switch commands settle
+
+    const fitCount = () =>
+      page.evaluate(
+        () => ((window as unknown as { _pageCmds: { fn: string }[] })._pageCmds ?? [])
+          .filter((c) => c.fn === 'fitBounds' || c.fn === 'fitToOutline').length,
+      );
+    const fitsBefore = await fitCount();
+    const showBefore = await parentCmdCount(page, 'showLayerIds');
+
+    // Toggle one sub-layer checkbox
+    await page.locator('#bmap-sublayer-overlay input[type="checkbox"]').first().click();
+    await page.waitForTimeout(500);
+
+    // Exactly ONE showLayerIds — a duplicated listener would dispatch two
+    const showAfter = await parentCmdCount(page, 'showLayerIds');
+    expect(showAfter - showBefore, 'Sub-layer toggle must dispatch exactly one showLayerIds').toBe(1);
+
+    // No refit — the user's viewport must be preserved
+    const fitsAfter = await fitCount();
+    expect(fitsAfter - fitsBefore, 'Sub-layer toggle must not refit the viewport').toBe(0);
   });
 });
