@@ -79,6 +79,30 @@ export const ASSET_TYPE_TEMPLATES: Record<string, {
     requiredKeys: [],
     optionalKeys: ["notes"],
   },
+  plow: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
+  atv: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
+  hand_shovel: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
+  ice_melt: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
+  slicer: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
+  storage_area: {
+    requiredKeys: [],
+    optionalKeys: ["surface", "priority", "equipment", "notes"],
+  },
 };
 
 export const SUB_LAYER_TO_ASSET_TYPE: Record<string, string> = {
@@ -171,12 +195,19 @@ function resolveGeometry(feature: any): {
   return { geometryType, lat, lng };
 }
 
+export interface SyncFailure {
+  featureRef: string;
+  reason: string;
+}
+
 export interface SyncResult {
   created: number;
   updated: number;
   archived: number;
   skippedMissingId: number;
   total: number;
+  failed: number;
+  failures: SyncFailure[];
 }
 
 export async function syncAssetsFromLayer(
@@ -188,12 +219,12 @@ export async function syncAssetsFromLayer(
   triggeredByUserId?: string,
 ): Promise<SyncResult> {
   if (layerKey === "outline") {
-    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
+    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0, failed: 0, failures: [] };
   }
 
   const assetType = resolveAssetType(layerKey, subLayerKey);
   if (!assetType) {
-    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
+    return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0, failed: 0, failures: [] };
   }
 
   let features: any[] = [];
@@ -206,12 +237,14 @@ export async function syncAssetsFromLayer(
         features = [parsed];
       }
     } catch {
-      return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0 };
+      return { created: 0, updated: 0, archived: 0, skippedMissingId: 0, total: 0, failed: 0, failures: [] };
     }
   }
 
   let created = 0;
   let updated = 0;
+  let failed = 0;
+  const failures: SyncFailure[] = [];
   const processedFeatureRefs: string[] = [];
 
   for (let i = 0; i < features.length; i++) {
@@ -221,66 +254,75 @@ export async function syncAssetsFromLayer(
     const { geometryType, lat, lng } = resolveGeometry(feature);
     processedFeatureRefs.push(featureRef);
 
-    const [existing] = await db.select().from(assets).where(
-      and(
-        eq(assets.communityId, communityId),
-        eq(assets.mapLayerId, mapLayerId),
-        eq(assets.featureRef, featureRef),
-      )
-    );
+    try {
+      const [existing] = await db.select().from(assets).where(
+        and(
+          eq(assets.communityId, communityId),
+          eq(assets.mapLayerId, mapLayerId),
+          eq(assets.featureRef, featureRef),
+        )
+      );
 
-    if (existing) {
-      await db.update(assets)
-        .set({
-          label: label,
+      if (existing) {
+        await db.update(assets)
+          .set({
+            label: label,
+            geometryType: geometryType,
+            latitude: lat,
+            longitude: lng,
+            isArchived: false,
+            archivedAt: null,
+            sourceUpdatedAt: new Date(),
+            updatedAt: new Date(),
+            ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
+          })
+          .where(eq(assets.id, existing.id));
+
+        const sqFt = computeAreaSqFt(feature);
+        if (sqFt != null) {
+          await db.insert(assetProperties)
+            .values({ assetId: existing.id, key: "sqFt", value: String(sqFt) })
+            .onConflictDoUpdate({
+              target: [assetProperties.assetId, assetProperties.key],
+              set: { value: String(sqFt), updatedAt: new Date() },
+            });
+        }
+
+        updated++;
+      } else {
+        const [inserted] = await db.insert(assets).values({
+          communityId,
+          assetType: assetType as Asset["assetType"],
+          label,
+          featureRef,
+          mapLayerId,
           geometryType: geometryType,
           latitude: lat,
           longitude: lng,
           isArchived: false,
-          archivedAt: null,
           sourceUpdatedAt: new Date(),
-          updatedAt: new Date(),
-          ...(triggeredByUserId ? { updatedBy: triggeredByUserId } : {}),
-        })
-        .where(eq(assets.id, existing.id));
+          ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
+        }).returning();
 
-      const sqFt = computeAreaSqFt(feature);
-      if (sqFt != null) {
-        await db.insert(assetProperties)
-          .values({ assetId: existing.id, key: "sqFt", value: String(sqFt) })
-          .onConflictDoUpdate({
-            target: [assetProperties.assetId, assetProperties.key],
-            set: { value: String(sqFt), updatedAt: new Date() },
-          });
+        const sqFt = computeAreaSqFt(feature);
+        if (sqFt != null) {
+          await db.insert(assetProperties)
+            .values({ assetId: inserted.id, key: "sqFt", value: String(sqFt) })
+            .onConflictDoUpdate({
+              target: [assetProperties.assetId, assetProperties.key],
+              set: { value: String(sqFt), updatedAt: new Date() },
+            });
+        }
+
+        created++;
       }
-
-      updated++;
-    } else {
-      const [inserted] = await db.insert(assets).values({
-        communityId,
-        assetType: assetType as Asset["assetType"],
-        label,
-        featureRef,
-        mapLayerId,
-        geometryType: geometryType,
-        latitude: lat,
-        longitude: lng,
-        isArchived: false,
-        sourceUpdatedAt: new Date(),
-        ...(triggeredByUserId ? { createdBy: triggeredByUserId, updatedBy: triggeredByUserId } : {}),
-      }).returning();
-
-      const sqFt = computeAreaSqFt(feature);
-      if (sqFt != null) {
-        await db.insert(assetProperties)
-          .values({ assetId: inserted.id, key: "sqFt", value: String(sqFt) })
-          .onConflictDoUpdate({
-            target: [assetProperties.assetId, assetProperties.key],
-            set: { value: String(sqFt), updatedAt: new Date() },
-          });
+    } catch (err: any) {
+      failed++;
+      const reason = err?.message || "unknown error";
+      console.error(`[syncAssetsFromLayer] Failed to sync feature ${featureRef} (${label}): ${reason}`);
+      if (failures.length < 20) {
+        failures.push({ featureRef, reason });
       }
-
-      created++;
     }
   }
 
@@ -322,7 +364,7 @@ export async function syncAssetsFromLayer(
     }
   }
 
-  return { created, updated, archived, skippedMissingId: 0, total: features.length };
+  return { created, updated, archived, skippedMissingId: 0, total: features.length, failed, failures };
 }
 
 export function getMissingRequiredKeys(assetType: string, properties: { key: string; value: string }[]): string[] {

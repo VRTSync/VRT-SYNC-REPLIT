@@ -33,7 +33,7 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypeEnum } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray } from "drizzle-orm";
 
@@ -60,6 +60,28 @@ function isUniqueViolation(error: any, constraint?: string): boolean {
   if (!pg || pg.code !== "23505") return false;
   if (constraint) return pg.constraint === constraint;
   return true;
+}
+
+/**
+ * Validates that (layerKey, subLayerKey) resolves to a known asset type present
+ * in the database enum. Returns null on success, or an error message string on failure.
+ * Layers that legitimately produce no assets (e.g. "outline") are exempt.
+ */
+function validateAssetTypeMapping(layerKey: string, subLayerKey: string): string | null {
+  // "outline" layers never produce assets — exempt from asset-type validation.
+  if (layerKey === "outline") return null;
+
+  const resolvedType = resolveAssetType(layerKey, subLayerKey);
+  if (!resolvedType) {
+    return `No asset type mapping found for layer "${layerKey}/${subLayerKey}". Upload rejected to prevent silent data loss.`;
+  }
+
+  const validEnumValues: readonly string[] = assetTypeEnum.enumValues;
+  if (!validEnumValues.includes(resolvedType)) {
+    return `Asset type "${resolvedType}" (mapped from "${layerKey}/${subLayerKey}") is not a valid enum value. Upload rejected to prevent silent data loss.`;
+  }
+
+  return null;
 }
 
 // 60-second in-process cache for GET /api/admin/dashboard
@@ -2789,6 +2811,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const keyValidation = validateLayerKeys(parsed.data.layerKey, parsed.data.subLayerKey);
       if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
 
+      const assetTypeError = validateAssetTypeMapping(parsed.data.layerKey, parsed.data.subLayerKey);
+      if (assetTypeError) return void res.status(400).json({ error: assetTypeError });
+
       if (!parsed.data.color) {
         const count = (await storage.getMapLayersByCommunity(parsed.data.communityId, parsed.data.layerKey)).length;
         parsed.data.color = getDefaultLayerColor(parsed.data.subLayerKey, count);
@@ -2860,6 +2885,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const keyValidation = validateLayerKeys(layerKey, subLayerKey);
       if (!keyValidation.valid) return void res.status(400).json({ error: keyValidation.error });
+
+      const assetTypeError = validateAssetTypeMapping(layerKey, subLayerKey);
+      if (assetTypeError) return void res.status(400).json({ error: assetTypeError });
 
       let geojsonData: string;
       let sourceFormat: "kml" | "geojson" = "geojson";

@@ -964,10 +964,25 @@ window._renderMapLayers = async function(container, communityId) {
   }
 
   function showSyncReport(result) {
+    const failed = result.failed || 0;
+    const failures = result.failures || [];
+    let failuresHtml = '';
+    if (failed > 0) {
+      const rows = failures.map(f =>
+        `<tr><td style="padding:4px 8px;font-family:monospace;font-size:11px;word-break:break-all">${esc(f.featureRef)}</td><td style="padding:4px 8px;font-size:11px;color:#c0392b">${esc(f.reason)}</td></tr>`
+      ).join('');
+      failuresHtml = `
+        <div style="margin-top:16px;border:1px solid #e74c3c;border-radius:6px;overflow:hidden">
+          <div style="background:#fdf2f2;padding:8px 12px;font-size:13px;font-weight:600;color:#c0392b">
+            ⚠ ${failed} feature${failed === 1 ? '' : 's'} failed — see details${failures.length < failed ? ` (showing first ${failures.length})` : ''}
+          </div>
+          ${rows.length > 0 ? `<table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:4px 8px;font-size:11px;text-align:left;background:#fdf2f2;border-top:1px solid #e74c3c">Feature ID</th><th style="padding:4px 8px;font-size:11px;text-align:left;background:#fdf2f2;border-top:1px solid #e74c3c">Reason</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+        </div>`;
+    }
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:440px">
+      <div class="modal" style="max-width:480px">
         <div class="modal-header">
           <h2>Sync Report</h2>
           <button class="modal-close">&times;</button>
@@ -987,11 +1002,12 @@ window._renderMapLayers = async function(container, communityId) {
               <div style="font-size:12px;color:var(--gray-500)">Archived</div>
             </div>
             <div style="background:var(--gray-50);padding:16px;border-radius:8px">
-              <div style="font-size:24px;font-weight:700;color:#95a5a6">${result.skippedMissingId || 0}</div>
-              <div style="font-size:12px;color:var(--gray-500)">Skipped (no ID)</div>
+              <div style="font-size:24px;font-weight:700;color:${failed > 0 ? '#e74c3c' : '#95a5a6'}">${failed}</div>
+              <div style="font-size:12px;color:var(--gray-500)">Failed</div>
             </div>
           </div>
           <p style="margin-top:16px;font-size:13px;color:var(--gray-500)">Total features processed: ${result.featureCount || result.total || 0}</p>
+          ${failuresHtml}
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary close-btn">Done</button>

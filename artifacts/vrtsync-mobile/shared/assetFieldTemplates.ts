@@ -158,6 +158,90 @@ export const ASSET_FIELD_TEMPLATES: Record<string, AssetFieldTemplate> = {
       },
     ],
   },
+  plow: {
+    displayName: 'Truck Plow',
+    sections: [
+      {
+        title: 'Plow Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
+  atv: {
+    displayName: 'ATV',
+    sections: [
+      {
+        title: 'ATV Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
+  hand_shovel: {
+    displayName: 'Hand Shovel',
+    sections: [
+      {
+        title: 'Hand Shovel Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
+  ice_melt: {
+    displayName: 'Ice Melt',
+    sections: [
+      {
+        title: 'Ice Melt Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
+  slicer: {
+    displayName: 'Slicer',
+    sections: [
+      {
+        title: 'Slicer Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
+  storage_area: {
+    displayName: 'Storage Area',
+    sections: [
+      {
+        title: 'Storage Area Details',
+        fields: [
+          { key: 'surface', label: 'Surface', source: 'property' },
+          { key: 'priority', label: 'Priority', source: 'property' },
+          { key: 'equipment', label: 'Equipment', source: 'property' },
+          { key: 'notes', label: 'Notes', source: 'property' },
+        ],
+      },
+    ],
+  },
 };
 
 export function getTemplateKeys(assetType: string): Set<string> {
