@@ -923,12 +923,16 @@
         submitEl.disabled = true;
         submitEl.textContent = 'Saving…';
 
-        // Upload any pending photos first, then PATCH the task
+        // Upload any pending photos first, then PATCH the task.
+        // pendingFiles is NOT cleared until the full operation succeeds so the
+        // user can retry with the same files if the save fails partway through.
         var uploadPhotoFiles = pendingFiles.slice();
-        pendingFiles = [];
+        // confirmedKeys accumulates each objectPath as it is confirmed so that
+        // on failure we can delete the orphaned private objects.
+        var confirmedKeys = [];
 
-        function uploadNext(remaining, collected) {
-          if (remaining.length === 0) return Promise.resolve(collected);
+        function uploadNext(remaining) {
+          if (remaining.length === 0) return Promise.resolve();
           var file = remaining[0];
           var rest = remaining.slice(1);
           return apiFetch('/api/objects/upload', { method: 'POST' })
@@ -941,30 +945,43 @@
                     body: JSON.stringify({ uploadURL: r.uploadURL }),
                   });
                 })
-                .then(function (c) { collected.push(c.objectPath); return uploadNext(rest, collected); });
+                .then(function (c) { confirmedKeys.push(c.objectPath); return uploadNext(rest); });
             });
         }
 
-        uploadNext(uploadPhotoFiles, [])
-          .then(function (objectKeys) {
+        uploadNext(uploadPhotoFiles)
+          .then(function () {
             var patchUrl = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + (suffix || '');
             var photoUrl = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + '/photos' + (suffix || '');
             // Run PATCH and photo attachment in sequence (photos need task to exist)
             return apiFetch(patchUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ title: titleEl.value.trim(), description: descEl.value.trim() || null }) })
               .then(function () {
-                if (objectKeys.length === 0) return;
+                if (confirmedKeys.length === 0) return;
                 return apiFetch(photoUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ objectKeys: objectKeys }) });
+                  body: JSON.stringify({ objectKeys: confirmedKeys }) });
               });
           })
           .then(function () {
+            // Full success — clear the pending-file list and close the dialog
+            pendingFiles = [];
             overlay.remove();
             showToast('Work order updated');
             if (window._woRefreshPage) window._woRefreshPage();
             openDetailPanel(container, detail.id);
           })
           .catch(function (err) {
+            // Best-effort cleanup: delete any objects we already confirmed but
+            // failed to attach, so they are not orphaned in private storage.
+            // pendingFiles is intentionally NOT cleared here so the user can retry.
+            if (confirmedKeys.length > 0) {
+              apiFetch('/api/objects', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ objectPaths: confirmedKeys }),
+              }).catch(function () { /* best-effort */ });
+              confirmedKeys = [];
+            }
             errEl.textContent = err.message || 'Failed to save changes.';
             errEl.style.display = 'block';
             submitEl.disabled = false;

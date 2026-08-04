@@ -59,6 +59,7 @@ async function runStartupMigrations() {
       CREATE UNIQUE INDEX IF NOT EXISTS asset_attachments_asset_idempotency_idx ON asset_attachments(asset_id, idempotency_key);
       CREATE INDEX IF NOT EXISTS asset_attachments_asset_idx ON asset_attachments(asset_id);
       CREATE INDEX IF NOT EXISTS asset_attachments_community_idx ON asset_attachments(community_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS attachments_task_idempotency_partial_idx ON attachments(task_id, idempotency_key) WHERE task_completion_id IS NULL;
     `);
     logger.info("Startup migrations applied.");
   } catch (err) {

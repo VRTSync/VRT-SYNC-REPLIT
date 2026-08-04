@@ -84,7 +84,7 @@ PortalRouter.register('map', async function (container) {
   });
 
   container.innerHTML = `
-    <div class="map-workspace">
+    <div class="map-workspace" id="portal-map-workspace">
       <div class="map-layers-panel" id="map-layers-panel">
         <div class="mlp-header">
           <span class="mlp-title">Layers</span>
@@ -94,9 +94,13 @@ PortalRouter.register('map', async function (container) {
       </div>
       <div class="map-canvas-wrap">
         <iframe id="map-iframe" src="/leaflet-map.html" class="map-iframe" allowfullscreen></iframe>
-        <div class="map-toolbar-overlay">
-          <button class="map-basemap-toggle" id="map-basemap-toggle" title="Switch basemap">
-            <span id="map-basemap-label">Satellite</span>
+        <div class="map-toolbar-overlay" id="portal-map-toolbar">
+          <!-- satellite toggle injected by VRTMapRenderer.renderSatelliteToggle -->
+          <button class="portal-map-expand-btn" id="portal-map-expand-btn"
+            title="Expand map" aria-label="Expand map" aria-pressed="false">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -114,31 +118,9 @@ PortalRouter.register('map', async function (container) {
 
   renderCategories();
   renderSublayers();
-  setupSatelliteToggle();
   document.addEventListener('click', dismissColorPicker, true);
 
   loadMapData();
-
-  // ── Satellite toggle ────────────────────────────────────────────────────────
-  function setupSatelliteToggle() {
-    const btn   = document.getElementById('map-basemap-toggle');
-    const label = document.getElementById('map-basemap-label');
-    if (!btn || !label) return;
-
-    let isSatellite = false;
-    try { isSatellite = localStorage.getItem('vrt_map_basemap') === 'satellite'; } catch (_) {}
-
-    function applySatellite(on) {
-      isSatellite = on;
-      label.textContent = on ? 'Map' : 'Satellite';
-      btn.classList.toggle('map-basemap-toggle--active', on);
-      if (renderer) renderer.setSatellite(on);
-      try { localStorage.setItem('vrt_map_basemap', on ? 'satellite' : 'map'); } catch (_) {}
-    }
-
-    applySatellite(isSatellite);
-    btn.addEventListener('click', () => applySatellite(!isSatellite));
-  }
 
   // ── Color picker helpers ───────────────────────────────────────────────────
   function dismissColorPicker(e) {
@@ -375,12 +357,48 @@ PortalRouter.register('map', async function (container) {
       hierarchy: LAYER_HIERARCHY,
     });
 
-    // Restore saved satellite preference (queued until iframe ready)
-    try {
-      if (localStorage.getItem('vrt_map_basemap') === 'satellite') {
-        renderer.setSatellite(true);
-      }
-    } catch (_) {}
+    // Wire satellite toggle and expand button via shared helpers
+    const toolbarEl  = document.getElementById('portal-map-toolbar');
+    const expandBtn  = document.getElementById('portal-map-expand-btn');
+    const workspaceEl = document.getElementById('portal-map-workspace');
+
+    if (window.VRTMapRenderer && toolbarEl) {
+      window.VRTMapRenderer.renderSatelliteToggle(toolbarEl, renderer);
+    }
+    if (window.VRTMapRenderer && expandBtn && workspaceEl) {
+      window.VRTMapRenderer.renderExpandButton(expandBtn, workspaceEl, renderer, 'portal-map-ws--expanded');
+    }
+
+    // Sync expanded overlay events back to the left-panel layer UI
+    if (workspaceEl) {
+      workspaceEl.addEventListener('vrt-overlay-category-change', function (e) {
+        activeCategory = e.detail.activeCategory;
+        // Sync renderer to the new category before updating the left-panel UI,
+        // so left-panel checkbox changes apply to the correct category.
+        if (renderer) renderer.setActiveCategory(activeCategory);
+        renderCategories();
+        renderSublayers();
+      });
+      workspaceEl.addEventListener('vrt-overlay-sublayer-change', function (e) {
+        const cat = e.detail.cat;
+        const stateForCat = e.detail.stateForCat || {};
+        if (cat && sublayerState[cat]) {
+          Object.keys(stateForCat).forEach(sk => { sublayerState[cat][sk] = stateForCat[sk]; });
+        }
+        renderSublayers();
+      });
+      workspaceEl.addEventListener('layer-state-change', function (e) {
+        const detail = e.detail;
+        if (detail.activeCategory) activeCategory = detail.activeCategory;
+        const cs = detail.checkedSubLayers || {};
+        Object.keys(cs).forEach(cat => {
+          if (!sublayerState[cat]) sublayerState[cat] = {};
+          Object.keys(cs[cat]).forEach(sk => { sublayerState[cat][sk] = cs[cat][sk]; });
+        });
+        renderCategories();
+        renderSublayers();
+      });
+    }
 
     renderer.on('ready', function (state) {
       // Sync page state from renderer
@@ -393,6 +411,34 @@ PortalRouter.register('map', async function (container) {
       _outlineStyle       = state.outlineStyle;
       renderCategories();
       renderSublayers();
+
+      // Build layer state for expanded overlay from live renderer state
+      if (window.VRTMapRenderer && workspaceEl) {
+        const expLayerState = {
+          categoryOrder:    populatedCategories,
+          categoryGroups:   {},
+          checkedSubLayers: {},
+          activeCategory:   activeCategory,
+        };
+        populatedCategories.forEach(cat => {
+          const subs = LAYER_HIERARCHY[cat] || [];
+          expLayerState.categoryGroups[cat] = subs.map(sub => ({
+            id:          sub.key,          // portal uses subKey as id
+            subLayerKey: sub.key,
+            name:        sub.label,
+            color:       renderer.getLayerEffectiveColor(cat, sub.key),
+            hasGeometry: !!(populated[cat] && populated[cat][sub.key]),
+          }));
+          expLayerState.checkedSubLayers[cat] = {};
+          subs.forEach(sub => {
+            expLayerState.checkedSubLayers[cat][sub.key] =
+              !!(sublayerState[cat] && sublayerState[cat][sub.key]);
+          });
+        });
+        window.VRTMapRenderer.renderExpandedOverlays(
+          workspaceEl, renderer, expLayerState, 'portal-map-ws--expanded'
+        );
+      }
     });
 
     renderer.on('assetTap', function (data) {

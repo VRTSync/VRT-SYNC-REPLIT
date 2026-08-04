@@ -50,6 +50,7 @@
   var _categoryGroups = {};
   var _checkedSubLayers = {}; // { [categoryKey]: { [layerId]: bool } }
   var _container      = null;
+  var _bMapPanel      = null; // #branch-map-panel — used to sync overlay on tab switch
 
   function _teardown() {
     if (_renderer) { _renderer.destroy(); _renderer = null; }
@@ -58,6 +59,7 @@
     _categoryGroups = {};
     _checkedSubLayers = {};
     _container      = null;
+    _bMapPanel      = null;
   }
 
   // ── Accent/colour helpers ─────────────────────────────────────────────────
@@ -186,14 +188,22 @@
     _activeTabIdx = tabIdx;
     _updateSublayerOverlay(tabIdx);
     _renderer.invalidateSize();
+    var categoryKey;
     if (tabIdx === 0) {
       _updateMapPanelTitle('Property Map');
       _renderer.setActiveCategory(null); // null = show all layers (summary)
+      categoryKey = null;
     } else {
-      var categoryKey = _categoryOrder[tabIdx - 1];
+      categoryKey = _categoryOrder[tabIdx - 1];
       if (!categoryKey) return;
       _updateMapPanelTitle(_categoryLabel(categoryKey) + ' Map');
       _renderer.setActiveCategory(categoryKey);
+    }
+    // Keep the expanded overlay's active category in sync with the page tab bar
+    if (_bMapPanel) {
+      _bMapPanel.dispatchEvent(new CustomEvent('vrt-sync-overlay-category', {
+        bubbles: false, detail: { activeCategory: categoryKey }
+      }));
     }
   }
 
@@ -322,11 +332,72 @@
       hierarchy: hierarchyMap,
     });
 
+    // Wire satellite toggle and expand button now that renderer instance exists
+    var _bPanel    = container.querySelector('#branch-map-panel');
+    _bMapPanel     = _bPanel; // expose to _switchToTab for overlay sync
+    var _bExpBtn   = container.querySelector('#bmap-expand-btn');
+    var _bHeadCtrl = container.querySelector('#bmap-head-controls');
+
+    if (window.VRTMapRenderer && _bHeadCtrl) {
+      window.VRTMapRenderer.renderSatelliteToggle(_bHeadCtrl, _renderer);
+    }
+    if (window.VRTMapRenderer && _bExpBtn && _bPanel) {
+      window.VRTMapRenderer.renderExpandButton(_bExpBtn, _bPanel, _renderer, 'bmap-panel--expanded');
+    }
+
     _renderer.on('ready', function (state) {
       // Switch to Summary tab (show all layers)
       _activeTabIdx = 0;
       _updateSublayerOverlay(0);
       _renderer.setActiveCategory(null);
+
+      // Inject expanded floating overlay now that layer data is loaded
+      if (window.VRTMapRenderer && _bPanel) {
+        var _bLayerState = {
+          categoryOrder:    _categoryOrder,
+          categoryGroups:   _categoryGroups,
+          checkedSubLayers: _checkedSubLayers,
+          activeCategory:   null,
+        };
+        window.VRTMapRenderer.renderExpandedOverlays(
+          _bPanel, _renderer, _bLayerState, 'bmap-panel--expanded'
+        );
+
+        // Sync expanded overlay → tab bar (real-time category switch)
+        _bPanel.addEventListener('vrt-overlay-category-change', function (e) {
+          var cat = e.detail.activeCategory;
+          var idx = _categoryOrder.indexOf(cat) + 1;
+          if (idx > 0) { _activeTabIdx = idx; _syncTabUI(idx); }
+        });
+
+        // Sync expanded overlay → checked sub-layers (real-time toggle)
+        _bPanel.addEventListener('vrt-overlay-sublayer-change', function (e) {
+          var cat = e.detail.cat;
+          var lid = e.detail.layerId;
+          if (cat && lid !== undefined) {
+            if (!_checkedSubLayers[cat]) _checkedSubLayers[cat] = {};
+            _checkedSubLayers[cat][lid] = e.detail.checked;
+            _updateSublayerOverlay(_activeTabIdx);
+          }
+        });
+
+        // Sync collapsed state → tab bar + sub-layer overlay
+        _bPanel.addEventListener('layer-state-change', function (e) {
+          var detail = e.detail;
+          if (detail.activeCategory) {
+            var idx2 = _categoryOrder.indexOf(detail.activeCategory) + 1;
+            if (idx2 > 0) { _activeTabIdx = idx2; _syncTabUI(idx2); }
+          }
+          if (detail.checkedSubLayers) {
+            Object.keys(detail.checkedSubLayers).forEach(function (cat) {
+              _checkedSubLayers[cat] = {};
+              var src = detail.checkedSubLayers[cat];
+              Object.keys(src).forEach(function (k) { _checkedSubLayers[cat][k] = src[k]; });
+            });
+            _updateSublayerOverlay(_activeTabIdx);
+          }
+        });
+      }
     });
 
     _renderer.load(branchId);
@@ -451,11 +522,14 @@
     return '<div class="panel p-blue" id="branch-map-panel">'
       + '<div class="panel-head">'
         + '<h2 id="bmap-panel-title">Property Map</h2>'
-        + '<button class="bmap-expand-btn" id="bmap-expand-btn" title="Expand map" aria-label="Expand map" aria-pressed="false">'
-          + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
-            + '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>'
-          + '</svg>'
-        + '</button>'
+        + '<div class="bmap-head-controls" id="bmap-head-controls">'
+          + '<!-- satellite toggle injected by VRTMapRenderer.renderSatelliteToggle -->'
+          + '<button class="bmap-expand-btn" id="bmap-expand-btn" title="Expand map" aria-label="Expand map" aria-pressed="false">'
+            + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+              + '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>'
+            + '</svg>'
+          + '</button>'
+        + '</div>'
       + '</div>'
       + '<div id="bmap-sublayer-overlay"></div>'
       + '<div class="branch-map-container" id="bmap-stable"></div>'
@@ -666,7 +740,6 @@
 
     wireSelectorBlock(container, branchId, allBranches);
     wireTabBar(container);
-    _wireExpandButton(container);
     setupBranchRenderer(container, data, branchId);
   }
 
@@ -763,36 +836,17 @@
     });
   }
 
-  // ── Expand button ──────────────────────────────────────────────────────────
-  function _wireExpandButton(container) {
-    var panel = container.querySelector('#branch-map-panel');
-    var btn   = container.querySelector('#bmap-expand-btn');
-    if (!panel || !btn) return;
-
-    function postExpandInvalidate() {
-      if (_renderer) _renderer.invalidateSize();
-    }
-
-    function toggleExpand() {
-      var expanded = panel.classList.toggle('bmap-panel--expanded');
-      btn.setAttribute('aria-pressed', expanded ? 'true' : 'false');
-      btn.title = expanded ? 'Collapse map' : 'Expand map';
-      setTimeout(postExpandInvalidate, 270);
-    }
-
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      toggleExpand();
-    });
-
-    document.addEventListener('keydown', function onEsc(e) {
-      if (e.key === 'Escape' && panel.classList.contains('bmap-panel--expanded')) {
-        panel.classList.remove('bmap-panel--expanded');
-        btn.setAttribute('aria-pressed', 'false');
-        btn.title = 'Expand map';
-        setTimeout(postExpandInvalidate, 270);
-      }
-    });
+  // ── Tab UI sync helper ─────────────────────────────────────────────────────
+  // Syncs the tab bar and pane visibility when the active tab changes from
+  // outside (e.g. expanded overlay category switch).
+  function _syncTabUI(tabIdx) {
+    if (!_container) return;
+    _container.querySelectorAll('#branch-tab-bar .tab').forEach(function (t) { t.classList.remove('on'); });
+    _container.querySelectorAll('.tabpane[data-pane-idx]').forEach(function (p) { p.classList.remove('on'); });
+    var tab  = _container.querySelector('#branch-tab-bar .tab[data-tab-idx="'  + tabIdx + '"]');
+    var pane = _container.querySelector('.tabpane[data-pane-idx="' + tabIdx + '"]');
+    if (tab)  tab.classList.add('on');
+    if (pane) pane.classList.add('on');
   }
 
   // ── Main render ────────────────────────────────────────────────────────────

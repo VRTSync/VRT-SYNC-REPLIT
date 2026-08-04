@@ -158,6 +158,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk-delete private objects owned by the calling user.
+  // Only objects whose ACL owner is the caller and that have no access groups
+  // (i.e. have not yet been transferred to a community) are eligible.
+  // Intended for client-side cleanup of confirmed-but-unattached upload objects
+  // when a subsequent PATCH or attach call fails.
+  app.delete("/api/objects", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { objectPaths } = req.body as { objectPaths?: unknown };
+      if (!Array.isArray(objectPaths) || objectPaths.length === 0) {
+        return void res.status(400).json({ error: "objectPaths[] is required" });
+      }
+      if (objectPaths.length > 20) {
+        return void res.status(400).json({ error: "Too many objectPaths; max 20 per call" });
+      }
+      const objectStorageService = new ObjectStorageService();
+      const results: Array<{ key: string; deleted: boolean }> = [];
+      for (const key of objectPaths) {
+        if (typeof key !== "string" || !key.startsWith("/objects/")) {
+          results.push({ key: String(key), deleted: false });
+          continue;
+        }
+        try {
+          const objectFile = await objectStorageService.getObjectEntityFile(key);
+          const aclPolicy = await getObjectAclPolicy(objectFile);
+          // Only allow deletion of private objects owned by the caller that
+          // have not yet been shared with any community (no ACL rules).
+          if (
+            !aclPolicy ||
+            aclPolicy.owner !== req.session.userId! ||
+            (aclPolicy.aclRules && aclPolicy.aclRules.length > 0)
+          ) {
+            results.push({ key, deleted: false });
+            continue;
+          }
+          await objectStorageService.deleteObject(key);
+          results.push({ key, deleted: true });
+        } catch (e: any) {
+          if (e?.name === "ObjectNotFoundError") {
+            results.push({ key, deleted: true }); // already gone — treat as success
+          } else {
+            results.push({ key, deleted: false });
+          }
+        }
+      }
+      return void res.json({ results });
+    } catch (error) {
+      req.log.error({ error }, "Delete objects error");
+      return void res.status(500).json({ error: "Failed to delete objects" });
+    }
+  });
+
   app.post("/api/objects/confirm", requireAuth, async (req: Request, res: Response) => {
     const { uploadURL, communityId } = req.body;
     if (!uploadURL) {
@@ -6581,6 +6632,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           continue;
         }
         try {
+          // Idempotency check: if this (taskId, key) pair was already attached,
+          // return success without re-transferring ownership or inserting again.
+          const existing = await storage.getAttachmentByTaskIdAndIdempotencyKey(taskId, key);
+          if (existing) {
+            attached.push(key);
+            continue;
+          }
+
           // Validate that the calling user owns this object before attaching it.
           // This prevents clients from claiming objects uploaded by other users.
           const objectFile = await objectStorageService.getObjectEntityFile(key);
@@ -6603,8 +6662,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           attached.push(key);
         } catch (e: any) {
-          if (e?.name === 'ObjectNotFoundError') { rejected.push(key); }
-          else { /* skip duplicate idempotency keys */ }
+          if (e?.name === 'ObjectNotFoundError') {
+            rejected.push(key);
+          } else if (isUniqueViolation(e)) {
+            // Race-condition duplicate: a concurrent request beat us to the
+            // insert.  Re-read the now-existing attachment and treat as success.
+            const concurrent = await storage.getAttachmentByTaskIdAndIdempotencyKey(taskId, key);
+            if (concurrent) {
+              attached.push(key);
+            } else {
+              throw e; // unexpected — surface the original error
+            }
+          } else {
+            // Re-throw all other errors; only ObjectNotFoundError and unique
+            // violations are benign per-key failures.
+            throw e;
+          }
         }
       }
 

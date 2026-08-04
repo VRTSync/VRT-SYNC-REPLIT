@@ -790,5 +790,300 @@
     };
   }
 
-  window.VRTMapRenderer = { create: create };
+  // ── Static helper: renderSatelliteToggle ─────────────────────────────────
+  // Creates a Map/Satellite toggle button inside containerEl.
+  // Reads vrt_map_basemap from localStorage on init and calls renderer.setSatellite()
+  // immediately. Writes back to localStorage on click. Emits 'basemap-change' event.
+  function renderSatelliteToggle(containerEl, renderer) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'vrt-sat-toggle';
+
+    var isSatellite = false;
+    try { isSatellite = localStorage.getItem('vrt_map_basemap') === 'satellite'; } catch (_) {}
+
+    function apply(on) {
+      isSatellite = on;
+      btn.textContent = on ? 'Map' : 'Satellite';
+      btn.classList.toggle('vrt-sat-toggle--active', on);
+      btn.title = on ? 'Switch to street map' : 'Switch to satellite view';
+      if (renderer) renderer.setSatellite(on);
+      try { localStorage.setItem('vrt_map_basemap', on ? 'satellite' : 'map'); } catch (_) {}
+      btn.dispatchEvent(new CustomEvent('basemap-change', { bubbles: true, detail: { satellite: on } }));
+    }
+
+    apply(isSatellite);
+    btn.addEventListener('click', function () { apply(!isSatellite); });
+    containerEl.appendChild(btn);
+    return btn;
+  }
+
+  // ── Static helper: renderExpandButton ────────────────────────────────────
+  // Wires an existing expand/collapse button (btnEl) to toggle expandedClass
+  // on mapWrapEl. If btnEl is null, creates and appends a floating button.
+  // Fires 'vrt-map-collapse' custom event on mapWrapEl when collapsing.
+  // Returns { collapse } so callers can trigger collapse programmatically.
+  function renderExpandButton(btnEl, mapWrapEl, renderer, expandedClass) {
+    var btn = btnEl;
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vrt-map-expand-btn-auto';
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
+      mapWrapEl.appendChild(btn);
+    }
+
+    function collapse() {
+      mapWrapEl.classList.remove(expandedClass);
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Expand map';
+      setTimeout(function () { if (renderer) renderer.invalidateSize(); }, 270);
+      mapWrapEl.dispatchEvent(new CustomEvent('vrt-map-collapse', { bubbles: false }));
+    }
+
+    function expand() {
+      mapWrapEl.classList.add(expandedClass);
+      btn.setAttribute('aria-pressed', 'true');
+      btn.title = 'Collapse map';
+      setTimeout(function () { if (renderer) renderer.invalidateSize(); }, 270);
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (mapWrapEl.classList.contains(expandedClass)) { collapse(); } else { expand(); }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && mapWrapEl.classList.contains(expandedClass)) { collapse(); }
+    });
+
+    return { collapse: collapse };
+  }
+
+  // ── Static helper: renderExpandedOverlays ────────────────────────────────
+  // Injects a floating category+sublayer panel (top-left) and a legend panel
+  // (bottom-left) inside mapWrapEl. Both panels are visible only when mapWrapEl
+  // carries expandedClass. Uses a MutationObserver to track class changes.
+  //
+  // layerState shape:
+  //   {
+  //     categoryOrder:   string[],
+  //     categoryGroups:  { [cat]: [{ id, subLayerKey, name, color, hasGeometry, assetCount? }] },
+  //     checkedSubLayers:{ [cat]: { [id]: bool } },
+  //     activeCategory:  string | null,
+  //   }
+  //
+  // Fires on mapWrapEl:
+  //   'vrt-overlay-category-change' → { activeCategory }
+  //   'vrt-overlay-sublayer-change' → { cat, layerId, checked, stateForCat }
+  //   'layer-state-change'          → { activeCategory, checkedSubLayers }  (on collapse)
+  function renderExpandedOverlays(mapWrapEl, renderer, layerState, expandedClass) {
+    if (!layerState || !layerState.categoryOrder || layerState.categoryOrder.length === 0) return;
+
+    // Local mutable state
+    var _activeCat = layerState.activeCategory !== undefined ? layerState.activeCategory : (layerState.categoryOrder[0] || null);
+    var _checked = {};
+    layerState.categoryOrder.forEach(function (cat) {
+      _checked[cat] = {};
+      var src = (layerState.checkedSubLayers || {})[cat] || {};
+      Object.keys(src).forEach(function (k) { _checked[cat][k] = src[k]; });
+    });
+
+    // Satellite state (shared with any existing toggle)
+    var _isSat = false;
+    try { _isSat = localStorage.getItem('vrt_map_basemap') === 'satellite'; } catch (_) {}
+
+    // DOM nodes
+    var panel = document.createElement('div');
+    panel.className = 'vrt-expanded-overlay';
+    mapWrapEl.appendChild(panel);
+
+    var legend = document.createElement('div');
+    legend.className = 'vrt-expanded-legend';
+    mapWrapEl.appendChild(legend);
+
+    function buildStateForCat(cat) {
+      var layers = (layerState.categoryGroups[cat] || []);
+      var chk    = _checked[cat] || {};
+      var state  = {};
+      layers.forEach(function (l) {
+        var subKey = l.subLayerKey || l.id;
+        state[subKey] = l.hasGeometry ? (chk[l.id] !== false) : false;
+      });
+      return state;
+    }
+
+    function renderLegend() {
+      var layers = (layerState.categoryGroups[_activeCat] || []);
+      var items  = layers.filter(function (l) { return l.hasGeometry; }).map(function (l) {
+        return '<div class="vrt-expanded-legend__item">'
+          + '<span class="vrt-expanded-legend__dot" style="background:' + (l.color || '#888') + '"></span>'
+          + '<span class="vrt-expanded-legend__lbl">' + (l.name || l.id) + '</span>'
+          + '</div>';
+      }).join('');
+      legend.innerHTML = items ? '<div class="vrt-expanded-legend__title">Legend</div>' + items : '';
+      legend.style.display = items ? '' : 'none';
+    }
+
+    function renderPanel() {
+      var catOrder = layerState.categoryOrder || [];
+
+      // Category tabs
+      var tabsHtml = catOrder.map(function (cat) {
+        var active = cat === _activeCat ? ' vrt-expanded-overlay__cat--active' : '';
+        var label  = cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ');
+        return '<button class="vrt-expanded-overlay__cat' + active + '" data-cat="' + cat + '">' + label + '</button>';
+      }).join('');
+
+      // Sub-layer rows for active category
+      var layers  = (layerState.categoryGroups[_activeCat] || []);
+      var chk     = _checked[_activeCat] || {};
+      var rowsHtml = layers.map(function (layer) {
+        var color       = layer.color || '#888888';
+        var hasGeo      = !!layer.hasGeometry;
+        var isChecked   = hasGeo ? (chk[layer.id] !== false) : false;
+        var disabledCls = hasGeo ? '' : ' vrt-expanded-overlay__row--disabled';
+        var disabledAtr = hasGeo ? '' : ' disabled';
+        var checkedAtr  = (hasGeo && isChecked) ? ' checked' : '';
+        var countHtml   = (layer.assetCount != null && hasGeo)
+          ? '<span class="vrt-expanded-overlay__count">' + layer.assetCount + '</span>' : '';
+        var noDataHtml  = !hasGeo ? '<span class="vrt-expanded-overlay__nodata">no data</span>' : '';
+        return '<label class="vrt-expanded-overlay__row' + disabledCls + '">'
+          + '<input type="checkbox"' + checkedAtr + disabledAtr
+            + ' data-cat="' + _activeCat + '" data-layer-id="' + layer.id + '">'
+          + '<span class="vrt-expanded-overlay__dot" style="background:' + color + '"></span>'
+          + '<span class="vrt-expanded-overlay__lbl">' + (layer.name || layer.id) + '</span>'
+          + noDataHtml + countHtml
+          + '</label>';
+      }).join('');
+
+      // Satellite toggle (synced with external toggles via localStorage key)
+      var satLabel = _isSat ? 'Map' : 'Satellite';
+      var satActive = _isSat ? ' vrt-sat-toggle--active' : '';
+
+      panel.innerHTML = ''
+        // Compact-mode toggle button (shown only at < 900 px)
+        + '<button class="vrt-expanded-overlay__compact-btn" type="button">Layers</button>'
+        // Main content
+        + '<div class="vrt-expanded-overlay__main">'
+          + '<div class="vrt-expanded-overlay__header">'
+            + '<span class="vrt-expanded-overlay__title">Layers</span>'
+            + '<button type="button" class="vrt-sat-toggle vrt-expanded-overlay__sat-btn' + satActive + '">' + satLabel + '</button>'
+          + '</div>'
+          + '<div class="vrt-expanded-overlay__cats">' + tabsHtml + '</div>'
+          + (rowsHtml ? '<div class="vrt-expanded-overlay__rows">' + rowsHtml + '</div>' : '')
+        + '</div>';
+
+      // Wire compact-mode button
+      var compactBtn = panel.querySelector('.vrt-expanded-overlay__compact-btn');
+      if (compactBtn) {
+        compactBtn.addEventListener('click', function () { panel.classList.toggle('vrt-expanded-overlay--open'); });
+      }
+
+      // Wire satellite button inside panel
+      var satBtn = panel.querySelector('.vrt-expanded-overlay__sat-btn');
+      if (satBtn) {
+        satBtn.addEventListener('click', function () {
+          _isSat = !_isSat;
+          satBtn.textContent = _isSat ? 'Map' : 'Satellite';
+          satBtn.classList.toggle('vrt-sat-toggle--active', _isSat);
+          if (renderer) renderer.setSatellite(_isSat);
+          try { localStorage.setItem('vrt_map_basemap', _isSat ? 'satellite' : 'map'); } catch (_) {}
+          // Sync any external satellite toggles in the same wrap
+          mapWrapEl.querySelectorAll('.vrt-sat-toggle:not(.vrt-expanded-overlay__sat-btn)').forEach(function (b) {
+            b.classList.toggle('vrt-sat-toggle--active', _isSat);
+            b.textContent = _isSat ? 'Map' : 'Satellite';
+          });
+        });
+      }
+
+      // Wire category tabs
+      panel.querySelectorAll('.vrt-expanded-overlay__cat').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          _activeCat = btn.getAttribute('data-cat');
+          if (renderer) renderer.setActiveCategory(_activeCat);
+          mapWrapEl.dispatchEvent(new CustomEvent('vrt-overlay-category-change', {
+            bubbles: false, detail: { activeCategory: _activeCat }
+          }));
+          renderPanel();
+        });
+      });
+
+      // Wire sub-layer checkboxes
+      panel.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          var cat = cb.getAttribute('data-cat');
+          var lid = cb.getAttribute('data-layer-id');
+          if (!cat || !lid) return;
+          if (!_checked[cat]) _checked[cat] = {};
+          _checked[cat][lid] = cb.checked;
+          var stateForCat = buildStateForCat(cat);
+          if (renderer) {
+            // Always sync the renderer's active category before applying sublayer
+            // visibility — the host tab bar may have changed the renderer's category
+            // independently of the overlay while both are visible simultaneously.
+            renderer.setActiveCategory(cat);
+            renderer.setVisibleSubLayers(stateForCat);
+          }
+          mapWrapEl.dispatchEvent(new CustomEvent('vrt-overlay-sublayer-change', {
+            bubbles: false,
+            detail: { cat: cat, layerId: lid, checked: cb.checked, stateForCat: stateForCat }
+          }));
+        });
+      });
+
+      renderLegend();
+    }
+
+    function updateVisibility() {
+      var isExpanded = mapWrapEl.classList.contains(expandedClass);
+      // Sync satellite state from localStorage each time we show
+      try { _isSat = localStorage.getItem('vrt_map_basemap') === 'satellite'; } catch (_) {}
+      panel.style.display  = isExpanded ? '' : 'none';
+      legend.style.display = isExpanded ? '' : 'none';
+      if (isExpanded) renderPanel();
+    }
+
+    // Watch class changes on mapWrapEl
+    var classObserver = new MutationObserver(function () { updateVisibility(); });
+    classObserver.observe(mapWrapEl, { attributes: true, attributeFilter: ['class'] });
+
+    // Allow host pages (tab bars, etc.) to push a new active category into the
+    // overlay without triggering a feedback loop.  Used by branch-detail when
+    // the user clicks a page tab while the map is expanded.
+    mapWrapEl.addEventListener('vrt-sync-overlay-category', function (e) {
+      var newCat = e.detail.activeCategory; // null = Summary / show-all
+      _activeCat = (newCat !== null && newCat !== undefined)
+        ? newCat
+        : null;
+      if (panel.style.display !== 'none') renderPanel();
+    });
+
+    // On collapse: fire layer-state-change with final state
+    mapWrapEl.addEventListener('vrt-map-collapse', function () {
+      mapWrapEl.dispatchEvent(new CustomEvent('layer-state-change', {
+        bubbles: false,
+        detail: { activeCategory: _activeCat, checkedSubLayers: _checked }
+      }));
+    });
+
+    // ResizeObserver for compact mode (< 900 px)
+    if (typeof ResizeObserver !== 'undefined') {
+      var ro = new ResizeObserver(function (entries) {
+        var w = entries[0].contentRect.width;
+        panel.classList.toggle('vrt-expanded-overlay--compact', w < 900);
+      });
+      ro.observe(mapWrapEl);
+    }
+
+    // Initial visibility
+    updateVisibility();
+  }
+
+  window.VRTMapRenderer = {
+    create:                  create,
+    renderSatelliteToggle:   renderSatelliteToggle,
+    renderExpandButton:      renderExpandButton,
+    renderExpandedOverlays:  renderExpandedOverlays,
+  };
 })();

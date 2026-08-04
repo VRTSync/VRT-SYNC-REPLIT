@@ -179,23 +179,7 @@
     var expandBtn = document.getElementById('pfm-map-expand-btn');
     var iframe    = document.getElementById('pf-map-iframe');
 
-    // Wire expand/collapse — CSS-only, iframe stays mounted.
-    if (mapWrap && expandBtn) {
-      expandBtn.addEventListener('click', function () {
-        var expanded = mapWrap.classList.toggle('pfm-map-wrap--expanded');
-        expandBtn.setAttribute('aria-pressed', expanded ? 'true' : 'false');
-        expandBtn.title = expanded ? 'Collapse map' : 'Expand map';
-        setTimeout(function () { if (_renderer) _renderer.invalidateSize(); }, 270);
-      });
-      document.addEventListener('keydown', function pfmEsc(e) {
-        if (e.key === 'Escape' && mapWrap.classList.contains('pfm-map-wrap--expanded')) {
-          mapWrap.classList.remove('pfm-map-wrap--expanded');
-          expandBtn.setAttribute('aria-pressed', 'false');
-          expandBtn.title = 'Expand map';
-          setTimeout(function () { if (_renderer) _renderer.invalidateSize(); }, 270);
-        }
-      });
-    }
+    // Expand/collapse and satellite toggle wired after renderer is created (below)
 
     var allBranches = mapData.branches || [];
     var allUnmapped = mapData.unmapped || [];
@@ -235,6 +219,16 @@
       adapter:   nullAdapter,
       hierarchy: {},
     });
+
+    // Wire expand button and satellite toggle using shared helpers
+    if (window.VRTMapRenderer) {
+      if (mapWrap && expandBtn) {
+        window.VRTMapRenderer.renderExpandButton(expandBtn, mapWrap, _renderer, 'pfm-map-wrap--expanded');
+      }
+      if (mapWrap) {
+        window.VRTMapRenderer.renderSatelliteToggle(mapWrap, _renderer);
+      }
+    }
 
     _renderer.on('ready', function () {
       // Send initial pins once the map is ready
