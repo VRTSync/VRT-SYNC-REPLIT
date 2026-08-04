@@ -54,8 +54,10 @@
 
   // ── Status chip ────────────────────────────────────────────────────────────
   function statusChip(task) {
+    if (task.cancelledAt) return '<span class="gchip g-cancelled">Cancelled</span>';
+    if (task.declinedAt)  return '<span class="gchip g-declined">Declined</span>';
     var s = task.status;
-    if (task.estimateCents != null && !task.approvedAt) {
+    if (task.estimateCents != null && !task.approvedAt && !task.declinedAt) {
       return '<span class="gchip g2">Awaiting approval</span>';
     }
     if (s === 'completed') return '<span class="gchip g3">Completed</span>';
@@ -69,17 +71,20 @@
   var _filter = 'open'; // active chip
   var _search = '';     // search text
 
-  function applyFilter(open, closed) {
-    var all = open.concat(closed.map(function (t) { return Object.assign({ _closed: true }, t); }));
+  function applyFilter(open, closed, cancelled) {
+    var cancelledArr = (cancelled || []).map(function (t) { return Object.assign({ _cancelled: true }, t); });
+    var all = open.concat(closed.map(function (t) { return Object.assign({ _closed: true }, t); })).concat(cancelledArr);
     var filtered;
     if (_filter === 'open') {
       filtered = open;
     } else if (_filter === 'awaiting') {
-      filtered = open.filter(function (t) { return t.estimateCents != null && !t.approvedAt; });
+      filtered = open.filter(function (t) { return t.estimateCents != null && !t.approvedAt && !t.declinedAt; });
     } else if (_filter === 'scheduled') {
       filtered = open.filter(function (t) { return t.status === 'pending' || t.status === 'in_progress'; });
     } else if (_filter === 'closed') {
       filtered = closed.map(function (t) { return Object.assign({ _closed: true }, t); });
+    } else if (_filter === 'cancelled') {
+      filtered = cancelledArr;
     } else {
       filtered = all;
     }
@@ -98,7 +103,7 @@
   }
 
   // ── Pipeline band ──────────────────────────────────────────────────────────
-  function renderPipeline(pipeline, open, closed) {
+  function renderPipeline(pipeline, open, closed, cancelled) {
     var p = pipeline || {};
     var flagged   = Number(p.flaggedByHp       || 0);
     var awaiting  = Number(p.awaitingApproval  || 0);
@@ -150,13 +155,14 @@
   }
 
   // ── Filter chip row ────────────────────────────────────────────────────────
-  function renderFilterChips(pipeline, open, closed) {
+  function renderFilterChips(pipeline, open, closed, cancelled) {
     var p = pipeline || {};
     var chips = [
-      { key: 'open',     label: 'Open (' + (open || []).length + ')' },
-      { key: 'awaiting', label: 'Awaiting approval (' + (p.awaitingApproval || 0) + ')' },
-      { key: 'scheduled',label: 'Scheduled (' + (p.scheduled || 0) + ')' },
-      { key: 'closed',   label: 'Closed (' + (closed || []).length + ')' },
+      { key: 'open',      label: 'Open (' + (open || []).length + ')' },
+      { key: 'awaiting',  label: 'Awaiting approval (' + (p.awaitingApproval || 0) + ')' },
+      { key: 'scheduled', label: 'Scheduled (' + (p.scheduled || 0) + ')' },
+      { key: 'closed',    label: 'Closed (' + (closed || []).length + ')' },
+      { key: 'cancelled', label: 'Cancelled (' + (cancelled || []).length + ')' },
     ];
 
     var chipsHtml = chips.map(function (c) {
@@ -196,11 +202,13 @@
         var photoBadge = t.photoCount > 0
           ? ' · <span class="sr-photos">📷 ' + esc(t.photoCount) + '</span>'
           : '';
-        var approveBtn = (t.estimateCents != null && !t.approvedAt)
+        // Only show Approve button when there is an estimate and the task is not yet
+        // approved, cancelled, or declined (both cancelled and declined are terminal).
+        var approveBtn = (t.estimateCents != null && !t.approvedAt && !t.cancelledAt && !t.declinedAt)
           ? ' <button class="ghost-btn approve-btn" data-task-id="' + esc(t.id) + '" data-task-ref="' + esc(t.ref) + '" data-branch="' + esc(t.branchName) + '" data-title="' + esc(t.title) + '" data-est="' + esc(t.estimateCents) + '" style="font-size:11.5px;padding:4px 12px;">Approve</button>'
           : '';
 
-        return '<tr class="clickable" data-community-id="' + esc(t.communityId) + '">'
+        return '<tr class="clickable" data-community-id="' + esc(t.communityId) + '" data-task-id="' + esc(t.id) + '">'
           + '<td class="sr-ref">' + esc(t.ref) + '</td>'
           + '<td><span class="bcode">' + esc(t.branchCode || '—') + '</span>'
           + (t.branchName ? '<div class="bsub">' + esc(t.branchName) + '</div>' : '') + '</td>'
@@ -241,7 +249,7 @@
       body = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--gray-400);padding:24px;">No closed work orders in the last 30 days.</td></tr>';
     } else {
       body = rows.map(function (t) {
-        return '<tr class="clickable" data-community-id="' + esc(t.communityId) + '">'
+        return '<tr class="clickable" data-community-id="' + esc(t.communityId) + '" data-task-id="' + esc(t.id) + '">'
           + '<td class="sr-ref">' + esc(t.ref) + '</td>'
           + '<td><span class="bcode">' + esc(t.branchCode || '—') + '</span></td>'
           + '<td><div class="bname">' + esc(t.title) + '</div>'
@@ -553,18 +561,12 @@
 
   // ── Wire table row clicks ──────────────────────────────────────────────────
   function wireTableRows(container) {
-    container.querySelectorAll('tr.clickable[data-community-id]').forEach(function (row) {
+    container.querySelectorAll('tr.clickable[data-task-id]').forEach(function (row) {
       row.addEventListener('click', function (e) {
         // Don't trigger if clicking an approve button
         if (e.target.closest('.approve-btn')) return;
-        var cid = row.getAttribute('data-community-id');
-        if (cid && window.PortfolioRouter) {
-          var branches = (window.PortfolioState && window.PortfolioState.branches) || [];
-          var branch = branches.find(function (b) { return b.id === cid; });
-          if (branch) {
-            PortfolioRouter.navigate('branch-detail', true, { id: branch.id });
-          }
-        }
+        var taskId = row.getAttribute('data-task-id');
+        if (taskId) openDetailPanel(container, taskId);
       });
     });
 
@@ -583,29 +585,499 @@
     });
   }
 
+  // ── Detail panel ───────────────────────────────────────────────────────────
+
+  function openDetailPanel(container, taskId) {
+    var suffix = orgParam();
+    var url = '/api/portfolio/work-orders/' + encodeURIComponent(taskId) + (suffix || '');
+    apiFetch(url)
+      .then(function (detail) {
+        var existing = document.getElementById('wo-detail-overlay');
+        if (existing) existing.remove();
+        var overlay = document.createElement('div');
+        overlay.id = 'wo-detail-overlay';
+        overlay.className = 'wo-detail-overlay';
+        overlay.innerHTML = renderDetailPanel(detail);
+        document.body.appendChild(overlay);
+        // Force reflow then add visible class for CSS transition
+        requestAnimationFrame(function () { overlay.classList.add('visible'); });
+        wireDetailPanel(overlay, detail, container);
+      })
+      .catch(function (err) {
+        console.error('[work-orders] detail fetch failed:', err);
+        showToast('Failed to load work order details');
+      });
+  }
+
+  function fmtDateTime(iso) {
+    if (!iso) return '—';
+    try {
+      var d = new Date(iso);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch (_) { return iso; }
+  }
+
+  function renderDetailPanel(d) {
+    // ── Header status chip ──
+    var chip = '';
+    if (d.cancelledAt)        chip = '<span class="gchip g-cancelled">Cancelled</span>';
+    else if (d.declinedAt)    chip = '<span class="gchip g-declined">Declined</span>';
+    else if (d.approvedAt)    chip = '<span class="gchip g3">Approved</span>';
+    else if (d.estimateCents != null) chip = '<span class="gchip g2">Awaiting approval</span>';
+    else if (d.acknowledgedAt) chip = '<span class="gchip g1">In review</span>';
+    else                       chip = '<span class="gchip g1">Submitted</span>';
+
+    // ── Branch link ──
+    var branchLink = '<a class="wo-detail-branch-link" href="#" data-community-id="' + esc(d.communityId) + '">'
+      + (d.branchCode ? esc(d.branchCode) + ' · ' : '') + esc(d.branchName)
+      + ' <span style="font-size:11px;opacity:0.7;">View Branch →</span></a>';
+
+    // ── Estimate section ──
+    var estHtml = '';
+    if (d.estimateCents != null) {
+      estHtml = '<div class="wo-detail-section">'
+        + '<div class="wo-detail-section-title">Estimate</div>'
+        + '<div class="wo-detail-est">' + esc(fmtCents(d.estimateCents)) + '</div>'
+        + (d.approvedAt   ? '<div class="wo-detail-approved">✓ Approved ' + esc(fmtDate(d.approvedAt)) + '</div>' : '')
+        + (d.declinedAt   ? '<div class="wo-detail-declined-note">✕ Declined — ' + esc(d.declineReason || '') + '</div>' : '')
+        + '</div>';
+    }
+
+    // ── Map pin ──
+    var mapHtml = '';
+    if (d.latitude != null && d.longitude != null) {
+      mapHtml = '<div class="wo-detail-section">'
+        + '<div class="wo-detail-section-title">Location</div>'
+        + '<div class="wo-detail-map-pin">📍 ' + esc(Number(d.latitude).toFixed(5)) + ', ' + esc(Number(d.longitude).toFixed(5)) + '</div>'
+        + '</div>';
+    }
+
+    // ── Photos ──
+    var photosHtml = '';
+    if (d.attachments && d.attachments.length > 0) {
+      photosHtml = '<div class="wo-detail-section">'
+        + '<div class="wo-detail-section-title">Photos (' + esc(d.attachments.length) + ')</div>'
+        + '<div class="wo-detail-photos">'
+        + d.attachments.map(function (a) {
+            // fileRef is already an /objects/... path — use it directly
+            var src = a.fileRef.startsWith('/objects/') ? a.fileRef : '/objects/' + a.fileRef;
+            return '<img class="wo-detail-photo" src="' + esc(src) + '" alt="attachment" data-url="' + esc(src) + '">';
+          }).join('')
+        + '</div></div>';
+    }
+
+    // ── Timeline ──
+    var tlHtml = '';
+    if (d.timeline && d.timeline.length > 0) {
+      var eventLabels = { submitted: 'Submitted', acknowledged: 'Acknowledged by contractor',
+        scheduled: 'Scheduled', approved: 'Estimate approved', declined: 'Estimate declined',
+        cancelled: 'Cancelled', completed: 'Completed' };
+      tlHtml = '<div class="wo-detail-section">'
+        + '<div class="wo-detail-section-title">Timeline</div>'
+        + '<div class="wo-detail-timeline">'
+        + d.timeline.map(function (e) {
+            return '<div class="tl-row">'
+              + '<div class="tl-dot"></div>'
+              + '<div class="tl-body">'
+              + '<div class="tl-event">' + esc(eventLabels[e.event] || e.event)
+              + (e.actor ? ' <span class="tl-actor">by ' + esc(e.actor) + '</span>' : '')
+              + '</div>'
+              + '<div class="tl-time">' + esc(fmtDateTime(e.timestamp)) + '</div>'
+              + '</div></div>';
+          }).join('')
+        + '</div></div>';
+    }
+
+    // ── Comments ──
+    var cmtHtml = '<div class="wo-detail-section" id="wo-detail-comments-section">'
+      + '<div class="wo-detail-section-title">Comments</div>'
+      + '<div class="wo-detail-comments" id="wo-detail-comments-list">'
+      + (d.comments && d.comments.length > 0
+          ? d.comments.map(function (c) {
+              return '<div class="wo-comment">'
+                + '<div class="wo-comment-meta"><b>' + esc(c.authorName || 'Unknown') + '</b> · ' + esc(fmtDateTime(c.createdAt)) + '</div>'
+                + '<div class="wo-comment-body">' + esc(c.body) + '</div>'
+                + '</div>';
+            }).join('')
+          : '<div class="wo-comment-empty">No comments yet.</div>')
+      + '</div>'
+      + '<div class="wo-detail-comment-form">'
+      + '<textarea id="wo-detail-comment-input" class="wo-comment-input" placeholder="Add a comment…" rows="2"></textarea>'
+      + '<div id="wo-detail-comment-err" class="wo-inline-err" style="display:none;"></div>'
+      + '<button id="wo-detail-comment-submit" class="cmp-btn" style="margin-top:6px;" disabled>Post Comment</button>'
+      + '</div></div>';
+
+    // ── Action buttons ──
+    var canEdit    = d.origin === 'client' && !d.acknowledgedAt && !d.cancelledAt;
+    var canCancel  = d.origin === 'client' && !d.acknowledgedAt && !d.cancelledAt;
+    var canApprove = d.estimateCents != null && !d.approvedAt && !d.declinedAt && !d.cancelledAt;
+    var canDecline = d.estimateCents != null && !d.approvedAt && !d.declinedAt && !d.cancelledAt;
+
+    var actionsHtml = '';
+    if (canEdit || canCancel || canApprove || canDecline) {
+      actionsHtml = '<div class="wo-detail-actions">';
+      if (canEdit)    actionsHtml += '<button class="ghost-btn" id="wo-detail-edit-btn">Edit</button>';
+      if (canDecline) actionsHtml += '<button class="ghost-btn wo-decline-btn" id="wo-detail-decline-btn" style="color:var(--red);">Decline Estimate</button>';
+      if (canApprove) actionsHtml += '<button class="cmp-btn" id="wo-detail-approve-btn" data-task-id="' + esc(d.id) + '" data-task-ref="' + esc(d.ref) + '" data-branch="' + esc(d.branchName) + '" data-title="' + esc(d.title) + '" data-est="' + esc(d.estimateCents) + '">Approve Estimate</button>';
+      if (canCancel)  actionsHtml += '<button class="ghost-btn" id="wo-detail-cancel-btn" style="color:var(--gray-500);">Cancel Request</button>';
+      actionsHtml += '</div>';
+    }
+
+    // ── Cancel/Decline reason blocks (hidden until button clicked) ──
+    var cancelFormHtml = canCancel ? (
+      '<div id="wo-detail-cancel-form" class="wo-detail-reason-form" style="display:none;">'
+      + '<div class="wo-detail-section-title">Cancel Request</div>'
+      + '<textarea id="wo-detail-cancel-reason" class="wo-comment-input" placeholder="Reason for cancelling (required)…" rows="2"></textarea>'
+      + '<div id="wo-detail-cancel-err" class="wo-inline-err" style="display:none;"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px;">'
+      + '<button id="wo-detail-cancel-submit" class="ghost-btn" style="color:var(--red);" disabled>Confirm Cancel</button>'
+      + '<button id="wo-detail-cancel-dismiss" class="ghost-btn">Never mind</button>'
+      + '</div></div>'
+    ) : '';
+
+    var declineFormHtml = canDecline ? (
+      '<div id="wo-detail-decline-form" class="wo-detail-reason-form" style="display:none;">'
+      + '<div class="wo-detail-section-title">Decline Estimate</div>'
+      + '<textarea id="wo-detail-decline-reason" class="wo-comment-input" placeholder="Reason for declining (required)…" rows="2"></textarea>'
+      + '<div id="wo-detail-decline-err" class="wo-inline-err" style="display:none;"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px;">'
+      + '<button id="wo-detail-decline-submit" class="ghost-btn" style="color:var(--red);" disabled>Confirm Decline</button>'
+      + '<button id="wo-detail-decline-dismiss" class="ghost-btn">Never mind</button>'
+      + '</div></div>'
+    ) : '';
+
+    // ── Edit form (hidden until Edit clicked) ──
+    var editFormHtml = canEdit ? (
+      '<div id="wo-detail-edit-form" class="wo-detail-reason-form" style="display:none;">'
+      + '<div class="wo-detail-section-title">Edit Request</div>'
+      + '<input id="wo-detail-edit-title" class="wo-detail-edit-input" type="text" value="' + esc(d.title) + '" placeholder="Title">'
+      + '<textarea id="wo-detail-edit-desc" class="wo-comment-input" rows="3" placeholder="Description (optional)…">' + esc(d.description || '') + '</textarea>'
+      + '<div class="wo-edit-photos-section" style="margin-top:10px;">'
+      + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--gray-400);margin-bottom:6px;">Add Photos</div>'
+      + '<label class="wo-edit-photo-label ghost-btn" for="wo-detail-edit-photos" style="cursor:pointer;display:inline-block;">📷 Choose Photos…</label>'
+      + '<input id="wo-detail-edit-photos" type="file" accept="image/*" multiple style="display:none;">'
+      + '<div id="wo-detail-edit-photo-queue" class="wo-detail-photos" style="margin-top:8px;"></div>'
+      + '</div>'
+      + '<div id="wo-detail-edit-err" class="wo-inline-err" style="display:none;"></div>'
+      + '<div style="display:flex;gap:8px;margin-top:6px;">'
+      + '<button id="wo-detail-edit-submit" class="cmp-btn">Save Changes</button>'
+      + '<button id="wo-detail-edit-dismiss" class="ghost-btn">Cancel</button>'
+      + '</div></div>'
+    ) : '';
+
+    // ── Assemble ──
+    return '<div class="wo-detail-panel">'
+      + '<div class="wo-detail-header">'
+      +   '<div>'
+      +     '<div class="wo-detail-ref">' + esc(d.ref) + ' ' + chip + '</div>'
+      +     '<h2 class="wo-detail-title">' + esc(d.title) + '</h2>'
+      +     '<div class="wo-detail-meta">' + branchLink + ' · <span>' + esc(d.source) + '</span></div>'
+      +   '</div>'
+      +   '<button class="wo-detail-close" id="wo-detail-close">&times;</button>'
+      + '</div>'
+      + '<div class="wo-detail-body">'
+      + (d.description ? '<div class="wo-detail-section"><div class="wo-detail-section-title">Description</div><p class="wo-detail-desc">' + esc(d.description) + '</p></div>' : '')
+      + estHtml + mapHtml + photosHtml
+      + actionsHtml + editFormHtml + cancelFormHtml + declineFormHtml
+      + tlHtml + cmtHtml
+      + '</div></div>';
+  }
+
+  function wireDetailPanel(overlay, detail, container) {
+    var panel = overlay.querySelector('.wo-detail-panel');
+    var suffix = orgParam();
+
+    // ── Close ──
+    document.getElementById('wo-detail-close').addEventListener('click', function () {
+      overlay.classList.remove('visible');
+      setTimeout(function () { overlay.remove(); }, 260);
+    });
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) {
+        overlay.classList.remove('visible');
+        setTimeout(function () { overlay.remove(); }, 260);
+      }
+    });
+
+    // ── Branch link ──
+    var branchLink = overlay.querySelector('.wo-detail-branch-link');
+    if (branchLink) {
+      branchLink.addEventListener('click', function (e) {
+        e.preventDefault();
+        var cid = branchLink.getAttribute('data-community-id');
+        overlay.remove();
+        if (cid && window.PortfolioRouter) {
+          var branches = (window.PortfolioState && window.PortfolioState.branches) || [];
+          var branch = branches.find(function (b) { return b.id === cid; });
+          if (branch) PortfolioRouter.navigate('branch-detail', true, { id: branch.id });
+        }
+      });
+    }
+
+    // ── Photo click-to-enlarge ──
+    overlay.querySelectorAll('.wo-detail-photo').forEach(function (img) {
+      img.addEventListener('click', function () {
+        var lbk = document.createElement('div');
+        lbk.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:600;display:flex;align-items:center;justify-content:center;cursor:zoom-out;';
+        lbk.innerHTML = '<img src="' + esc(img.getAttribute('data-url')) + '" style="max-width:92vw;max-height:90vh;border-radius:6px;">';
+        lbk.addEventListener('click', function () { lbk.remove(); });
+        document.body.appendChild(lbk);
+      });
+    });
+
+    // ── Comment input / submit ──
+    var cmtInput  = document.getElementById('wo-detail-comment-input');
+    var cmtSubmit = document.getElementById('wo-detail-comment-submit');
+    var cmtErr    = document.getElementById('wo-detail-comment-err');
+    if (cmtInput && cmtSubmit) {
+      cmtInput.addEventListener('input', function () {
+        cmtSubmit.disabled = cmtInput.value.trim().length === 0;
+      });
+      cmtSubmit.addEventListener('click', function () {
+        var body = cmtInput.value.trim();
+        if (!body) return;
+        cmtSubmit.disabled = true;
+        cmtSubmit.textContent = 'Posting…';
+        cmtErr.style.display = 'none';
+        var url = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + '/comments' + (suffix || '');
+        apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: body }) })
+          .then(function (comment) {
+            cmtInput.value = '';
+            cmtSubmit.disabled = true;
+            cmtSubmit.textContent = 'Post Comment';
+            var list = document.getElementById('wo-detail-comments-list');
+            var empty = list && list.querySelector('.wo-comment-empty');
+            if (empty) empty.remove();
+            var el = document.createElement('div');
+            el.className = 'wo-comment';
+            el.innerHTML = '<div class="wo-comment-meta"><b>' + esc(comment.authorName || 'You') + '</b> · ' + esc(fmtDateTime(comment.createdAt)) + '</div>'
+              + '<div class="wo-comment-body">' + esc(comment.body) + '</div>';
+            if (list) list.appendChild(el);
+          })
+          .catch(function (err) {
+            cmtErr.textContent = err.message || 'Failed to post comment';
+            cmtErr.style.display = 'block';
+            cmtSubmit.disabled = false;
+            cmtSubmit.textContent = 'Post Comment';
+          });
+      });
+    }
+
+    // ── Approve button (reuse existing dialog) ──
+    var approveBtn = document.getElementById('wo-detail-approve-btn');
+    if (approveBtn) {
+      approveBtn.addEventListener('click', function () {
+        renderApproveDialog(
+          approveBtn.getAttribute('data-task-id'),
+          approveBtn.getAttribute('data-task-ref'),
+          approveBtn.getAttribute('data-branch'),
+          approveBtn.getAttribute('data-title'),
+          approveBtn.getAttribute('data-est')
+        );
+      });
+    }
+
+    // ── Edit form ──
+    var editBtn = document.getElementById('wo-detail-edit-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', function () {
+        document.getElementById('wo-detail-edit-form').style.display = 'block';
+        editBtn.style.display = 'none';
+      });
+      document.getElementById('wo-detail-edit-dismiss').addEventListener('click', function () {
+        document.getElementById('wo-detail-edit-form').style.display = 'none';
+        editBtn.style.display = '';
+      });
+      // ── Photo file picker → preview ──
+      var photoInput  = document.getElementById('wo-detail-edit-photos');
+      var photoQueue  = document.getElementById('wo-detail-edit-photo-queue');
+      var pendingFiles = []; // File objects to upload when Save is clicked
+      if (photoInput) {
+        photoInput.addEventListener('change', function () {
+          var files = Array.from(photoInput.files || []);
+          files.forEach(function (f) {
+            pendingFiles.push(f);
+            var img = document.createElement('img');
+            img.className = 'wo-detail-photo';
+            img.src = URL.createObjectURL(f);
+            img.alt = f.name;
+            img.style.cursor = 'default';
+            photoQueue.appendChild(img);
+          });
+          photoInput.value = '';
+        });
+      }
+
+      document.getElementById('wo-detail-edit-submit').addEventListener('click', function () {
+        var titleEl  = document.getElementById('wo-detail-edit-title');
+        var descEl   = document.getElementById('wo-detail-edit-desc');
+        var errEl    = document.getElementById('wo-detail-edit-err');
+        var submitEl = document.getElementById('wo-detail-edit-submit');
+        errEl.style.display = 'none';
+        if (!titleEl.value.trim()) {
+          errEl.textContent = 'Title is required.';
+          errEl.style.display = 'block';
+          return;
+        }
+        submitEl.disabled = true;
+        submitEl.textContent = 'Saving…';
+
+        // Upload any pending photos first, then PATCH the task
+        var uploadPhotoFiles = pendingFiles.slice();
+        pendingFiles = [];
+
+        function uploadNext(remaining, collected) {
+          if (remaining.length === 0) return Promise.resolve(collected);
+          var file = remaining[0];
+          var rest = remaining.slice(1);
+          return apiFetch('/api/objects/upload', { method: 'POST' })
+            .then(function (r) {
+              return fetch(r.uploadURL, { method: 'PUT', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } })
+                .then(function () {
+                  return apiFetch('/api/objects/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uploadURL: r.uploadURL }),
+                  });
+                })
+                .then(function (c) { collected.push(c.objectPath); return uploadNext(rest, collected); });
+            });
+        }
+
+        uploadNext(uploadPhotoFiles, [])
+          .then(function (objectKeys) {
+            var patchUrl = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + (suffix || '');
+            var photoUrl = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + '/photos' + (suffix || '');
+            // Run PATCH and photo attachment in sequence (photos need task to exist)
+            return apiFetch(patchUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ title: titleEl.value.trim(), description: descEl.value.trim() || null }) })
+              .then(function () {
+                if (objectKeys.length === 0) return;
+                return apiFetch(photoUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ objectKeys: objectKeys }) });
+              });
+          })
+          .then(function () {
+            overlay.remove();
+            showToast('Work order updated');
+            if (window._woRefreshPage) window._woRefreshPage();
+            openDetailPanel(container, detail.id);
+          })
+          .catch(function (err) {
+            errEl.textContent = err.message || 'Failed to save changes.';
+            errEl.style.display = 'block';
+            submitEl.disabled = false;
+            submitEl.textContent = 'Save Changes';
+          });
+      });
+    }
+
+    // ── Cancel form ──
+    var cancelBtn = document.getElementById('wo-detail-cancel-btn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        document.getElementById('wo-detail-cancel-form').style.display = 'block';
+        cancelBtn.style.display = 'none';
+      });
+      document.getElementById('wo-detail-cancel-dismiss').addEventListener('click', function () {
+        document.getElementById('wo-detail-cancel-form').style.display = 'none';
+        cancelBtn.style.display = '';
+      });
+      var cancelReason = document.getElementById('wo-detail-cancel-reason');
+      var cancelSubmit = document.getElementById('wo-detail-cancel-submit');
+      cancelReason.addEventListener('input', function () {
+        cancelSubmit.disabled = cancelReason.value.trim().length === 0;
+      });
+      cancelSubmit.addEventListener('click', function () {
+        var errEl = document.getElementById('wo-detail-cancel-err');
+        errEl.style.display = 'none';
+        cancelSubmit.disabled = true;
+        cancelSubmit.textContent = 'Cancelling…';
+        var url = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + '/cancel' + (suffix || '');
+        apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: cancelReason.value.trim() }) })
+          .then(function () {
+            overlay.remove();
+            showToast('Work order cancelled');
+            if (window._woRefreshPage) window._woRefreshPage();
+          })
+          .catch(function (err) {
+            errEl.textContent = err.message || 'Failed to cancel.';
+            errEl.style.display = 'block';
+            cancelSubmit.disabled = false;
+            cancelSubmit.textContent = 'Confirm Cancel';
+          });
+      });
+    }
+
+    // ── Decline form ──
+    var declineBtn = document.getElementById('wo-detail-decline-btn');
+    if (declineBtn) {
+      declineBtn.addEventListener('click', function () {
+        document.getElementById('wo-detail-decline-form').style.display = 'block';
+        declineBtn.style.display = 'none';
+      });
+      document.getElementById('wo-detail-decline-dismiss').addEventListener('click', function () {
+        document.getElementById('wo-detail-decline-form').style.display = 'none';
+        declineBtn.style.display = '';
+      });
+      var declineReason = document.getElementById('wo-detail-decline-reason');
+      var declineSubmit = document.getElementById('wo-detail-decline-submit');
+      declineReason.addEventListener('input', function () {
+        declineSubmit.disabled = declineReason.value.trim().length === 0;
+      });
+      declineSubmit.addEventListener('click', function () {
+        var errEl = document.getElementById('wo-detail-decline-err');
+        errEl.style.display = 'none';
+        declineSubmit.disabled = true;
+        declineSubmit.textContent = 'Declining…';
+        var url = '/api/portfolio/work-orders/' + encodeURIComponent(detail.id) + '/decline' + (suffix || '');
+        apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: declineReason.value.trim() }) })
+          .then(function () {
+            overlay.remove();
+            showToast('Estimate declined');
+            if (window._woRefreshPage) window._woRefreshPage();
+          })
+          .catch(function (err) {
+            errEl.textContent = err.message || 'Failed to decline.';
+            errEl.style.display = 'block';
+            declineSubmit.disabled = false;
+            declineSubmit.textContent = 'Confirm Decline';
+          });
+      });
+    }
+  }
+
   // ── Full page render ───────────────────────────────────────────────────────
   function renderPage(container, data) {
-    var open   = Array.isArray(data.open)   ? data.open   : [];
-    var closed = Array.isArray(data.closed) ? data.closed : [];
-    var pipeline = data.pipeline || {};
+    var open      = Array.isArray(data.open)      ? data.open      : [];
+    var closed    = Array.isArray(data.closed)    ? data.closed    : [];
+    var cancelled = Array.isArray(data.cancelled) ? data.cancelled : [];
+    var pipeline  = data.pipeline || {};
 
-    var filtered = applyFilter(open, closed);
+    var filtered = applyFilter(open, closed, cancelled);
 
-    // Split filtered back into open / closed for separate tables
-    var filteredOpen   = filtered.filter(function (t) { return !t._closed; });
-    var filteredClosed = filtered.filter(function (t) { return t._closed; });
+    // Split filtered back into open / closed / cancelled for separate tables
+    var filteredOpen      = filtered.filter(function (t) { return !t._closed && !t._cancelled; });
+    var filteredClosed    = filtered.filter(function (t) { return t._closed; });
+    var filteredCancelled = filtered.filter(function (t) { return t._cancelled; });
 
-    var org   = (window.PortfolioState && window.PortfolioState.organization) || {};
+    // When showing cancelled filter use the open table renderer (shows status chip)
+    var showCancelled = _filter === 'cancelled';
+
     var html  = '<div class="ctx">'
       + '<h1>Work Orders</h1>'
       + '<span class="sub">Open items across all branches</span>'
       + '<button class="cmp-btn" id="wo-open-modal" style="margin-left:auto;">+ Submit Request</button>'
       + '</div>'
-      + renderPipeline(pipeline, open, closed)
+      + renderPipeline(pipeline, open, closed, cancelled)
       + renderKpiRow(pipeline, open)
-      + renderFilterChips(pipeline, open, closed)
-      + renderOpenTable(filteredOpen)
-      + renderClosedTable(filteredClosed)
+      + renderFilterChips(pipeline, open, closed, cancelled)
+      + (showCancelled
+          ? renderOpenTable(filteredCancelled)
+          : renderOpenTable(filteredOpen) + renderClosedTable(filteredClosed))
       + renderCallout()
       + renderSubmitModal();
 
@@ -615,7 +1087,7 @@
     wireTableRows(container);
     wireModal(container);
 
-    // Expose refresh function for approve callback
+    // Expose refresh function for approve/cancel/decline callbacks
     window._woRefreshPage = function () {
       var suffix = orgParam();
       apiFetch('/api/portfolio/work-orders' + (suffix || ''))
@@ -641,7 +1113,8 @@
         // Empty portfolio: no open or closed work orders
         var open   = Array.isArray(data.open)   ? data.open   : [];
         var closed = Array.isArray(data.closed) ? data.closed : [];
-        if (open.length === 0 && closed.length === 0) {
+        var cancelled = Array.isArray(data.cancelled) ? data.cancelled : [];
+        if (open.length === 0 && closed.length === 0 && cancelled.length === 0) {
           container.innerHTML = '<div class="ctx"><h1>Work Orders</h1>'
             + '<span class="sub">Open items across all branches</span>'
             + '<button class="cmp-btn" id="wo-open-modal" style="margin-left:auto;">+ Submit Request</button>'

@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, requireClientOrAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
-import { ObjectPermission, buildCommunityAclPolicy } from "../objectAcl";
+import { ObjectPermission, buildCommunityAclPolicy, getObjectAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
 import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "../pushNotifications";
 import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "../assetSync";
@@ -34,9 +34,9 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable } from "@workspace/db";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments } from "@workspace/db";
 import { db, pool } from "../db";
-import { eq, and, desc, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
@@ -5846,6 +5846,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           estimate_cents: number | null;
           approved_at: string | null;
           approved_by: string | null;
+          cancelled_at: string | null;
+          declined_at: string | null;
           created_at: string;
           updated_at: string;
           days_open: string;
@@ -5869,6 +5871,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             t.estimate_cents,
             t.approved_at::text,
             t.approved_by,
+            t.cancelled_at::text,
+            t.declined_at::text,
             t.created_at::text,
             t.updated_at::text,
             -- daysOpen: calendar days since creation (rounded)
@@ -5894,6 +5898,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const open: any[] = [];
       const closed: any[] = [];
+      const cancelled: any[] = [];
 
       for (const r of workOrdersResult.rows) {
         // ref: short form of the task id (first 8 chars, uppercased, prefixed WO-)
@@ -5926,13 +5931,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           estimateCents: r.estimate_cents,
           approvedAt: r.approved_at,
           approvedBy: r.approved_by,
+          cancelledAt: (r as any).cancelled_at ?? null,
+          declinedAt: (r as any).declined_at ?? null,
           createdAt: r.created_at,
           updatedAt: r.updated_at,
           daysOpen: Math.max(0, Number(r.days_open ?? 0)),
           photoCount: Number(r.photo_count ?? 0),
         };
 
-        if (r.status === 'completed') {
+        if ((r as any).cancelled_at || (r as any).declined_at) {
+          // Cancelled and declined tasks shown separately; excluded from open counts
+          cancelled.push(row);
+        } else if (r.status === 'completed') {
           // Only include completed tasks from the last 30 days
           const completedAt = r.completed_at ? new Date(r.completed_at) : null;
           if (completedAt && completedAt >= now30) {
@@ -5943,16 +5953,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Pipeline counts
+      // Pipeline counts — excludes cancelled/declined items (they are not in `open`)
       const pipeline = {
         flaggedByHp: open.filter(t => t.origin !== 'client').length,
-        awaitingApproval: open.filter(t => t.estimateCents != null && !t.approvedAt).length,
+        awaitingApproval: open.filter(t => t.estimateCents != null && !t.approvedAt && !t.declinedAt).length,
         scheduled: open.filter(t => t.status === 'pending' || t.status === 'in_progress').length,
         completed30d: closed.length,
       };
 
-      console.log(`[GET /api/portfolio/work-orders] org=${orgId} open=${open.length} closed=${closed.length} (${Date.now() - t0}ms)`);
-      return void res.json({ pipeline, open, closed });
+      console.log(`[GET /api/portfolio/work-orders] org=${orgId} open=${open.length} closed=${closed.length} cancelled=${cancelled.length} (${Date.now() - t0}ms)`);
+      return void res.json({ pipeline, open, closed, cancelled });
     } catch (error) {
       console.error("Portfolio work-orders GET error:", error);
       return void res.status(500).json({ error: "Failed to fetch work orders" });
@@ -6062,6 +6072,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
       }
 
+      // 409 if already declined — Approve and Decline are mutually exclusive
+      if ((task as any).declinedAt) {
+        return void res.status(409).json({ error: "This estimate has already been declined. Approve and Decline are mutually exclusive." });
+      }
+      // 409 if cancelled — cancellation is a terminal state
+      if ((task as any).cancelledAt) {
+        return void res.status(409).json({ error: "This work order has been cancelled and can no longer be approved." });
+      }
+
       // Idempotent: if already approved, return current state with 200
       if (task.approvedAt) {
         const org = await storage.getOrganizationById(orgId);
@@ -6085,14 +6104,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Set approvedAt + approvedBy (direct DB update; no version bump needed for approval)
+      // Set approvedAt + approvedBy conditionally: only when approvedAt, declinedAt, and
+      // cancelledAt are still NULL at the DB level (cancelled is terminal; preserves
+      // mutual-exclusion under concurrent approve/decline requests).
       const [updated] = await db.update(tasks)
         .set({ approvedAt: new Date(), approvedBy: req.session.userId! })
-        .where(eq(tasks.id, taskId))
+        .where(and(
+          eq(tasks.id, taskId),
+          isNull(tasks.approvedAt),
+          isNull((tasks as any).declinedAt),
+          isNull((tasks as any).cancelledAt),
+        ))
         .returning();
 
       if (!updated) {
-        return void res.status(404).json({ error: "Work order not found" });
+        // Conditional update matched no rows — re-read to differentiate concurrent decline / cancel / 404
+        const current = await storage.getTaskById(taskId);
+        if (!current) return void res.status(404).json({ error: "Work order not found" });
+        if ((current as any).declinedAt) {
+          return void res.status(409).json({ error: "This estimate has already been declined. Approve and Decline are mutually exclusive." });
+        }
+        if ((current as any).cancelledAt) {
+          return void res.status(409).json({ error: "This work order has been cancelled and can no longer be approved." });
+        }
+        return void res.status(409).json({ error: "Work order state changed concurrently; please refresh and try again." });
       }
 
       const org = await storage.getOrganizationById(orgId);
@@ -6119,6 +6154,469 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Portfolio work-orders approve error:", error);
       return void res.status(500).json({ error: "Failed to approve work order" });
+    }
+  });
+
+  // ── Portfolio: Work Order detail + client action routes ──────────────────
+  //
+  // All routes below share the same org-isolation guard: task.communityId must
+  // belong to the caller's org (resolvePortfolioOrg).  Cross-org → 403.
+  //
+  // Helper: build the full work-order detail response object (reused by GET,
+  // PATCH, cancel, decline so the returned shape is always consistent).
+  async function buildWODetail(task: any, community: any, org: any) {
+    const ref = 'WO-' + task.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+    const source = task.origin === 'client'
+      ? (org?.name ? org.name + ' request' : 'Client request')
+      : 'HP';
+
+    const [attRows, cmtRows, completionRows] = await Promise.all([
+      pool.query<{ id: string; file_ref: string; url: string; created_at: string }>(
+        `SELECT id, file_ref, url, created_at FROM attachments
+          WHERE task_id = $1 AND task_completion_id IS NULL
+          ORDER BY created_at ASC`,
+        [task.id]
+      ),
+      pool.query<{ id: string; body: string; author_name: string; created_at: string }>(
+        `SELECT tc.id, tc.body, tc.created_at, u.display_name AS author_name
+           FROM task_comments tc
+           JOIN users u ON u.id = tc.author_user_id
+          WHERE tc.task_id = $1
+          ORDER BY tc.created_at ASC`,
+        [task.id]
+      ),
+      pool.query<{ completed_at: string; actor_name: string | null }>(
+        `SELECT tcomp.completed_at::text, u.display_name AS actor_name
+           FROM task_completions tcomp
+           LEFT JOIN users u ON u.id = tcomp.completed_by
+          WHERE tcomp.task_id = $1
+          ORDER BY tcomp.completed_at DESC LIMIT 1`,
+        [task.id]
+      ),
+    ]);
+
+    // Fetch actor names for attributed events (acknowledged_by, approved_by, cancelled_by, declined_by)
+    const actorIds = new Set<string>();
+    if (task.approvedBy)  actorIds.add(task.approvedBy);
+    if ((task as any).cancelledBy) actorIds.add((task as any).cancelledBy);
+    if ((task as any).declinedBy)  actorIds.add((task as any).declinedBy);
+    const actorNames: Record<string, string> = {};
+    if (actorIds.size > 0) {
+      const idList = Array.from(actorIds);
+      const actorRows = await pool.query<{ id: string; display_name: string }>(
+        `SELECT id, display_name FROM users WHERE id = ANY($1)`,
+        [idList]
+      );
+      for (const row of actorRows.rows) actorNames[row.id] = row.display_name;
+    }
+
+    // Build chronological timeline from known timestamps with actor attribution
+    const timelineRaw: { event: string; timestamp: Date; actor?: string }[] = [];
+    if (task.createdAt)      timelineRaw.push({ event: 'submitted',    timestamp: task.createdAt });
+    if (task.acknowledgedAt) timelineRaw.push({ event: 'acknowledged', timestamp: task.acknowledgedAt });
+    if (task.startDate)      timelineRaw.push({ event: 'scheduled',    timestamp: task.startDate });
+    if (task.approvedAt)     timelineRaw.push({ event: 'approved',     timestamp: task.approvedAt,
+                                                actor: task.approvedBy ? (actorNames[task.approvedBy] ?? undefined) : undefined });
+    if ((task as any).declinedAt)  timelineRaw.push({ event: 'declined',   timestamp: (task as any).declinedAt,
+                                                actor: (task as any).declinedBy ? (actorNames[(task as any).declinedBy] ?? undefined) : undefined });
+    if ((task as any).cancelledAt) timelineRaw.push({ event: 'cancelled',  timestamp: (task as any).cancelledAt,
+                                                actor: (task as any).cancelledBy ? (actorNames[(task as any).cancelledBy] ?? undefined) : undefined });
+    if (completionRows.rows.length > 0 && completionRows.rows[0].completed_at) {
+      timelineRaw.push({
+        event: 'completed',
+        timestamp: new Date(completionRows.rows[0].completed_at),
+        actor: completionRows.rows[0].actor_name ?? undefined,
+      });
+    }
+    timelineRaw.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    return {
+      id: task.id, ref,
+      communityId: task.communityId,
+      branchName: community.name,
+      branchCode: community.code ?? null,
+      title: task.title,
+      description: task.description ?? null,
+      status: task.status,
+      priority: task.priority,
+      source, origin: task.origin ?? null,
+      latitude: task.latitude ?? null,
+      longitude: task.longitude ?? null,
+      estimateCents: task.estimateCents ?? null,
+      acknowledgedAt: task.acknowledgedAt?.toISOString() ?? null,
+      approvedAt: task.approvedAt?.toISOString() ?? null,
+      approvedBy: task.approvedBy ?? null,
+      cancelledAt: task.cancelledAt?.toISOString() ?? null,
+      cancelReason: task.cancelReason ?? null,
+      declinedAt: task.declinedAt?.toISOString() ?? null,
+      declineReason: task.declineReason ?? null,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+      attachments: attRows.rows.map(a => ({ id: a.id, fileRef: a.file_ref, url: a.url })),
+      timeline: timelineRaw.map(e => ({ event: e.event, timestamp: e.timestamp.toISOString(), actor: e.actor ?? null })),
+      comments: cmtRows.rows.map(c => ({ id: c.id, body: c.body, authorName: c.author_name, createdAt: c.created_at })),
+    };
+  }
+
+  app.get("/api/portfolio/work-orders/:taskId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const detail = await buildWODetail(task, community, org);
+      console.log(`[GET /api/portfolio/work-orders/:taskId] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.json(detail);
+    } catch (error) {
+      console.error("Portfolio WO detail GET error:", error);
+      return void res.status(500).json({ error: "Failed to fetch work order detail" });
+    }
+  });
+
+  app.patch("/api/portfolio/work-orders/:taskId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      // Guard: only editable when origin='client' AND not yet acknowledged
+      if (task.origin !== 'client') {
+        return void res.status(403).json({ error: "Only client-submitted work orders can be edited via this endpoint" });
+      }
+      if (task.acknowledgedAt) {
+        return void res.status(403).json({ error: "This work order has already been acknowledged by the contractor and can no longer be edited" });
+      }
+
+      const { title, description } = req.body;
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (title !== undefined) {
+        if (typeof title !== 'string' || title.trim().length === 0) {
+          return void res.status(400).json({ error: "title must be a non-empty string" });
+        }
+        updates.title = title.trim();
+      }
+      if (description !== undefined) {
+        updates.description = typeof description === 'string' ? description.trim() || null : null;
+      }
+
+      // Conditional WHERE enforces guard at DB level: only applies when still
+      // origin='client', unacknowledged, and not cancelled/declined (terminal states).
+      const [updated] = await db.update(tasks)
+        .set(updates)
+        .where(and(
+          eq(tasks.id, taskId),
+          isNull(tasks.acknowledgedAt),
+          isNull((tasks as any).cancelledAt),
+          isNull((tasks as any).declinedAt),
+        ))
+        .returning();
+      if (!updated) {
+        const current = await storage.getTaskById(taskId);
+        if (!current) return void res.status(404).json({ error: "Work order not found" });
+        if (current.acknowledgedAt) return void res.status(403).json({ error: "This work order has already been acknowledged by the contractor and can no longer be edited" });
+        if ((current as any).cancelledAt) return void res.status(409).json({ error: "This work order has been cancelled and can no longer be edited" });
+        if ((current as any).declinedAt)  return void res.status(409).json({ error: "The estimate on this work order has been declined; it can no longer be edited" });
+        return void res.status(409).json({ error: "Work order state changed concurrently; please refresh and try again." });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const detail = await buildWODetail(updated, community, org);
+      console.log(`[PATCH /api/portfolio/work-orders/:taskId] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.json(detail);
+    } catch (error) {
+      console.error("Portfolio WO PATCH error:", error);
+      return void res.status(500).json({ error: "Failed to update work order" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders/:taskId/cancel", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const { reason } = req.body;
+      if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+        return void res.status(400).json({ error: "reason is required to cancel a work order" });
+      }
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      // Guard: only cancellable when origin='client' AND not yet acknowledged
+      if (task.origin !== 'client') {
+        return void res.status(403).json({ error: "Only client-submitted work orders can be cancelled via this endpoint" });
+      }
+      if (task.acknowledgedAt) {
+        return void res.status(403).json({ error: "This work order has already been acknowledged by the contractor and can no longer be cancelled" });
+      }
+
+      // Idempotent: already cancelled → return current state
+      if ((task as any).cancelledAt) {
+        const org = await storage.getOrganizationById(orgId);
+        const detail = await buildWODetail(task, community, org);
+        return void res.json(detail);
+      }
+
+      // Conditional WHERE enforces guard at DB level: only applies when still
+      // unacknowledged and not already in a terminal state (cancelled, declined).
+      const [updated] = await db.update(tasks)
+        .set({ cancelledAt: new Date(), cancelledBy: req.session.userId!, cancelReason: reason.trim() } as any)
+        .where(and(
+          eq(tasks.id, taskId),
+          isNull(tasks.acknowledgedAt),
+          isNull((tasks as any).cancelledAt),
+          isNull((tasks as any).declinedAt),
+        ))
+        .returning();
+      if (!updated) {
+        const current = await storage.getTaskById(taskId);
+        if (!current) return void res.status(404).json({ error: "Work order not found" });
+        if (current.acknowledgedAt) return void res.status(403).json({ error: "This work order has already been acknowledged by the contractor and can no longer be cancelled" });
+        if ((current as any).cancelledAt) {
+          // Already cancelled — idempotent
+          const org2 = await storage.getOrganizationById(orgId);
+          const detail2 = await buildWODetail(current, community, org2);
+          return void res.json(detail2);
+        }
+        if ((current as any).declinedAt) return void res.status(409).json({ error: "The estimate has been declined; this work order is in a terminal state" });
+        return void res.status(409).json({ error: "Work order state changed concurrently; please refresh and try again." });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const detail = await buildWODetail(updated, community, org);
+      console.log(`[POST /api/portfolio/work-orders/:taskId/cancel] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.json(detail);
+    } catch (error) {
+      console.error("Portfolio WO cancel error:", error);
+      return void res.status(500).json({ error: "Failed to cancel work order" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders/:taskId/decline", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const { reason } = req.body;
+      if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+        return void res.status(400).json({ error: "reason is required to decline an estimate" });
+      }
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      // Guard: must have an estimate to decline
+      if (task.estimateCents == null) {
+        return void res.status(400).json({ error: "This work order does not have an estimate to decline" });
+      }
+      // Guard: cannot decline if already approved
+      if (task.approvedAt) {
+        return void res.status(409).json({ error: "This estimate has already been approved. Approve and Decline are mutually exclusive." });
+      }
+      // Guard: cancelled is a terminal state — cannot decline a cancelled work order
+      if ((task as any).cancelledAt) {
+        return void res.status(409).json({ error: "This work order has been cancelled and can no longer be declined." });
+      }
+
+      // Idempotent: already declined → return current state
+      if ((task as any).declinedAt) {
+        const org = await storage.getOrganizationById(orgId);
+        const detail = await buildWODetail(task, community, org);
+        return void res.json(detail);
+      }
+
+      // Set declinedAt conditionally: only when approvedAt, declinedAt, and cancelledAt are
+      // still NULL at the DB level (cancelled is terminal; preserves mutual-exclusion).
+      const [updated] = await db.update(tasks)
+        .set({ declinedAt: new Date(), declinedBy: req.session.userId!, declineReason: reason.trim() } as any)
+        .where(and(
+          eq(tasks.id, taskId),
+          isNull(tasks.approvedAt),
+          isNull((tasks as any).declinedAt),
+          isNull((tasks as any).cancelledAt),
+        ))
+        .returning();
+      if (!updated) {
+        // Could not update: re-read to determine whether it was a concurrent approve or 404
+        const current = await storage.getTaskById(taskId);
+        if (!current) return void res.status(404).json({ error: "Work order not found" });
+        if (current.approvedAt) return void res.status(409).json({ error: "This estimate has already been approved. Approve and Decline are mutually exclusive." });
+        if ((current as any).declinedAt) {
+          const org2 = await storage.getOrganizationById(orgId);
+          const detail2 = await buildWODetail(current, community, org2);
+          return void res.json(detail2);
+        }
+        return void res.status(409).json({ error: "Work order state changed concurrently; please refresh and try again." });
+      }
+
+      const org = await storage.getOrganizationById(orgId);
+      const detail = await buildWODetail(updated, community, org);
+      console.log(`[POST /api/portfolio/work-orders/:taskId/decline] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.json(detail);
+    } catch (error) {
+      console.error("Portfolio WO decline error:", error);
+      return void res.status(500).json({ error: "Failed to decline estimate" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders/:taskId/comments", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const { body } = req.body;
+      if (!body || typeof body !== 'string' || body.trim().length === 0) {
+        return void res.status(400).json({ error: "body is required" });
+      }
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      const [comment] = await db.insert(taskComments).values({
+        taskId,
+        authorUserId: req.session.userId!,
+        body: body.trim(),
+      }).returning();
+
+      // Fetch author name for the response
+      const author = await storage.getUserById(req.session.userId!);
+      console.log(`[POST /api/portfolio/work-orders/:taskId/comments] org=${orgId} task=${taskId} (${Date.now() - t0}ms)`);
+      return void res.status(201).json({
+        id: comment.id,
+        body: comment.body,
+        authorName: author?.displayName ?? 'Unknown',
+        createdAt: comment.createdAt.toISOString(),
+      });
+    } catch (error) {
+      console.error("Portfolio WO comment error:", error);
+      return void res.status(500).json({ error: "Failed to post comment" });
+    }
+  });
+
+  app.post("/api/portfolio/work-orders/:taskId/photos", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const taskId = req.params.taskId as string;
+
+      const { objectKeys } = req.body;
+      if (!Array.isArray(objectKeys) || objectKeys.length === 0) {
+        return void res.status(400).json({ error: "objectKeys[] is required" });
+      }
+
+      const task = await storage.getTaskById(taskId);
+      if (!task) return void res.status(404).json({ error: "Work order not found" });
+
+      const community = await storage.getCommunityById(task.communityId);
+      if (!community || community.organizationId !== orgId) {
+        return void res.status(403).json({ error: "Work order not found or does not belong to this organization" });
+      }
+
+      // Guard: only attachable when origin='client' AND not yet acknowledged
+      if (task.origin !== 'client') {
+        return void res.status(403).json({ error: "Only client-submitted work orders accept photos via this endpoint" });
+      }
+      if (task.acknowledgedAt) {
+        return void res.status(403).json({ error: "This work order has already been acknowledged and can no longer receive photos" });
+      }
+
+      const objectStorageService = new ObjectStorageService();
+      const attached: string[] = [];
+      const rejected: string[] = [];
+
+      for (const key of objectKeys) {
+        if (typeof key !== 'string' || !key.startsWith('/objects/')) {
+          rejected.push(key);
+          continue;
+        }
+        try {
+          // Validate that the calling user owns this object before attaching it.
+          // This prevents clients from claiming objects uploaded by other users.
+          const objectFile = await objectStorageService.getObjectEntityFile(key);
+          const aclPolicy = await getObjectAclPolicy(objectFile);
+          if (!aclPolicy || aclPolicy.owner !== req.session.userId!) {
+            rejected.push(key);
+            continue;
+          }
+          // Transfer the object ACL to community ownership (same as /api/objects/confirm)
+          await objectStorageService.trySetObjectEntityAclPolicy(
+            key,
+            buildCommunityAclPolicy(req.session.userId!, task.communityId),
+          );
+          await storage.createAttachment({
+            taskId,
+            fileRef: key,
+            url: key,
+            uploadedBy: req.session.userId!,
+            idempotencyKey: key,
+          });
+          attached.push(key);
+        } catch (e: any) {
+          if (e?.name === 'ObjectNotFoundError') { rejected.push(key); }
+          else { /* skip duplicate idempotency keys */ }
+        }
+      }
+
+      if (rejected.length > 0 && attached.length === 0) {
+        return void res.status(403).json({
+          error: "None of the provided object keys are owned by the current user or valid",
+          rejected,
+        });
+      }
+
+      const attachments = await storage.getAttachmentsByTaskId(taskId);
+      console.log(`[POST /api/portfolio/work-orders/:taskId/photos] org=${orgId} task=${taskId} attached=${attached.length} rejected=${rejected.length} (${Date.now() - t0}ms)`);
+      return void res.json({ attachments: attachments.map(a => ({ id: a.id, fileRef: a.fileRef, url: a.url })), rejected });
+    } catch (error) {
+      console.error("Portfolio WO photos error:", error);
+      return void res.status(500).json({ error: "Failed to attach photos" });
     }
   });
 

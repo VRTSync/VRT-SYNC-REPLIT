@@ -3545,10 +3545,13 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
     }>(`
       SELECT
         (
+          -- NOTE: cancelled_at/declined_at IS NULL excludes both terminal client states from overdue counts
           SELECT COUNT(DISTINCT community_id)
           FROM tasks
           WHERE due_date < now()
             AND status NOT IN ('completed')
+            AND cancelled_at IS NULL
+            AND declined_at IS NULL
         )::text AS communities_overdue,
         (
           SELECT COUNT(*)
@@ -4005,28 +4008,36 @@ export async function getPortfolioDashboard(orgId: string) {
         )::text AS services_logged
     `, [orgId]),
 
-    // work orders: non-completed task counts
+    // work orders: non-completed, non-cancelled, non-declined task counts
+    // NOTE: cancelled_at IS NULL AND declined_at IS NULL excludes both terminal client states from all open counts
     pool.query<{
       total: string;
       awaiting_approval: string;
       scheduled: string;
     }>(`
       SELECT
-        -- no reliable "work order" column exists today; counting all non-completed tasks
-        (SELECT COUNT(*) FROM tasks t
-           JOIN communities c ON c.id = t.community_id
-          WHERE c.organization_id = $1 AND t.status != 'completed')::text AS total,
+        -- total open: excludes completed, cancelled, and declined tasks
         (SELECT COUNT(*) FROM tasks t
            JOIN communities c ON c.id = t.community_id
           WHERE c.organization_id = $1
             AND t.status != 'completed'
+            AND t.cancelled_at IS NULL
+            AND t.declined_at IS NULL)::text AS total,
+        (SELECT COUNT(*) FROM tasks t
+           JOIN communities c ON c.id = t.community_id
+          WHERE c.organization_id = $1
+            AND t.status != 'completed'
+            AND t.cancelled_at IS NULL
             AND t.estimate_cents IS NOT NULL
-            AND t.approved_at IS NULL)::text AS awaiting_approval,
+            AND t.approved_at IS NULL
+            AND t.declined_at IS NULL)::text AS awaiting_approval,
         -- tasks table has no scheduled_date column; using start_date / window_start as nearest proxy
         (SELECT COUNT(*) FROM tasks t
            JOIN communities c ON c.id = t.community_id
           WHERE c.organization_id = $1
             AND t.status != 'completed'
+            AND t.cancelled_at IS NULL
+            AND t.declined_at IS NULL
             AND (t.start_date > now() OR t.window_start > CURRENT_DATE))::text AS scheduled
     `, [orgId]),
 
@@ -4123,6 +4134,7 @@ export async function getPortfolioDashboard(orgId: string) {
               SELECT community_id FROM branch_group_members WHERE group_id = bg.id
             ) AND sv.status = 'completed')
         ), 0)::text AS services_count,
+        -- open_tasks: excludes completed, client-cancelled, and client-declined tasks
         COALESCE((
           SELECT COUNT(*)
             FROM tasks t
@@ -4130,6 +4142,8 @@ export async function getPortfolioDashboard(orgId: string) {
              SELECT community_id FROM branch_group_members WHERE group_id = bg.id
            )
              AND t.status != 'completed'
+             AND t.cancelled_at IS NULL
+             AND t.declined_at IS NULL
         ), 0)::text AS open_tasks,
         -- photoProofPct per group; 0 when no completions
         COALESCE((SELECT
@@ -4300,12 +4314,15 @@ export async function getPortfolioBranches(orgId: string) {
           AND sv.status = 'completed'
         ORDER BY sv.community_id, sv.completed_at DESC NULLS LAST
       ),
-      -- open (non-completed) task count grouped by community
+      -- open (non-completed, non-cancelled, non-declined) task count grouped by community
+      -- NOTE: cancelled_at/declined_at IS NULL excludes both terminal client states from open counts
       open_wo AS (
         SELECT community_id, COUNT(*) AS cnt
           FROM tasks
          WHERE community_id IN (SELECT id FROM org_coms)
            AND status != 'completed'
+           AND cancelled_at IS NULL
+           AND declined_at IS NULL
          GROUP BY community_id
       )
       SELECT
@@ -4451,7 +4468,8 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       LIMIT 20
     `, [communityId]),
 
-    // openWorkOrders: non-completed tasks
+    // openWorkOrders: non-completed, non-cancelled, non-declined tasks
+    // NOTE: cancelled_at/declined_at IS NULL excludes both terminal client states from open counts
     pool.query<{
       id: string;
       title: string;
@@ -4470,6 +4488,8 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       FROM tasks t
       WHERE t.community_id = $1
         AND t.status != 'completed'
+        AND t.cancelled_at IS NULL
+        AND t.declined_at IS NULL
       ORDER BY t.created_at DESC
     `, [communityId]),
 

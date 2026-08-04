@@ -134,6 +134,14 @@ export const tasks = pgTable("tasks", {
   estimateCents: integer("estimate_cents"),
   approvedAt: timestamp("approved_at"),
   approvedBy: varchar("approved_by").references(() => users.id, { onDelete: 'set null' }),
+  // Client-side cancel lifecycle (populated when client cancels unacknowledged request)
+  cancelledAt: timestamp("cancelled_at"),
+  cancelledBy: varchar("cancelled_by").references(() => users.id, { onDelete: 'set null' }),
+  cancelReason: text("cancel_reason"),
+  // Client-side decline lifecycle (populated when client declines a contractor estimate)
+  declinedAt: timestamp("declined_at"),
+  declinedBy: varchar("declined_by").references(() => users.id, { onDelete: 'set null' }),
+  declineReason: text("decline_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
@@ -541,6 +549,7 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   creator: one(users, { fields: [tasks.createdBy], references: [users.id], relationName: "createdTasks" }),
   completions: many(taskCompletions),
   taskLinks: many(taskLinks),
+  comments: many(taskComments),
 }));
 
 export const taskCompletionsRelations = relations(taskCompletions, ({ one, many }) => ({
@@ -600,6 +609,31 @@ export const assetAttachmentsRelations = relations(assetAttachments, ({ one }) =
 
 export type AssetAttachment = typeof assetAttachments.$inferSelect;
 export type InsertAssetAttachment = typeof assetAttachments.$inferInsert;
+
+// ── Task Comments ─────────────────────────────────────────────────────────────
+// Shared comment thread for tasks across all product tiers (HOA requests,
+// contractor tasks, commercial work orders).  Named task_comments deliberately
+// so the same table serves all contexts without renaming.
+export const taskComments = pgTable("task_comments", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  authorUserId: varchar("author_user_id").notNull().references(() => users.id),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("task_comments_task_id_idx").on(table.taskId),
+  index("task_comments_created_at_idx").on(table.createdAt),
+]);
+
+export const taskCommentsRelations = relations(taskComments, ({ one }) => ({
+  task: one(tasks, { fields: [taskComments.taskId], references: [tasks.id] }),
+  author: one(users, { fields: [taskComments.authorUserId], references: [users.id] }),
+}));
+
+export type TaskComment = typeof taskComments.$inferSelect;
+export type InsertTaskComment = typeof taskComments.$inferInsert;
 
 export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
   task: one(tasks, { fields: [taskLinks.taskId], references: [tasks.id] }),
