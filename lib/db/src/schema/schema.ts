@@ -204,7 +204,6 @@ export const assetTypes = pgTable("asset_types", {
   layerKey: text("layer_key").notNull(),
   subLayerKey: text("sub_layer_key").notNull(),
   allowedGeometry: jsonb("allowed_geometry").$type<string[]>(),
-  defaultColor: text("default_color"),
   requiredKeys: jsonb("required_keys").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   optionalKeys: jsonb("optional_keys").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   sortOrder: integer("sort_order").notNull().default(0),

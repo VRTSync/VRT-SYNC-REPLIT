@@ -35,7 +35,6 @@ AdminRouter.register('asset-types', async function(container) {
             <th>Label</th>
             <th>Layer</th>
             <th>Sub-Layer</th>
-            <th>Color</th>
             <th>Required Fields</th>
             <th>Optional Fields</th>
             <th>Sort</th>
@@ -43,7 +42,7 @@ AdminRouter.register('asset-types', async function(container) {
             <th>Actions</th>
           </tr></thead>
           <tbody id="types-tbody">
-            <tr><td colspan="10" class="loading-spinner">Loading…</td></tr>
+            <tr><td colspan="9" class="loading-spinner">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -76,18 +75,9 @@ AdminRouter.register('asset-types', async function(container) {
                   <input class="form-input" id="field-sub-layer-key" placeholder="e.g. parking_sweep" required />
                 </div>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-                <div>
-                  <label class="form-label">Default Color</label>
-                  <div style="display:flex;gap:8px;align-items:center">
-                    <input type="color" id="field-color-picker" style="width:40px;height:34px;cursor:pointer;border:1px solid #ccc;border-radius:4px;padding:2px" />
-                    <input class="form-input" id="field-color" placeholder="#888888" style="flex:1" />
-                  </div>
-                </div>
-                <div>
-                  <label class="form-label">Sort Order</label>
-                  <input class="form-input" id="field-sort-order" type="number" min="0" value="0" />
-                </div>
+              <div>
+                <label class="form-label">Sort Order</label>
+                <input class="form-input" id="field-sort-order" type="number" min="0" value="0" />
               </div>
               <div>
                 <label class="form-label">Allowed Geometry (comma-separated)</label>
@@ -123,14 +113,6 @@ AdminRouter.register('asset-types', async function(container) {
     document.getElementById('search-input').addEventListener('input', renderTable);
     document.getElementById('layer-filter').addEventListener('change', renderTable);
     document.getElementById('status-filter').addEventListener('change', renderTable);
-
-    // Sync color picker ↔ hex input
-    const picker = document.getElementById('field-color-picker');
-    const colorInput = document.getElementById('field-color');
-    picker.addEventListener('input', () => { colorInput.value = picker.value; });
-    colorInput.addEventListener('input', () => {
-      if (/^#[0-9A-Fa-f]{6}$/.test(colorInput.value)) picker.value = colorInput.value;
-    });
 
     document.getElementById('type-form').addEventListener('submit', handleSubmit);
 
@@ -177,14 +159,6 @@ AdminRouter.register('asset-types', async function(container) {
         <td>${esc(t.label)}</td>
         <td><span class="badge badge-teal">${esc(t.layerKey)}</span></td>
         <td><code style="font-size:12px">${esc(t.subLayerKey)}</code></td>
-        <td>
-          ${t.defaultColor
-            ? `<span style="display:inline-flex;align-items:center;gap:6px">
-                <span style="width:14px;height:14px;border-radius:3px;background:${esc(t.defaultColor)};display:inline-block;border:1px solid rgba(0,0,0,.15)"></span>
-                <code style="font-size:11px">${esc(t.defaultColor)}</code>
-               </span>`
-            : '<span style="color:#aaa">—</span>'}
-        </td>
         <td style="font-size:12px">${(t.requiredKeys || []).length ? esc((t.requiredKeys || []).join(', ')) : '<span style="color:#aaa">—</span>'}</td>
         <td style="font-size:12px">${(t.optionalKeys || []).length ? esc((t.optionalKeys || []).join(', ')) : '<span style="color:#aaa">—</span>'}</td>
         <td style="text-align:center">${t.sortOrder}</td>
@@ -223,10 +197,6 @@ AdminRouter.register('asset-types', async function(container) {
       document.getElementById('field-label').value = t.label;
       document.getElementById('field-layer-key').value = t.layerKey;
       document.getElementById('field-sub-layer-key').value = t.subLayerKey;
-      document.getElementById('field-color').value = t.defaultColor || '';
-      if (t.defaultColor && /^#[0-9A-Fa-f]{6}$/.test(t.defaultColor)) {
-        document.getElementById('field-color-picker').value = t.defaultColor;
-      }
       document.getElementById('field-sort-order').value = t.sortOrder ?? 0;
       document.getElementById('field-geometry').value = (t.allowedGeometry || []).join(', ');
       document.getElementById('field-required-keys').value = (t.requiredKeys || []).join(', ');
@@ -261,14 +231,13 @@ AdminRouter.register('asset-types', async function(container) {
     const label = document.getElementById('field-label').value.trim();
     const layerKey = document.getElementById('field-layer-key').value.trim();
     const subLayerKey = document.getElementById('field-sub-layer-key').value.trim();
-    const defaultColor = document.getElementById('field-color').value.trim() || null;
     const sortOrder = parseInt(document.getElementById('field-sort-order').value, 10) || 0;
     const allowedGeometry = parseKeyList(document.getElementById('field-geometry').value);
     const requiredKeys = parseKeyList(document.getElementById('field-required-keys').value);
     const optionalKeys = parseKeyList(document.getElementById('field-optional-keys').value);
     const isActive = document.getElementById('field-active').checked;
 
-    const body = { key, label, layerKey, subLayerKey, defaultColor, sortOrder,
+    const body = { key, label, layerKey, subLayerKey, sortOrder,
       allowedGeometry: allowedGeometry.length ? allowedGeometry : null,
       requiredKeys, optionalKeys, isActive };
 

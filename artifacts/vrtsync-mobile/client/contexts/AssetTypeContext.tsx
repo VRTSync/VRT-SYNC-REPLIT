@@ -21,7 +21,6 @@ export type AssetTypeInfo = {
   layerKey: string;
   subLayerKey: string;
   allowedGeometry: string[] | null;
-  defaultColor: string | null;
   requiredKeys: string[];
   optionalKeys: string[];
   sortOrder: number;
@@ -34,8 +33,6 @@ type AssetTypeContextType = {
   assetTypes: AssetTypeInfo[];
   /** Human-readable label for a type key. Falls back to title-cased key. */
   getLabel: (key: string) => string;
-  /** Default hex color for a type key, or null if unknown. */
-  getColor: (key: string) => string | null;
   /** Required property keys for a type. Returns [] for unknown types. */
   getRequiredKeys: (key: string) => string[];
   /** Optional property keys for a type. Returns [] for unknown types. */
@@ -78,7 +75,6 @@ export function AssetTypeProvider({ children }: { children: React.ReactNode }) {
   }, [data]);
 
   const getLabel = (key: string) => typeMap.get(key)?.label ?? deriveLabel(key);
-  const getColor = (key: string) => typeMap.get(key)?.defaultColor ?? null;
   const getRequiredKeys = (key: string) => typeMap.get(key)?.requiredKeys ?? [];
   const getOptionalKeys = (key: string) => typeMap.get(key)?.optionalKeys ?? [];
 
@@ -87,7 +83,6 @@ export function AssetTypeProvider({ children }: { children: React.ReactNode }) {
       value={{
         assetTypes: data,
         getLabel,
-        getColor,
         getRequiredKeys,
         getOptionalKeys,
         isLoaded: isSuccess,

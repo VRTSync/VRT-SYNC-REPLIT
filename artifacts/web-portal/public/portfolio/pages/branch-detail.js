@@ -104,15 +104,48 @@
   }
 
   /**
-   * Return a valid geometry color for a layer.
-   * Accepts the admin-configured color from the API when it is a well-formed hex
-   * value; falls back to the tab-accent palette for null, empty, or malformed values
-   * so geometry always renders even when the database holds a bad string.
+   * Per-sub-layer hardcoded default geometry colours.
+   * Matches the LAYER_HIERARCHY colors in portal/pages/map.js.
+   * Used as fallback when map_layers.color is absent or invalid.
+   * Geometry color must NEVER fall back to a tab-accent palette — that
+   * produces confusing results when the layer is displayed on a different tab.
+   */
+  var _SUBLAYER_DEFAULT_COLORS = {
+    'bluegrass_area':   '#2E8B57',
+    'native_area':      '#8F9779',
+    'landscape_bed':    '#8B5A2B',
+    'pet_station':      '#1ABC9C',
+    'backflow':         '#00BFFF',
+    'controller':       '#25C1AC',
+    'zone':             '#3498db',
+    'master_valve':     '#1F4E79',
+    'flow_meter':       '#00CED1',
+    'qc_iso_valve':     '#87CEEB',
+    'isolation_valve':  '#F39C12',
+    'quick_connect':    '#E67E22',
+    'wire_splice':      '#9B59B6',
+    'plow':             '#4A90E2',
+    'atv':              '#6A5ACD',
+    'hand_shovel':      '#E83E8C',
+    'ice_melt':         '#FF8C00',
+    'slicer':           '#D62828',
+    'storage_area':     '#708090',
+    'tree':             '#006400',
+  };
+  /**
+   * Return a valid geometry colour for a layer.
+   * Resolution order:
+   *   1. map_layers.color (admin-configured via Map Layers color picker) — only
+   *      accepted when it is a well-formed hex string.
+   *   2. Hardcoded per-sub-layer default from _SUBLAYER_DEFAULT_COLORS.
+   *   3. Neutral grey — geometry always renders, never silently invisible.
    */
   function _layerColor(layer) {
     var raw = layer && layer.color;
     if (_isValidHex(raw)) return raw.trim();
-    return _dotHex(layerAccent(layer));
+    var subKey = layer && (layer.subLayerKey || layer.type);
+    if (subKey && _SUBLAYER_DEFAULT_COLORS[subKey]) return _SUBLAYER_DEFAULT_COLORS[subKey];
+    return '#888888';
   }
 
   /**
@@ -205,18 +238,28 @@
     });
   }
 
-  /** Show a "no geometry" notice inside a slot container. */
-  function _showNoGeometry(slotId) {
+  /**
+   * Show a "no geometry" notice overlaid on the stable map container.
+   * The iframe is never removed — only a notice div is layered on top.
+   */
+  function _showNoGeometry() {
     if (!_bMap.container) return;
-    var slot = _bMap.container.querySelector('#' + slotId);
-    if (!slot) return;
-    // Remove iframe if it's currently in this slot
-    if (_bMap.iframe && _bMap.iframe.parentNode === slot) slot.removeChild(_bMap.iframe);
-    if (!slot.querySelector('.mp-note')) {
-      slot.innerHTML = '<div class="map-placeholder"><div class="mp-note">No geometry mapped for this layer yet</div></div>';
-    }
+    var stable = _bMap.container.querySelector('#bmap-stable');
+    if (!stable || stable.querySelector('.bmap-no-geom-notice')) return;
+    var notice = document.createElement('div');
+    notice.className = 'bmap-no-geom-notice map-placeholder';
+    notice.innerHTML = '<div class="mp-note">No geometry mapped for this layer yet</div>';
+    stable.appendChild(notice);
   }
 
+  /** Remove the "no geometry" notice from the stable map container. */
+  function _clearNoGeometry() {
+    if (!_bMap.container) return;
+    var stable = _bMap.container.querySelector('#bmap-stable');
+    if (!stable) return;
+    var notice = stable.querySelector('.bmap-no-geom-notice');
+    if (notice) notice.remove();
+  }
   /**
    * Show the Summary tab: fetch ALL layers (including outline layers that have
    * geometry but no assets), push new ones to the iframe, restore original colours,
@@ -225,7 +268,7 @@
    */
   function _showSummaryTab() {
     var layers = _bMap.allLayers || [];
-    if (layers.length === 0) { _showNoGeometry('bmap-summary'); return; }
+    if (layers.length === 0) { _showNoGeometry(); return; }
     Promise.all(layers.map(function (l) {
       return _fetchLayer(l).then(function (g) { return { id: l.id, layer: l, g: g }; });
     })).then(function (results) {
@@ -233,10 +276,9 @@
       results.forEach(function (r) { gmap[r.id] = r.g; });
       _pushNewLayers(layers, gmap);
       var allIds = layers.filter(function (l) { return gmap[l.id]; }).map(function (l) { return l.id; });
-      if (allIds.length === 0) { _showNoGeometry('bmap-summary'); return; }
-      // Ensure iframe is in the summary slot
-      var slot = _bMap.container && _bMap.container.querySelector('#bmap-summary');
-      if (slot && _bMap.iframe && _bMap.iframe.parentNode !== slot) slot.appendChild(_bMap.iframe);
+      if (allIds.length === 0) { _showNoGeometry(); return; }
+      // Iframe stays in #bmap-stable — never re-parented.
+      _clearNoGeometry();
       _bCmd('showLayerIds', allIds);
       // Restore original colours for all layers (undo any per-tab dimming)
       allIds.forEach(function (id) {
@@ -265,7 +307,7 @@
    */
   function _showCategoryTab(categoryKey) {
     var layers = (_bMap.categoryGroups && _bMap.categoryGroups[categoryKey]) || [];
-    if (layers.length === 0) { _showNoGeometry('bmap-cat-' + categoryKey); return; }
+    if (layers.length === 0) { _showNoGeometry(); return; }
 
     // Always include the outline in the fetch list so its GeoJSON is resolved
     // inside this .then() and can be sent before fitToContent in every code path.
@@ -280,12 +322,9 @@
       // _pushNewLayers skips the outline type internally — safe to pass the full gmap.
       _pushNewLayers(layers, gmap);
 
-      // Ensure iframe is in the category map slot
-      var slot = _bMap.container && _bMap.container.querySelector('#bmap-cat-' + categoryKey);
-      if (!slot) { return; }
-      if (_bMap.iframe && _bMap.iframe.parentNode !== slot) slot.appendChild(_bMap.iframe);
+      // Iframe stays in #bmap-stable — never re-parented.
 
-      // Update any "no data" disabled state in the sub-layer panel based on actual geometry
+      // Update any "no data" disabled state in the sub-layer overlay based on actual geometry
       _syncSubLayerPanelState(categoryKey, gmap);
 
       // Collect checked + has-geometry sub-layer IDs
@@ -296,7 +335,8 @@
 
       // If nothing has any geometry at all, show placeholder
       var anyGeometry = layers.some(function (l) { return gmap[l.id]; });
-      if (!anyGeometry) { _showNoGeometry('bmap-cat-' + categoryKey); return; }
+      if (!anyGeometry) { _showNoGeometry(); return; }
+      _clearNoGeometry();
 
       // Restore all loaded layer colours (no dimming — category view shows/hides)
       Array.from(_bMap.addedSet).forEach(function (id) {
@@ -353,33 +393,36 @@
   }
 
   /**
-   * Move the shared iframe into the named slot, then trigger lazy loading.
+   * Switch the map to show the requested tab's layers.
    * tabIdx 0 = Summary; tabIdx > 0 = categoryOrder[tabIdx-1].
+   *
+   * ⚠️ HAZARD: re-parenting an iframe reloads it and empties the map's
+   * layerCache.  The iframe MUST stay in #bmap-stable.  We use CSS to
+   * position the panel, never DOM moves.
    */
   function _switchToTab(tabIdx) {
     if (!_bMap.iframe || !_bMap.container) return;
-    var slotId, categoryKey;
-    if (tabIdx === 0) {
-      slotId = 'bmap-summary';
-    } else {
-      var order = _bMap.categoryOrder || [];
-      categoryKey = order[tabIdx - 1];
-      if (!categoryKey) return;
-      slotId = 'bmap-cat-' + categoryKey;
-    }
-    var slot = _bMap.container.querySelector('#' + slotId);
-    if (!slot) return;
-    slot.appendChild(_bMap.iframe);
-    // Moving the iframe to a new DOM slot resets its layout box; invalidateSize
-    // tells Leaflet to recalculate its container dimensions.
+    _bMap.activeTab = tabIdx; // persist so post-reload mapReady can restore this tab
+    _updateSublayerOverlay(tabIdx);
     _bCmd('invalidateSize');
     if (tabIdx === 0) {
+      _updateMapPanelTitle('Property Map');
       _showSummaryTab();
     } else {
+      var order = _bMap.categoryOrder || [];
+      var categoryKey = order[tabIdx - 1];
+      if (!categoryKey) return;
+      _updateMapPanelTitle(_categoryLabel(categoryKey) + ' Map');
       _showCategoryTab(categoryKey);
     }
   }
 
+  /** Update the stable map panel's header title. */
+  function _updateMapPanelTitle(title) {
+    if (!_bMap.container) return;
+    var el = _bMap.container.querySelector('#bmap-panel-title');
+    if (el) el.textContent = title;
+  }
   /**
    * Mount the shared Leaflet iframe in the summary (or first available) slot
    * and register the mapReady message listener.
@@ -434,16 +477,11 @@
     _bMap.categoryOrder     = categoryOrder;
     _bMap.checkedSubLayers  = checkedSubLayers;
 
-    // Mount in summary slot — always present now that we render it unconditionally.
-    var slot = container.querySelector('#bmap-summary');
-    if (!slot) {
-      // Fallback: first category slot
-      for (var i = 0; i < categoryOrder.length; i++) {
-        slot = container.querySelector('#bmap-cat-' + categoryOrder[i]);
-        if (slot) break;
-      }
-    }
-    if (!slot) return; // no map panels at all — shouldn't happen but guard
+    // ⚠️ HAZARD: re-parenting an iframe reloads it and empties the Leaflet
+    // layerCache inside it.  The iframe is created once and lives permanently
+    // in #bmap-stable — it is NEVER moved to another DOM node.
+    var slot = container.querySelector('#bmap-stable');
+    if (!slot) return; // stable container not present — shouldn't happen
 
     var iframe = document.createElement('iframe');
     iframe.src = '/leaflet-map.html';
@@ -451,6 +489,21 @@
     iframe.setAttribute('allowfullscreen', 'true');
     _bMap.iframe = iframe;
     slot.appendChild(iframe);
+
+    // If the iframe reloads (e.g. user navigated away and back in the same
+    // SPA session), reset the tracking sets so _pushNewLayers re-sends all
+    // layers instead of skipping them because addedSet still thinks they are
+    // in the now-empty layerCache.
+    iframe.addEventListener('load', function () {
+      if (!_bMap.ready) return; // first load is handled by mapReady
+      console.warn('[branch-detail] map iframe reloaded — resetting layer state');
+      _bMap.ready       = false;
+      _bMap.addedSet    = new Set();
+      _bMap.layerColors = {};
+      _bMap.pending     = [];
+    });
+
+    _bMap.activeTab = 0; // 0 = Summary; updated by _switchToTab on every switch
 
     _bMap.handler = function (e) {
       if (!e.data) return;
@@ -464,8 +517,10 @@
       if (msg.type === 'mapReady' && !_bMap.ready) {
         _bMap.ready = true;
         _bFlush();
-        // Initial tab is always Summary — kick off its lazy load
-        _showSummaryTab();
+        // Restore whichever tab was active when the map became ready.
+        // This handles both first load (activeTab=0 → Summary) and
+        // any iframe reload that occurs while a category tab is selected.
+        _switchToTab(_bMap.activeTab || 0);
       }
     };
     window.addEventListener('message', _bMap.handler);
@@ -708,7 +763,26 @@
       + '</div>';
   }
 
-  // ── Service row ────────────────────────────────────────────────────────────
+  /**
+   * Render the single stable Leaflet map panel that lives OUTSIDE the tab panes.
+   * The iframe is always mounted in #bmap-stable and is never re-parented.
+   * The sub-layer overlay (#bmap-sublayer-overlay) is updated by _updateSublayerOverlay
+   * whenever the active tab changes.
+   */
+  function renderStableMapPanel() {
+    return '<div class="panel p-blue" id="branch-map-panel">'
+      + '<div class="panel-head">'
+        + '<h2 id="bmap-panel-title">Property Map</h2>'
+        + '<button class="bmap-expand-btn" id="bmap-expand-btn" title="Expand map" aria-label="Expand map" aria-pressed="false">'
+          + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+            + '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>'
+          + '</svg>'
+        + '</button>'
+      + '</div>'
+      + '<div id="bmap-sublayer-overlay"></div>'
+      + '<div class="branch-map-container" id="bmap-stable"></div>'
+      + '</div>';
+  }
   function renderServiceRow(svc) {
     var dotCls = svc.type === 'task_completion' ? 'teal' : 'blue';
     var photos = svc.photoCount > 0 ? '<span class="sr-photos">📷 ' + esc(svc.photoCount) + '</span>' : '';
@@ -793,9 +867,7 @@
     var catResult        = _buildCategoryGroups(serviceLayers);
     var breakdownHtml    = renderCategoryBreakdown(catResult.order, catResult.groups);
 
-    // Always render the map panel — geometry is fetched lazily and a
-    // "no geometry" notice is shown in-slot if the API returns nothing.
-    var mapHtml = renderMapPanel('Property Map', 'p-blue', 'bmap-summary');
+    // The map is rendered in the single stable panel outside the tab panes.
 
     // Recent services panel
     var svcRows = svcs.length > 0
@@ -834,7 +906,7 @@
       + woRows
       + '</div>';
 
-    return kpis + breakdownHtml + mapHtml
+    return kpis + breakdownHtml
       + '<div class="two-col">' + svcPanel + woPanel + '</div>';
   }
 
@@ -857,7 +929,8 @@
     var distinctTypes = catInv.length;
     var lastSvcDate   = svcs.length > 0 ? fmtDate(svcs[0].date) : '—';
 
-    var subLayerPanel = renderSubLayerPanel(categoryKey, categoryLayers);
+    // Sub-layer checkboxes are rendered in #bmap-sublayer-overlay (the stable
+    // map panel's overlay) by _updateSublayerOverlay on each tab switch.
 
     var kpiStrip = renderKpiStrip([
       { label: 'Assets',       value: totalAssets,                        border: accent.invcBorder },
@@ -866,9 +939,7 @@
       { label: 'Open Items',   value: (data.openWorkOrders || []).length, border: 'b-amber'         },
     ]);
 
-    // Always render the map panel — geometry is fetched lazily and a
-    // "no geometry" notice is shown in-slot if the API returns nothing.
-    var mapHtml = renderMapPanel(categoryLabel + ' Map', accent.panel, 'bmap-cat-' + categoryKey);
+    // The map is rendered in the single stable panel outside the tab panes.
 
     // Inventory table (all sub-layers combined)
     var invRows;
@@ -900,7 +971,7 @@
       + svcContent
       + '</div>';
 
-    var contentHtml = subLayerPanel + kpiStrip + mapHtml
+    var contentHtml = kpiStrip
       + '<div class="two-col">' + invPanel + svcPanel + '</div>';
 
     // Snow category: prepend winter season block
@@ -962,11 +1033,18 @@
         + '</div>';
     }).join('');
 
-    container.innerHTML = selectorHtml + titleHtml + tabBarHtml + summaryPane + categoryPanes;
+    // The stable map panel is rendered OUTSIDE the tab panes so the shared
+    // iframe is never re-parented when switching tabs.
+    container.innerHTML = selectorHtml + titleHtml + tabBarHtml
+      + renderStableMapPanel()
+      + summaryPane + categoryPanes;
 
     wireSelectorBlock(container, branchId, allBranches);
     wireTabBar(container);
-    wireSubLayerToggles(container);
+    // wireSubLayerToggles is a no-op here because sub-layer checkboxes now
+    // live in #bmap-sublayer-overlay (populated by _updateSublayerOverlay on
+    // each tab switch) rather than in the tab panes.
+    _wireExpandButton(container);
     setupBranchMaps(container, data);
   }
 
@@ -1156,4 +1234,94 @@
       if (window.PortfolioRouter) PortfolioRouter.register('branch-detail', renderBranchDetail);
     });
   }
+  /**
+   * Populate the sub-layer overlay inside the stable map panel for the given tab.
+   * tabIdx 0 = Summary → empty overlay.
+   * tabIdx > 0 = category sub-layers for categoryOrder[tabIdx-1].
+   * Wires checkbox toggle listeners after rendering the new HTML.
+   */
+  function _updateSublayerOverlay(tabIdx) {
+    if (!_bMap.container) return;
+    var overlay = _bMap.container.querySelector('#bmap-sublayer-overlay');
+    if (!overlay) return;
+    if (tabIdx === 0) {
+      overlay.innerHTML = '';
+      return;
+    }
+    var order = _bMap.categoryOrder || [];
+    var categoryKey = order[tabIdx - 1];
+    if (!categoryKey) { overlay.innerHTML = ''; return; }
+    var catLayers = (_bMap.categoryGroups && _bMap.categoryGroups[categoryKey]) || [];
+    overlay.innerHTML = renderSubLayerPanel(categoryKey, catLayers);
+    // Wire toggle listeners for the freshly-rendered checkboxes in the overlay
+    overlay.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var ck  = cb.getAttribute('data-category-key');
+        var lid = cb.getAttribute('data-layer-id');
+        if (!ck || !lid || !_bMap.checkedSubLayers) return;
+        if (!_bMap.checkedSubLayers[ck]) _bMap.checkedSubLayers[ck] = new Set();
+        if (cb.checked) { _bMap.checkedSubLayers[ck].add(lid); }
+        else            { _bMap.checkedSubLayers[ck].delete(lid); }
+        var catLayersForToggle = (_bMap.categoryGroups && _bMap.categoryGroups[ck]) || [];
+        var checkedSet = _bMap.checkedSubLayers[ck];
+        var checkedIds = catLayersForToggle.filter(function (l) {
+          return checkedSet.has(l.id) && _bMap.geojsonCache && _bMap.geojsonCache.get(l.id);
+        }).map(function (l) { return l.id; });
+        Array.from(_bMap.addedSet || []).forEach(function (id) {
+          _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
+        });
+        _bCmd('showLayerIds', checkedIds);
+        var outlineLayer = _bMap.outlineLayer;
+        var outlineGeo = outlineLayer && _bMap.geojsonCache
+          ? _bMap.geojsonCache.get(outlineLayer.id) : undefined;
+        if (outlineGeo) {
+          _bCmd('setCommunityOutline', outlineGeo);
+          _bCmd('setOutlineBounds',    outlineGeo);
+        }
+        _bCmd('fitToContent', [], null);
+      });
+    });
+  }
+
+  /**
+   * Wire the expand/collapse button for the stable branch map panel.
+   * Toggling adds/removes .bmap-panel--expanded on #branch-map-panel.
+   * invalidateSize fires after a short delay so Leaflet measures the final
+   * container dimensions, not mid-animation ones.
+   * The iframe is NEVER re-parented — expand is CSS-only.
+   */
+  function _wireExpandButton(container) {
+    var panel = container.querySelector('#branch-map-panel');
+    var btn   = container.querySelector('#bmap-expand-btn');
+    if (!panel || !btn) return;
+
+    function postExpandInvalidate() {
+      _bCmd('invalidateSize');
+    }
+
+    function toggleExpand() {
+      var expanded = panel.classList.toggle('bmap-panel--expanded');
+      btn.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+      btn.title = expanded ? 'Collapse map' : 'Expand map';
+      // Call invalidateSize after the CSS expand animation (250 ms) so Leaflet
+      // measures the final container dimensions, not mid-animation ones.
+      setTimeout(postExpandInvalidate, 270);
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      toggleExpand();
+    });
+
+    // Escape key collapses the panel
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape' && panel.classList.contains('bmap-panel--expanded')) {
+        panel.classList.remove('bmap-panel--expanded');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.title = 'Expand map';
+        setTimeout(postExpandInvalidate, 270);
+      }
+    });
+  }
+
 })();

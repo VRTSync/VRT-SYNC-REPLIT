@@ -215,11 +215,42 @@
         + '</div>'
         + '<div class="pfm-map-wrap" id="pfm-map-wrap">'
           + '<iframe id="pf-map-iframe" src="/leaflet-map.html" class="pfm-iframe" allowfullscreen></iframe>'
+          + '<button class="pfm-map-expand-btn" id="pfm-map-expand-btn" title="Expand map" aria-label="Expand map" aria-pressed="false">'
+            + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
+              + '<path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/>'
+            + '</svg>'
+          + '</button>'
         + '</div>'
         + '<div id="pfm-unmapped" class="pfm-unmapped" style="display:none"></div>'
       + '</div>';
 
     _iframeEl = document.getElementById('pf-map-iframe');
+
+    // Wire expand/collapse for the portfolio map wrap.
+    // The iframe is never re-parented — expand is CSS-only.
+    var mapWrap = document.getElementById('pfm-map-wrap');
+    var expandBtn = document.getElementById('pfm-map-expand-btn');
+    if (mapWrap && expandBtn) {
+      function pfmPostTransitionInvalidate() {
+        cmdToIframe('invalidateSize');
+      }
+      expandBtn.addEventListener('click', function () {
+        var expanded = mapWrap.classList.toggle('pfm-map-wrap--expanded');
+        expandBtn.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+        expandBtn.title = expanded ? 'Collapse map' : 'Expand map';
+        // Call invalidateSize after the CSS expand animation (250 ms) so Leaflet
+        // measures the final container dimensions, not mid-animation ones.
+        setTimeout(pfmPostTransitionInvalidate, 270);
+      });
+      document.addEventListener('keydown', function pfmEsc(e) {
+        if (e.key === 'Escape' && mapWrap.classList.contains('pfm-map-wrap--expanded')) {
+          mapWrap.classList.remove('pfm-map-wrap--expanded');
+          expandBtn.setAttribute('aria-pressed', 'false');
+          expandBtn.title = 'Expand map';
+          setTimeout(pfmPostTransitionInvalidate, 270);
+        }
+      });
+    }
 
     var allBranches = mapData.branches || [];
     var allUnmapped = mapData.unmapped || [];

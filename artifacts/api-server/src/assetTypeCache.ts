@@ -21,7 +21,6 @@ export type AssetTypeRow = {
   layerKey: string;
   subLayerKey: string;
   allowedGeometry: string[] | null;
-  defaultColor: string | null;
   requiredKeys: string[];
   optionalKeys: string[];
   sortOrder: number;

@@ -92,6 +92,13 @@
       "when": 1754524800000,
       "tag": "0012_asset_types_unique_layer_sub",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1754611200000,
+      "tag": "0013_drop_asset_types_default_color",
+      "breakpoints": true
     }
   ]
 }

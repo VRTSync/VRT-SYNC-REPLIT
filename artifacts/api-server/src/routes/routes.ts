@@ -3577,7 +3577,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     layerKey:        z.string().regex(/^[a-z][a-z0-9_]*$/, "layerKey must be lowercase letters, digits, underscores"),
     subLayerKey:     z.string().regex(/^[a-z][a-z0-9_]*$/, "subLayerKey must be lowercase letters, digits, underscores"),
     allowedGeometry: z.array(z.string()).nullable().optional(),
-    defaultColor:    z.string().regex(/^#[0-9A-Fa-f]{6}$/, "defaultColor must be a hex colour e.g. #25C1AC").nullable().optional(),
     requiredKeys:    z.array(z.string()).optional(),
     optionalKeys:    z.array(z.string()).optional(),
     sortOrder:       z.number().int().min(0).optional(),
@@ -3588,7 +3587,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     layerKey:        z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
     subLayerKey:     z.string().regex(/^[a-z][a-z0-9_]*$/).optional(),
     allowedGeometry: z.array(z.string()).nullable().optional(),
-    defaultColor:    z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
     requiredKeys:    z.array(z.string()).optional(),
     optionalKeys:    z.array(z.string()).optional(),
     sortOrder:       z.number().int().min(0).optional(),
@@ -3601,11 +3599,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
-      const { key, label, layerKey, subLayerKey, allowedGeometry, defaultColor, requiredKeys, optionalKeys, sortOrder } = parsed.data;
+      const { key, label, layerKey, subLayerKey, allowedGeometry, requiredKeys, optionalKeys, sortOrder } = parsed.data;
       const [row] = await db.insert(assetTypesTable).values({
         key, label, layerKey, subLayerKey,
         allowedGeometry: allowedGeometry ?? null,
-        defaultColor: defaultColor ?? null,
         requiredKeys: requiredKeys ?? [],
         optionalKeys: optionalKeys ?? [],
         sortOrder: sortOrder ?? 0,
@@ -3630,13 +3627,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed.success) {
         return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
-      const { label, layerKey, subLayerKey, allowedGeometry, defaultColor, requiredKeys, optionalKeys, sortOrder, isActive } = parsed.data;
+      const { label, layerKey, subLayerKey, allowedGeometry, requiredKeys, optionalKeys, sortOrder, isActive } = parsed.data;
       const updates: Record<string, any> = { updatedAt: new Date() };
       if (label !== undefined) updates.label = label;
       if (layerKey !== undefined) updates.layerKey = layerKey;
       if (subLayerKey !== undefined) updates.subLayerKey = subLayerKey;
       if (allowedGeometry !== undefined) updates.allowedGeometry = allowedGeometry;
-      if (defaultColor !== undefined) updates.defaultColor = defaultColor;
       if (requiredKeys !== undefined) updates.requiredKeys = requiredKeys;
       if (optionalKeys !== undefined) updates.optionalKeys = optionalKeys;
       if (sortOrder !== undefined) updates.sortOrder = sortOrder;

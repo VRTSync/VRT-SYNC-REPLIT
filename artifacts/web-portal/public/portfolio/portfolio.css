@@ -1497,3 +1497,93 @@ tbody tr:last-child td { border-bottom: none; }
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+/* ── Branch detail: stable map panel expand ──────────────────────────────── */
+/* The expand button replaces the dead "Open full map →" link.
+   Toggling .bmap-panel--expanded makes the panel fill the viewport.
+   The iframe is NEVER re-parented — expand is CSS-only. */
+.bmap-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: var(--white);
+  cursor: pointer;
+  color: var(--gray-600);
+  transition: background .12s, color .12s;
+  flex-shrink: 0;
+  margin-left: auto;
+  line-height: 1;
+}
+.bmap-expand-btn:hover { background: var(--gray-100); color: var(--navy); }
+.bmap-expand-btn svg   { pointer-events: none; display: block; }
+
+#branch-map-panel.bmap-panel--expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  border-radius: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+#branch-map-panel.bmap-panel--expanded .branch-map-container {
+  flex: 1;
+  height: 0; /* flex grows it to fill remaining space */
+}
+/* Sub-layer overlay floats in the top-left corner when expanded */
+#branch-map-panel.bmap-panel--expanded #bmap-sublayer-overlay:not(:empty) {
+  position: absolute;
+  top: 68px;
+  left: 16px;
+  z-index: 9510;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 10px 14px;
+  max-height: 50vh;
+  overflow-y: auto;
+  min-width: 200px;
+}
+
+/* "No geometry" overlay notice inside the stable map container */
+.bmap-no-geom-notice {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ── Portfolio Map: expand in place ──────────────────────────────────────── */
+.pfm-map-expand-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(12, 29, 49, 0.6);
+  cursor: pointer;
+  color: #fff;
+  transition: background .12s;
+  line-height: 1;
+}
+.pfm-map-expand-btn:hover { background: rgba(12, 29, 49, 0.85); }
+.pfm-map-expand-btn svg   { pointer-events: none; display: block; }
+
+#pfm-map-wrap.pfm-map-wrap--expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  border-radius: 0;
+  margin: 0;
+  height: 100vh;
+}

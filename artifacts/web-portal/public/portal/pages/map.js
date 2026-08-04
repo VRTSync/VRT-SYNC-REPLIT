@@ -48,6 +48,18 @@ PortalRouter.register('map', async function (container) {
     trees: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L7 10h2l-3 6h3l-2 6h10l-2-6h3l-3-6h2z"/></svg>',
   };
 
+  // Snapshot the hardcoded colour defaults before loadMapData() may overwrite
+  // LAYER_HIERARCHY with API-driven entries.  getLayerEffectiveColor() resolves
+  // map_layers.color first, so these hardcoded values are only the final fallback
+  // — they must NOT come from asset_types.defaultColor (dropped in migration 0013).
+  const _HIERARCHY_DEFAULT_COLORS = {};
+  Object.keys(LAYER_HIERARCHY).forEach(cat => {
+    _HIERARCHY_DEFAULT_COLORS[cat] = {};
+    LAYER_HIERARCHY[cat].forEach(sub => {
+      _HIERARCHY_DEFAULT_COLORS[cat][sub.key] = sub.color;
+    });
+  });
+
   let activeCategory = 'community';
   let sublayerState = {};
   let populated = {};          // populated[cat][subKey] = true when layer has ≥1 feature
@@ -531,7 +543,12 @@ PortalRouter.register('map', async function (container) {
           for (const t of assetTypesData) {
             if (!t.isActive) continue;
             if (!newHierarchy[t.layerKey]) newHierarchy[t.layerKey] = [];
-            newHierarchy[t.layerKey].push({ key: t.subLayerKey, label: t.label, color: t.defaultColor || '#888888' });
+            // Geometry colours come from map_layers.color (set via the admin
+            // Map Layers colour picker), not from asset_types.  Use the original
+            // hardcoded LAYER_HIERARCHY colour as fallback; neutral grey last.
+            const hardcodedColor =
+              (_HIERARCHY_DEFAULT_COLORS[t.layerKey] || {})[t.subLayerKey] || '#888888';
+            newHierarchy[t.layerKey].push({ key: t.subLayerKey, label: t.label, color: hardcodedColor });
           }
           // Merge sublayerState: preserve existing on/off choices; init new entries to false.
           for (const [cat, subs] of Object.entries(newHierarchy)) {
