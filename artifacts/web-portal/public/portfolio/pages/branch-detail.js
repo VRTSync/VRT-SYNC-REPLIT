@@ -19,6 +19,12 @@
 
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
 
+  // ── Demo presentation flag ─────────────────────────────────────────────────
+  // Set to false to hide "· opened <date>" on work order rows during demos
+  // where all work orders share the same creation date.  Flip back to true once
+  // real historical data has accumulated.
+  var SHOW_WORK_ORDER_DATES = false;
+
   /**
    * Ordered list of main layer categories.  Tabs appear in this order; any
    * layer_key not listed here falls through with a title-cased label so a
@@ -815,7 +821,7 @@
           + '<span class="sdot amber"></span>'
           + '<div class="sr-main">'
             + '<div class="sr-title">' + esc(wo.title || '—') + '</div>'
-            + '<div class="sr-meta">' + esc(statusLabel) + ' · opened ' + esc(fmtDate(wo.openedAt)) + esc(estimate) + '</div>'
+            + '<div class="sr-meta">' + esc(statusLabel) + (SHOW_WORK_ORDER_DATES ? ' · opened ' + esc(fmtDate(wo.openedAt)) : '') + esc(estimate) + '</div>'
           + '</div>'
           + '</div>';
       }).join('');

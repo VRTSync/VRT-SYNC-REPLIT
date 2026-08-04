@@ -16,6 +16,12 @@
 
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
 
+  // ── Demo presentation flag ─────────────────────────────────────────────────
+  // Set to false to hide opened/closed/days-open dates during demos where all
+  // work orders share the same creation date.  Flip back to true once real
+  // historical data has accumulated.
+  var SHOW_WORK_ORDER_DATES = false;
+
   // ── Admin org-id suffix ───────────────────────────────────────────────────
   function orgParam() {
     var state = window.PortfolioState;
@@ -166,20 +172,25 @@
 
   // ── Open Work Orders table ─────────────────────────────────────────────────
   function renderOpenTable(rows) {
+    var colCount = SHOW_WORK_ORDER_DATES ? 7 : 6;
     var header = '<div class="panel p-amber">'
       + '<div class="panel-head"><h2>Open Work Orders</h2>'
       + '<span class="hint">flagged by HP or submitted by client</span></div>'
       + '<table>'
-      + '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
-      + '<col style="width:100px"><col style="width:150px"><col style="width:110px"></colgroup>'
+      + (SHOW_WORK_ORDER_DATES
+          ? '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
+            + '<col style="width:100px"><col style="width:150px"><col style="width:110px"></colgroup>'
+          : '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
+            + '<col style="width:150px"><col style="width:110px"></colgroup>')
       + '<thead><tr>'
       + '<th>Work Order</th><th>Branch</th><th>Item</th><th>Source</th>'
-      + '<th>Opened</th><th>Status</th><th class="num">Estimate</th>'
+      + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th>' : '')
+      + '<th>Status</th><th class="num">Estimate</th>'
       + '</tr></thead><tbody>';
 
     var body;
     if (rows.length === 0) {
-      body = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:24px;">No open work orders.</td></tr>';
+      body = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--gray-400);padding:24px;">No open work orders.</td></tr>';
     } else {
       body = rows.map(function (t) {
         var photoBadge = t.photoCount > 0
@@ -197,7 +208,9 @@
           + (t.description ? '<div class="bsub">' + esc(t.description.slice(0, 80)) + '</div>' : '')
           + photoBadge + '</td>'
           + '<td class="bsub">' + esc(t.source) + '</td>'
-          + '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '<div class="bsub">' + esc(t.daysOpen) + ' days open</div></td>'
+          + (SHOW_WORK_ORDER_DATES
+              ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '<div class="bsub">' + esc(t.daysOpen) + ' days open</div></td>'
+              : '')
           + '<td>' + statusChip(t) + '</td>'
           + '<td class="num">' + esc(fmtCents(t.estimateCents)) + approveBtn + '</td>'
           + '</tr>';
@@ -209,20 +222,23 @@
 
   // ── Recently Closed table ──────────────────────────────────────────────────
   function renderClosedTable(rows) {
+    var colCount = SHOW_WORK_ORDER_DATES ? 6 : 3;
     var header = '<div class="panel p-green">'
       + '<div class="panel-head"><h2>Recently Closed</h2>'
       + '<span class="view-all">Service history →</span></div>'
       + '<table>'
-      + '<colgroup><col style="width:130px"><col style="width:100px"><col>'
-      + '<col style="width:100px"><col style="width:100px"><col style="width:100px"></colgroup>'
+      + (SHOW_WORK_ORDER_DATES
+          ? '<colgroup><col style="width:130px"><col style="width:100px"><col>'
+            + '<col style="width:100px"><col style="width:100px"><col style="width:100px"></colgroup>'
+          : '<colgroup><col style="width:130px"><col style="width:100px"><col></colgroup>')
       + '<thead><tr>'
       + '<th>Work Order</th><th>Branch</th><th>Item</th>'
-      + '<th>Opened</th><th>Closed</th><th class="num">Days Open</th>'
+      + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th><th>Closed</th><th class="num">Days Open</th>' : '')
       + '</tr></thead><tbody>';
 
     var body;
     if (rows.length === 0) {
-      body = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:24px;">No closed work orders in the last 30 days.</td></tr>';
+      body = '<tr><td colspan="' + colCount + '" style="text-align:center;color:var(--gray-400);padding:24px;">No closed work orders in the last 30 days.</td></tr>';
     } else {
       body = rows.map(function (t) {
         return '<tr class="clickable" data-community-id="' + esc(t.communityId) + '">'
@@ -230,9 +246,11 @@
           + '<td><span class="bcode">' + esc(t.branchCode || '—') + '</span></td>'
           + '<td><div class="bname">' + esc(t.title) + '</div>'
           + (t.photoCount > 0 ? '<div class="bsub">📷 ' + esc(t.photoCount) + ' photos</div>' : '') + '</td>'
-          + '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '</td>'
-          + '<td class="bsub">' + esc(fmtDate(t.completedAt)) + '</td>'
-          + '<td class="num">' + esc(t.daysOpen) + '</td>'
+          + (SHOW_WORK_ORDER_DATES
+              ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '</td>'
+                + '<td class="bsub">' + esc(fmtDate(t.completedAt)) + '</td>'
+                + '<td class="num">' + esc(t.daysOpen) + '</td>'
+              : '')
           + '</tr>';
       }).join('');
     }
