@@ -4383,16 +4383,18 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
 
   const [layersResult, inventoryResult, recentServicesResult, openWorkOrdersResult, groupIdsResult] = await Promise.all([
     // layers: data-driven from DB (never hardcoded list)
-    pool.query<{ id: string; name: string; type: string; asset_count: string; color: string | null; stroke_color: string | null; stroke_weight: string | null; fill_opacity: string | null }>(`
+    pool.query<{ id: string; name: string; type: string; sub_layer_key: string | null; asset_count: string; color: string | null; stroke_color: string | null; stroke_weight: string | null; fill_opacity: string | null; has_geometry: boolean }>(`
       SELECT
         ml.id,
         ml.display_name AS name,
         ml.layer_key AS type,
+        ml.sub_layer_key,
         COALESCE((SELECT COUNT(*) FROM assets a WHERE a.map_layer_id = ml.id AND a.is_archived = false), 0)::text AS asset_count,
         ml.color,
         ml.stroke_color,
         ml.stroke_weight::text,
-        ml.fill_opacity::text
+        ml.fill_opacity::text,
+        (ml.geojson_data IS NOT NULL AND jsonb_array_length(COALESCE((ml.geojson_data::jsonb -> 'features'), '[]'::jsonb)) > 0) AS has_geometry
       FROM map_layers ml
       WHERE ml.community_id = $1
       ORDER BY ml.layer_key, ml.sub_layer_key
@@ -4494,11 +4496,13 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       id: r.id,
       name: r.name,
       type: r.type,
+      subLayerKey: r.sub_layer_key ?? null,
       assetCount: Number(r.asset_count),
       color: r.color ?? null,
       strokeColor: r.stroke_color ?? null,
       strokeWeight: r.stroke_weight != null ? Number(r.stroke_weight) : null,
       fillOpacity: r.fill_opacity != null ? Number(r.fill_opacity) : null,
+      hasGeometry: r.has_geometry ?? false,
     })),
     inventory: inventoryResult.rows.map(r => ({
       assetType: r.asset_type,

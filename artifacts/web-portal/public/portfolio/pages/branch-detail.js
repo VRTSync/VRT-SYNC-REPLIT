@@ -9,32 +9,58 @@
  * Renders:
  *   • Branch Selector block (dropdown + ‹ › arrows)
  *   • Title row (name, PNC code, address · city, group chip)
- *   • Layer tab bar — "Summary" always first, then one tab per layer in API order
- *   • Tab content — Summary tab + per-layer content (KPI strip, map placeholder,
- *     inventory table, service history); Snow layer appends snowSeason block
+ *   • Layer tab bar — "Summary" always first, then one tab per main-layer category
+ *     (Site Grounds, Irrigation, Snow, Trees).  Each category tab has a sub-layer
+ *     toggle panel, combined KPI strip, lazy map, and inventory table.
+ *   • Snow category tab prepends a winter season block when data is available.
  */
 (function () {
   'use strict';
 
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
 
+  /**
+   * Ordered list of main layer categories.  Tabs appear in this order; any
+   * layer_key not listed here falls through with a title-cased label so a
+   * new type surfaces automatically without code changes.
+   */
+  var LAYER_HIERARCHY = [
+    { key: 'community',  label: 'Site Grounds' },
+    { key: 'irrigation', label: 'Irrigation'   },
+    { key: 'snow',       label: 'Snow'          },
+    { key: 'trees',      label: 'Trees'         },
+  ];
+
+  /** Return tab accent class set for a main-layer category key. */
+  function categoryAccent(key) {
+    if (key === 'irrigation') return { cls: 't-blue',  panel: 'p-blue',  invcBorder: 'b-blue'  };
+    if (key === 'trees')      return { cls: 't-green', panel: 'p-green', invcBorder: 'b-green' };
+    if (key === 'community')  return { cls: 't-lime',  panel: 'p-green', invcBorder: 'b-lime'  };
+    if (key === 'snow')       return { cls: 't-slate', panel: 'p-slate', invcBorder: 'b-gray'  };
+    // Unknown category — use teal defaults
+    return { cls: '', panel: '', invcBorder: 'b-teal' };
+  }
+
   // ── Per-branch Leaflet map state ──────────────────────────────────────────
   // One shared iframe is created per branch detail render and moved between
   // tab pane slots. GeoJSON is fetched lazily (per-tab on first visit) and
   // cached in geojsonCache for the lifetime of the current branch view.
   var _bMap = {
-    iframe:        null,
-    ready:         false,
-    pending:       [],
-    handler:       null,
-    geojsonCache:  null, // Map<layerId, geojson|null> — null = fetched but no geometry
-    addedSet:      null, // Set<layerId>  — layers already sent to iframe via addLayers
-    layerColors:   null, // Record<layerId, hex> — original colour per layer (for dimming)
-    branchId:      null, // current branch id (for GeoJSON URL construction)
-    allLayers:     null, // all layers array for current branch (includes outline)
-    serviceLayers: null, // layers where type !== 'outline' — used for tab bar
-    outlineLayer:  null, // first outline layer, if any — pushed as context shape
-    container:     null, // container element (for slot lookup in lazy handlers)
+    iframe:           null,
+    ready:            false,
+    pending:          [],
+    handler:          null,
+    geojsonCache:     null, // Map<layerId, geojson|null> — null = fetched but no geometry
+    addedSet:         null, // Set<layerId>  — layers already sent to iframe via addLayers
+    layerColors:      null, // Record<layerId, hex> — original colour per layer
+    branchId:         null, // current branch id (for GeoJSON URL construction)
+    allLayers:        null, // all layers array for current branch (includes outline)
+    serviceLayers:    null, // layers where type !== 'outline'
+    outlineLayer:     null, // first outline layer, if any — pushed as context shape
+    container:        null, // container element (for slot lookup in lazy handlers)
+    categoryGroups:   null, // Record<categoryKey, Layer[]> — service layers per category
+    categoryOrder:    null, // string[] — ordered category keys that have service layers
+    checkedSubLayers: null, // Record<categoryKey, Set<layerId>> — toggle state per category
   };
 
   function _bCmd(fn) {
@@ -56,6 +82,7 @@
     _bMap.geojsonCache = null; _bMap.addedSet = null; _bMap.layerColors = null;
     _bMap.branchId = null; _bMap.allLayers = null; _bMap.container = null;
     _bMap.serviceLayers = null; _bMap.outlineLayer = null;
+    _bMap.categoryGroups = null; _bMap.categoryOrder = null; _bMap.checkedSubLayers = null;
   }
 
   /** Dot colour → hex for layer styling (tab underlines/dots only — not geometry). */
@@ -147,7 +174,7 @@
       toAdd.push({
         id: layer.id,
         layerKey:    layer.type || 'community',
-        subLayerKey: layer.type || 'community',
+        subLayerKey: layer.subLayerKey || layer.type || 'community',
         displayName: layer.name,
         color:       color,
         geojson:     geojson,
@@ -216,63 +243,112 @@
   }
 
   /**
-   * Show a specific layer tab: lazily fetch only that layer (cache hit = instant),
-   * push it to the iframe if new, then show ALL loaded layers but dim the inactive
-   * ones via updateLayerColor — so the active layer stands out while the others
-   * remain visible as a greyed-out context layer.
-   * No network activity if the layer was already loaded.
+   * Show a category tab: lazily fetch all layers in the category, push new ones to
+   * the iframe, then show only the checked sub-layers at their full colours.
+   * Layers from other categories remain in the iframe's cache but are hidden via
+   * showLayerIds.  The outline is always re-sent as context.
    */
-  function _showLayerTab(layer) {
-    if (!layer) return;
-    _fetchLayer(layer).then(function (geojson) {
-      if (!geojson) { _showNoGeometry('bmap-layer-' + layer.id); return; }
-      var gmap = {}; gmap[layer.id] = geojson;
-      _pushNewLayers([layer], gmap);
-      // Collect all layers that have been loaded into the iframe
-      var loadedIds = Array.from(_bMap.addedSet);
-      _bCmd('showLayerIds', loadedIds);
-      // Active layer: full admin colour; others: washed-out tint derived from
-      // each layer's own colour so they stay contextually visible but subdued.
-      loadedIds.forEach(function (id) {
-        if (id === layer.id) {
-          _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
-        } else {
-          _bCmd('updateLayerColor', id, _dimHex(_bMap.layerColors[id] || '#25C1AC'));
-        }
+  function _showCategoryTab(categoryKey) {
+    var layers = (_bMap.categoryGroups && _bMap.categoryGroups[categoryKey]) || [];
+    if (layers.length === 0) { _showNoGeometry('bmap-cat-' + categoryKey); return; }
+
+    Promise.all(layers.map(function (l) {
+      return _fetchLayer(l).then(function (g) { return { id: l.id, layer: l, g: g }; });
+    })).then(function (results) {
+      var gmap = {};
+      results.forEach(function (r) { gmap[r.id] = r.g; });
+      _pushNewLayers(layers, gmap);
+
+      // Ensure iframe is in the category map slot
+      var slot = _bMap.container && _bMap.container.querySelector('#bmap-cat-' + categoryKey);
+      if (!slot) { return; }
+      if (_bMap.iframe && _bMap.iframe.parentNode !== slot) slot.appendChild(_bMap.iframe);
+
+      // Update any "no data" disabled state in the sub-layer panel based on actual geometry
+      _syncSubLayerPanelState(categoryKey, gmap);
+
+      // Collect checked + has-geometry sub-layer IDs
+      var checkedSet = (_bMap.checkedSubLayers && _bMap.checkedSubLayers[categoryKey]) || new Set();
+      var checkedIds = layers
+        .filter(function (l) { return checkedSet.has(l.id) && gmap[l.id]; })
+        .map(function (l) { return l.id; });
+
+      // If nothing has any geometry at all, show placeholder
+      var anyGeometry = layers.some(function (l) { return gmap[l.id]; });
+      if (!anyGeometry) { _showNoGeometry('bmap-cat-' + categoryKey); return; }
+
+      // Restore all loaded layer colours (no dimming — category view shows/hides)
+      Array.from(_bMap.addedSet).forEach(function (id) {
+        _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
       });
+
+      _bCmd('showLayerIds', checkedIds);
       _bCmd('fitToContent', [], null);
-      // Always re-send the outline so it remains visible on this tab view
       _pushOutline();
     });
   }
 
   /**
-   * Move the shared iframe into the named slot, then trigger lazy loading
-   * for the appropriate tab content.
-   * tabIdx 0 = Summary; tabIdx > 0 = layers[tabIdx-1].
+   * After fetching GeoJSON for a category, update the sub-layer checkbox rows in
+   * the DOM to reflect actual geometry availability (disables rows with no data,
+   * adds "no data" hint).  Defensive — no-ops if the panel elements are absent.
+   */
+  function _syncSubLayerPanelState(categoryKey, gmap) {
+    if (!_bMap.container) return;
+    var rows = _bMap.container.querySelectorAll('.bd-sublayer-row[data-category-key="' + categoryKey + '"]');
+    rows.forEach(function (row) {
+      var layerId = row.getAttribute('data-layer-id');
+      var hasGeometry = !!(gmap && gmap[layerId]);
+      var cb = row.querySelector('input[type="checkbox"]');
+      if (!hasGeometry) {
+        row.classList.add('bd-sublayer-row--disabled');
+        if (cb) { cb.disabled = true; cb.checked = false; }
+        // Add "no data" hint if not already present
+        if (!row.querySelector('.bd-no-data')) {
+          var label = row.querySelector('.bd-sub-label');
+          if (label) {
+            var hint = document.createElement('span');
+            hint.className = 'bd-no-data';
+            hint.textContent = 'no data';
+            label.parentNode.insertBefore(hint, label.nextSibling);
+          }
+        }
+        // Remove from checked set
+        if (_bMap.checkedSubLayers && _bMap.checkedSubLayers[categoryKey]) {
+          _bMap.checkedSubLayers[categoryKey].delete(layerId);
+        }
+      } else {
+        row.classList.remove('bd-sublayer-row--disabled');
+        if (cb) { cb.disabled = false; }
+      }
+    });
+  }
+
+  /**
+   * Move the shared iframe into the named slot, then trigger lazy loading.
+   * tabIdx 0 = Summary; tabIdx > 0 = categoryOrder[tabIdx-1].
    */
   function _switchToTab(tabIdx) {
     if (!_bMap.iframe || !_bMap.container) return;
-    var layers = _bMap.serviceLayers || [];
-    var slotId, layer;
+    var slotId, categoryKey;
     if (tabIdx === 0) {
       slotId = 'bmap-summary';
     } else {
-      layer = layers[tabIdx - 1];
-      if (!layer) return;
-      slotId = 'bmap-layer-' + layer.id;
+      var order = _bMap.categoryOrder || [];
+      categoryKey = order[tabIdx - 1];
+      if (!categoryKey) return;
+      slotId = 'bmap-cat-' + categoryKey;
     }
     var slot = _bMap.container.querySelector('#' + slotId);
-    if (!slot) return; // this layer has no geometry — no slot was rendered
+    if (!slot) return;
     slot.appendChild(_bMap.iframe);
-    // invariant: after tab switch, active layer id is in showLayerIds set and map container is sized.
-    // Moving the iframe to a new DOM slot resets its layout box; invalidateSize tells Leaflet to
-    // recalculate its container dimensions so tiles and vectors render at the correct size.
+    // Moving the iframe to a new DOM slot resets its layout box; invalidateSize
+    // tells Leaflet to recalculate its container dimensions.
     _bCmd('invalidateSize');
     if (tabIdx === 0) {
       _showSummaryTab();
     } else {
-      _showLayerTab(layer);
+      _showCategoryTab(categoryKey);
     }
   }
 
@@ -284,21 +360,58 @@
   function setupBranchMaps(container, data) {
     _bTeardown();
     var layers = data.layers || [];
-    _bMap.geojsonCache  = new Map();
-    _bMap.addedSet      = new Set();
-    _bMap.layerColors   = {};
-    _bMap.branchId      = data.branch.id;
-    _bMap.allLayers     = layers;
-    _bMap.serviceLayers = layers.filter(function (l) { return l.type !== 'outline'; });
-    _bMap.outlineLayer  = layers.find(function (l) { return l.type === 'outline'; }) || null;
-    _bMap.container     = container;
+    var serviceLayers = layers.filter(function (l) { return l.type !== 'outline'; });
+
+    // Build category groups ordered by LAYER_HIERARCHY; unknown types appended after.
+    var categoryGroups = {};
+    var categoryOrder = [];
+    var seenKeys = {};
+
+    // Process in LAYER_HIERARCHY order first
+    LAYER_HIERARCHY.forEach(function (cat) {
+      var group = serviceLayers.filter(function (l) { return l.type === cat.key; });
+      if (group.length > 0) {
+        categoryGroups[cat.key] = group;
+        categoryOrder.push(cat.key);
+        seenKeys[cat.key] = true;
+      }
+    });
+    // Append any unknown category keys not in LAYER_HIERARCHY
+    serviceLayers.forEach(function (l) {
+      if (!seenKeys[l.type]) {
+        if (!categoryGroups[l.type]) { categoryGroups[l.type] = []; categoryOrder.push(l.type); }
+        categoryGroups[l.type].push(l);
+        seenKeys[l.type] = true;
+      }
+    });
+
+    // Initialize checked sub-layers: all layers with hasGeometry start checked
+    var checkedSubLayers = {};
+    categoryOrder.forEach(function (key) {
+      checkedSubLayers[key] = new Set();
+      (categoryGroups[key] || []).forEach(function (l) {
+        if (l.hasGeometry) checkedSubLayers[key].add(l.id);
+      });
+    });
+
+    _bMap.geojsonCache      = new Map();
+    _bMap.addedSet          = new Set();
+    _bMap.layerColors       = {};
+    _bMap.branchId          = data.branch.id;
+    _bMap.allLayers         = layers;
+    _bMap.serviceLayers     = serviceLayers;
+    _bMap.outlineLayer      = layers.find(function (l) { return l.type === 'outline'; }) || null;
+    _bMap.container         = container;
+    _bMap.categoryGroups    = categoryGroups;
+    _bMap.categoryOrder     = categoryOrder;
+    _bMap.checkedSubLayers  = checkedSubLayers;
 
     // Mount in summary slot — always present now that we render it unconditionally.
-    // Fall back to first layer slot in case the branch has no summary panel.
     var slot = container.querySelector('#bmap-summary');
     if (!slot) {
-      for (var i = 0; i < layers.length; i++) {
-        slot = container.querySelector('#bmap-layer-' + layers[i].id);
+      // Fallback: first category slot
+      for (var i = 0; i < categoryOrder.length; i++) {
+        slot = container.querySelector('#bmap-cat-' + categoryOrder[i]);
         if (slot) break;
       }
     }
@@ -447,23 +560,92 @@
       + '</div>';
   }
 
+  // ── Category label helper ─────────────────────────────────────────────────
+  function _categoryLabel(key) {
+    var entry;
+    for (var i = 0; i < LAYER_HIERARCHY.length; i++) {
+      if (LAYER_HIERARCHY[i].key === key) { entry = LAYER_HIERARCHY[i]; break; }
+    }
+    if (entry) return entry.label;
+    // Unknown key — title-case it
+    return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+  }
+
+  /**
+   * Build ordered category groups from service layers.
+   * Returns { groups: Record<key,Layer[]>, order: string[] }.
+   */
+  function _buildCategoryGroups(serviceLayers) {
+    var groups = {};
+    var order  = [];
+    var seen   = {};
+    LAYER_HIERARCHY.forEach(function (cat) {
+      var group = serviceLayers.filter(function (l) { return l.type === cat.key; });
+      if (group.length > 0) {
+        groups[cat.key] = group;
+        order.push(cat.key);
+        seen[cat.key] = true;
+      }
+    });
+    serviceLayers.forEach(function (l) {
+      if (!seen[l.type]) {
+        if (!groups[l.type]) { groups[l.type] = []; order.push(l.type); }
+        groups[l.type].push(l);
+        seen[l.type] = true;
+      }
+    });
+    return { groups: groups, order: order };
+  }
+
   // ── Tab bar ────────────────────────────────────────────────────────────────
-  function renderTabBar(layers, activeIdx) {
+  // Renders one tab per main-layer category (not per sub-layer).
+  // Badge shows summed asset count across all sub-layers in the category.
+  function renderTabBar(categoryOrder, categoryGroups, activeIdx) {
     // activeIdx 0 = Summary
     var summaryOn = activeIdx === 0 ? ' on' : '';
     var tabs = '<div class="tab' + summaryOn + '" data-tab-idx="0">Summary</div>';
 
-    layers.forEach(function (layer, i) {
-      var idx = i + 1;
-      var accent = layerAccent(layer);
-      var on = activeIdx === idx ? ' on' : '';
-      tabs += '<div class="tab ' + accent.cls + on + '" data-tab-idx="' + idx + '">'
-        + esc(layer.name)
-        + '<span class="tcount">' + esc(layer.assetCount) + '</span>'
+    categoryOrder.forEach(function (key, i) {
+      var idx        = i + 1;
+      var accent     = categoryAccent(key);
+      var label      = _categoryLabel(key);
+      var catLayers  = categoryGroups[key] || [];
+      var totalCount = catLayers.reduce(function (s, l) { return s + (l.assetCount || 0); }, 0);
+      var on         = activeIdx === idx ? ' on' : '';
+      tabs += '<div class="tab ' + accent.cls + on + '" data-tab-idx="' + idx + '" data-category-key="' + esc(key) + '">'
+        + esc(label)
+        + '<span class="tcount">' + esc(totalCount) + '</span>'
         + '</div>';
     });
 
     return '<div class="tabs" id="branch-tab-bar">' + tabs + '</div>';
+  }
+
+  // ── Sub-layer toggle panel ─────────────────────────────────────────────────
+  // Renders one checkbox row per sub-layer with colour swatch and asset count.
+  // Rows are disabled (with "no data" hint) only when hasGeometry is false.
+  function renderSubLayerPanel(categoryKey, layers) {
+    if (layers.length === 0) return '';
+    var rows = layers.map(function (layer) {
+      var color        = _isValidHex(layer.color) ? layer.color.trim() : _dotHex(layerAccent(layer));
+      var hasGeo       = layer.hasGeometry;
+      var disabledAttr = hasGeo ? '' : ' disabled';
+      var disabledCls  = hasGeo ? '' : ' bd-sublayer-row--disabled';
+      var checkedAttr  = hasGeo ? ' checked' : '';
+      var noDataHint   = hasGeo ? '' : '<span class="bd-no-data">no data</span>';
+      return '<label class="bd-sublayer-row' + disabledCls + '"'
+        + ' data-category-key="' + esc(categoryKey) + '"'
+        + ' data-layer-id="' + esc(layer.id) + '">'
+        + '<input type="checkbox"' + checkedAttr + disabledAttr
+          + ' data-category-key="' + esc(categoryKey) + '"'
+          + ' data-layer-id="' + esc(layer.id) + '">'
+        + '<span class="bd-sub-dot" style="background:' + esc(color) + '"></span>'
+        + '<span class="bd-sub-label">' + esc(layer.name) + '</span>'
+        + noDataHint
+        + '<span class="bd-sub-count">' + esc(layer.assetCount) + '</span>'
+        + '</label>';
+    }).join('');
+    return '<div class="bd-sublayer-panel">' + rows + '</div>';
   }
 
   // ── KPI strip (4-cell) ─────────────────────────────────────────────────────
@@ -576,39 +758,45 @@
       + '<div class="two-col">' + svcPanel + woPanel + '</div>';
   }
 
-  // ── Layer tab content ──────────────────────────────────────────────────────
-  function renderLayerContent(layer, data) {
-    var accent    = layerAccent(layer);
-    var inventory = data.inventory || [];
-    var svcs      = data.recentServices || [];
+  // ── Category tab content ─────────────────────────────────────────────────
+  // One pane per main-layer category.  Shows sub-layer toggle panel + map +
+  // combined KPI/inventory for all sub-layers in the category.
+  function renderCategoryContent(categoryKey, categoryLayers, data) {
+    var accent        = categoryAccent(categoryKey);
+    var categoryLabel = _categoryLabel(categoryKey);
+    var inventory     = data.inventory || [];
+    var svcs          = data.recentServices || [];
 
-    // Filter inventory to this layer's assets
-    var layerInv = inventory.filter(function (inv) {
-      return inv.layerId === layer.id;
+    // Filter inventory to all sub-layers in this category
+    var catLayerIds = categoryLayers.map(function (l) { return l.id; });
+    var catInv = inventory.filter(function (inv) {
+      return catLayerIds.indexOf(inv.layerId) !== -1;
     });
 
-    // KPI strip
-    var distinctTypes   = layerInv.length;
-    var totalInvAssets  = layerInv.reduce(function (s, inv) { return s + inv.count; }, 0);
-    var lastSvcDate     = svcs.length > 0 ? fmtDate(svcs[0].date) : '—';
+    var totalAssets  = categoryLayers.reduce(function (s, l) { return s + (l.assetCount || 0); }, 0);
+    var distinctTypes = catInv.length;
+    var lastSvcDate   = svcs.length > 0 ? fmtDate(svcs[0].date) : '—';
+
+    var subLayerPanel = renderSubLayerPanel(categoryKey, categoryLayers);
+
     var kpiStrip = renderKpiStrip([
-      { label: 'Assets',       value: layer.assetCount || 0, border: accent.invcBorder },
-      { label: 'Asset Types',  value: distinctTypes,         border: accent.invcBorder },
-      { label: 'Last Service', value: lastSvcDate,           border: 'b-teal'          },
-      { label: 'Open Items',   value: (data.openWorkOrders || []).length, border: 'b-amber' },
+      { label: 'Assets',       value: totalAssets,                        border: accent.invcBorder },
+      { label: 'Asset Types',  value: distinctTypes,                      border: accent.invcBorder },
+      { label: 'Last Service', value: lastSvcDate,                        border: 'b-teal'          },
+      { label: 'Open Items',   value: (data.openWorkOrders || []).length, border: 'b-amber'         },
     ]);
 
     // Always render the map panel — geometry is fetched lazily and a
     // "no geometry" notice is shown in-slot if the API returns nothing.
-    var mapHtml = renderMapPanel(layer.name + ' Map', accent.panel, 'bmap-layer-' + layer.id);
+    var mapHtml = renderMapPanel(categoryLabel + ' Map', accent.panel, 'bmap-cat-' + categoryKey);
 
-    // Inventory table
+    // Inventory table (all sub-layers combined)
     var invRows;
-    if (layerInv.length === 0) {
-      invRows = '<div class="pf-empty">No assets mapped for this layer yet.</div>';
+    if (catInv.length === 0) {
+      invRows = '<div class="pf-empty">No assets mapped for this category yet.</div>';
     } else {
       invRows = '<table><thead><tr><th>Asset Type</th><th class="num">Count</th></tr></thead><tbody>'
-        + layerInv.map(function (inv) {
+        + catInv.map(function (inv) {
             var typeName = (inv.assetType || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
             return '<tr><td class="bname">' + esc(typeName) + '</td><td class="num">' + esc(inv.count) + '</td></tr>';
           }).join('')
@@ -616,31 +804,27 @@
     }
 
     var invPanel = '<div class="panel ' + esc(accent.panel) + '">'
-      + '<div class="panel-head"><h2>' + esc(layer.name) + ' Inventory</h2></div>'
+      + '<div class="panel-head"><h2>' + esc(categoryLabel) + ' Inventory</h2></div>'
       + invRows
       + '</div>';
 
-    // Service history — branch-wide services are shown on Summary only.
-    // Layer-level attribution is not available in the current API schema, so
-    // individual layer tabs show an honest empty state rather than misleading
-    // the viewer into thinking all branch services belong to this layer.
+    // Service history — branch-wide services shown on Summary; per-layer attribution not yet available
     var svcContent = '<div class="pf-empty" style="font-style:italic;color:var(--gray-400);">'
       + 'Per-layer service history will appear here once service records include layer attribution.'
       + '</div>';
 
     var svcPanel = '<div class="panel ' + esc(accent.panel) + '">'
-      + '<div class="panel-head"><h2>' + esc(layer.name) + ' Service History</h2>'
+      + '<div class="panel-head"><h2>' + esc(categoryLabel) + ' Service History</h2>'
       + (svcs.length > 0 ? '<span class="hint">' + esc(svcs.length) + ' recent</span>' : '')
       + '</div>'
       + svcContent
       + '</div>';
 
-    var contentHtml = kpiStrip + mapHtml
+    var contentHtml = subLayerPanel + kpiStrip + mapHtml
       + '<div class="two-col">' + invPanel + svcPanel + '</div>';
 
-    // Snow-type extra block
-    var isSnow = /snow|winter|ice/.test((layer.name || '').toLowerCase() + ' ' + (layer.type || '').toLowerCase());
-    if (isSnow) {
+    // Snow category: prepend winter season block
+    if (categoryKey === 'snow') {
       var snowSeason = data.snowSeason;
       var snowBlock;
       if (snowSeason) {
@@ -666,42 +850,43 @@
 
   // ── Full detail page ───────────────────────────────────────────────────────
   function renderDetailPage(container, data, branchId) {
-    var state      = window.PortfolioState || {};
+    var state       = window.PortfolioState || {};
     var allBranches = Array.isArray(state.branches) ? state.branches : [];
     var groups      = Array.isArray(state.groups)   ? state.groups   : [];
     var groupLookup = buildGroupLookup(groups);
 
     var branch = data.branch;
     var layers = data.layers || [];
-    // Exclude outline layers from the tab bar — they are boundary shapes, not
-    // service layers.  The outline is pushed separately via setCommunityOutline
-    // so it always appears as a neutral context shape on every map view.
+    // Exclude outline layers — pushed separately as context shape, never a tab.
     var serviceLayers = layers.filter(function (l) { return l.type !== 'outline'; });
+
+    // Group service layers into ordered main-layer categories
+    var catResult      = _buildCategoryGroups(serviceLayers);
+    var categoryOrder  = catResult.order;
+    var categoryGroups = catResult.groups;
 
     var selectorHtml = renderSelectorBlock(branchId, allBranches);
     var titleHtml    = renderTitleRow(branch, groupLookup);
-    var tabBarHtml   = renderTabBar(serviceLayers, 0 /* start on Summary */);
+    var tabBarHtml   = renderTabBar(categoryOrder, categoryGroups, 0 /* start on Summary */);
 
-    // Build all tab pane HTML (hidden except index 0)
+    // Summary pane (always index 0)
     var summaryPane = '<div class="tabpane on" data-pane-idx="0">'
       + renderSummaryTab(data)
       + '</div>';
 
-    var layerPanes = serviceLayers.map(function (layer, i) {
-      return '<div class="tabpane" data-pane-idx="' + (i + 1) + '">'
-        + renderLayerContent(layer, data)
+    // One pane per main-layer category
+    var categoryPanes = categoryOrder.map(function (key, i) {
+      var catLayers = categoryGroups[key] || [];
+      return '<div class="tabpane" data-pane-idx="' + (i + 1) + '" data-category-key="' + esc(key) + '">'
+        + renderCategoryContent(key, catLayers, data)
         + '</div>';
     }).join('');
 
-    container.innerHTML = selectorHtml + titleHtml + tabBarHtml + summaryPane + layerPanes;
+    container.innerHTML = selectorHtml + titleHtml + tabBarHtml + summaryPane + categoryPanes;
 
-    // Wire selector block
     wireSelectorBlock(container, branchId, allBranches);
-
-    // Wire tab bar (pass service layers so slot switching works)
-    wireTabBar(container, serviceLayers);
-
-    // Mount live Leaflet maps
+    wireTabBar(container);
+    wireSubLayerToggles(container);
     setupBranchMaps(container, data);
   }
 
@@ -775,7 +960,7 @@
   }
 
   // ── Wire tab bar ───────────────────────────────────────────────────────────
-  function wireTabBar(container, layers) {
+  function wireTabBar(container) {
     var tabs  = container.querySelectorAll('#branch-tab-bar .tab');
     var panes = container.querySelectorAll('.tabpane[data-pane-idx]');
 
@@ -790,9 +975,42 @@
         var target = container.querySelector('.tabpane[data-pane-idx="' + idx + '"]');
         if (target) target.classList.add('on');
 
-        // Move the shared iframe to the new slot and lazy-load its geometry.
-        // Tab 0 = Summary (shows all layers); others = single-layer (others hidden).
+        // Move the shared iframe to the new slot and lazy-load geometry.
+        // Tab 0 = Summary (all layers); Tab N = categoryOrder[N-1].
         _switchToTab(idx);
+      });
+    });
+  }
+
+  // ── Wire sub-layer toggle checkboxes ──────────────────────────────────────
+  function wireSubLayerToggles(container) {
+    container.querySelectorAll('.bd-sublayer-row input[type="checkbox"]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var categoryKey = cb.getAttribute('data-category-key');
+        var layerId     = cb.getAttribute('data-layer-id');
+        if (!categoryKey || !layerId || !_bMap.checkedSubLayers) return;
+
+        if (!_bMap.checkedSubLayers[categoryKey]) _bMap.checkedSubLayers[categoryKey] = new Set();
+        if (cb.checked) {
+          _bMap.checkedSubLayers[categoryKey].add(layerId);
+        } else {
+          _bMap.checkedSubLayers[categoryKey].delete(layerId);
+        }
+
+        // Build the visible ID list: checked sub-layers that have actual geometry
+        var catLayers = (_bMap.categoryGroups && _bMap.categoryGroups[categoryKey]) || [];
+        var checkedSet = _bMap.checkedSubLayers[categoryKey];
+        var checkedIds = catLayers.filter(function (l) {
+          return checkedSet.has(l.id) && _bMap.geojsonCache && _bMap.geojsonCache.get(l.id);
+        }).map(function (l) { return l.id; });
+
+        // Restore all loaded layer colours to full (no dimming — category view shows/hides)
+        Array.from(_bMap.addedSet || []).forEach(function (id) {
+          _bCmd('updateLayerColor', id, _bMap.layerColors[id] || '#25C1AC');
+        });
+
+        _bCmd('showLayerIds', checkedIds);
+        _bCmd('fitToContent', [], null);
       });
     });
   }
