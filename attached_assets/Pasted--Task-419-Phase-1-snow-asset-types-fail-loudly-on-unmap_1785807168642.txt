@@ -1,0 +1,87 @@
+# Task #419: Phase 1 — snow asset types + fail loudly on unmapped sub-layers
+
+## What & Why
+
+Uploading a snow layer (Hand Shovel, Ice Melt, Truck Plow) creates the **layer** and stores its geometry, but syncs **zero assets**. Confirmed live on FB02: `Hand Shovel 0`, `Ice Melt 0`, `Truck Plow 0` while `Trees 35` works.
+
+Cause: `SUB_LAYER_TO_ASSET_TYPE` (`artifacts/api-server/src/assetSync.ts` ~84–106) maps snow sub-layers to asset types that **do not exist in the `asset_type` enum**:
+
+```ts
+"snow/plow": "plow",  "snow/atv": "atv",  "snow/hand_shovel": "hand_shovel",
+"snow/ice_melt": "ice_melt",  "snow/slicer": "slicer",  "snow/storage_area": "storage_area",
+"snow/snow_area": "snow_area",   // ← the only one that exists
+```
+
+Actual enum: `controller, backflow, zone, tree, pet_station, landscape_bed, bluegrass_area, native_area, snow_area, master_valve, flow_meter, pump, quick_connect, isolation_valve, splice`.
+
+So asset inserts fail on the enum value and the user is told nothing. **The silence is the worse bug** — this cost a day of debugging.
+
+This task adds the missing types and makes any future mismatch fail loudly. It is deliberately scoped small; the data-driven refactor is Task #420.
+
+## Done looks like
+
+- Uploading each snow sub-layer creates assets: Hand Shovel, Ice Melt, Truck Plow, ATV, Slicer, Storage Area.
+- FB02's snow layers show non-zero asset counts in admin, the portal map, and the client portfolio.
+- Uploading a layer whose `(layerKey, subLayerKey)` has **no** asset-type mapping, or maps to a value not in the enum, returns a **clear 400** naming the key pair — before any layer row is created. No silent zero-asset imports, ever.
+- Asset sync reports per-feature failures instead of swallowing them: the upload response includes `syncResult.failed` with a reason, and the UI surfaces it.
+- Completeness math treats the new types sensibly (they appear in `ASSET_TYPE_TEMPLATES`).
+- Existing HOA/community/tree/irrigation imports behave exactly as before.
+
+## Steps
+
+### 1. Migration `0010_add_snow_asset_types.sql`
+
+Add to `asset_type`, each as its own statement with `--> statement-breakpoint`, following `0008`'s pattern:
+
+```
+plow, atv, hand_shovel, ice_melt, slicer, storage_area
+```
+
+Use `ALTER TYPE "public"."asset_type" ADD VALUE IF NOT EXISTS '<value>';`. Update `lib/db/migrations/meta/_journal.json` (idx 10, correct current timestamp). Update `assetTypeEnum` in `lib/db/src/schema/schema.ts` to match exactly.
+
+### 2. Field templates for the new types
+
+In `artifacts/api-server/src/assetSync.ts` `ASSET_TYPE_TEMPLATES`, add entries for all six. Keep required keys minimal and honest — these are service areas/routes, so something like `requiredKeys: []` with useful optional keys (e.g. `surface`, `priority`, `equipment`, `notes`) unless HP specifies otherwise. **Do not invent required fields**, since required keys drive the completeness percentage shown to clients.
+
+Mirror the same additions into `artifacts/api-server/src/shared/assetFieldTemplates.ts` **and** copy to `artifacts/vrtsync-mobile/shared/` (manual copy per `replit.md`; run `diff -rq` to prove they match).
+
+### 3. Fail loudly — validate before creating the layer
+
+In the map-layer upload routes (`/api/map-layers/upload`, `/api/map-layers/upload-irrigation`, `POST /api/map-layers`):
+
+- Before inserting the layer, call `resolveAssetType(layerKey, subLayerKey)`. If it returns `null`, respond **400** with: `"No asset type is configured for layer '<layerKey>/<subLayerKey>'. Add a mapping before importing this layer."`
+- Additionally validate that the resolved type is a **current enum value** (compare against the enum list exported from the schema). If not, 400 with a message naming the missing type — this is exactly the snow failure mode.
+- Do this **before** any write so a rejected upload leaves no orphan layer.
+
+### 4. Surface per-feature sync failures
+
+- `syncAssetsFromLayer` currently returns `{ created, updated, archived, skippedMissingId, total }`. Add `failed: number` and `failures: Array<{ featureRef, reason }>` (cap at ~20 entries).
+- Wrap per-feature inserts so one bad feature doesn't abort the batch, and log the reason server-side.
+- Include the counts in the upload response, and show them in the admin upload result panel: e.g. `"Imported 12 assets · 3 failed — see details"`.
+
+### 5. Backfill FB02
+
+After deploy, re-import (or re-sync) FB02's three snow layers and confirm assets appear. Use the existing replace/merge flow from #393 — no manual SQL.
+
+### 6. Verify
+
+- Upload each snow sub-layer → assets created, counts non-zero in admin + portfolio.
+- Upload a layer with a bogus sub-layer key → 400 with the exact message, and **no layer row created**.
+- Upload a valid layer containing one malformed feature → other features import, response reports `failed: 1` with a reason.
+- `diff -rq artifacts/api-server/src/shared artifacts/vrtsync-mobile/shared` → identical.
+- Existing tree/community/irrigation imports unchanged; completeness percentages don't move for existing communities.
+- Migration re-runs cleanly as a no-op; `/api/admin/migrations` shows `inSync: true` after deploy.
+
+## Out of scope
+
+- The data-driven asset-type refactor (Task #420).
+- Layer hierarchy lists in web/mobile map UIs (the new types render via existing snow sub-layer keys already present there).
+- Valve-box display, branch-detail map rendering (#418).
+
+## Relevant files
+
+- `lib/db/src/schema/schema.ts` (`assetTypeEnum` ~190), new `lib/db/migrations/0010_add_snow_asset_types.sql`, `meta/_journal.json`
+- `artifacts/api-server/src/assetSync.ts` (`SUB_LAYER_TO_ASSET_TYPE` ~84, `ASSET_TYPE_TEMPLATES` ~18, `resolveAssetType` ~108, `syncAssetsFromLayer` ~177)
+- `artifacts/api-server/src/routes/routes.ts` (upload routes ~2762, ~2832, ~2911)
+- `artifacts/api-server/src/shared/assetFieldTemplates.ts` + `artifacts/vrtsync-mobile/shared/` copy
+- `artifacts/web-portal/public/admin/pages/map-layers.js` (upload result panel)

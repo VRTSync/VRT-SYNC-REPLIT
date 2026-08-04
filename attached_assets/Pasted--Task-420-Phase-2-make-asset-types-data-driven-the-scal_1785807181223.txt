@@ -1,0 +1,92 @@
+# Task #420: Phase 2 — make asset types data-driven (the scalable fix)
+
+## What & Why
+
+Adding one service type to VRTSync currently requires a developer to touch **five hardcoded places**, in lockstep:
+
+1. `assetTypeEnum` in `lib/db/src/schema/schema.ts` (+ a migration)
+2. `SUB_LAYER_TO_ASSET_TYPE` in `artifacts/api-server/src/assetSync.ts`
+3. `ASSET_TYPE_TEMPLATES` in the same file (drives the **completeness percentage** clients see)
+4. `artifacts/api-server/src/shared/assetFieldTemplates.ts` — **manually copied** to `artifacts/vrtsync-mobile/shared/` (Metro limitation)
+5. `LAYER_HIERARCHY` in `artifacts/web-portal/public/portal/pages/map.js` **and** `artifacts/vrtsync-mobile/app/(tabs)/map.tsx` **and** `(hoa-tabs)/map.tsx`
+
+Miss any one and the failure is silent or inconsistent (the snow-layer bug in #419 was exactly this — a mapping pointing at an enum value that didn't exist, with no error surfaced).
+
+This is fine for a fixed HOA feature set. It does not scale to commercial clients whose assets differ per industry — parking-lot sweeping, lighting, sidewalk inspection, dock areas. Onboarding a client should not require a deploy.
+
+**Goal:** one `asset_types` table as the source of truth; the enum, mapping table, field templates, and layer hierarchies all read from it.
+
+## Guiding constraints
+
+- **Values must not change.** `assets.asset_type` keeps the exact same string values (`tree`, `zone`, `hand_shovel`, …) so all ~46 files comparing string literals keep working untouched. This is a plumbing change, not a data rename.
+- **No downtime, no data loss.** Existing assets, completeness math, exports, offline packs, and the mobile app must behave identically the day this ships.
+- **Mobile stops needing a manual copy** — the app fetches type definitions from an endpoint and caches them (including in offline packs).
+- Ship behind verification, not behind a feature flag — the change is structural, and a half-migrated state is worse than either end.
+
+## Done looks like
+
+- New table `asset_types` holds every type currently in the enum, with: `key` (PK, matches today's enum values), `label`, `layerKey`, `subLayerKey`, `allowedGeometry` (json: point/polygon/line), `defaultColor`, `requiredKeys` (json), `optionalKeys` (json), `sortOrder`, `isActive`.
+- `assets.asset_type` converted from `pgEnum` to `varchar` with an FK to `asset_types.key`. **Values unchanged.**
+- `resolveAssetType(layerKey, subLayerKey)` becomes a lookup against `asset_types` (cached in-process, 60s) instead of a hardcoded Record.
+- `ASSET_TYPE_TEMPLATES` consumers (`storage.ts` ~517, ~973 — the completeness calculations) read `requiredKeys`/`optionalKeys` from the same source.
+- `GET /api/asset-types` (authenticated) returns the active types; the mobile app consumes it, caches it, and includes it in offline packs. `shared/assetFieldTemplates.ts` duplication is **removed**.
+- Layer hierarchy lists in the web portal map and both mobile map screens are built from the API response, not hardcoded arrays.
+- Admin UI: an "Asset Types" page under the admin hub — list, create, edit, deactivate. Creating a type requires no deploy.
+- Adding a brand-new type end-to-end (create in admin → upload a KML with that sub-layer → assets sync → visible on web + mobile maps with its color) works without touching code.
+
+## Steps
+
+### 1. Schema + seed migration
+
+- Create `asset_types`. Seed one row per existing enum value, with `layerKey`/`subLayerKey` taken from today's `SUB_LAYER_TO_ASSET_TYPE`, and `requiredKeys`/`optionalKeys` from today's `ASSET_TYPE_TEMPLATES`. Seed data must reproduce current behavior exactly.
+- Convert `assets.asset_type`: `ALTER TABLE assets ALTER COLUMN asset_type TYPE varchar USING asset_type::text;` then add the FK to `asset_types(key)`. Keep the old enum type in place (unused) rather than dropping it in this migration — dropping is a separate cleanup once nothing references it.
+- Idempotent, guarded, journal updated. **Take a database snapshot before deploying this one** — it is the first non-additive migration in the project.
+
+### 2. Server — read from the table
+
+- Replace `SUB_LAYER_TO_ASSET_TYPE` and `ASSET_TYPE_TEMPLATES` with cached queries (60s in-process cache, same pattern as `getAdminDashboard`).
+- Keep the exported function names (`resolveAssetType`, and a `getAssetTypeTemplate(key)`) so call sites don't churn.
+- `GET /api/asset-types` returns active types; include `updatedAt` so clients can cache-bust.
+
+### 3. Mobile — consume the endpoint, delete the copy
+
+- Fetch and cache asset types on app start; include them in the offline pack payload so field use is unaffected offline.
+- Delete `artifacts/vrtsync-mobile/shared/assetFieldTemplates.ts` and its server twin **only after** the app reads from the API. Update `replit.md`'s shared-code-duplication note accordingly (one fewer manual copy).
+
+### 4. Layer hierarchies from data
+
+- Build `LAYER_HIERARCHY` in `portal/pages/map.js` and both mobile map screens from the API (grouped by `layerKey`, ordered by `sortOrder`, colored by `defaultColor`).
+- Preserve current visual output for existing types — verify by comparing before/after screenshots of a mapped community.
+
+### 5. Admin UI — Asset Types page
+
+- List with filter by layer; create/edit form (key, label, layer/sub-layer, geometry, color, required/optional keys, active).
+- **Key is immutable after creation** (it's the FK value and lives in existing rows).
+- Deactivating hides a type from new imports/hierarchies but never alters existing assets.
+
+### 6. Verify — this is the important half
+
+- **Behavioral parity**: pick two mapped communities; record asset counts, completeness percentages, and map appearance before and after. They must match exactly.
+- Existing imports (tree, community, irrigation, snow) sync identically.
+- Mobile: crew map, HOA map, Map Creator render the same layers/colors; offline pack download + offline use still work with types cached.
+- Exports and reports that group by asset type are unchanged.
+- **New-type test**: create `parking_sweep` in the admin UI → upload a KML with `snow/parking_sweep`… (or a new layer key) → assets sync, layer appears on web and mobile with the chosen color — **with no code change and no deploy**.
+- Rollback plan documented in the PR: what to do if parity fails (the old enum type still exists, so reverting the column type is possible).
+
+## Out of scope
+
+- Renaming any existing asset type value.
+- Dropping the legacy `asset_type` enum (separate cleanup task once verified).
+- Per-client custom types (all types are global for now; client-scoped types are a later question).
+- Changing how assets themselves are created, edited, or synced beyond the type lookup.
+
+## Relevant files
+
+- `lib/db/src/schema/schema.ts` (`assetTypeEnum` ~190, `assets` ~220) + new migration
+- `artifacts/api-server/src/assetSync.ts` (`SUB_LAYER_TO_ASSET_TYPE` ~84, `ASSET_TYPE_TEMPLATES` ~18, `resolveAssetType` ~108)
+- `artifacts/api-server/src/storage.ts` (completeness math ~517, ~973)
+- `artifacts/api-server/src/shared/assetFieldTemplates.ts` + `artifacts/vrtsync-mobile/shared/` copy (to be removed)
+- `artifacts/web-portal/public/portal/pages/map.js` (`LAYER_HIERARCHY` ~20)
+- `artifacts/vrtsync-mobile/app/(tabs)/map.tsx`, `app/(hoa-tabs)/map.tsx` (`LAYER_HIERARCHY`)
+- `artifacts/vrtsync-mobile/client/` (offline pack payload)
+- `replit.md` (update the shared-code duplication note)
