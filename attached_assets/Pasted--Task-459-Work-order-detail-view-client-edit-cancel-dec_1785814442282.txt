@@ -1,0 +1,103 @@
+# Task #459: Work order detail view + client edit, cancel, decline, and comments
+
+## What & Why
+
+The Branch Portfolio's Work Orders page can currently only **list**, **submit**, and **approve**. There is no detail view and no way for a client to edit their own request, cancel it, decline an estimate, or ask a question. Items sit in "awaiting approval" with no path forward except a phone call — which is the workflow VRTSync exists to replace.
+
+This task adds a work-order detail view and the client-side actions that belong to the client, **without giving the client authority that belongs to the contractor.**
+
+## Authority model (enforce server-side, not just in the UI)
+
+| Action | Client may | Notes |
+|---|---|---|
+| View full detail, photos, location, history | ✅ always | |
+| Edit title/description/photos of **their own** request | ✅ only while `status = 'submitted'` and `acknowledgedAt IS NULL` | Once HP acknowledges, it's a shared record |
+| Cancel **their own** request | ✅ only while unacknowledged, reason required | |
+| Approve an estimate | ✅ | already exists; keep idempotent |
+| **Decline** an estimate | ✅ new, reason required | |
+| Comment on any work order | ✅ any stage | The pressure valve — "can this wait until Thursday?" |
+| Edit a contractor-flagged item | ❌ | Client responds via approve/decline/comment |
+| Change status, schedule, assignment, or estimate | ❌ | Contractor authority |
+| Edit or delete anything after work has started/completed | ❌ | The record is proof; it must be immutable |
+
+Every rule above must be checked on the server. UI hiding is presentation, not security.
+
+## Schema
+
+Existing columns cover most of this — `tasks.status` (`pending, in_progress, completed, submitted, acknowledged`), `acknowledgedAt`, `estimateCents`, `approvedAt`, `approvedBy`, `origin` (`'client'` for portal-submitted).
+
+Two additions needed:
+
+1. **Decline** — add `declinedAt timestamp NULL`, `declinedBy varchar NULL → users.id`, `declineReason text NULL` to `tasks`.
+2. **Comments** — new table `work_order_comments`: `id`, `taskId` (FK → tasks, cascade), `authorUserId` (FK → users), `body text NOT NULL`, `createdAt`. Keep it minimal; no editing or threading in this pass.
+
+Cancellation: use existing status rather than a new column — set `status = 'completed'`? **No.** Add `cancelledAt`, `cancelledBy`, `cancelReason` to `tasks` and leave status alone, so a cancelled request is never mistaken for completed work in any count or export. Additive migration, `IF NOT EXISTS` guards, journal entry with a correct timestamp.
+
+**Important:** audit every existing query that counts open/closed work (`getPortfolioDashboard`, `getPortfolioBranches`, `getPortfolioBranchDetail`, `/api/portfolio/work-orders`, admin dashboard) and exclude cancelled items from "open" counts. List the queries you changed in the implementation notes.
+
+## API (all `requireClientOrAdmin`, org-scoped — verify the task's community belongs to the caller's org before anything else)
+
+```
+GET    /api/portfolio/work-orders/:taskId            → full detail incl. comments, photos, location, timeline
+PATCH  /api/portfolio/work-orders/:taskId            → title/description (403 unless origin='client' AND acknowledgedAt IS NULL)
+POST   /api/portfolio/work-orders/:taskId/cancel     → { reason } (same guard as PATCH)
+POST   /api/portfolio/work-orders/:taskId/decline    → { reason } (403 if no estimate, or already approved)
+POST   /api/portfolio/work-orders/:taskId/comments   → { body }
+POST   /api/portfolio/work-orders/:taskId/photos     → attach already-uploaded object keys via the existing upload/confirm flow
+```
+
+- Approve and decline are mutually exclusive: declining an approved item → 409 with a clear message, and vice versa.
+- All are idempotent-safe: repeating an action returns current state, not a 500.
+
+## UI
+
+**Work order detail** — open from a row click on the Work Orders page (rows currently navigate to the branch; move that to an explicit branch link inside the detail). A panel or full page, matching portfolio styling:
+
+- Header: title, ref, branch, status chip, source
+- Body: description, photos (click to enlarge), map location if present, estimate
+- **Timeline**: flagged/submitted → acknowledged → approved/declined → scheduled → completed, with timestamps and who did what
+- **Comments** thread with an input box
+- Action buttons, shown only when permitted: Edit, Cancel, Approve, Decline
+
+**Behaviors**
+- Edit opens the fields inline; save is disabled while in flight; server rejection renders inline, never a toast that discards typing.
+- Cancel and Decline both require a reason; the button stays disabled until one is entered.
+- After any action, the list and the detail both reflect the new state without a full reload.
+- Cancelled and declined items are visually distinct and drop out of "open" counts.
+
+## Done looks like
+
+- A client can open any work order and see its full history, photos, and location.
+- A client can edit or cancel **their own unacknowledged** request; attempting either on an acknowledged or contractor-flagged item is refused by the server with a clear message.
+- A client can approve **or decline** an estimate, with a reason on decline.
+- A client can comment on any work order at any stage; comments show author and timestamp.
+- Cancelled/declined items are excluded from open counts everywhere they're reported.
+- Cross-org access to any of these endpoints returns 403.
+- Admin preview (`?org=`) can perform the same actions, attributed to the admin user.
+- Contractor-facing behavior is unchanged — these tasks appear in the mobile app exactly as before, with comments visible where task notes already surface (or noted as a follow-up if no such surface exists).
+
+## Verify
+
+- Submit a request → edit it → cancel it, all as the client.
+- Have an admin acknowledge a request (or set `acknowledgedAt` via the admin hub) → client edit/cancel now refused with the correct message.
+- Approve an estimate; then attempt decline → 409. Reverse order likewise.
+- Comment as client and as admin; both appear with correct attribution.
+- Cancel a work order → open counts on the dashboard, branches list, branch detail, and work-orders page all decrease by one.
+- Cross-org attempts on every new endpoint → 403.
+- Mobile app: the same task still appears and behaves normally for crews.
+
+## Out of scope
+
+- Contractor-side UI for responding to comments (note where it would go).
+- Notifications/emails on client actions.
+- Editing or deleting comments.
+- Attachment deletion.
+
+## Relevant files
+
+- `artifacts/api-server/src/routes/routes.ts` (`/api/portfolio/work-orders` block ~5747–6030)
+- `artifacts/api-server/src/storage.ts` (task queries, open/closed counts)
+- `lib/db/src/schema/schema.ts` (`tasks` ~120–140) + new migration
+- `artifacts/web-portal/public/portfolio/pages/work-orders.js`
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js` (open work orders panel — link to detail)
+- `artifacts/web-portal/public/portfolio/portfolio.css`
