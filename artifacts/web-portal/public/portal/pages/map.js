@@ -10,30 +10,31 @@ PortalRouter.register('map', async function (container) {
     return;
   }
 
+  // ── Default LAYER_HIERARCHY (overwritten from API in loadMapData) ──────────
   let LAYER_HIERARCHY = {
     community: [
       { key: 'bluegrass_area', label: 'Bluegrass', color: '#2E8B57' },
-      { key: 'native_area', label: 'Native Area', color: '#8F9779' },
-      { key: 'landscape_bed', label: 'Landscape Bed', color: '#8B5A2B' },
-      { key: 'pet_station', label: 'Pet Station', color: '#1ABC9C' },
+      { key: 'native_area',    label: 'Native Area', color: '#8F9779' },
+      { key: 'landscape_bed',  label: 'Landscape Bed', color: '#8B5A2B' },
+      { key: 'pet_station',    label: 'Pet Station', color: '#1ABC9C' },
     ],
     irrigation: [
-      { key: 'backflow', label: 'Backflow', color: '#00BFFF' },
-      { key: 'controller', label: 'Controller', color: '#25C1AC' },
-      { key: 'zone', label: 'Zone', color: '#3498db' },
-      { key: 'master_valve', label: 'Master Valve', color: '#1F4E79' },
-      { key: 'flow_meter', label: 'Flow Meter', color: '#00CED1' },
-      { key: 'qc_iso_valve', label: 'QC/ISO Valve', color: '#87CEEB' },
-      { key: 'isolation_valve', label: 'Gate Valve', color: '#F39C12' },
-      { key: 'quick_connect', label: 'Quick Connect', color: '#E67E22' },
-      { key: 'wire_splice', label: 'Wire Splice', color: '#9B59B6' },
+      { key: 'backflow',        label: 'Backflow',      color: '#00BFFF' },
+      { key: 'controller',      label: 'Controller',    color: '#25C1AC' },
+      { key: 'zone',            label: 'Zone',          color: '#3498db' },
+      { key: 'master_valve',    label: 'Master Valve',  color: '#1F4E79' },
+      { key: 'flow_meter',      label: 'Flow Meter',    color: '#00CED1' },
+      { key: 'qc_iso_valve',    label: 'QC/ISO Valve',  color: '#87CEEB' },
+      { key: 'isolation_valve', label: 'Gate Valve',    color: '#F39C12' },
+      { key: 'quick_connect',   label: 'Quick Connect', color: '#E67E22' },
+      { key: 'wire_splice',     label: 'Wire Splice',   color: '#9B59B6' },
     ],
     snow: [
-      { key: 'plow', label: 'Plow', color: '#4A90E2' },
-      { key: 'atv', label: 'ATV', color: '#6A5ACD' },
-      { key: 'hand_shovel', label: 'Hand Shovel', color: '#E83E8C' },
-      { key: 'ice_melt', label: 'Ice Melt', color: '#FF8C00' },
-      { key: 'slicer', label: 'Slicer', color: '#D62828' },
+      { key: 'plow',         label: 'Plow',         color: '#4A90E2' },
+      { key: 'atv',          label: 'ATV',          color: '#6A5ACD' },
+      { key: 'hand_shovel',  label: 'Hand Shovel',  color: '#E83E8C' },
+      { key: 'ice_melt',     label: 'Ice Melt',     color: '#FF8C00' },
+      { key: 'slicer',       label: 'Slicer',       color: '#D62828' },
       { key: 'storage_area', label: 'Storage Area', color: '#708090' },
     ],
     trees: [
@@ -41,17 +42,7 @@ PortalRouter.register('map', async function (container) {
     ],
   };
 
-  const CATEGORY_ICONS = {
-    community: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
-    irrigation: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>',
-    snow: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/></svg>',
-    trees: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L7 10h2l-3 6h3l-2 6h10l-2-6h3l-3-6h2z"/></svg>',
-  };
-
-  // Snapshot the hardcoded colour defaults before loadMapData() may overwrite
-  // LAYER_HIERARCHY with API-driven entries.  getLayerEffectiveColor() resolves
-  // map_layers.color first, so these hardcoded values are only the final fallback
-  // — they must NOT come from asset_types.defaultColor (dropped in migration 0013).
+  // Snapshot hardcoded colour defaults — used as fallback in the renderer
   const _HIERARCHY_DEFAULT_COLORS = {};
   Object.keys(LAYER_HIERARCHY).forEach(cat => {
     _HIERARCHY_DEFAULT_COLORS[cat] = {};
@@ -60,41 +51,36 @@ PortalRouter.register('map', async function (container) {
     });
   });
 
-  let activeCategory = 'community';
-  let sublayerState = {};
-  let populated = {};          // populated[cat][subKey] = true when layer has ≥1 feature
+  const CATEGORY_ICONS = {
+    community:  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+    irrigation: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z"/></svg>',
+    snow:       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/></svg>',
+    trees:      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L7 10h2l-3 6h3l-2 6h10l-2-6h3l-3-6h2z"/></svg>',
+  };
+
+  // ── Page state ─────────────────────────────────────────────────────────────
+  let activeCategory     = 'community';
+  let sublayerState      = {};
+  let populated          = {};
   let populatedCategories = [];
-  let selectedAsset = null;
-  let detailTab = 'details';
-  let mapLayers = [];
-  let iframeReady = false;
-  let _mapDataReady = false; // true once all GeoJSON and controller data have loaded
-  let pendingCmds = [];
-  let renderGeneration = 0;
-  let controllerData = [];
-  // Per-sublayer suppression flags, set once at data-load time.
-  // A GeoJSON sublayer is suppressed only when EVERY one of its features has a
-  // positioned marker replacing it — never when only some do.
-  // These never change on sub-layer toggles or color updates.
-  let suppressControllerGeo = false;
-  let suppressZoneGeo = false;
-  let activeColorPicker = null;
-  let sessionColorOverrides = {};
-  let _outlineGeojson = null;
-  let _outlineStyle = null;
+  let selectedAsset      = null;
+  let detailTab          = 'details';
+  let mapLayers          = [];
+  let renderGeneration   = 0;
+  let activeColorPicker  = null;
+  let _outlineGeojson    = null;
+  let _outlineStyle      = null;
   let _showCommunityOutline = true;
+  let renderer           = null;
 
   if (window._portalMapCleanup) {
     window._portalMapCleanup();
   }
 
-  // Initialise all sub-layers to off; loadMapData() will turn on populated ones
-  // after the GeoJSON has been fetched and the populated index is built.
+  // Initialise sub-layer state to off until renderer loads data
   Object.keys(LAYER_HIERARCHY).forEach(cat => {
     sublayerState[cat] = {};
-    LAYER_HIERARCHY[cat].forEach(sub => {
-      sublayerState[cat][sub.key] = false;
-    });
+    LAYER_HIERARCHY[cat].forEach(sub => { sublayerState[cat][sub.key] = false; });
   });
 
   container.innerHTML = `
@@ -128,58 +114,50 @@ PortalRouter.register('map', async function (container) {
 
   renderCategories();
   renderSublayers();
-  setupIframe();
   setupSatelliteToggle();
-  loadMapData();
-
   document.addEventListener('click', dismissColorPicker, true);
 
+  loadMapData();
+
+  // ── Satellite toggle ────────────────────────────────────────────────────────
+  function setupSatelliteToggle() {
+    const btn   = document.getElementById('map-basemap-toggle');
+    const label = document.getElementById('map-basemap-label');
+    if (!btn || !label) return;
+
+    let isSatellite = false;
+    try { isSatellite = localStorage.getItem('vrt_map_basemap') === 'satellite'; } catch (_) {}
+
+    function applySatellite(on) {
+      isSatellite = on;
+      label.textContent = on ? 'Map' : 'Satellite';
+      btn.classList.toggle('map-basemap-toggle--active', on);
+      if (renderer) renderer.setSatellite(on);
+      try { localStorage.setItem('vrt_map_basemap', on ? 'satellite' : 'map'); } catch (_) {}
+    }
+
+    applySatellite(isSatellite);
+    btn.addEventListener('click', () => applySatellite(!isSatellite));
+  }
+
+  // ── Color picker helpers ───────────────────────────────────────────────────
   function dismissColorPicker(e) {
     if (!activeColorPicker) return;
     if (!e.target.closest('.mlp-color-swatch-btn') && !e.target.closest('.mlp-color-picker-wrap')) {
       closeColorPicker();
     }
   }
-
   function closeColorPicker() {
-    if (activeColorPicker) {
-      activeColorPicker.remove();
-      activeColorPicker = null;
-    }
+    if (activeColorPicker) { activeColorPicker.remove(); activeColorPicker = null; }
   }
 
-  function setupSatelliteToggle() {
-    const btn = document.getElementById('map-basemap-toggle');
-    const label = document.getElementById('map-basemap-label');
-    if (!btn || !label) return;
-
-    let isSatellite = false;
-    try {
-      isSatellite = localStorage.getItem('vrt_map_basemap') === 'satellite';
-    } catch (_) {}
-
-    function applySatellite(on) {
-      isSatellite = on;
-      label.textContent = on ? 'Map' : 'Satellite';
-      btn.classList.toggle('map-basemap-toggle--active', on);
-      cmdToIframe('setSatellite', on);
-      try {
-        localStorage.setItem('vrt_map_basemap', on ? 'satellite' : 'map');
-      } catch (_) {}
-    }
-
-    // Apply saved preference once the iframe is ready (cmd will be queued if not yet ready)
-    applySatellite(isSatellite);
-
-    btn.addEventListener('click', () => applySatellite(!isSatellite));
-  }
-
+  // ── Layer chrome rendering ─────────────────────────────────────────────────
   function renderCategories() {
     const el = document.getElementById('mlp-categories');
     if (!el) return;
     el.innerHTML = Object.keys(LAYER_HIERARCHY).map(cat => {
       const active = cat === activeCategory ? ' mlp-cat--active' : '';
-      const label = cat.charAt(0).toUpperCase() + cat.slice(1);
+      const label  = cat.charAt(0).toUpperCase() + cat.slice(1);
       return `<button class="mlp-cat-btn${active}" data-cat="${cat}">${CATEGORY_ICONS[cat] || ''}<span>${esc(label)}</span></button>`;
     }).join('');
     el.querySelectorAll('.mlp-cat-btn').forEach(btn => {
@@ -187,14 +165,13 @@ PortalRouter.register('map', async function (container) {
         activeCategory = btn.dataset.cat;
         renderCategories();
         renderSublayers();
-        syncVisibleLayers(true);
+        if (renderer) renderer.setActiveCategory(activeCategory);
       });
     });
   }
 
   function getLayerEffectiveColor(cat, subKey) {
-    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
-    if (apiLayer && apiLayer.color) return apiLayer.color;
+    if (renderer) return renderer.getLayerEffectiveColor(cat, subKey);
     const def = (LAYER_HIERARCHY[cat] || []).find(s => s.key === subKey);
     return def ? def.color : '#888888';
   }
@@ -202,11 +179,11 @@ PortalRouter.register('map', async function (container) {
   function renderSublayers() {
     const el = document.getElementById('mlp-sublayers');
     if (!el) return;
-    const subs = LAYER_HIERARCHY[activeCategory] || [];
+    const subs    = LAYER_HIERARCHY[activeCategory] || [];
     const isAdmin = role === 'admin';
 
     const outlineColor = (_outlineStyle && _outlineStyle.strokeColor) || '#0C1D31';
-    const outlineRow = _outlineGeojson ? `
+    const outlineRow   = _outlineGeojson ? `
       <label class="mlp-sublayer-row" style="border-bottom:1px solid #eef1f5;margin-bottom:6px;padding-bottom:6px">
         <input type="checkbox" id="mlp-outline-toggle" ${_showCommunityOutline ? 'checked' : ''}>
         <span class="mlp-sub-dot" style="background:${outlineColor};border-radius:2px"></span>
@@ -214,12 +191,10 @@ PortalRouter.register('map', async function (container) {
       </label>
     ` : '';
 
-    // Check if the active category has any populated sub-layers at all
     const catPopulated = populated[activeCategory] || {};
     const anyPopulated = subs.some(sub => catPopulated[sub.key]);
 
     if (!anyPopulated && populatedCategories.length > 0) {
-      // Data has loaded but this category has nothing mapped yet
       const catLabel = activeCategory.charAt(0).toUpperCase() + activeCategory.slice(1);
       el.innerHTML = `<div class="mlp-empty-state">No ${esc(catLabel.toLowerCase())} data mapped for this community yet.</div>`;
       return;
@@ -228,18 +203,16 @@ PortalRouter.register('map', async function (container) {
     el.innerHTML = outlineRow + subs.map(sub => {
       const isPopulated = !!catPopulated[sub.key];
       if (!isPopulated) {
-        // Render unpopulated sub-layers as disabled with a muted "no data" label
         const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
         return `
           <label class="mlp-sublayer-row mlp-sublayer-row--disabled" title="No data available">
             <input type="checkbox" disabled data-cat="${activeCategory}" data-key="${sub.key}">
             <span class="mlp-sub-dot" style="background:${dotColor};opacity:0.35"></span>
             <span class="mlp-sub-label" style="color:var(--gray-300)">${esc(sub.label)} <span class="mlp-no-data-tag">no data</span></span>
-          </label>
-        `;
+          </label>`;
       }
-      const checked = sublayerState[activeCategory][sub.key] ? 'checked' : '';
-      const dotColor = getLayerEffectiveColor(activeCategory, sub.key);
+      const checked   = sublayerState[activeCategory][sub.key] ? 'checked' : '';
+      const dotColor  = getLayerEffectiveColor(activeCategory, sub.key);
       const swatchBtn = isAdmin
         ? `<button class="mlp-color-swatch-btn" data-cat="${activeCategory}" data-key="${sub.key}" style="background:${dotColor}" title="Change color" aria-label="Change color for ${esc(sub.label)}"></button>`
         : `<span class="mlp-sub-dot" style="background:${dotColor}"></span>`;
@@ -248,27 +221,31 @@ PortalRouter.register('map', async function (container) {
           <input type="checkbox" ${checked} data-cat="${activeCategory}" data-key="${sub.key}">
           ${swatchBtn}
           <span class="mlp-sub-label">${esc(sub.label)}</span>
-        </label>
-      `;
+        </label>`;
     }).join('');
 
     const outlineToggle = document.getElementById('mlp-outline-toggle');
     if (outlineToggle) {
       outlineToggle.addEventListener('change', () => {
         _showCommunityOutline = outlineToggle.checked;
-        cmdToIframe('setCommunityOutline', _showCommunityOutline ? _outlineGeojson : null, _outlineStyle);
+        if (renderer) {
+          renderer.cmdToIframe('setCommunityOutline',
+            _showCommunityOutline ? _outlineGeojson : null,
+            _outlineStyle);
+        }
       });
     }
 
     el.querySelectorAll('input[type="checkbox"]:not(#mlp-outline-toggle)').forEach(cb => {
       cb.addEventListener('change', () => {
         sublayerState[cb.dataset.cat][cb.dataset.key] = cb.checked;
-        syncVisibleLayers();
+        if (renderer) renderer.setVisibleSubLayers(sublayerState[activeCategory]);
       });
     });
+
     if (isAdmin) {
       el.querySelectorAll('.mlp-color-swatch-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', e => {
           e.preventDefault();
           e.stopPropagation();
           openColorPicker(btn, btn.dataset.cat, btn.dataset.key);
@@ -287,9 +264,9 @@ PortalRouter.register('map', async function (container) {
 
     const rect = swatchBtn.getBoundingClientRect();
     wrap.style.position = 'fixed';
-    wrap.style.left = (rect.right + 6) + 'px';
-    wrap.style.top = rect.top + 'px';
-    wrap.style.zIndex = '9999';
+    wrap.style.left     = (rect.right + 6) + 'px';
+    wrap.style.top      = rect.top + 'px';
+    wrap.style.zIndex   = '9999';
 
     const input = wrap.querySelector('.mlp-color-input');
     input.focus();
@@ -299,112 +276,21 @@ PortalRouter.register('map', async function (container) {
     input.addEventListener('input', () => {
       const newColor = input.value;
       swatchBtn.style.background = newColor;
-      applyLayerColorLive(cat, subKey, newColor);
+      if (renderer) renderer.applyColorLive(cat, subKey, newColor);
     });
 
     input.addEventListener('change', () => {
       const newColor = input.value;
       swatchBtn.style.background = newColor;
-      applyLayerColorLive(cat, subKey, newColor);
+      if (renderer) renderer.applyColorLive(cat, subKey, newColor);
       persistLayerColor(cat, subKey, newColor);
       closeColorPicker();
     });
   }
 
-  function buildZoneColorMap(uniformColor) {
-    const colorMap = {};
-    for (const ctrl of controllerData) {
-      if (ctrl.featureRef) {
-        colorMap[ctrl.featureRef] = uniformColor;
-      }
-    }
-    return colorMap;
-  }
-
-  function applyLayerColorLive(cat, subKey, newColor) {
-    if (cat === 'irrigation' && (subKey === 'controller' || subKey === 'zone')) {
-      setSessionColorOverride(cat, subKey, newColor);
-      const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
-      const zoneOverride = getSessionColorOverride('irrigation', 'zone');
-      sendIrrigationMarkers(ctrlOverride, zoneOverride);
-      const ctrlLayer = mapLayers.find(l => l.layerKey === 'irrigation' && l.subLayerKey === 'controller');
-      const zoneLayer = mapLayers.find(l => l.layerKey === 'irrigation' && l.subLayerKey === 'zone');
-      if (subKey === 'controller') {
-        const updatedColorMap = buildControllerColorMap(ctrlOverride);
-        if (ctrlLayer) {
-          cmdToIframe('updateLayerColorMap', ctrlLayer.id, updatedColorMap, ctrlOverride || getLayerEffectiveColor('irrigation', 'controller'));
-        }
-        if (zoneLayer) {
-          const effectiveZone = zoneOverride || getLayerEffectiveColor('irrigation', 'zone');
-          const zoneGeoMap = zoneOverride
-            ? buildZoneColorMap(effectiveZone)
-            : updatedColorMap;
-          cmdToIframe('updateLayerColorMap', zoneLayer.id, zoneGeoMap, effectiveZone);
-        }
-      } else {
-        if (zoneLayer) {
-          const zoneColorMap = buildZoneColorMap(newColor);
-          cmdToIframe('updateLayerColorMap', zoneLayer.id, zoneColorMap, newColor);
-        }
-      }
-      return;
-    }
-    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
-    if (!apiLayer) return;
-    cmdToIframe('updateLayerColor', apiLayer.id, newColor);
-  }
-
-  function sendIrrigationMarkers(ctrlColorOverride, zoneColorOverride) {
-    const fallbackCtrlColor = getLayerEffectiveColor('irrigation', 'controller');
-
-    const ctrlMarkers = controllerData
-      .filter(c => c.latitude != null && c.longitude != null)
-      .map(c => {
-        const perCtrlColor = ctrlColorOverride !== null
-          ? ctrlColorOverride
-          : (c.controllerColor || fallbackCtrlColor);
-        return {
-          id: c.id,
-          label: c.label || c.controllerKey || 'Controller',
-          featureRef: c.featureRef,
-          controllerKey: c.controllerKey || '',
-          color: perCtrlColor,
-          latitude: c.latitude,
-          longitude: c.longitude,
-          zoneCount: c.zoneCount || (c.zones ? c.zones.length : 0),
-        };
-      });
-
-    const fallbackZoneColor = getLayerEffectiveColor('irrigation', 'zone');
-    const zoneMarkers = controllerData.flatMap(c => {
-      const perCtrlColor = ctrlColorOverride !== null
-        ? ctrlColorOverride
-        : (c.controllerColor || fallbackCtrlColor);
-      const zColor = zoneColorOverride !== null ? zoneColorOverride : perCtrlColor;
-      return (c.zones || [])
-        .filter(z => z.latitude != null && z.longitude != null)
-        .map(z => ({
-          id: z.id,
-          label: z.label || z.zoneLabelShort || `Zone ${z.zoneNumber || ''}`,
-          featureRef: z.featureRef,
-          zoneNumber: z.zoneNumber,
-          controllerColor: zColor,
-          controllerLabel: c.label || c.controllerKey || 'Controller',
-          latitude: z.latitude,
-          longitude: z.longitude,
-        }));
-    });
-
-    if (ctrlMarkers.length > 0) {
-      cmdToIframe('setControllerMarkers', ctrlMarkers);
-    }
-    if (zoneMarkers.length > 0) {
-      cmdToIframe('setZoneMarkers', zoneMarkers);
-    }
-  }
-
   async function persistLayerColor(cat, subKey, newColor) {
-    const apiLayer = mapLayers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
+    const layers = renderer ? renderer.getMapLayers() : mapLayers;
+    const apiLayer = layers.find(l => l.subLayerKey === subKey && l.layerKey === cat);
     if (apiLayer) {
       try {
         const updated = await apiFetch(`/api/map-layers/${apiLayer.id}`, {
@@ -412,500 +298,143 @@ PortalRouter.register('map', async function (container) {
           body: { color: newColor, version: apiLayer.version },
         });
         if (updated && updated.id) {
-          const idx = mapLayers.findIndex(l => l.id === apiLayer.id);
-          if (idx !== -1) {
-            mapLayers[idx] = { ...mapLayers[idx], color: newColor, version: updated.version };
-          }
+          const idx = layers.findIndex(l => l.id === apiLayer.id);
+          if (idx !== -1) layers[idx] = { ...layers[idx], color: newColor, version: updated.version };
         }
-      } catch (err) {
-        console.error('Failed to save layer color:', err);
-      }
+      } catch (err) { console.error('Failed to save layer color:', err); }
     }
 
-    if (cat === 'irrigation' && subKey === 'controller' && controllerData.length > 0) {
+    if (cat === 'irrigation' && subKey === 'controller') {
+      const controllerData = renderer ? renderer.getControllerData() : [];
       const updates = controllerData
         .filter(c => c.id)
         .map(c => apiFetch(`/api/assets/${c.id}/properties`, {
           method: 'PUT',
           body: { properties: [{ key: 'controllerColor', value: newColor }] },
-        }).then(result => {
-          const idx = controllerData.findIndex(cd => cd.id === c.id);
-          if (idx !== -1) controllerData[idx] = { ...controllerData[idx], controllerColor: newColor };
-          return result;
         }).catch(err => console.error('Failed to update controller color for', c.id, err)));
       await Promise.allSettled(updates);
     }
 
     if (cat === 'irrigation' && subKey === 'zone') {
+      const controllerData = renderer ? renderer.getControllerData() : [];
       const allZones = controllerData.flatMap(c => c.zones || []).filter(z => z.id);
       const updates = allZones.map(z => apiFetch(`/api/assets/${z.id}/properties`, {
         method: 'PUT',
         body: { properties: [{ key: 'zoneColor', value: newColor }] },
-      }).then(() => {
-        for (const ctrl of controllerData) {
-          const zi = (ctrl.zones || []).findIndex(zz => zz.id === z.id);
-          if (zi !== -1) ctrl.zones[zi] = { ...ctrl.zones[zi], zoneColor: newColor };
-        }
       }).catch(err => console.error('Failed to update zone color for', z.id, err)));
       await Promise.allSettled(updates);
     }
   }
 
-  function setupIframe() {
+  // ── Data loading + renderer ────────────────────────────────────────────────
+  async function loadMapData() {
     const iframe = document.getElementById('map-iframe');
     if (!iframe) return;
 
-    function handler(e) {
-      if (!e.data || typeof e.data !== 'string') return;
-      try {
-        var msg = JSON.parse(e.data);
-      } catch (_) { return; }
-      if (msg.type === 'mapReady') {
-        iframeReady = true;
-        var cmds = pendingCmds.slice();
-        pendingCmds = [];
-        cmds.forEach(function(c) {
-          var iframe = document.getElementById('map-iframe');
-          if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({ type: 'cmd', fn: c.fn, args: c.args }, '*');
+    // Rebuild LAYER_HIERARCHY from the DB-backed catalogue so new types appear
+    // without a deploy. The hardcoded colours above are the fallback.
+    try {
+      const assetTypesData = await apiFetch('/api/asset-types');
+      if (Array.isArray(assetTypesData) && assetTypesData.length > 0) {
+        const newHierarchy = {};
+        for (const t of assetTypesData) {
+          if (!t.isActive) continue;
+          if (!newHierarchy[t.layerKey]) newHierarchy[t.layerKey] = [];
+          const hardcodedColor =
+            (_HIERARCHY_DEFAULT_COLORS[t.layerKey] || {})[t.subLayerKey] || '#888888';
+          newHierarchy[t.layerKey].push({ key: t.subLayerKey, label: t.label, color: hardcodedColor });
+        }
+        // Merge sublayerState: preserve existing on/off choices; init new to false.
+        for (const [cat, subs] of Object.entries(newHierarchy)) {
+          if (!sublayerState[cat]) sublayerState[cat] = {};
+          for (const sub of subs) {
+            if (sublayerState[cat][sub.key] === undefined) sublayerState[cat][sub.key] = false;
           }
-        });
-        loadCommunity(community.id);
-      } else if (msg.type === 'viewAssetDetail') {
-        handleAssetDetail(msg.data);
+        }
+        LAYER_HIERARCHY = newHierarchy;
       }
+    } catch (assetTypesErr) {
+      console.warn('[map] Failed to load asset types catalogue — using hardcoded fallback:', assetTypesErr);
     }
 
-    window.addEventListener('message', handler);
+    // Portal adapter
+    const portalAdapter = {
+      fetchLayers: (communityId) =>
+        apiFetch(`/api/map-layers?communityId=${communityId}`),
+      fetchLayerGeojson: (layerId) =>
+        apiFetch(`/api/map-layers/${layerId}/geojson`),
+      fetchControllers: (communityId) =>
+        apiFetch(`/api/communities/${communityId}/controllers`),
+      fetchBounds: (communityId) =>
+        apiFetch(`/api/communities/${communityId}/bounds`),
+    };
+
+    renderer = window.VRTMapRenderer.create({
+      iframe:    iframe,
+      adapter:   portalAdapter,
+      hierarchy: LAYER_HIERARCHY,
+    });
+
+    // Restore saved satellite preference (queued until iframe ready)
+    try {
+      if (localStorage.getItem('vrt_map_basemap') === 'satellite') {
+        renderer.setSatellite(true);
+      }
+    } catch (_) {}
+
+    renderer.on('ready', function (state) {
+      // Sync page state from renderer
+      populated           = state.populated;
+      sublayerState       = state.sublayerState;
+      populatedCategories = state.populatedCategories;
+      activeCategory      = state.activeCategory;
+      mapLayers           = state.mapLayers;
+      _outlineGeojson     = state.outlineGeojson;
+      _outlineStyle       = state.outlineStyle;
+      renderCategories();
+      renderSublayers();
+    });
+
+    renderer.on('assetTap', function (data) {
+      handleAssetDetail(data);
+    });
+
+    renderer.load(community.id).catch(err => {
+      console.error('[map] Failed to load map data:', err);
+    });
+
     window._portalMapCleanup = function () {
-      window.removeEventListener('message', handler);
+      if (renderer) { renderer.destroy(); renderer = null; }
       document.removeEventListener('click', dismissColorPicker, true);
       closeColorPicker();
       window._portalMapCleanup = null;
     };
   }
 
-  function cmdToIframe(fn) {
-    var args = Array.prototype.slice.call(arguments, 1);
-    var iframe = document.getElementById('map-iframe');
-    if (!iframe || !iframe.contentWindow) return;
-    if (!iframeReady) {
-      pendingCmds.push({ fn: fn, args: args });
-      return;
-    }
-    iframe.contentWindow.postMessage({ type: 'cmd', fn: fn, args: args }, '*');
-  }
-
-  async function loadCommunity(communityId) {
-    selectedAsset = null;
-    renderDetailPanel();
-    // activeCategory, sublayerState, and suppression flags are all set
-    // data-driven in loadMapData() once GeoJSON has loaded; fall back to
-    // 'community'/false here only until data arrives.
-    activeCategory = 'community';
-    suppressControllerGeo = false;
-    suppressZoneGeo = false;
-    Object.keys(LAYER_HIERARCHY).forEach(cat => {
-      sublayerState[cat] = {};
-      LAYER_HIERARCHY[cat].forEach(sub => {
-        sublayerState[cat][sub.key] = false;
-      });
-    });
-    renderCategories();
-    renderSublayers();
-
-    cmdToIframe('clearIrrigation');
-
-    try {
-      const bounds = await apiFetch(`/api/communities/${communityId}/bounds`);
-      if (bounds && bounds.bounds && bounds.bounds.length > 0) {
-        cmdToIframe('fitBounds', bounds.bounds);
-      }
-    } catch (err) {
-      console.error('Failed to load community bounds:', err);
-    }
-
-    // If data already loaded before the iframe became ready, apply it now.
-    // Otherwise loadMapData() will call applyDataDrivenState() when it finishes.
-    if (_mapDataReady) {
-      applyDataDrivenState();
-    }
-  }
-
-  async function loadMapData() {
-    try {
-      // Rebuild LAYER_HIERARCHY from the DB-backed catalogue every load so that
-      // new types appear and deactivated types disappear without a deploy.
-      try {
-        const assetTypesData = await apiFetch('/api/asset-types');
-        if (Array.isArray(assetTypesData) && assetTypesData.length > 0) {
-          const newHierarchy = {};
-          for (const t of assetTypesData) {
-            if (!t.isActive) continue;
-            if (!newHierarchy[t.layerKey]) newHierarchy[t.layerKey] = [];
-            // Geometry colours come from map_layers.color (set via the admin
-            // Map Layers colour picker), not from asset_types.  Use the original
-            // hardcoded LAYER_HIERARCHY colour as fallback; neutral grey last.
-            const hardcodedColor =
-              (_HIERARCHY_DEFAULT_COLORS[t.layerKey] || {})[t.subLayerKey] || '#888888';
-            newHierarchy[t.layerKey].push({ key: t.subLayerKey, label: t.label, color: hardcodedColor });
-          }
-          // Merge sublayerState: preserve existing on/off choices; init new entries to false.
-          for (const [cat, subs] of Object.entries(newHierarchy)) {
-            if (!sublayerState[cat]) sublayerState[cat] = {};
-            for (const sub of subs) {
-              if (sublayerState[cat][sub.key] === undefined) {
-                sublayerState[cat][sub.key] = false;
-              }
-            }
-          }
-          LAYER_HIERARCHY = newHierarchy;
-        }
-      } catch (assetTypesErr) {
-        console.warn('[map] Failed to load asset types catalogue — using hardcoded fallback:', assetTypesErr);
-      }
-
-      const [layers, controllers] = await Promise.all([
-        apiFetch(`/api/map-layers?communityId=${community.id}`),
-        apiFetch(`/api/communities/${community.id}/controllers`).catch(() => []),
-      ]);
-      mapLayers = layers || [];
-      controllerData = controllers || [];
-
-      for (const layer of mapLayers) {
-        try {
-          const geojson = await apiFetch(`/api/map-layers/${layer.id}/geojson`);
-          if (geojson) {
-            layer._geojson = geojson;
-          }
-        } catch (_) {}
-      }
-
-      // --- Build populated index ---
-      // populated[cat][subKey] = true when the layer exists, is enabled,
-      // and its GeoJSON has at least one feature.
-      populated = {};
-      Object.keys(LAYER_HIERARCHY).forEach(cat => { populated[cat] = {}; });
-
-      mapLayers.forEach(layer => {
-        const cat = layer.layerKey;
-        const sub = layer.subLayerKey;
-        if (!cat || !sub || layer.isEnabled === false) return;
-        if (populated[cat] === undefined) return; // unknown category
-        const features = layer._geojson && layer._geojson.features;
-        if (features && features.length > 0) {
-          populated[cat][sub] = true;
-        }
-      });
-
-      // Per-sublayer suppression: only suppress a GeoJSON sublayer when EVERY
-      // feature in that sublayer has a confirmed positioned marker replacing it.
-      // We cross-reference actual GeoJSON feature refs against positioned asset
-      // records — not asset records against each other — so imported/unmatched
-      // geometry always retains its raw layer.
-      //
-      // Returns the array of string refs from a GeoJSON feature collection, or
-      // null if any feature has no resolvable ref (can't verify → don't suppress).
-      function geoJsonFeatureRefs(geojson) {
-        if (!geojson || !geojson.features || geojson.features.length === 0) return null;
-        const refs = [];
-        for (const f of geojson.features) {
-          const p = f.properties || {};
-          const ref = (f.id != null && f.id !== '' ? String(f.id) : null)
-            || p.featureId || p.id || p.featureRef || p.name || null;
-          if (!ref) return null; // unresolvable ref → cannot confirm full coverage
-          refs.push(String(ref));
-        }
-        return refs;
-      }
-
-      const positionedCtrlRefs = new Set(
-        controllerData
-          .filter(c => c.latitude != null && c.longitude != null && c.featureRef)
-          .map(c => String(c.featureRef))
-      );
-      const positionedZoneRefs = new Set(
-        controllerData.flatMap(c => c.zones || [])
-          .filter(z => z.latitude != null && z.longitude != null && z.featureRef)
-          .map(z => String(z.featureRef))
-      );
-
-      // A sublayer's GeoJSON is suppressed only when every one of its features
-      // has a resolved ref AND that ref is covered by a positioned marker.
-      function allFeaturesPositioned(subLayerKey, positionedRefs) {
-        const layers = mapLayers.filter(l => l.subLayerKey === subLayerKey && l._geojson);
-        if (layers.length === 0) return false;
-        return layers.every(layer => {
-          const refs = geoJsonFeatureRefs(layer._geojson);
-          return refs !== null && refs.length > 0 &&
-            refs.every(ref => positionedRefs.has(ref));
-        });
-      }
-
-      suppressControllerGeo = allFeaturesPositioned('controller', positionedCtrlRefs);
-      suppressZoneGeo = allFeaturesPositioned('zone', positionedZoneRefs);
-
-      // Irrigation markers count as populating controller/zone sub-layers even
-      // when GeoJSON geometry is absent — pre-populate based on controller data.
-      if (controllerData && controllerData.length > 0) {
-        if (populated.irrigation === undefined) populated.irrigation = {};
-        populated.irrigation.controller = true;
-        if (controllerData.some(c => (c.zones || []).length > 0)) {
-          populated.irrigation.zone = true;
-        }
-      }
-
-      // List categories (in LAYER_HIERARCHY order) that have at least one populated sub-layer
-      populatedCategories = Object.keys(LAYER_HIERARCHY).filter(cat =>
-        Object.values(populated[cat] || {}).some(Boolean)
-      );
-
-      // --- Set data-driven initial category ---
-      // Pick the first populated category; fall back to 'community' when none are populated.
-      activeCategory = populatedCategories[0] || 'community';
-
-      // --- Set data-driven sub-layer state ---
-      // Every populated sub-layer starts on; every unpopulated one starts off.
-      Object.keys(LAYER_HIERARCHY).forEach(cat => {
-        sublayerState[cat] = {};
-        LAYER_HIERARCHY[cat].forEach(sub => {
-          sublayerState[cat][sub.key] = !!(populated[cat] && populated[cat][sub.key]);
-        });
-      });
-
-      _mapDataReady = true;
-      // If the iframe is already ready, apply now.
-      // If not, loadCommunity() will apply once mapReady fires.
-      if (iframeReady) {
-        applyDataDrivenState();
-      }
-    } catch (err) {
-      console.error('Failed to load map layers:', err);
-    }
-  }
-
-  // Called once both data and the iframe are ready — whichever arrives second
-  // triggers this.  Safe to call multiple times; always uses the latest data.
-  function applyDataDrivenState() {
-    renderCategories();
-    pushLayersToIframe();
-    pushIrrigationToIframe();
-    loadCommunityOutline();
-    renderSublayers();
-    // Fit the viewport to the initial category's visible content
-    syncVisibleLayers(true);
-  }
-
-  function buildOutlineStyle(layer) {
-    if (!layer) return null;
-    const s = {};
-    if (layer.strokeColor) s.strokeColor = layer.strokeColor;
-    if (layer.strokeWeight) s.strokeWeight = layer.strokeWeight;
-    if (layer.fillOpacity != null) {
-      const fo = parseFloat(layer.fillOpacity);
-      if (!isNaN(fo) && fo >= 0 && fo <= 1) s.fillOpacity = fo;
-    }
-    return Object.keys(s).length ? s : null;
-  }
-
-  function loadCommunityOutline() {
-    const outlineLayer = mapLayers.find(l => l.layerKey === 'outline' && l._geojson && l.isEnabled !== false);
-    if (outlineLayer) {
-      _outlineGeojson = outlineLayer._geojson;
-      _outlineStyle = buildOutlineStyle(outlineLayer);
-      if (_showCommunityOutline) {
-        cmdToIframe('setCommunityOutline', _outlineGeojson, _outlineStyle);
-      }
-      // No fitToOutline here — fitVisibleContent() (called from syncVisibleLayers)
-      // uses fitToOutline as a fallback only when no visible content has bounds,
-      // preventing the outline from overriding an already-framed category view.
-    } else {
-      _outlineGeojson = null;
-      _outlineStyle = null;
-      cmdToIframe('setCommunityOutline', null);
-    }
-    renderSublayers();
-  }
-
-  function getSessionColorOverride(cat, subKey) {
-    return sessionColorOverrides[cat + '/' + subKey] || null;
-  }
-
-  function setSessionColorOverride(cat, subKey, color) {
-    sessionColorOverrides[cat + '/' + subKey] = color;
-  }
-
-  function buildControllerColorMap(uniformColorOverride) {
-    const colorMap = {};
-    const fallback = getLayerEffectiveColor('irrigation', 'controller');
-    for (const ctrl of controllerData) {
-      if (ctrl.featureRef) {
-        colorMap[ctrl.featureRef] = uniformColorOverride !== null
-          ? uniformColorOverride
-          : (ctrl.controllerColor || fallback);
-      }
-    }
-    return colorMap;
-  }
-
-  function pushLayersToIframe() {
-    const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
-    const ctrlColorMap = buildControllerColorMap(ctrlOverride);
-    const storedZoneColor = getStoredZoneColor();
-    // Geometry is only withheld when a confirmed non-empty marker set replaced it.
-    // Each sublayer is suppressed independently — only when every feature has a marker.
-    const layerData = mapLayers.filter(l => {
-      if (!l._geojson || l.layerKey === 'outline') return false;
-      if (l.subLayerKey === 'controller' && suppressControllerGeo) return false;
-      if (l.subLayerKey === 'zone' && suppressZoneGeo) return false;
-      return true;
-    }).map(l => {
-      let colorMap = {};
-      if (l.subLayerKey === 'controller') {
-        colorMap = ctrlColorMap;
-      } else if (l.subLayerKey === 'zone') {
-        colorMap = storedZoneColor ? buildZoneColorMap(storedZoneColor) : ctrlColorMap;
-      }
-      return {
-        id: l.id,
-        layerKey: l.layerKey,
-        subLayerKey: l.subLayerKey,
-        displayName: l.displayName,
-        color: l.color || '#25C1AC',
-        geojson: l._geojson,
-        controllerColorMap: colorMap,
-      };
-    });
-    if (layerData.length > 0) {
-      cmdToIframe('addLayers', layerData);
-    }
-  }
-
-  function getStoredZoneColor() {
-    for (const ctrl of controllerData) {
-      for (const z of (ctrl.zones || [])) {
-        if (z.zoneColor) return z.zoneColor;
-      }
-    }
-    return null;
-  }
-
-  function pushIrrigationToIframe() {
-    if (!controllerData || controllerData.length === 0) return;
-    const ctrlOverride = getSessionColorOverride('irrigation', 'controller');
-    const zoneOverride = getSessionColorOverride('irrigation', 'zone') || getStoredZoneColor();
-    sendIrrigationMarkers(ctrlOverride, zoneOverride);
-  }
-
-  function syncVisibleLayers(fitMap) {
-    const visibleIds = [];
-    mapLayers.forEach(layer => {
-      const cat = layer.layerKey;
-      const sub = layer.subLayerKey;
-      // Geometry is only withheld when a confirmed non-empty marker set replaced it,
-      // checked independently per sublayer so unpositioned assets keep their geometry.
-      if (sub === 'controller' && suppressControllerGeo) return;
-      if (sub === 'zone' && suppressZoneGeo) return;
-      if (cat === activeCategory && sublayerState[cat] && sublayerState[cat][sub]) {
-        visibleIds.push(layer.id);
-      }
-    });
-    cmdToIframe('showLayerIds', visibleIds);
-
-    const showControllers = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.controller;
-    const showZones = activeCategory === 'irrigation' && sublayerState.irrigation && sublayerState.irrigation.zone;
-    cmdToIframe('showControllers', !!showControllers);
-    cmdToIframe('showZones', !!showZones);
-    if (fitMap) {
-      fitVisibleContent();
-    }
-  }
-
-  // Compute bounds entirely on the portal side from the data already loaded, then
-  // send a single fitBounds command. This avoids any dependency on iframe-side
-  // geoLayers state and eliminates timing races with showLayerIds.
-  // Falls back to fitToOutline only when no visible content bounds can be derived.
-  function fitVisibleContent() {
-    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
-
-    function extendWith(lat, lng) {
-      if (lat == null || lng == null || isNaN(+lat) || isNaN(+lng)) return;
-      minLat = Math.min(minLat, +lat);
-      maxLat = Math.max(maxLat, +lat);
-      minLng = Math.min(minLng, +lng);
-      maxLng = Math.max(maxLng, +lng);
-    }
-
-    // Walk GeoJSON coordinates; handles Point, LineString, Polygon, Multi*, Collection.
-    function walkCoords(coords) {
-      if (!Array.isArray(coords)) return;
-      if (typeof coords[0] === 'number') {
-        extendWith(coords[1], coords[0]); // GeoJSON is [lng, lat]
-      } else {
-        coords.forEach(walkCoords);
-      }
-    }
-
-    // Active-category GeoJSON layers (only the ones currently toggled on)
-    mapLayers.forEach(layer => {
-      if (layer.layerKey !== activeCategory) return;
-      const sub = layer.subLayerKey;
-      if (sub === 'controller' && suppressControllerGeo) return;
-      if (sub === 'zone' && suppressZoneGeo) return;
-      if (!sublayerState[activeCategory] || !sublayerState[activeCategory][sub]) return;
-      if (!layer._geojson || !layer._geojson.features) return;
-      layer._geojson.features.forEach(f => {
-        if (f.geometry && f.geometry.coordinates) walkCoords(f.geometry.coordinates);
-      });
-    });
-
-    // Irrigation markers for the active category (positioned assets replace geometry)
-    if (activeCategory === 'irrigation') {
-      const state = sublayerState.irrigation || {};
-      controllerData.forEach(c => {
-        if (state.controller && c.latitude != null && c.longitude != null) {
-          extendWith(c.latitude, c.longitude);
-        }
-        (c.zones || []).forEach(z => {
-          if (state.zone && z.latitude != null && z.longitude != null) {
-            extendWith(z.latitude, z.longitude);
-          }
-        });
-      });
-    }
-
-    if (minLat <= maxLat && minLng <= maxLng) {
-      cmdToIframe('fitBounds', [[minLat, minLng], [maxLat, maxLng]]);
-    } else if (_outlineGeojson) {
-      // Nothing visible in the active category — fall back to community outline
-      cmdToIframe('fitToOutline');
-    }
-  }
-
+  // ── Asset detail panel ─────────────────────────────────────────────────────
   async function handleAssetDetail(data) {
     if (!data || !data.featureRef) return;
     try {
       const asset = await apiFetch(`/api/assets/by-feature?communityId=${community.id}&featureRef=${encodeURIComponent(data.featureRef)}`);
       if (asset) {
-        selectedAsset = asset;
-        selectedAsset._label = data.label || asset.label || asset.displayName || '';
+        selectedAsset           = asset;
+        selectedAsset._label    = data.label || asset.label || asset.displayName || '';
         selectedAsset._assetType = data.assetType || asset.assetType || '';
         selectedAsset._layerName = data.layerName || '';
         detailTab = 'details';
         renderDetailPanel();
         const lat = asset.latitude;
         const lng = asset.longitude;
-        if (lat != null && lng != null) {
-          const flyLabel = selectedAsset._label || '';
-          cmdToIframe('flyTo', lat, lng, 16, flyLabel);
+        if (lat != null && lng != null && renderer) {
+          renderer.cmdToIframe('flyTo', lat, lng, 16, selectedAsset._label || '');
         }
       } else {
         selectedAsset = {
-          _label: data.label || data.featureRef,
+          _label:     data.label || data.featureRef,
           _assetType: data.assetType || '',
           _layerName: data.layerName || '',
           featureRef: data.featureRef,
-          _notFound: true,
+          _notFound:  true,
         };
         detailTab = 'details';
         renderDetailPanel();
@@ -916,28 +445,28 @@ PortalRouter.register('map', async function (container) {
   }
 
   function renderDetailPanel() {
-    const emptyEl = document.getElementById('mdp-empty');
+    const emptyEl   = document.getElementById('mdp-empty');
     const contentEl = document.getElementById('mdp-content');
     if (!emptyEl || !contentEl) return;
 
     if (!selectedAsset) {
-      emptyEl.style.display = '';
+      emptyEl.style.display   = '';
       contentEl.style.display = 'none';
       return;
     }
 
-    emptyEl.style.display = 'none';
+    emptyEl.style.display   = 'none';
     contentEl.style.display = '';
 
-    const asset = selectedAsset;
-    const label = asset._label || asset.label || asset.displayName || asset.featureRef || 'Asset';
+    const asset     = selectedAsset;
+    const label     = asset._label || asset.label || asset.displayName || asset.featureRef || 'Asset';
     const assetType = asset._assetType || asset.assetType || '';
     const typeLabel = assetType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-    const tabs = ['details', 'history', 'notes', 'photos'];
+    const tabs      = ['details', 'history', 'notes', 'photos'];
     const tabLabels = { details: 'Details', history: 'Work History', notes: 'Contractor Notes', photos: 'Photos' };
 
-    let html = `
+    contentEl.innerHTML = `
       <div class="mdp-header">
         <button class="mdp-close" id="mdp-close-btn">&times;</button>
         <div class="mdp-type-badge">${esc(typeLabel)}</div>
@@ -949,8 +478,6 @@ PortalRouter.register('map', async function (container) {
       </div>
       <div class="mdp-tab-body" id="mdp-tab-body"></div>
     `;
-
-    contentEl.innerHTML = html;
 
     contentEl.querySelector('#mdp-close-btn').addEventListener('click', () => {
       selectedAsset = null;
@@ -968,7 +495,7 @@ PortalRouter.register('map', async function (container) {
   }
 
   function renderTabContent() {
-    const body = document.getElementById('mdp-tab-body');
+    const body  = document.getElementById('mdp-tab-body');
     if (!body) return;
     const asset = selectedAsset;
 
@@ -977,84 +504,54 @@ PortalRouter.register('map', async function (container) {
       return;
     }
 
-    if (detailTab === 'details') {
-      renderDetailsTab(body, asset);
-    } else if (detailTab === 'history') {
-      renderHistoryTab(body, asset);
-    } else if (detailTab === 'notes') {
-      renderNotesTab(body, asset);
-    } else if (detailTab === 'photos') {
-      renderPhotosTab(body, asset);
-    }
+    if (detailTab === 'details')  renderDetailsTab(body, asset);
+    else if (detailTab === 'history') renderHistoryTab(body, asset);
+    else if (detailTab === 'notes')   renderNotesTab(body, asset);
+    else if (detailTab === 'photos')  renderPhotosTab(body, asset);
   }
 
   const TYPE_FIELD_DEFS = {
     tree: [
-      { key: 'species', label: 'Species' },
-      { key: 'common_name', label: 'Common Name' },
-      { key: 'dbh', label: 'DBH (inches)' },
-      { key: 'height', label: 'Height' },
-      { key: 'canopy_spread', label: 'Canopy Spread' },
-      { key: 'condition', label: 'Condition' },
-      { key: 'health_rating', label: 'Health Rating' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'species', label: 'Species' }, { key: 'common_name', label: 'Common Name' },
+      { key: 'dbh', label: 'DBH (inches)' }, { key: 'height', label: 'Height' },
+      { key: 'canopy_spread', label: 'Canopy Spread' }, { key: 'condition', label: 'Condition' },
+      { key: 'health_rating', label: 'Health Rating' }, { key: 'notes', label: 'Notes' },
     ],
     controller: [
-      { key: 'controller_key', label: 'Controller Key' },
-      { key: 'make', label: 'Make' },
-      { key: 'model', label: 'Model' },
-      { key: 'serial_number', label: 'Serial Number' },
-      { key: 'zone_count', label: 'Zone Count' },
-      { key: 'install_date', label: 'Install Date' },
-      { key: 'location_description', label: 'Location' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'controller_key', label: 'Controller Key' }, { key: 'make', label: 'Make' },
+      { key: 'model', label: 'Model' }, { key: 'serial_number', label: 'Serial Number' },
+      { key: 'zone_count', label: 'Zone Count' }, { key: 'install_date', label: 'Install Date' },
+      { key: 'location_description', label: 'Location' }, { key: 'notes', label: 'Notes' },
     ],
     zone: [
-      { key: 'zone_number', label: 'Zone Number' },
-      { key: 'controller_key', label: 'Controller' },
-      { key: 'head_type', label: 'Head Type' },
-      { key: 'head_count', label: 'Head Count' },
-      { key: 'precipitation_rate', label: 'Precip. Rate' },
-      { key: 'area_sqft', label: 'Area (sq ft)' },
-      { key: 'plant_type', label: 'Plant Type' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'zone_number', label: 'Zone Number' }, { key: 'controller_key', label: 'Controller' },
+      { key: 'head_type', label: 'Head Type' }, { key: 'head_count', label: 'Head Count' },
+      { key: 'precipitation_rate', label: 'Precip. Rate' }, { key: 'area_sqft', label: 'Area (sq ft)' },
+      { key: 'plant_type', label: 'Plant Type' }, { key: 'notes', label: 'Notes' },
     ],
     backflow: [
-      { key: 'device_type', label: 'Device Type' },
-      { key: 'make', label: 'Make' },
-      { key: 'model', label: 'Model' },
-      { key: 'serial_number', label: 'Serial Number' },
-      { key: 'size', label: 'Size' },
-      { key: 'install_date', label: 'Install Date' },
-      { key: 'last_test_date', label: 'Last Test Date' },
-      { key: 'test_result', label: 'Test Result' },
-      { key: 'location_description', label: 'Location' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'device_type', label: 'Device Type' }, { key: 'make', label: 'Make' },
+      { key: 'model', label: 'Model' }, { key: 'serial_number', label: 'Serial Number' },
+      { key: 'size', label: 'Size' }, { key: 'install_date', label: 'Install Date' },
+      { key: 'last_test_date', label: 'Last Test Date' }, { key: 'test_result', label: 'Test Result' },
+      { key: 'location_description', label: 'Location' }, { key: 'notes', label: 'Notes' },
     ],
     bluegrass_area: [
-      { key: 'area_sqft', label: 'Area (sq ft)' },
-      { key: 'turf_type', label: 'Turf Type' },
-      { key: 'condition', label: 'Condition' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'area_sqft', label: 'Area (sq ft)' }, { key: 'turf_type', label: 'Turf Type' },
+      { key: 'condition', label: 'Condition' }, { key: 'notes', label: 'Notes' },
     ],
     native_area: [
-      { key: 'area_sqft', label: 'Area (sq ft)' },
-      { key: 'vegetation_type', label: 'Vegetation Type' },
-      { key: 'condition', label: 'Condition' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'area_sqft', label: 'Area (sq ft)' }, { key: 'vegetation_type', label: 'Vegetation Type' },
+      { key: 'condition', label: 'Condition' }, { key: 'notes', label: 'Notes' },
     ],
     landscape_bed: [
-      { key: 'area_sqft', label: 'Area (sq ft)' },
-      { key: 'bed_type', label: 'Bed Type' },
-      { key: 'mulch_type', label: 'Mulch Type' },
-      { key: 'condition', label: 'Condition' },
+      { key: 'area_sqft', label: 'Area (sq ft)' }, { key: 'bed_type', label: 'Bed Type' },
+      { key: 'mulch_type', label: 'Mulch Type' }, { key: 'condition', label: 'Condition' },
       { key: 'notes', label: 'Notes' },
     ],
     pet_station: [
-      { key: 'station_type', label: 'Station Type' },
-      { key: 'condition', label: 'Condition' },
-      { key: 'location_description', label: 'Location' },
-      { key: 'notes', label: 'Notes' },
+      { key: 'station_type', label: 'Station Type' }, { key: 'condition', label: 'Condition' },
+      { key: 'location_description', label: 'Location' }, { key: 'notes', label: 'Notes' },
     ],
   };
 
@@ -1084,19 +581,16 @@ PortalRouter.register('map', async function (container) {
     }
 
     const fields = [];
-
     fields.push(['Type', assetType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())]);
-    if (asset.featureRef) fields.push(['Feature Ref', asset.featureRef]);
-    if (asset.status) fields.push(['Status', asset.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())]);
-    if (asset.label) fields.push(['Label', asset.label]);
+    if (asset.featureRef)   fields.push(['Feature Ref', asset.featureRef]);
+    if (asset.status)       fields.push(['Status', asset.status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())]);
+    if (asset.label)        fields.push(['Label', asset.label]);
     if (asset.displayName && asset.displayName !== asset.label) fields.push(['Display Name', asset.displayName]);
 
     if (typeDef) {
       typeDef.forEach(fd => {
         const v = propsMap[fd.key];
-        if (v != null && v !== '') {
-          fields.push([fd.label, String(v)]);
-        }
+        if (v != null && v !== '') { fields.push([fd.label, String(v)]); }
         delete propsMap[fd.key];
       });
     }
@@ -1123,10 +617,8 @@ PortalRouter.register('map', async function (container) {
           <div class="mdp-field">
             <span class="mdp-field-label">${esc(label)}</span>
             <span class="mdp-field-value">${esc(value)}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
+          </div>`).join('')}
+      </div>`;
   }
 
   async function renderHistoryTab(body, asset) {
@@ -1149,22 +641,17 @@ PortalRouter.register('map', async function (container) {
             if (item.status) html += `<span class="mdp-hist-status">${esc(item.status.replace(/_/g, ' '))}</span>`;
             if (item.completedAt || item.windowEnd) html += `<span class="mdp-hist-date">${new Date(item.completedAt || item.windowEnd).toLocaleDateString()}</span>`;
             html += `</div>`;
-            if (!isContractor && item.invoiceAmount != null) {
-              html += `<div class="mdp-hist-amount">$${Number(item.invoiceAmount).toFixed(2)}</div>`;
-            }
+            if (!isContractor && item.invoiceAmount != null) html += `<div class="mdp-hist-amount">$${Number(item.invoiceAmount).toFixed(2)}</div>`;
             html += `</div>`;
             return html;
           }).join('')}
-        </div>
-      `;
+        </div>`;
     } catch (err) {
       body.innerHTML = '<div class="mdp-empty-tab">Failed to load work history.</div>';
     }
   }
 
-  function renderNotesTab(body, asset) {
-    loadNotesTab(body, asset);
-  }
+  function renderNotesTab(body, asset) { loadNotesTab(body, asset); }
 
   async function loadNotesTab(body, asset) {
     const gen = ++renderGeneration;
@@ -1181,27 +668,25 @@ PortalRouter.register('map', async function (container) {
       body.innerHTML = `
         <div class="mdp-notes-list">
           ${notes.map(note => {
-            const canDelete = isAdmin || (currentUserId && note.createdBy === currentUserId);
-            const noteText = note.noteText || note.content || note.text || note.note || '';
+            const canDelete  = isAdmin || (currentUserId && note.createdBy === currentUserId);
+            const noteText   = note.noteText || note.content || note.text || note.note || '';
             const authorName = note.creatorName || note.authorName || note.author || 'Unknown';
-            const noteDate = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : '';
+            const noteDate   = note.createdAt ? new Date(note.createdAt).toLocaleDateString() : '';
             return `
-            <div class="mdp-note-item" data-note-id="${esc(note.id)}">
-              <div class="mdp-note-meta">
-                <span class="mdp-note-author">${esc(authorName)}</span>
-                <div class="mdp-note-meta-right">
-                  <span class="mdp-note-date">${noteDate}</span>
-                  ${canDelete ? `<button class="mdp-note-delete-btn" data-note-id="${esc(note.id)}" title="Delete note" aria-label="Delete note">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  </button>` : ''}
+              <div class="mdp-note-item" data-note-id="${esc(note.id)}">
+                <div class="mdp-note-meta">
+                  <span class="mdp-note-author">${esc(authorName)}</span>
+                  <div class="mdp-note-meta-right">
+                    <span class="mdp-note-date">${noteDate}</span>
+                    ${canDelete ? `<button class="mdp-note-delete-btn" data-note-id="${esc(note.id)}" title="Delete note" aria-label="Delete note">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>` : ''}
+                  </div>
                 </div>
-              </div>
-              <div class="mdp-note-text">${esc(noteText)}</div>
-            </div>
-          `;
+                <div class="mdp-note-text">${esc(noteText)}</div>
+              </div>`;
           }).join('')}
-        </div>
-      `;
+        </div>`;
 
       body.querySelectorAll('.mdp-note-delete-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1227,7 +712,6 @@ PortalRouter.register('map', async function (container) {
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         </div>
         <p>No photos available for this asset.</p>
-      </div>
-    `;
+      </div>`;
   }
 });

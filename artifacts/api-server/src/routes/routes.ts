@@ -5717,6 +5717,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/portfolio/branches/:communityId/controllers", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const communityId = req.params.communityId as string;
+
+      // Verify the community belongs to this org (no existence leak)
+      const community = await storage.getCommunityById(communityId);
+      if (!community || community.organizationId !== resolved.orgId) {
+        return void res.status(403).json({ error: "Branch not found or does not belong to this organization" });
+      }
+
+      // Same shape as GET /api/communities/:id/controllers
+      const controllerAssets = await storage.getAssetsByCommunitySorted(communityId, "controller");
+      const zoneAssets = await storage.getAssetsByCommunitySorted(communityId, "zone");
+
+      const controllerIds = controllerAssets.map(a => a.id);
+      const zoneIds = zoneAssets.map(a => a.id);
+      const allIds = [...controllerIds, ...zoneIds];
+
+      let allProps: { assetId: string; key: string; value: string }[] = [];
+      if (allIds.length > 0) {
+        allProps = await storage.getAssetPropertiesBulk(allIds);
+      }
+
+      const propsMap = new Map<string, Record<string, string>>();
+      for (const p of allProps) {
+        if (!propsMap.has(p.assetId)) propsMap.set(p.assetId, {});
+        propsMap.get(p.assetId)![p.key] = p.value;
+      }
+
+      const zonesByController = new Map<string, typeof zoneAssets>();
+      for (const zone of zoneAssets) {
+        if (zone.isArchived) continue;
+        const zProps = propsMap.get(zone.id) || {};
+        const ctrlRef = zProps.controllerFeatureRef;
+        if (ctrlRef) {
+          if (!zonesByController.has(ctrlRef)) zonesByController.set(ctrlRef, []);
+          zonesByController.get(ctrlRef)!.push(zone);
+        }
+      }
+
+      const result = controllerAssets
+        .filter(c => !c.isArchived)
+        .map(c => {
+          const cProps = propsMap.get(c.id) || {};
+          const zones = zonesByController.get(c.featureRef || "") || [];
+          return {
+            id: c.id,
+            label: c.label,
+            featureRef: c.featureRef,
+            controllerKey: cProps.controllerKey || "",
+            controllerColor: cProps.controllerColor || "#999999",
+            latitude: c.latitude,
+            longitude: c.longitude,
+            zoneCount: zones.length,
+            zones: zones.map(z => {
+              const zProps = propsMap.get(z.id) || {};
+              return {
+                id: z.id,
+                label: z.label,
+                featureRef: z.featureRef,
+                zoneNumber: zProps.zoneNumber ? parseInt(zProps.zoneNumber) : null,
+                zoneType: zProps.zoneType || null,
+                zoneLabelShort: zProps.zoneLabelShort || null,
+                zoneColor: zProps.zoneColor || null,
+                latitude: z.latitude,
+                longitude: z.longitude,
+              };
+            }).sort((a, b) => (a.zoneNumber || 999) - (b.zoneNumber || 999)),
+          };
+        })
+        .sort((a, b) => a.controllerKey.localeCompare(b.controllerKey));
+
+      console.log(`[GET /api/portfolio/branches/:communityId/controllers] org=${resolved.orgId} community=${communityId} count=${result.length} (${Date.now() - t0}ms)`);
+      return void res.json(result);
+    } catch (error) {
+      console.error("Portfolio branch controllers error:", error);
+      return void res.status(500).json({ error: "Failed to fetch branch controllers" });
+    }
+  });
+
   app.get("/api/portfolio/groups", requireClientOrAdmin, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {

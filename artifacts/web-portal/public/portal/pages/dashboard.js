@@ -1261,7 +1261,7 @@ function _patchListModule(container, colSelector, rows, emptyMsg) {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
- * Dashboard Map Preview — Leaflet bridge
+ * Dashboard Map Preview — delegates to VRTMapRenderer
  * ────────────────────────────────────────────────────────────────────────── */
 async function _initMapPreview(communityId) {
   if (typeof window._dashMapCleanup === 'function') {
@@ -1272,81 +1272,54 @@ async function _initMapPreview(communityId) {
   const iframe = document.getElementById('dash-map-iframe');
   if (!iframe) return;
 
-  let ready = false;
-  const pending = [];
-
-  function send(fn) {
-    const args = Array.prototype.slice.call(arguments, 1);
-    if (!ready) { pending.push({ fn, args }); return; }
-    if (iframe.contentWindow) {
-      iframe.contentWindow.postMessage({ type: 'cmd', fn, args }, '*');
-    }
+  if (!window.VRTMapRenderer) {
+    console.warn('[dashboard] VRTMapRenderer not loaded — skipping map preview');
+    return;
   }
 
-  function handler(e) {
-    if (e.source !== iframe.contentWindow) return;
-    if (!e.data || typeof e.data !== 'string') return;
-    var msg;
-    try { msg = JSON.parse(e.data); } catch (_) { return; }
-    if (msg.type !== 'mapReady') return;
-    ready = true;
-    var cmds = pending.splice(0);
-    cmds.forEach(function(c) {
-      if (iframe.contentWindow) {
-        iframe.contentWindow.postMessage({ type: 'cmd', fn: c.fn, args: c.args }, '*');
-      }
-    });
-    _loadPreviewCommunity(communityId, send);
-  }
+  // Portal adapter — same endpoints as portal/pages/map.js
+  const portalAdapter = {
+    fetchLayers: (cid) =>
+      PortalAPI.apiFetch(`/api/map-layers?communityId=${cid}`),
+    fetchLayerGeojson: (layerId) =>
+      PortalAPI.apiFetch(`/api/map-layers/${layerId}/geojson`),
+    fetchControllers: (cid) =>
+      PortalAPI.apiFetch(`/api/communities/${cid}/controllers`),
+    fetchBounds: (cid) =>
+      PortalAPI.apiFetch(`/api/communities/${cid}/bounds`),
+  };
 
-  window.addEventListener('message', handler);
+  // Dashboard preview shows the 'community' category by default
+  const PREVIEW_HIERARCHY = {
+    community:  [
+      { key: 'bluegrass_area', label: 'Bluegrass',      color: '#2E8B57' },
+      { key: 'native_area',   label: 'Native Area',     color: '#8F9779' },
+      { key: 'landscape_bed', label: 'Landscape Bed',   color: '#8B5A2B' },
+      { key: 'pet_station',   label: 'Pet Station',     color: '#1ABC9C' },
+    ],
+    irrigation: [],
+    snow:       [],
+    trees:      [],
+  };
+
+  const renderer = window.VRTMapRenderer.create({
+    iframe:    iframe,
+    adapter:   portalAdapter,
+    hierarchy: PREVIEW_HIERARCHY,
+  });
+
+  renderer.on('ready', function () {
+    // Show only the community category in the dashboard preview
+    renderer.setActiveCategory('community');
+  });
+
+  renderer.load(communityId).catch(function(err) {
+    console.error('Dashboard map preview failed:', err);
+  });
+
   window._dashMapCleanup = function() {
-    window.removeEventListener('message', handler);
+    renderer.destroy();
     window._dashMapCleanup = null;
   };
   return window._dashMapCleanup;
-}
-
-async function _loadPreviewCommunity(communityId, send) {
-  try {
-    const layers = await PortalAPI.apiFetch(`/api/map-layers?communityId=${communityId}`);
-    const mapLayers = Array.isArray(layers) ? layers : [];
-
-    for (const layer of mapLayers) {
-      try {
-        const geojson = await PortalAPI.apiFetch(`/api/map-layers/${layer.id}/geojson`);
-        if (geojson) layer._geojson = geojson;
-      } catch (_) {}
-    }
-
-    const communitySubKeys = ['bluegrass_area', 'native_area', 'landscape_bed', 'pet_station'];
-    const layerData = mapLayers
-      .filter(function(l) { return l._geojson && l.layerKey !== 'outline'; })
-      .map(function(l) {
-        return {
-          id: l.id,
-          layerKey: l.layerKey,
-          subLayerKey: l.subLayerKey,
-          displayName: l.displayName,
-          color: l.color || '#25C1AC',
-          geojson: l._geojson,
-          controllerColorMap: l.controllerColorMap || {},
-        };
-      });
-
-    if (layerData.length > 0) send('addLayers', layerData);
-
-    const visibleIds = mapLayers
-      .filter(function(l) { return l.layerKey === 'community' && communitySubKeys.indexOf(l.subLayerKey) !== -1; })
-      .map(function(l) { return l.id; });
-    send('showLayerIds', visibleIds);
-
-    const outlineLayer = mapLayers.find(function(l) { return l.layerKey === 'outline' && l._geojson; });
-    if (outlineLayer) {
-      send('setCommunityOutline', outlineLayer._geojson);
-      send('fitToOutline');
-    }
-  } catch (err) {
-    console.error('Dashboard map preview failed:', err);
-  }
 }

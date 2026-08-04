@@ -4,21 +4,17 @@
  *
  * Shows every branch as a Leaflet pin (navy = no open WOs, amber = has WOs).
  * Group filter chips filter visible pins.
- * Clicking a pin fires viewAssetDetail → branch card rendered in portal DOM.
+ * Clicking a pin fires the markerSelect event → branch card rendered in portal DOM.
  *
- * Branch pins are sent as a GeoJSON FeatureCollection via addLayers, using
- * subLayerKey:'controller' + controllerColorMap for per-pin colour.
- * A bridge extension (e.g. setBranchPins) would be cleaner for a future slice
- * but would require modifying the shared Leaflet template.
- *
- * The branch card popup is rendered in the portal DOM (not inside the iframe).
+ * Pin rendering is delegated to VRTMapRenderer via addCustomLayer/showCustomLayers
+ * so that no raw addLayers/showLayerIds calls live in this file.
  */
 (function () {
   'use strict';
 
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
 
-  // ── org param helper ────────────────────────────────────────────────────────
+  // ── org param helper ─────────────────────────────────────────────────────────
   function orgParam() {
     var state = window.PortfolioState;
     if (state && state.organizationId) {
@@ -34,73 +30,28 @@
     });
   }
 
-  // ── Iframe / postMessage bridge ─────────────────────────────────────────────
-  var _iframeReady = false;
-  var _pendingCmds = [];
-  var _iframeEl = null;
-  var _msgHandler = null;
-
-  function getIframe() { return _iframeEl || document.getElementById('pf-map-iframe'); }
-
-  function cmdToIframe(fn) {
-    var args = Array.prototype.slice.call(arguments, 1);
-    var iframe = getIframe();
-    if (!iframe || !iframe.contentWindow) return;
-    if (!_iframeReady) { _pendingCmds.push({ fn: fn, args: args }); return; }
-    iframe.contentWindow.postMessage({ type: 'cmd', fn: fn, args: args }, '*');
-  }
-
-  function flushPending() {
-    var cmds = _pendingCmds.slice();
-    _pendingCmds = [];
-    cmds.forEach(function (c) { cmdToIframe.apply(null, [c.fn].concat(c.args)); });
-  }
-
-  function setupIframe(onBranchPin) {
-    _msgHandler = function (e) {
-      if (!e.data) return;
-      // Leaflet template serialises every message with JSON.stringify
-      var msg;
-      if (typeof e.data === 'string') {
-        try { msg = JSON.parse(e.data); } catch (_) { return; }
-      } else {
-        msg = e.data;
-      }
-      // mapReady fires multiple times (retries) — only flush once
-      if (msg.type === 'mapReady') {
-        if (!_iframeReady) {
-          _iframeReady = true;
-          flushPending();
-        }
-      } else if (msg.type === 'markerSelect' && msg.data) {
-        // Branch pin clicked (popup just opened) — msg.data.featureRef === branch.id.
-        // markerSelect is emitted by the template on popupopen, before the user
-        // clicks "View Details", so the portal card appears on the first tap.
-        onBranchPin(msg.data.featureRef || msg.data.label);
-      }
-    };
-    window.addEventListener('message', _msgHandler);
-  }
-
-  function teardownIframe() {
-    if (_msgHandler) { window.removeEventListener('message', _msgHandler); _msgHandler = null; }
-    _iframeReady = false;
-    _pendingCmds = [];
-    _iframeEl = null;
-  }
-
-  // ── Pin rendering ───────────────────────────────────────────────────────────
+  // ── Per-render cleanup ───────────────────────────────────────────────────────
+  var _renderer   = null;
   var _pinVersion = 0;
 
+  function _teardown() {
+    if (_renderer) { _renderer.destroy(); _renderer = null; }
+  }
+
+  // ── Pin rendering via shared renderer ────────────────────────────────────────
   /**
-   * Send branch pins to the iframe as a GeoJSON FeatureCollection.
-   * Uses subLayerKey:'controller' + controllerColorMap for per-pin colour.
-   * Navy (#0C1D31) = no open WOs; amber (#f59e0b) = has open WOs.
+   * Send branch pins to the map via VRTMapRenderer.addCustomLayer /
+   * VRTMapRenderer.showCustomLayers so no raw addLayers/showLayerIds calls
+   * live in this file.
    */
   function sendBranchPins(branches) {
-    if (!branches || branches.length === 0) return;
+    if (!_renderer) return;
+    if (!branches || branches.length === 0) {
+      _renderer.showCustomLayers([]);
+      return;
+    }
     _pinVersion++;
-    var layerId = 'portfolio-branches-v' + _pinVersion;
+    var layerId  = 'portfolio-branches-v' + _pinVersion;
     var colorMap = {};
     branches.forEach(function (b) {
       colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31';
@@ -114,28 +65,28 @@
           geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
           properties: {
             featureId: b.id,
-            label: (b.code ? b.code + ' — ' : '') + b.name,
+            label: (b.code ? b.code + ' \u2014 ' : '') + b.name,
             displayName: b.name,
             assetType: 'branch',
           },
         };
       }),
     };
-    // addLayers caches by id; showLayerIds hides old layers and shows new one
-    cmdToIframe('addLayers', [{
-      id: layerId,
-      layerKey: 'branch',
-      subLayerKey: 'controller', // enables controllerColorMap per-feature colouring
-      displayName: 'Branches',
-      color: '#0C1D31',
+
+    _renderer.addCustomLayer({
+      id:               layerId,
+      layerKey:         'branch',
+      subLayerKey:      'controller', // enables per-feature colouring via controllerColorMap
+      displayName:      'Branches',
+      color:            '#0C1D31',
       controllerColorMap: colorMap,
-      geojson: geojson,
-    }]);
-    cmdToIframe('showLayerIds', [layerId]);
-    cmdToIframe('fitToContent', [], null);
+      geojson:          geojson,
+    });
+    _renderer.showCustomLayers([layerId]);
+    _renderer.fit();
   }
 
-  // ── Group chips ─────────────────────────────────────────────────────────────
+  // ── Group chips ──────────────────────────────────────────────────────────────
   function renderGroupChips(groups, activeGroupId, onSelect) {
     var chips = '<button class="pfm-chip' + (!activeGroupId ? ' pfm-chip--active' : '') + '" data-group="">All</button>';
     groups.forEach(function (g) {
@@ -152,7 +103,7 @@
     });
   }
 
-  // ── Branch card ─────────────────────────────────────────────────────────────
+  // ── Branch card ──────────────────────────────────────────────────────────────
   function renderBranchCard(branch, container) {
     var existing = document.getElementById('pfm-branch-card');
     if (existing) existing.remove();
@@ -186,7 +137,7 @@
     });
   }
 
-  // ── Unmapped list ───────────────────────────────────────────────────────────
+  // ── Unmapped list ────────────────────────────────────────────────────────────
   function renderUnmappedList(unmapped) {
     var el = document.getElementById('pfm-unmapped');
     if (!el) return;
@@ -202,10 +153,10 @@
       + '</div>';
   }
 
-  // ── Main render ─────────────────────────────────────────────────────────────
+  // ── Main render ──────────────────────────────────────────────────────────────
   function renderMapPage(container, mapData, groups) {
-    // Clean up any existing listener
-    if (window._portfolioMapCleanup) window._portfolioMapCleanup();
+    _teardown();
+    if (window._portfolioMapCleanup) { window._portfolioMapCleanup(); }
 
     container.innerHTML = ''
       + '<div class="pfm-page">'
@@ -224,37 +175,31 @@
         + '<div id="pfm-unmapped" class="pfm-unmapped" style="display:none"></div>'
       + '</div>';
 
-    _iframeEl = document.getElementById('pf-map-iframe');
-
-    // Wire expand/collapse for the portfolio map wrap.
-    // The iframe is never re-parented — expand is CSS-only.
-    var mapWrap = document.getElementById('pfm-map-wrap');
+    var mapWrap   = document.getElementById('pfm-map-wrap');
     var expandBtn = document.getElementById('pfm-map-expand-btn');
+    var iframe    = document.getElementById('pf-map-iframe');
+
+    // Wire expand/collapse — CSS-only, iframe stays mounted.
     if (mapWrap && expandBtn) {
-      function pfmPostTransitionInvalidate() {
-        cmdToIframe('invalidateSize');
-      }
       expandBtn.addEventListener('click', function () {
         var expanded = mapWrap.classList.toggle('pfm-map-wrap--expanded');
         expandBtn.setAttribute('aria-pressed', expanded ? 'true' : 'false');
         expandBtn.title = expanded ? 'Collapse map' : 'Expand map';
-        // Call invalidateSize after the CSS expand animation (250 ms) so Leaflet
-        // measures the final container dimensions, not mid-animation ones.
-        setTimeout(pfmPostTransitionInvalidate, 270);
+        setTimeout(function () { if (_renderer) _renderer.invalidateSize(); }, 270);
       });
       document.addEventListener('keydown', function pfmEsc(e) {
         if (e.key === 'Escape' && mapWrap.classList.contains('pfm-map-wrap--expanded')) {
           mapWrap.classList.remove('pfm-map-wrap--expanded');
           expandBtn.setAttribute('aria-pressed', 'false');
           expandBtn.title = 'Expand map';
-          setTimeout(pfmPostTransitionInvalidate, 270);
+          setTimeout(function () { if (_renderer) _renderer.invalidateSize(); }, 270);
         }
       });
     }
 
     var allBranches = mapData.branches || [];
     var allUnmapped = mapData.unmapped || [];
-    var branchById = {};
+    var branchById  = {};
     allBranches.forEach(function (b) { branchById[b.id] = b; });
 
     var activeGroupId = null;
@@ -273,75 +218,54 @@
       activeGroupId = groupId || null;
       renderGroupChips(groups, activeGroupId, onGroupSelect);
       sendBranchPins(getFilteredBranches());
-      // Close any open branch card
       var card = document.getElementById('pfm-branch-card');
       if (card) card.remove();
     }
 
-    function onBranchPin(branchId) {
-      var branch = branchById[branchId];
-      var wrap = document.getElementById('pfm-map-wrap');
-      renderBranchCard(branch || null, wrap || container);
-    }
+    // Null adapter — the portfolio map page doesn't render community layers;
+    // it only renders branch pins via addCustomLayer.
+    var nullAdapter = {
+      fetchLayers:      function () { return Promise.resolve([]); },
+      fetchLayerGeojson: function () { return Promise.resolve(null); },
+      fetchControllers: function () { return Promise.resolve([]); },
+    };
 
-    setupIframe(onBranchPin);
-    // When iframe is ready, send pins
-    _pendingCmds.push({ fn: 'addLayers', args: [] }); // no-op — real send happens below
-    _pendingCmds.pop();
-    // Queue actual pin send (will flush on mapReady)
-    var filtered = getFilteredBranches();
-    if (filtered.length > 0) {
-      _pinVersion++;
-      var layerId = 'portfolio-branches-v' + _pinVersion;
-      var colorMap = {};
-      filtered.forEach(function (b) { colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31'; });
-      _pendingCmds.push({ fn: 'addLayers', args: [[{
-        id: layerId,
-        layerKey: 'branch',
-        subLayerKey: 'controller',
-        displayName: 'Branches',
-        color: '#0C1D31',
-        controllerColorMap: colorMap,
-        geojson: {
-          type: 'FeatureCollection',
-          features: filtered.map(function (b) {
-            return {
-              type: 'Feature',
-              id: b.id,
-              geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
-              properties: {
-                featureId: b.id,
-                label: (b.code ? b.code + ' \u2014 ' : '') + b.name,
-                displayName: b.name,
-                assetType: 'branch',
-              },
-            };
-          }),
-        },
-      }]] });
-      _pendingCmds.push({ fn: 'showLayerIds', args: [[layerId]] });
-      _pendingCmds.push({ fn: 'fitToContent', args: [[], null] });
-    }
+    _renderer = window.VRTMapRenderer.create({
+      iframe:    iframe,
+      adapter:   nullAdapter,
+      hierarchy: {},
+    });
+
+    _renderer.on('ready', function () {
+      // Send initial pins once the map is ready
+      sendBranchPins(getFilteredBranches());
+    });
+
+    _renderer.on('assetTap', function (data) {
+      var branchId = data && (data.featureRef || data.featureId || data.label);
+      if (branchId) {
+        var branch = branchById[branchId];
+        renderBranchCard(branch || null, mapWrap || container);
+      }
+    });
+
+    // Load with no communityId — community is empty so only custom layers appear
+    _renderer.load(null);
 
     renderGroupChips(groups, activeGroupId, onGroupSelect);
     renderUnmappedList(allUnmapped);
 
     window._portfolioMapCleanup = function () {
-      teardownIframe();
+      _teardown();
       window._portfolioMapCleanup = null;
     };
   }
 
-  // ── Register ────────────────────────────────────────────────────────────────
+  // ── Register ──────────────────────────────────────────────────────────────────
   function register() {
-    PortfolioRouter.register('map', function (container, params) {
-      // Reset iframe state for fresh mount
-      _iframeReady = false;
-      _pendingCmds = [];
-      _iframeEl = null;
-
+    PortfolioRouter.register('map', function (container) {
       var orgSuffix = orgParam();
-      var state = window.PortfolioState || {};
+      var state  = window.PortfolioState || {};
       var groups = Array.isArray(state.groups) ? state.groups : [];
 
       container.innerHTML = '<div class="pf-spinner">Loading map\u2026</div>';
