@@ -1,0 +1,90 @@
+# Task #444: Fix sub-layer map rendering + restore a single source of truth for layer colors
+
+## What & Why
+
+Two problems, same render path.
+
+### A. Sub-layers don't render on category tabs (root cause found)
+
+`artifacts/web-portal/public/portfolio/pages/branch-detail.js` (~279) moves the map iframe between per-tab slots:
+
+```js
+if (_bMap.iframe && _bMap.iframe.parentNode !== slot) slot.appendChild(_bMap.iframe);
+```
+
+**Re-parenting an `<iframe>` forces the browser to reload it.** That destroys the map's internal `layerCache`, so every layer previously sent via `addLayers` is gone. But `_bMap.addedSet` still believes those layers are loaded, so `_pushNewLayers()` skips re-sending them, and the subsequent `showLayerIds(checkedIds)` arrives at a map with an empty cache. Net result, exactly as observed: checkboxes checked, correct ids computed, **nothing drawn** — while the Summary tab (where the iframe is first mounted and never moved) works fine.
+
+This is why three previous fixes didn't stick: they corrected ids, colors, and fetch logic, none of which were broken.
+
+### B. Layer colors: there are now two places to set them — revert to one
+
+Task #442 added `asset_types.defaultColor`, creating a second color source alongside the long-standing **Map Layers** color picker (`map_layers.color`). That was a mistake: colors must be set in **one** place — the admin Map Layers page, per community, as before.
+
+`defaultColor` is barely wired in and nothing meaningful depends on it:
+- `portal/pages/map.js` (~534) builds its sub-layer palette from it — but the **original hardcoded colors still exist in the same file** (lines ~21–40) and should be restored as the fallback.
+- Mobile `AssetTypeContext.getColor()` exists but **has no consumers**.
+- The portfolio branch-detail never reads it.
+
+**Correct, final resolution order everywhere:** `map_layers.color` → the hardcoded per-sub-layer default in `LAYER_HIERARCHY` → neutral grey. The portfolio's tab-accent palette is for **tab underlines and dots only**, never for geometry.
+
+## Done looks like
+
+- Selecting any category tab renders that category's checked sub-layers on the map. Toggling a sub-layer off/on hides/shows only that layer. Switching tabs repeatedly, in any order, always renders.
+- The map iframe is **never re-parented**; no iframe reload occurs during tab switching (verify: no repeated map-load network activity when switching tabs).
+- Geometry colors match what is set in the admin **Map Layers** page for that community. Changing a color there and reloading the portal shows the new color.
+- `asset_types.defaultColor` is gone: column dropped, removed from schema, cache, API request/response, admin Asset Types UI, and the mobile context.
+- `portal/pages/map.js` uses its own hardcoded `LAYER_HIERARCHY` colors as the fallback again (no API-supplied palette).
+- Existing portal map, admin map pages, and mobile maps behave exactly as before this change.
+
+## Steps
+
+### 1. Stop moving the iframe (the actual fix)
+
+Preferred approach: render **one map panel outside the tab panes** — a single fixed container that stays mounted while tabs change. Tabs then only change which layers are visible and what's rendered *below* the map (inventory, service history, sub-layer toggles).
+
+If keeping a per-tab layout is required for the design, then instead of `appendChild`, keep one iframe in a stable parent and reposition it with CSS (e.g. move the *panel* contents, not the iframe node).
+
+**Additionally, defend against any future reload:** attach a `load` listener to the iframe that resets `_bMap.addedSet`, `_bMap.layerColors`, and `_bMap.ready`, so a reload re-pushes layers instead of silently skipping them. Add a comment naming the hazard: *re-parenting an iframe reloads it and empties the map's layerCache.*
+
+### 2. Remove `defaultColor` end to end
+
+- Migration `0013_drop_asset_types_default_color.sql`: `ALTER TABLE "asset_types" DROP COLUMN IF EXISTS "default_color";` Journal entry with the correct current timestamp.
+- `lib/db/src/schema/schema.ts`: remove the column from `assetTypes`.
+- `artifacts/api-server/src/assetTypeCache.ts`: remove from the cached type.
+- `artifacts/api-server/src/routes/routes.ts` (~3580, ~3591, ~3604, ~3608, ~3633, ~3639): remove from create/update validation, payloads, and the `GET /api/asset-types` response.
+- `artifacts/web-portal/public/admin/pages/asset-types.js` (~181–183): remove the color swatch and any color input from the Asset Types page.
+- `artifacts/vrtsync-mobile/client/contexts/AssetTypeContext.tsx` (~24, ~81, ~90): remove `defaultColor` and `getColor` (no consumers).
+
+### 3. Restore the hardcoded fallback palette in the portal map
+
+`artifacts/web-portal/public/portal/pages/map.js` (~534): stop building sub-layer colors from the API. Restore use of the existing hardcoded `LAYER_HIERARCHY` colors (lines ~21–40 — still present: backflow `#00BFFF`, controller `#25C1AC`, zone `#3498db`, master_valve `#1F4E79`, flow_meter `#00CED1`, qc_iso_valve `#87CEEB`, plow `#4A90E2`, atv `#6A5ACD`, hand_shovel `#E83E8C`, ice_melt `#FF8C00`, slicer `#D62828`, storage_area `#708090`, tree `#006400`). `getLayerEffectiveColor()` keeps its current order: layer color first, hierarchy default second.
+
+Types created through the Asset Types admin UI that have no hierarchy entry fall back to neutral grey until a color is set on their layer in Map Layers.
+
+### 4. Portfolio color resolution
+
+`branch-detail.js` `_layerColor()`: use `layer.color` when it is a valid hex; otherwise the hardcoded default for that `subLayerKey`; otherwise neutral grey. **Do not** fall back to the tab-accent palette for geometry.
+
+### 5. Verify (FB02, PNC)
+
+- Site Grounds tab → Blue Grass and Landscape Beds polygons visible; unchecking Landscape Beds removes only those; re-checking restores them.
+- Irrigation tab → zones/valves render; Trees tab → 35 trees render.
+- Switch tabs 6+ times in mixed order including Summary → always renders; DevTools Network shows the map document loading **once**, not per tab switch.
+- Change Blue Grass's color in admin Map Layers → reload portal → new color on the map.
+- Admin Asset Types page shows **no** color control.
+- Portal map (HOA/PM/contractor) and mobile maps render exactly as before.
+- `grep -rn "defaultColor" artifacts lib --exclude-dir=node_modules --exclude-dir=dist` returns nothing.
+
+## Out of scope
+
+- Custom point icons per asset type (separate task — see notes).
+- Valve-box grouping on the map.
+- Any other asset-types functionality from #442 (the table, templates, layer mapping, admin CRUD all stay).
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js` (`_showCategoryTab` ~260, iframe move ~279, `_pushNewLayers` ~163, `_layerColor` ~106)
+- `artifacts/web-portal/public/portal/pages/map.js` (`LAYER_HIERARCHY` ~20–40, `getLayerEffectiveColor` ~183, API palette build ~534)
+- `artifacts/api-server/src/routes/routes.ts`, `assetTypeCache.ts`, `lib/db/src/schema/schema.ts`, new migration
+- `artifacts/web-portal/public/admin/pages/asset-types.js`
+- `artifacts/vrtsync-mobile/client/contexts/AssetTypeContext.tsx`
