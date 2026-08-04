@@ -231,6 +231,10 @@ export function registerAuthRoutes(app: any) {
         password: hashedPassword,
       });
 
+      // Regenerate session to prevent fixation and cross-user bleed
+      await new Promise<void>((resolve, reject) =>
+        req.session.regenerate((err) => (err ? reject(err) : resolve()))
+      );
       req.session.userId = user.id;
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         req.session.hoaCommunityId = user.hoaCommunityId;
@@ -238,6 +242,9 @@ export function registerAuthRoutes(app: any) {
       if (isClientRole(user.role) && user.organizationId) {
         req.session.organizationId = user.organizationId;
       }
+      await new Promise<void>((resolve, reject) =>
+        req.session.save((err) => (err ? reject(err) : resolve()))
+      );
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
@@ -263,6 +270,10 @@ export function registerAuthRoutes(app: any) {
         return void res.status(401).json({ message: "Invalid credentials" });
       }
 
+      // Regenerate session to prevent fixation and cross-user bleed
+      await new Promise<void>((resolve, reject) =>
+        req.session.regenerate((err) => (err ? reject(err) : resolve()))
+      );
       req.session.userId = user.id;
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         req.session.hoaCommunityId = user.hoaCommunityId;

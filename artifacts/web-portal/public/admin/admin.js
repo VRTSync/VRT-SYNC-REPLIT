@@ -42,7 +42,7 @@
 
       document.getElementById('logout-btn').addEventListener('click', async () => {
         await apiFetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/web/login';
+        window.location.replace('/web/login');
       });
 
       await refreshCommunities();
@@ -64,4 +64,11 @@
   }
 
   bootstrap();
+
+  // Guard against bfcache restoring a stale authenticated page after logout.
+  // When the browser serves a page from bfcache (e.g. after Back), reload it so
+  // requireRole on the server runs and redirects to /web/login if the session ended.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) window.location.reload();
+  });
 })();

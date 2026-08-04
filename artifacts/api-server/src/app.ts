@@ -73,6 +73,13 @@ app.use(
 
 setupSession(app);
 
+// Prevent authenticated API responses from being served from bfcache or HTTP cache.
+// Static asset paths (e.g. /objects signed URLs) set their own Cache-Control and are unaffected.
+app.use("/api", (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 app.use("/api", healthRouter);
 
 app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

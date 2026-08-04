@@ -42,7 +42,7 @@
 
       document.getElementById('logout-btn').addEventListener('click', async () => {
         await apiFetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/web/login';
+        window.location.replace('/web/login');
       });
 
       await refreshCommunities();
@@ -64,4 +64,9 @@
   }
 
   bootstrap();
+
+  // Guard against bfcache restoring a stale authenticated page after logout.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) window.location.reload();
+  });
 })();

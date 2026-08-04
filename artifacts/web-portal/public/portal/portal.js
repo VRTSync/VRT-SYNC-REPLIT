@@ -125,7 +125,7 @@
       /* Logout */
       document.getElementById('logout-btn').addEventListener('click', async () => {
         await apiFetch('/api/auth/logout', { method: 'POST' });
-        window.location.href = '/web/login';
+        window.location.replace('/web/login');
       });
 
       /* Init router, then direct to appropriate starting route */
@@ -261,4 +261,9 @@
   function iconDollar()      { return svg('<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>'); }
 
   bootstrap();
+
+  // Guard against bfcache restoring a stale authenticated page after logout.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) window.location.reload();
+  });
 })();

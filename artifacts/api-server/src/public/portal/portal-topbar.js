@@ -291,7 +291,7 @@ window.PortalTopbar = (function () {
       try {
         await apiFetch('/api/auth/logout', { method: 'POST' });
       } catch (e) { /* silent */ }
-      window.location.href = '/web/login';
+      window.location.replace('/web/login');
     });
     return dd;
   }

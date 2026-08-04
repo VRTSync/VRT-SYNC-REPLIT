@@ -339,6 +339,7 @@ function requireRole(allowed: string[]) {
 
 // Login
 app.get("/web/login", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(loginHtml);
 });
@@ -355,6 +356,7 @@ app.get("/web/admin", (_req: Request, res: Response) => {
 });
 
 app.get(/^\/web\/admin\/(?!login).*$/, requireRole(["admin"]), (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   // Inject the Mapbox token so static admin JS (e.g. xeriscape-planner.js) can
   // access it via window.MAPBOX_TOKEN without hard-coding it.
@@ -368,6 +370,7 @@ app.get("/web/contractor", (_req: Request, res: Response) =>
 );
 
 app.get(/^\/web\/contractor\/.*$/, requireRole(["contractor"]), (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(contractorShell);
 });
@@ -378,6 +381,7 @@ app.get("/web/hoa", (_req: Request, res: Response) =>
 );
 
 app.get(/^\/web\/hoa\/.*$/, requireRole(["hoa_admin", "hoa_member"]), (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(hoaShell);
 });
@@ -388,6 +392,7 @@ app.get("/web/pm", (_req: Request, res: Response) =>
 );
 
 app.get(/^\/web\/pm\/.*$/, requireRole(["property_manager"]), (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(pmShell);
 });
@@ -398,6 +403,7 @@ app.get("/web/portfolio", (_req: Request, res: Response) =>
 );
 
 app.get(/^\/web\/portfolio\/.*$/, requireRole(["client_admin", "admin"]), (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(portfolioShell);
 });

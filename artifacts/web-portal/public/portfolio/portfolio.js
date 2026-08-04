@@ -167,8 +167,8 @@
             signOutBtn.disabled = true;
             signOutBtn.textContent = 'Signing out…';
             fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
-              .then(function () { window.location.href = '/web/login'; })
-              .catch(function () { window.location.href = '/web/login'; });
+              .then(function () { window.location.replace('/web/login'); })
+              .catch(function () { window.location.replace('/web/login'); });
           });
         }
 
@@ -353,5 +353,10 @@
         console.error('[portfolio] /api/auth/me failed:', err);
         window.location.href = '/web/login';
       });
+  });
+
+  // Guard against bfcache restoring a stale authenticated page after logout.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) window.location.reload();
   });
 })();
