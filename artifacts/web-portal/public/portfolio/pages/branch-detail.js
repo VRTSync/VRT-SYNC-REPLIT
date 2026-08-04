@@ -695,6 +695,53 @@
       + '</div>';
   }
 
+  // ── Category breakdown panel (Summary tab) ────────────────────────────────
+  // Compact per-category rows: label · total assets · active sub-layer count.
+  // categoryOrder is the tab order built by _buildCategoryGroups — used to
+  // derive the tab index (Summary = 0, first category = 1, …).
+  function renderCategoryBreakdown(categoryOrder, categoryGroups) {
+    if (!categoryOrder || categoryOrder.length === 0) return '';
+
+    var rows = categoryOrder.map(function (key, i) {
+      var tabIdx    = i + 1;
+      var accent    = categoryAccent(key);
+      var label     = _categoryLabel(key);
+      var catLayers = categoryGroups[key] || [];
+      var total     = catLayers.reduce(function (s, l) { return s + (l.assetCount || 0); }, 0);
+      var activeSubs = catLayers.filter(function (l) { return l.hasGeometry; }).length;
+      var isEmpty   = total === 0 && activeSubs === 0;
+      var emptyCls  = isEmpty ? ' bd-cat-inv-row--empty' : '';
+
+      // Derive a CSS color name from the accent class (e.g. 't-blue' → 'blue')
+      var accentColor = (accent.cls || '').replace('t-', '') || 'teal';
+
+      var assetsLabel = isEmpty
+        ? '<span class="bd-cat-inv-assets bd-cat-inv-none">no data</span>'
+        : '<span class="bd-cat-inv-assets"><b>' + esc(total) + '</b> asset' + (total !== 1 ? 's' : '') + '</span>';
+
+      var subLabel = isEmpty
+        ? ''
+        : '<span class="bd-cat-inv-sublayers">' + esc(catLayers.length) + ' sub-layer' + (catLayers.length !== 1 ? 's' : '')
+          + (activeSubs < catLayers.length ? ' · <span class="bd-cat-inv-active">' + esc(activeSubs) + ' mapped</span>' : '')
+          + '</span>';
+
+      return '<div class="bd-cat-inv-row' + emptyCls + '" data-tab-idx="' + tabIdx + '" role="button" tabindex="0">'
+        + '<span class="bd-cat-inv-dot bd-cat-inv-dot--' + esc(accentColor) + '"></span>'
+        + '<span class="bd-cat-inv-label">' + esc(label) + '</span>'
+        + assetsLabel
+        + subLabel
+        + '<span class="bd-cat-inv-arrow">›</span>'
+        + '</div>';
+    }).join('');
+
+    return '<div class="panel bd-cat-inv">'
+      + '<div class="panel-head"><h2>Category Breakdown</h2>'
+      + '<span class="hint">click a row to explore</span>'
+      + '</div>'
+      + '<div class="bd-cat-inv-list">' + rows + '</div>'
+      + '</div>';
+  }
+
   // ── Summary tab content ────────────────────────────────────────────────────
   function renderSummaryTab(data) {
     var branch = data.branch;
@@ -712,6 +759,11 @@
       { label: 'Open Work Orders',value: openWOs.length,  border: 'b-amber' },
       { label: 'Last Service',    value: lastSvcDate,     border: 'b-green' },
     ]);
+
+    // Category breakdown: one row per main-layer category
+    var serviceLayers    = layers.filter(function (l) { return l.type !== 'outline'; });
+    var catResult        = _buildCategoryGroups(serviceLayers);
+    var breakdownHtml    = renderCategoryBreakdown(catResult.order, catResult.groups);
 
     // Always render the map panel — geometry is fetched lazily and a
     // "no geometry" notice is shown in-slot if the API returns nothing.
@@ -754,7 +806,7 @@
       + woRows
       + '</div>';
 
-    return kpis + mapHtml
+    return kpis + breakdownHtml + mapHtml
       + '<div class="two-col">' + svcPanel + woPanel + '</div>';
   }
 
@@ -964,20 +1016,38 @@
     var tabs  = container.querySelectorAll('#branch-tab-bar .tab');
     var panes = container.querySelectorAll('.tabpane[data-pane-idx]');
 
+    function activateTab(idx) {
+      tabs.forEach(function (t) { t.classList.remove('on'); });
+      panes.forEach(function (p) { p.classList.remove('on'); });
+
+      var tab = container.querySelector('#branch-tab-bar .tab[data-tab-idx="' + idx + '"]');
+      if (tab) tab.classList.add('on');
+      var target = container.querySelector('.tabpane[data-pane-idx="' + idx + '"]');
+      if (target) target.classList.add('on');
+
+      // Move the shared iframe to the new slot and lazy-load geometry.
+      // Tab 0 = Summary (all layers); Tab N = categoryOrder[N-1].
+      _switchToTab(idx);
+    }
+
     tabs.forEach(function (tab) {
       tab.addEventListener('click', function () {
-        var idx = parseInt(tab.getAttribute('data-tab-idx'), 10);
+        activateTab(parseInt(tab.getAttribute('data-tab-idx'), 10));
+      });
+    });
 
-        tabs.forEach(function (t) { t.classList.remove('on'); });
-        panes.forEach(function (p) { p.classList.remove('on'); });
-
-        tab.classList.add('on');
-        var target = container.querySelector('.tabpane[data-pane-idx="' + idx + '"]');
-        if (target) target.classList.add('on');
-
-        // Move the shared iframe to the new slot and lazy-load geometry.
-        // Tab 0 = Summary (all layers); Tab N = categoryOrder[N-1].
-        _switchToTab(idx);
+    // Category breakdown rows in the Summary pane — clicking navigates to
+    // the corresponding category tab.
+    container.querySelectorAll('.bd-cat-inv-row[data-tab-idx]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        activateTab(parseInt(row.getAttribute('data-tab-idx'), 10));
+      });
+      // Keyboard accessibility
+      row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activateTab(parseInt(row.getAttribute('data-tab-idx'), 10));
+        }
       });
     });
   }
