@@ -1,0 +1,57 @@
+# Task #487: Rename "Branch" to "Location" in the client portal — labels only
+
+## What & Why
+
+The Branch Portfolio was built around a bank pilot, so every user-facing string says "Branch". The product is being sold to commercial portfolios generally — warehouses, restaurants, retail, medical offices — where "branch" is wrong. Every screen a client sees should say **Location**.
+
+This is a **display-string change and nothing else.** Routes, API paths, payload keys, table names, column names, CSS classes, function names, and variable names all keep saying `branch`. Renaming those would be a large, risky diff across `routes.ts` and `storage.ts` for zero user benefit, and it would break the admin portal and mobile app which consume the same endpoints.
+
+**If you find yourself editing a `.sql` file, a route path, or a JSON key, you have left the scope of this task.**
+
+## Done looks like
+
+- No client-facing surface in `artifacts/web-portal/public/portfolio/` or `templates/portfolio-shell.html` displays the word "Branch" or "Branches" to a user, except where noted below.
+- Specifically changed:
+  - Sidebar nav label `Branches` → `Locations`
+  - Page heading `All Branches` → `All Locations`
+  - Dashboard panel `Branch Snapshot` → `Location Snapshot`
+  - Dashboard KPI tile `Branches` → `Locations` (and its sub-line "branches active" → "locations active")
+  - Table headers `Branch` → `Location` (locations table, work-orders table, work-order detail)
+  - Branch selector: `Branch Selector` → `Location Selector`, `← All Branches` → `← All Locations`
+  - `View Branch →` → `View Location →`
+  - Work-order submission form label `Branch *` → `Location *`
+  - Filter chip and hint text: "N branches" → "N locations", singular "branch" → "location"
+  - Admin org-picker copy: "…as an admin. Choose an organization…" — replace "Branch Portfolio" per the next bullet
+- **`Branch Portfolio` as the product name**: rename to **`Portfolio`** in the sidebar sub-brand and the page `<title>`. It is the client's portfolio of locations; "Branch Portfolio" reads as bank-specific. Flag it if you disagree before doing it.
+- Unchanged, deliberately: URL `/web/portfolio/branches`, route key `branches`, `pages/branches.js` filename, `/api/portfolio/branches*`, all payload keys (`branchIds`, `openWorkOrders`, …), `branch_groups` / `branch_group_members` tables, and every CSS class (`.bcode`, `.bname`, `.bsel-*`, `.pfm-branch-card`, …).
+- The **admin portal** and **HOA/PM/contractor portal** are untouched. Internal VRT staff and HOA users keep their existing vocabulary; this is the commercial client portal only.
+- Singular/plural and capitalization are correct everywhere — no "1 locations", no mid-sentence "Location" where prose wants lowercase.
+
+## Steps
+
+1. Grep `artifacts/web-portal/public/portfolio/` and `templates/portfolio-shell.html` for `Branch` and `branches` in **string literals and template text only**. There are roughly 40 occurrences; most are in `pages/branches.js`, `pages/dashboard.js`, `pages/work-orders.js`, `pages/branch-detail.js`, and `portfolio.js`'s `NAV_ITEMS`.
+2. Change display text. Leave identifiers alone.
+3. Re-grep to confirm the only remaining `branch` hits are identifiers, paths, keys, and classes.
+4. Check the mobile app and admin hub for any hardcoded "Branch Portfolio" label pointing at this portal, and update it to match.
+
+## Verify
+
+- Walk all six client pages: Dashboard, Locations, Portfolio Map, Work Orders, Groups (if #486 has landed), Account. No "Branch" visible anywhere.
+- Deep-link `/web/portfolio/branches` still resolves and the nav highlights Locations.
+- Browser tab title reads correctly.
+- Submit a work order from the client side — the form label reads "Location \*" and submission still succeeds.
+- Location selector on the detail page still switches locations.
+- Admin preview mode (`?org=<id>`) unaffected.
+- Admin hub and HOA portal still say whatever they said before.
+
+## Out of scope
+
+- Per-organization configurable nouns (Store / Site / Branch). Considered and deferred — revisit if a client asks.
+- Renaming anything in the database, API, routes, or CSS.
+- Changing the HOA/PM/contractor portal's use of "community".
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/portfolio.js` (`NAV_ITEMS` ~41, org-picker copy)
+- `artifacts/web-portal/public/portfolio/pages/branches.js`, `dashboard.js`, `work-orders.js`, `branch-detail.js`
+- `artifacts/web-portal/templates/portfolio-shell.html` (title, sub-brand)

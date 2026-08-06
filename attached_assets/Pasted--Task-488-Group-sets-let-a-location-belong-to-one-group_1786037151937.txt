@@ -1,0 +1,111 @@
+# Task #488: Group sets — let a location belong to one group per dimension
+
+## What & Why
+
+`branch_groups` is a flat list today. A bank portfolio is not flat: the same branch is simultaneously in a **region** (North), a **service tier** (Full Service), and a **format** (Drive-Thru Only). With a flat list there is nothing recording which dimension a group belongs to, so the Groups page can't organize itself and "compare Central against North" is indistinguishable from "compare Central against Full Service".
+
+This slice adds the **group set** — a named dimension that owns a handful of groups — and nothing else. The Groups page that consumes it is #489; do not build UI here beyond what the existing dashboard cards need to keep working.
+
+## Model
+
+New table `branch_group_sets`, and `branch_groups` gains a nullable FK to it.
+
+```
+branch_group_sets
+  id              varchar pk default gen_random_uuid()
+  organization_id varchar not null → organizations.id on delete cascade
+  name            text not null            -- "Region", "Service Tier", "Branch Format"
+  sort_order      integer not null default 0
+  created_at      timestamp not null default now()
+  unique (organization_id, name)
+
+branch_groups
+  + set_id        varchar null → branch_group_sets.id on delete set null
+```
+
+`set_id` is **nullable on purpose**: existing groups have no set, and a group with `set_id IS NULL` must keep working exactly as it does today (it renders in an "Ungrouped" bucket, never crashes a page). Do not backfill automatically — see step 3.
+
+**A location may belong to at most one group per set.** This is the whole point of the concept and it must be enforced in the database, not only in the UI. `branch_group_members` has no `set_id` column, so use a partial unique index over the join:
+
+```sql
+CREATE UNIQUE INDEX branch_group_members_one_per_set_idx
+  ON branch_group_members (community_id, (SELECT set_id FROM branch_groups WHERE id = group_id));
+```
+
+Postgres will not accept a subquery in an index expression. So implement it one of these two ways and **say in the implementation notes which you chose and why**:
+
+- **(a)** denormalize `set_id` onto `branch_group_members`, kept in sync by a trigger or by the insert path, then `UNIQUE (community_id, set_id) WHERE set_id IS NOT NULL`; or
+- **(b)** a `BEFORE INSERT OR UPDATE` trigger on `branch_group_members` that rejects a second membership in the same set.
+
+Option (a) is preferred — it is checkable by reading the table and survives a bulk insert that bypasses application code. Groups with `set_id IS NULL` are exempt from the constraint (a location may be in many set-less groups, as today).
+
+## ⚠️ The existing write path — read this before choosing
+
+Verified 2026-08-05 against `2becdfe`. There is already a live path that writes memberships:
+
+```
+PUT /api/admin/groups/:groupId/members        routes.ts ~6933
+  → storage.setBranchGroupMembers()           storage.ts ~3899
+      delete all rows for groupId, then
+      tx.insert(branchGroupMembers).values(
+        communityIds.map(communityId => ({ groupId, communityId }))   ← no set_id
+      )
+```
+
+Called from the admin UI at `artifacts/web-portal/public/admin/pages/organization-detail.js:412`.
+
+**Two consequences, both of which will bite:**
+
+**1. Under option (a), the constraint will silently enforce nothing.** That insert supplies only `groupId` and `communityId`. If `set_id` is a plain denormalized column and the index is `UNIQUE (community_id, set_id) WHERE set_id IS NOT NULL`, every row written by the app gets `set_id = NULL` and is therefore exempt. The feature would look implemented and protect nothing.
+
+So under option (a), `set_id` **must be derived by a `BEFORE INSERT OR UPDATE` trigger** that looks it up from `branch_groups`, not left to the application. Do not "fix" this by editing `setBranchGroupMembers` to pass `set_id` — a trigger also covers bulk loads, the seeding migration, and any future caller. If you choose option (b) instead, this concern disappears, and that is a legitimate reason to pick (b). **Say which you chose and why.**
+
+**2. The admin UI will start throwing 500s.** Today an admin can put one branch in both "North" and "Central". After this migration that insert raises a constraint violation, which the route's `catch` turns into a generic `{ error: "Failed to set branch group members" }` with no indication of what went wrong.
+
+**Specified behaviour: move, don't reject.** Assigning a location to a group in a set **removes its existing membership in that set**, in the same transaction. Reassigning a branch from North to Central is the normal operation and should not require unassigning first. Implement this in `setBranchGroupMembers`: before inserting, delete any membership this community already has in a group belonging to the same set.
+
+Additionally, harden the route: catch the constraint-violation error code specifically and return **409** with a message naming the conflicting group, so that if move semantics ever miss a case the admin sees a real explanation instead of "Failed to".
+
+If Randy would rather this hard-reject than silently move, say so before building — the constraint stays either way, only the write path changes.
+
+## Done looks like
+
+- Migration file under `lib/db/migrations/` (next number is **0015**) creating `branch_group_sets`, adding `branch_groups.set_id`, and adding the one-group-per-set constraint. Journal entry appended with a `when` **greater than** the current MAX(created_at) in `__drizzle_migrations` — a `when` in the past is silently skipped and the migration never runs. Server rebuilt so the migration is copied into `dist`.
+- Drizzle schema updated in `lib/db/src/schema/schema.ts`: `branchGroupSets` table, relations both directions, `set_id` on `branchGroups`, insert/select schemas and types following the existing `BranchGroup` / `NewBranchGroup` naming.
+- `GET /api/portfolio/groups` returns the same array it does today, with **two additions per group**: `setId` (string | null) and `setName` (string | null). No field is removed or renamed — the dashboard's group cards read this endpoint and must not change behaviour.
+- New `GET /api/portfolio/group-sets` returning, for the caller's org, each set with `id`, `name`, `sortOrder`, and its groups (each carrying the same metrics shape `getPortfolioGroups` already produces: `branchIds`, `branchCount`, `servicesPerBranch`, `openItems`, `photoProofPct`). Sets ordered by `sortOrder` then `name`; groups within a set the same way. `requireClientOrAdmin` with org resolution via `resolvePortfolioOrg`, exactly like the sibling routes.
+- Groups with `set_id IS NULL` come back from `/api/portfolio/group-sets` under a synthetic trailing set named **"Ungrouped"** with `id: null`. Do not invent a database row for it.
+- Attempting to add a location to a second group in the same set fails with a clear error, verified with a direct SQL insert (not just through the API).
+- The existing dashboard group cards render exactly as before, set or no set.
+
+## Steps
+
+1. **Schema + migration.** Table, column, constraint, per the model above. Handwrite the SQL; do not run `drizzle-kit push` — production is governed by migration files.
+2. **Storage.** Add `getPortfolioGroupSets(orgId)` in `storage.ts` alongside `getPortfolioGroups` (~4577). Reuse the existing metric SQL rather than writing a second copy of it — if that means extracting the per-group metric query into a helper both functions call, do that. **Do not create a parallel metrics implementation**; two functions computing "services per branch" differently is exactly the class of bug we have been digging out of this codebase.
+3. **Seed the pilot org's sets by migration data, not by code.** In the same migration, for the org that has the PNC branches: create sets `Region`, `Service Tier`, `Branch Format` and assign existing groups to `Region` if their names match existing region groups. If the existing group names don't map cleanly, **create the sets and leave `set_id` NULL rather than guessing** — a wrong assignment is worse than an empty one, and Randy can assign them in the admin UI later.
+4. **Route.** `/api/portfolio/group-sets` per above.
+5. **Verify.**
+   - `/api/admin/migrations` reports `inSync: true` after deploy.
+   - `GET /api/portfolio/groups` response is byte-comparable to before except for the two new fields.
+   - `GET /api/portfolio/group-sets` returns sets in order with correct branch counts; a group with no set appears under "Ungrouped".
+   - Direct `INSERT` supplying **only** `group_id` and `community_id` — exactly what `setBranchGroupMembers` writes — into two groups of the same set is rejected. **Do not hand-supply `set_id` in this test**; doing so hides the failure mode described above.
+   - Direct `INSERT` putting one community into two set-less groups still succeeds.
+   - Through the admin UI: assign a branch to "North", then assign the same branch to "Central". It moves — it ends up in Central only, and the response is a 200, not a 500.
+   - `PUT /api/admin/groups/:groupId/members` with a list that would create an in-set conflict returns a sensible result, never an unexplained 500.
+   - Dashboard renders unchanged.
+   - Cross-org check: a client user for org A gets 404/403 on org B's sets.
+
+## Out of scope
+
+- The Groups page (#489).
+- Admin UI for creating sets or assigning groups — sets are seeded by migration for now; the admin CRUD is a later slice.
+- Changing `branch_group_members` semantics for set-less groups.
+- Any rename of "branch" to "location" in tables, routes, or payload keys (#487 is labels only).
+
+## Relevant files
+
+- `lib/db/src/schema/schema.ts` (`branchGroups` ~77, `branchGroupMembers` ~88, relations ~518–538)
+- `lib/db/migrations/` + `meta/_journal.json` (latest is 0014, `when` 1785883526170)
+- `artifacts/api-server/src/storage.ts` (`getPortfolioGroups` ~4577, **`setBranchGroupMembers` ~3899**)
+- `artifacts/api-server/src/routes/routes.ts` (`/api/portfolio/groups` ~5858 — add the sibling route next to it; **`PUT /api/admin/groups/:groupId/members` ~6933**)
+- `artifacts/web-portal/public/admin/pages/organization-detail.js` (~412 — the admin caller; check its error handling still makes sense)
