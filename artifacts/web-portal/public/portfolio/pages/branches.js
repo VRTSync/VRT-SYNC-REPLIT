@@ -95,7 +95,7 @@
     return '<div class="anchor">'
       + '<div class="a-title">'
         + '<div class="a-label">Portfolio Coverage</div>'
-        + '<div class="a-main">' + esc(branchCount) + ' ' + (branchCount === 1 ? 'branch' : 'branches') + '</div>'
+        + '<div class="a-main">' + esc(branchCount) + ' ' + (branchCount === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="a-sub">' + esc(subText) + '</div>'
       + '</div>'
       + '<div class="a-mid">'
@@ -103,7 +103,7 @@
         + '<div class="a-legend">' + legendHtml + '</div>'
       + '</div>'
       + '<div class="a-stats">'
-        + '<div class="a-stat teal"><b>' + esc(branchCount) + '</b><span>branches</span></div>'
+        + '<div class="a-stat teal"><b>' + esc(branchCount) + '</b><span>locations</span></div>'
         + '<div class="a-stat blue"><b>' + esc(totalAssets) + '</b><span>assets</span></div>'
         + '<div class="a-stat"><b>' + esc(totalSvcsYtd) + '</b><span>services YTD</span></div>'
       + '</div>'
@@ -146,7 +146,7 @@
   function renderBranchTable(branches, groupLookup) {
     var rows;
     if (branches.length === 0) {
-      rows = '<tr class="pf-empty-row"><td colspan="11">No branches match this filter.</td></tr>';
+      rows = '<tr class="pf-empty-row"><td colspan="11">No locations match this filter.</td></tr>';
     } else {
       rows = branches.map(function (b) {
         var code       = b.code    || '—';
@@ -191,11 +191,11 @@
     }
 
     return '<div class="panel p-navy">'
-      + '<div class="panel-head"><h2>All Branches</h2>'
-      + '<span class="hint">' + esc(branches.length) + ' ' + (branches.length === 1 ? 'branch' : 'branches') + '</span>'
+      + '<div class="panel-head"><h2>All Locations</h2>'
+      + '<span class="hint">' + esc(branches.length) + ' ' + (branches.length === 1 ? 'location' : 'locations') + '</span>'
       + '</div>'
       + '<table><thead><tr>'
-      + '<th>Code</th><th>Branch</th><th>Address</th><th>City</th><th>Group</th>'
+      + '<th>Code</th><th>Location</th><th>Address</th><th>City</th><th>Group</th>'
       + '<th class="num">Assets</th><th class="num">Zones</th><th class="num">Trees</th>'
       + '<th class="num">Services YTD</th><th>Last Service</th><th class="num">Open WOs</th>'
       + '</tr></thead><tbody>' + rows + '</tbody></table>'
@@ -228,7 +228,7 @@
       // Update table panel hint
       var hint = container.querySelector('.panel-head .hint');
       var filtered = getFiltered();
-      if (hint) hint.textContent = filtered.length + ' ' + (filtered.length === 1 ? 'branch' : 'branches');
+      if (hint) hint.textContent = filtered.length + ' ' + (filtered.length === 1 ? 'location' : 'locations');
     }
 
     function wireTableClicks(el) {
@@ -268,7 +268,7 @@
 
       var html = '<div class="ctx">'
         + '<h1>' + esc(org.name || 'Portfolio') + '</h1>'
-        + '<span class="sub">Branches</span>'
+        + '<span class="sub">Locations</span>'
         + '</div>'
         + renderAnchorBand(branches)
         + renderFilterChips(branches, groupLookup, 'all')
@@ -281,7 +281,7 @@
 
     }).catch(function (err) {
       console.error('[portfolio/branches] fetch failed:', err);
-      container.innerHTML = '<div class="pf-empty">Failed to load branches. Please refresh.</div>';
+      container.innerHTML = '<div class="pf-empty">Failed to load locations. Please refresh.</div>';
     });
   }
 

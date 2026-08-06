@@ -2,7 +2,7 @@
  * map.js — Portfolio Map page.
  * Registered as PortfolioRouter.register('map', fn).
  *
- * Shows every branch as a Leaflet pin (navy = no open WOs, amber = has WOs).
+ * Shows every location as a Leaflet pin (navy = no open WOs, amber = has WOs).
  * Group filter chips filter visible pins.
  * Clicking a pin fires the markerSelect event → branch card rendered in portal DOM.
  *
@@ -77,7 +77,7 @@
       id:               layerId,
       layerKey:         'branch',
       subLayerKey:      'controller', // enables per-feature colouring via controllerColorMap
-      displayName:      'Branches',
+      displayName:      'Locations',
       color:            '#0C1D31',
       controllerColorMap: colorMap,
       geojson:          geojson,

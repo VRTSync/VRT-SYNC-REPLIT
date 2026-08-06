@@ -189,7 +189,7 @@
           : '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
             + '<col style="width:150px"><col style="width:110px"></colgroup>')
       + '<thead><tr>'
-      + '<th>Work Order</th><th>Branch</th><th>Item</th><th>Source</th>'
+      + '<th>Work Order</th><th>Location</th><th>Item</th><th>Source</th>'
       + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th>' : '')
       + '<th>Status</th><th class="num">Estimate</th>'
       + '</tr></thead><tbody>';
@@ -240,7 +240,7 @@
             + '<col style="width:100px"><col style="width:100px"><col style="width:100px"></colgroup>'
           : '<colgroup><col style="width:130px"><col style="width:100px"><col></colgroup>')
       + '<thead><tr>'
-      + '<th>Work Order</th><th>Branch</th><th>Item</th>'
+      + '<th>Work Order</th><th>Location</th><th>Item</th>'
       + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th><th>Closed</th><th class="num">Days Open</th>' : '')
       + '</tr></thead><tbody>';
 
@@ -291,9 +291,9 @@
       + '  <div style="padding:22px 24px;">'
       + '    <div id="wo-modal-error" style="display:none;background:var(--red-light);color:var(--red);border-radius:6px;padding:9px 14px;font-size:13px;margin-bottom:14px;"></div>'
       + '    <div style="margin-bottom:14px;">'
-      + '      <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500);margin-bottom:5px;">Branch *</label>'
+      + '      <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500);margin-bottom:5px;">Location *</label>'
       + '      <select id="wo-branch" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:9px 12px;font-size:13.5px;font-family:inherit;">'
-      + '        <option value="">— Select a branch —</option>'
+      + '        <option value="">— Select a location —</option>'
       + branchOpts
       + '      </select>'
       + '      <div id="wo-branch-err" style="display:none;color:var(--red);font-size:12px;margin-top:4px;"></div>'
@@ -339,7 +339,7 @@
       + 'Approve the estimate for this work order?</p>'
       + '  <div style="background:var(--gray-50);border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:18px;">'
       + '    <div><span style="color:var(--gray-500);font-size:11.5px;">Work Order</span> <b>' + esc(ref) + '</b></div>'
-      + '    <div style="margin-top:4px;"><span style="color:var(--gray-500);font-size:11.5px;">Branch</span> ' + esc(branch) + '</div>'
+      + '    <div style="margin-top:4px;"><span style="color:var(--gray-500);font-size:11.5px;">Location</span> ' + esc(branch) + '</div>'
       + '    <div style="margin-top:4px;font-size:13px;">' + esc(title) + '</div>'
       + '    <div style="margin-top:8px;font-size:15px;font-weight:700;color:var(--navy);">' + esc(fmtCents(Number(estCents))) + '</div>'
       + '  </div>'
@@ -486,7 +486,7 @@
       var valid = true;
       if (!branchEl.value) {
         var be = document.getElementById('wo-branch-err');
-        be.textContent = 'Please select a branch.';
+        be.textContent = 'Please select a location.';
         be.style.display = 'block';
         valid = false;
       }
@@ -631,7 +631,7 @@
     // ── Branch link ──
     var branchLink = '<a class="wo-detail-branch-link" href="#" data-community-id="' + esc(d.communityId) + '">'
       + (d.branchCode ? esc(d.branchCode) + ' · ' : '') + esc(d.branchName)
-      + ' <span style="font-size:11px;opacity:0.7;">View Branch →</span></a>';
+      + ' <span style="font-size:11px;opacity:0.7;">View Location →</span></a>';
 
     // ── Estimate section ──
     var estHtml = '';
@@ -1086,7 +1086,7 @@
 
     var html  = '<div class="ctx">'
       + '<h1>Work Orders</h1>'
-      + '<span class="sub">Open items across all branches</span>'
+      + '<span class="sub">Open items across all locations</span>'
       + '<button class="cmp-btn" id="wo-open-modal" style="margin-left:auto;">+ Submit Request</button>'
       + '</div>'
       + renderPipeline(pipeline, open, closed, cancelled)
@@ -1133,7 +1133,7 @@
         var cancelled = Array.isArray(data.cancelled) ? data.cancelled : [];
         if (open.length === 0 && closed.length === 0 && cancelled.length === 0) {
           container.innerHTML = '<div class="ctx"><h1>Work Orders</h1>'
-            + '<span class="sub">Open items across all branches</span>'
+            + '<span class="sub">Open items across all locations</span>'
             + '<button class="cmp-btn" id="wo-open-modal" style="margin-left:auto;">+ Submit Request</button>'
             + '</div>'
             + '<div class="pf-empty" style="text-align:center;padding:48px 0;">'

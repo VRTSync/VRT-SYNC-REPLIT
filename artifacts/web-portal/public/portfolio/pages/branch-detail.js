@@ -452,9 +452,9 @@
     var label = current ? esc(current.name) : '—';
     var code  = current ? esc(current.code || '') : '';
 
-    var menuItems = '<div class="bsel-item all" id="bs-all-link">← All Branches'
-      + '<span class="bi-city">' + esc(allBranches.length) + ' branches</span></div>'
-      + '<div class="bs-head">Switch branch</div>'
+    var menuItems = '<div class="bsel-item all" id="bs-all-link">← All Locations'
+      + '<span class="bi-city">' + esc(allBranches.length) + ' locations</span></div>'
+      + '<div class="bs-head">Switch location</div>'
       + allBranches.map(function (b) {
           var activeCls = b.id === currentBranchId ? ' active' : '';
           return '<div class="bsel-item' + activeCls + '" data-branch-id="' + esc(b.id) + '">'
@@ -464,7 +464,7 @@
         }).join('');
 
     return '<div class="branch-selector-block">'
-      + '<div class="bs-label">Branch Selector</div>'
+      + '<div class="bs-label">Location Selector</div>'
       + '<div class="bs-row">'
         + '<div class="bsel">'
           + '<button class="bsel-btn" id="bsel-toggle-btn" aria-haspopup="true" aria-expanded="false">'
@@ -475,8 +475,8 @@
           + '<div class="bsel-menu" id="bsel-menu">' + menuItems + '</div>'
         + '</div>'
         + '<div class="bsel-arrows">'
-          + '<button class="bs-arrow" id="bs-prev" title="Previous branch">‹</button>'
-          + '<button class="bs-arrow" id="bs-next" title="Next branch">›</button>'
+          + '<button class="bs-arrow" id="bs-prev" title="Previous location">‹</button>'
+          + '<button class="bs-arrow" id="bs-next" title="Next location">›</button>'
         + '</div>'
       + '</div>'
       + '</div>';
@@ -893,7 +893,7 @@
 
     var branchId = params && params.id;
     if (!branchId) {
-      container.innerHTML = '<div class="pf-empty">No branch ID specified.</div>';
+      container.innerHTML = '<div class="pf-empty">No location ID specified.</div>';
       return;
     }
 
@@ -904,7 +904,7 @@
       renderDetailPage(container, data, branchId);
     }).catch(function (err) {
       console.error('[portfolio/branch-detail] fetch failed:', err);
-      container.innerHTML = '<div class="pf-empty">Failed to load branch data. Please refresh.</div>';
+      container.innerHTML = '<div class="pf-empty">Failed to load location data. Please refresh.</div>';
     });
   }
 

@@ -98,8 +98,8 @@
     var openWO         = Number(wo.total         || 0);
 
     return '<div class="kpi-grid">'
-      + kpiTile('Branches',          branches,        'branches active',          'navy',  '')
-      + kpiTile('Assets Mapped',      assetsMapped,    'across all branches',      'teal',  '')
+      + kpiTile('Locations',         branches,        'locations active',          'navy',  '')
+      + kpiTile('Assets Mapped',      assetsMapped,    'across all locations',      'teal',  '')
       + kpiTile('Services Logged',    servicesLogged,  'all time',                 'blue',  '')
       + kpiTile('Photo Documentation', photoProofPct + '%', 'of completions verified', 'green', '')
       + kpiTile('Open Work Orders',   openWO,          wo.awaitingApproval + ' awaiting approval', 'amber kpi-clickable', 'data-nav="work-orders" title="View Work Orders" style="cursor:pointer;"')
@@ -198,7 +198,7 @@
           else if (status === 'missed'  )  svCls += ' flag';
           else if (status === 'scheduled') svCls += ' sched';
           return '<div class="' + svCls + '"><b>' + esc(item.label || status) + '</b>'
-            + (item.branchCount > 1 ? esc(item.branchCount) + ' branches' : '') + '</div>';
+            + (item.branchCount > 1 ? esc(item.branchCount) + ' locations' : '') + '</div>';
         }).join('');
       }
 
@@ -213,7 +213,7 @@
     var groups = Array.isArray(byGroup) ? byGroup : [];
     if (groups.length === 0) {
       return '<div class="pf-empty" style="margin-bottom:18px;">'
-        + 'No groups configured yet. Groups let you organize branches into regional or logical collections.'
+        + 'No groups configured yet. Groups let you organize locations into regional or logical collections.'
         + '</div>';
     }
 
@@ -226,7 +226,7 @@
 
       return '<div class="gcard ' + colorCls + '">'
         + '<div class="gc-name">' + esc(g.name) + '</div>'
-        + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'branch' : 'branches') + '</div>'
+        + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="gc-stats">'
           + '<div><b>' + esc(services) + '</b>services</div>'
           + '<div><b>' + esc(photoPct) + '%</b>photo proof</div>'
@@ -248,7 +248,7 @@
 
     var rows;
     if (bArr.length === 0) {
-      rows = '<tr class="pf-empty-row"><td colspan="5">No branches provisioned yet.</td></tr>';
+      rows = '<tr class="pf-empty-row"><td colspan="5">No locations provisioned yet.</td></tr>';
     } else {
       rows = bArr.map(function (b) {
         var code    = b.code  || '—';
@@ -293,11 +293,11 @@
     }
 
     return '<div class="panel p-navy">'
-      + '<div class="panel-head"><h2>Branch Snapshot</h2>'
-      + '<span class="hint">' + esc(bArr.length) + ' ' + (bArr.length === 1 ? 'branch' : 'branches') + '</span>'
+      + '<div class="panel-head"><h2>Location Snapshot</h2>'
+      + '<span class="hint">' + esc(bArr.length) + ' ' + (bArr.length === 1 ? 'location' : 'locations') + '</span>'
       + '</div>'
       + '<table><thead><tr>'
-      + '<th>Code</th><th>Branch</th><th>Group</th>'
+      + '<th>Code</th><th>Location</th><th>Group</th>'
       + '<th class="num">Services YTD</th><th>Last Service</th>'
       + '</tr></thead><tbody>' + rows + '</tbody></table>'
       + '</div>';

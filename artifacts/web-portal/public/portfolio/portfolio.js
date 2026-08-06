@@ -1,5 +1,5 @@
 /**
- * portfolio.js — Boot script for the Branch Portfolio portal.
+ * portfolio.js — Boot script for the Portfolio portal (client-facing labels say "Location").
  *
  * Branching logic:
  *   client_admin → GET /api/portfolio/me to bootstrap PortfolioState (no org param needed)
@@ -41,7 +41,7 @@
   // ── Sidebar render ────────────────────────────────────────────────────────
   var NAV_ITEMS = [
     { route: 'dashboard',    label: 'Dashboard'     },
-    { route: 'branches',     label: 'Branches'      },
+    { route: 'branches',     label: 'Locations'     },
     { route: 'map',          label: 'Portfolio Map' },
     { route: 'work-orders',  label: 'Work Orders'   },
   ];
@@ -235,7 +235,7 @@
 
       container.innerHTML = '<div class="org-picker">'
         + '<h2>Select an Organization</h2>'
-        + '<p>You are previewing the Branch Portfolio as an admin. Choose an organization to open its portfolio dashboard.</p>'
+        + '<p>You are previewing the Portfolio as an admin. Choose an organization to open its portfolio dashboard.</p>'
         + '<div class="org-list">' + rows + '</div></div>';
 
       // Hide nav since there's no org context
