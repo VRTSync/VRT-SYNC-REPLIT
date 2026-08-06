@@ -4606,6 +4606,9 @@ export async function getPortfolioGroups(orgId: string) {
       services_per_branch: string | null;
       open_items: string;
       photo_proof_pct: string | null;
+      asset_count: string;
+      irrigation_zones: string;
+      trees: string;
     }>(`
       SELECT
         bg.id,
@@ -4659,7 +4662,29 @@ export async function getPortfolioGroups(orgId: string) {
          WHERE t3.community_id IN (
            SELECT community_id FROM branch_group_members WHERE group_id = bg.id
          )
-        ) AS photo_proof_pct
+        ) AS photo_proof_pct,
+        -- asset inventory across group branches (same shape as the branches page counts)
+        COALESCE((
+          SELECT COUNT(*) FROM assets a
+           WHERE a.is_archived = false
+             AND a.community_id IN (
+               SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+             )
+        ), 0)::text AS asset_count,
+        COALESCE((
+          SELECT COUNT(*) FROM assets a
+           WHERE a.is_archived = false AND a.asset_type = 'zone'
+             AND a.community_id IN (
+               SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+             )
+        ), 0)::text AS irrigation_zones,
+        COALESCE((
+          SELECT COUNT(*) FROM assets a
+           WHERE a.is_archived = false AND a.asset_type = 'tree'
+             AND a.community_id IN (
+               SELECT community_id FROM branch_group_members WHERE group_id = bg.id
+             )
+        ), 0)::text AS trees
       FROM branch_groups bg
       LEFT JOIN branch_group_sets bgs ON bgs.id = bg.set_id
       LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
@@ -4697,6 +4722,9 @@ export async function getPortfolioGroups(orgId: string) {
       servicesPerBranch: r.services_per_branch != null ? Number(r.services_per_branch) : null,
       openItems: Number(r.open_items),
       photoProofPct: Number(r.photo_proof_pct ?? 0),
+      assets: Number(r.asset_count),
+      irrigationZones: Number(r.irrigation_zones),
+      trees: Number(r.trees),
     },
   }));
 }
@@ -4714,6 +4742,9 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
     servicesPerBranch: number | null;
     openItems: number;
     photoProofPct: number;
+    assets: number;
+    irrigationZones: number;
+    trees: number;
   }>;
 }>> {
   // Reuses getPortfolioGroups' metric SQL wholesale — no parallel metrics
@@ -4734,6 +4765,9 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
     servicesPerBranch: g.metrics.servicesPerBranch,
     openItems: g.metrics.openItems,
     photoProofPct: g.metrics.photoProofPct,
+    assets: g.metrics.assets,
+    irrigationZones: g.metrics.irrigationZones,
+    trees: g.metrics.trees,
   });
 
   const result = sets.map((s) => ({

@@ -44,6 +44,7 @@
     { route: 'branches',     label: 'Locations'     },
     { route: 'map',          label: 'Portfolio Map' },
     { route: 'work-orders',  label: 'Work Orders'   },
+    { route: 'groups',       label: 'Groups'        },
   ];
 
   // Cache of pipeline awaiting-approval count for sidebar badge

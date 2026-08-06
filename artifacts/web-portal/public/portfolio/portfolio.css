@@ -541,6 +541,20 @@ tbody tr:last-child td { border-bottom: none; }
 .gcard.g3 { border-top-color: var(--teal); }
 .gcard.g4 { border-top-color: var(--green); }
 .gcard.g5 { border-top-color: var(--red); }
+.gcard.add {
+  border: 2px dashed var(--gray-300);
+  border-top-width: 2px;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-400);
+  font-weight: 600;
+  font-size: 13px;
+  min-height: 96px;
+}
+.gcard.add:hover { box-shadow: none; }
 .gc-name {
   font-weight: 700;
   font-size: 14px;
