@@ -1311,6 +1311,63 @@ tbody tr:last-child td { border-bottom: none; }
   align-items: start;
 }
 
+/* ── Dashboard bottom row: Location Snapshot + Portfolio Map preview ─────── */
+.dash-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 470px;
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+.dash-bottom > .panel {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dash-map-panel .panel-head { cursor: pointer; flex-shrink: 0; }
+.dash-map-body {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+}
+.dash-map-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.dash-map-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 5;
+  background: rgba(255,255,255,0.93);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--gray-700);
+  pointer-events: none;
+  max-width: 60%;
+}
+.dash-map-legend:empty { display: none; }
+.dml-row { display: flex; align-items: center; gap: 6px; line-height: 1.7; white-space: nowrap; }
+.dml-row b { margin-left: auto; padding-left: 10px; color: var(--navy); }
+.dml-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(12,29,49,0.15);
+  flex-shrink: 0;
+}
+@media (max-width: 1100px) {
+  .dash-bottom { grid-template-columns: 1fr; }
+  .dash-map-panel .dash-map-body { min-height: 300px; }
+}
+
 /* ── Snow season hero block ─────────────────────────────────────────────── */
 .winter {
   background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);

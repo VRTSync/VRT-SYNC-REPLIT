@@ -51,38 +51,9 @@
       return;
     }
     _pinVersion++;
-    var layerId  = 'portfolio-branches-v' + _pinVersion;
-    var colorMap = {};
-    branches.forEach(function (b) {
-      colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31';
-    });
-    var geojson = {
-      type: 'FeatureCollection',
-      features: branches.map(function (b) {
-        return {
-          type: 'Feature',
-          id: b.id,
-          geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
-          properties: {
-            featureId: b.id,
-            label: (b.code ? b.code + ' \u2014 ' : '') + b.name,
-            displayName: b.name,
-            assetType: 'branch',
-          },
-        };
-      }),
-    };
-
-    _renderer.addCustomLayer({
-      id:               layerId,
-      layerKey:         'branch',
-      subLayerKey:      'controller', // enables per-feature colouring via controllerColorMap
-      displayName:      'Locations',
-      color:            '#0C1D31',
-      controllerColorMap: colorMap,
-      geojson:          geojson,
-    });
-    _renderer.showCustomLayers([layerId]);
+    var layerId = 'portfolio-branches-v' + _pinVersion;
+    // Pin building/colouring is shared with the dashboard preview — one copy only.
+    window.VRTMapRenderer.sendBranchPins(_renderer, branches, layerId);
     _renderer.fit();
   }
 

@@ -303,6 +303,120 @@
       + '</div>';
   }
 
+  // ── Portfolio map preview panel ───────────────────────────────────────────
+  var _mapRenderer = null;
+
+  function teardownMapPreview() {
+    if (_mapRenderer) { _mapRenderer.destroy(); _mapRenderer = null; }
+  }
+
+  function mappedBranches(branches) {
+    return (Array.isArray(branches) ? branches : []).filter(function (b) {
+      return b.lat != null && b.lng != null;
+    });
+  }
+
+  function renderMapPanel(branches) {
+    var mapped = mappedBranches(branches);
+    var body;
+    if (mapped.length === 0) {
+      body = '<div class="pf-empty" style="flex:1;">No locations mapped yet. Locations appear here once their property maps have geometry.</div>';
+    } else {
+      body = '<div class="dash-map-body" id="dash-map-body">'
+        + '<iframe id="dash-map-iframe" src="/leaflet-map.html" class="dash-map-iframe" title="Portfolio map preview"></iframe>'
+        + '<div class="dash-map-legend" id="dash-map-legend"></div>'
+        + '</div>';
+    }
+    return '<div class="panel p-teal dash-map-panel" id="dash-map-panel" title="Open Portfolio Map">'
+      + '<div class="panel-head"><h2>Portfolio Map</h2>'
+      + '<span class="hint">' + esc(mapped.length) + ' ' + (mapped.length === 1 ? 'location' : 'locations') + '</span>'
+      + '</div>'
+      + body
+      + '</div>';
+  }
+
+  // Compact legend: each group and its mapped-location count, plus the
+  // open-work-order amber pin key.
+  function buildLegendHtml(mapped, orderedGroups) {
+    var counts = {};   // groupId → count
+    var ungrouped = 0;
+    mapped.forEach(function (b) {
+      var gids = Array.isArray(b.groupIds) ? b.groupIds : [];
+      if (gids.length === 0) { ungrouped++; return; }
+      counts[gids[0]] = (counts[gids[0]] || 0) + 1;
+    });
+    var rows = '';
+    (orderedGroups || []).forEach(function (g) {
+      if (!counts[g.id]) return;
+      rows += '<div class="dml-row"><span class="dml-dot" style="background:#0C1D31"></span>'
+        + esc(g.name) + '<b>' + esc(counts[g.id]) + '</b></div>';
+    });
+    if (ungrouped > 0) {
+      rows += '<div class="dml-row"><span class="dml-dot" style="background:#0C1D31"></span>Ungrouped<b>' + esc(ungrouped) + '</b></div>';
+    }
+    var hasWo = mapped.some(function (b) { return Number(b.openWorkOrders) > 0; });
+    if (hasWo) {
+      rows += '<div class="dml-row"><span class="dml-dot" style="background:#f59e0b"></span>Open work order</div>';
+    }
+    return rows;
+  }
+
+  function initMapPreview(container, branches, orderedGroups) {
+    var mapped = mappedBranches(branches);
+    var panel  = container.querySelector('#dash-map-panel');
+    if (!panel) return;
+
+    // Header (and empty-state panel) click → full Portfolio Map route.
+    panel.querySelector('.panel-head').addEventListener('click', function () {
+      if (window.PortfolioRouter) PortfolioRouter.navigate('map', true, {});
+    });
+
+    if (mapped.length === 0) return; // empty-state panel, no renderer
+
+    var iframe = container.querySelector('#dash-map-iframe');
+    var legend = container.querySelector('#dash-map-legend');
+    if (legend) legend.innerHTML = buildLegendHtml(mapped, orderedGroups);
+
+    // Null adapter — the preview renders only branch pins via the shared
+    // custom-layer path; no community layers.
+    var nullAdapter = {
+      fetchLayers:       function () { return Promise.resolve([]); },
+      fetchLayerGeojson: function () { return Promise.resolve(null); },
+      fetchControllers:  function () { return Promise.resolve([]); },
+    };
+
+    _mapRenderer = window.VRTMapRenderer.create({
+      iframe:      iframe,
+      adapter:     nullAdapter,
+      hierarchy:   {},
+      interactive: false, // preview: no scroll-wheel zoom, drag, dbl-click, keyboard
+    });
+
+    var renderer = _mapRenderer;
+    var didInit  = false;
+    renderer.on('ready', function () {
+      // 'ready' can fire late/replayed — send pins + fit only once.
+      if (didInit) return;
+      didInit = true;
+      window.VRTMapRenderer.sendBranchPins(renderer, mapped, 'dash-branches', { directTap: true });
+      // Fit the viewport to all mapped locations once, on first render.
+      renderer.cmdToIframe('fitBounds', mapped.map(function (b) { return [b.lat, b.lng]; }));
+    });
+
+    renderer.on('assetTap', function (data) {
+      var branchId = data && (data.featureRef || data.featureId);
+      if (branchId && window.PortfolioRouter) {
+        PortfolioRouter.navigate('branch-detail', true, { id: branchId });
+      }
+    });
+
+    renderer.on('mapTap', function () {
+      if (window.PortfolioRouter) PortfolioRouter.navigate('map', true, {});
+    });
+
+    renderer.load(null);
+  }
+
   // ── Refresh label ─────────────────────────────────────────────────────────
   function refreshLabel() {
     return '<span class="refresh-label" id="pf-refresh-label">updated just now</span>';
@@ -310,6 +424,7 @@
 
   // ── Main render function ───────────────────────────────────────────────────
   function renderDashboard(container, _params) {
+    teardownMapPreview();
     var orgSuffix = orgParam();
     var state     = window.PortfolioState || {};
     var groups    = state.groups || [];
@@ -360,9 +475,14 @@
               colorIdx:     idx,
             };
           }))
-        + renderBranchSnapshot(branches, orderedGroups);
+        + '<div class="dash-bottom">'
+        +   renderBranchSnapshot(branches, orderedGroups)
+        +   renderMapPanel(branches)
+        + '</div>';
 
+      teardownMapPreview();
       container.innerHTML = html;
+      initMapPreview(container, branches, orderedGroups);
 
       // Wire branch snapshot rows to navigate to branch-detail
       container.querySelectorAll('tr.clickable[data-branch-id]').forEach(function (row) {

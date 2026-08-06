@@ -75,6 +75,10 @@
     var iframe    = opts.iframe;
     var adapter   = opts.adapter;
     var hierarchy = opts.hierarchy || {};
+    // interactive: false → preview mode. Disables all Leaflet interaction
+    // handlers (scroll-wheel zoom, dragging, double-click zoom, keyboard,
+    // box zoom, touch zoom) and hides the zoom control.
+    var interactive = opts.interactive !== false;
 
     // ── Internal state ──────────────────────────────────────────────────────
     var _iframeReady    = false;
@@ -95,7 +99,7 @@
     var _addedLayerIds    = {};   // layerId → true
     var _hasApplied       = false; // true after the first _applyState fit
     var _layerColors      = {};   // layerId → hex
-    var _events           = { ready: [], assetTap: [] };
+    var _events           = { ready: [], assetTap: [], mapTap: [] };
 
     // ── iframe bridge ────────────────────────────────────────────────────────
     function _cmd(fn) {
@@ -127,6 +131,8 @@
           }
         } else if (msg.type === 'viewAssetDetail') {
           _emit('assetTap', msg.data);
+        } else if (msg.type === 'mapTap') {
+          _emit('mapTap', msg.data || {});
         }
       };
       window.addEventListener('message', _msgHandler);
@@ -775,6 +781,10 @@
 
     _setupHandler();
 
+    // Preview mode: queue the interaction-disable command now — it is flushed
+    // to the iframe as soon as it reports mapReady.
+    if (!interactive) _cmd('setInteractive', false);
+
     return {
       load:                  load,
       setActiveCategory:     setActiveCategory,
@@ -795,6 +805,55 @@
       cmdToIframe:           _cmd,
       destroy:               destroy,
     };
+  }
+
+  // ── Static helper: sendBranchPins ────────────────────────────────────────
+  // Shared branch-pin logic for portfolio surfaces (map page + dashboard
+  // preview). Builds the pin GeoJSON (navy pin, amber when the branch has an
+  // open work order) and pushes it through addCustomLayer/showCustomLayers.
+  // The caller controls fitting the viewport.
+  //
+  //   branches: [{ id, code, name, lat, lng, openWorkOrders }]
+  //   layerId:  unique custom-layer id
+  //   opts:     { directTap: bool } — directTap posts assetTap immediately on
+  //             pin click (no popup); used by the dashboard preview.
+  function sendBranchPins(renderer, branches, layerId, opts) {
+    if (!renderer) return;
+    if (!branches || branches.length === 0) {
+      renderer.showCustomLayers([]);
+      return;
+    }
+    var colorMap = {};
+    branches.forEach(function (b) {
+      colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31';
+    });
+    var geojson = {
+      type: 'FeatureCollection',
+      features: branches.map(function (b) {
+        return {
+          type: 'Feature',
+          id: b.id,
+          geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
+          properties: {
+            featureId: b.id,
+            label: (b.code ? b.code + ' \u2014 ' : '') + b.name,
+            displayName: b.name,
+            assetType: 'branch',
+          },
+        };
+      }),
+    };
+    renderer.addCustomLayer({
+      id:               layerId,
+      layerKey:         'branch',
+      subLayerKey:      'controller', // enables per-feature colouring via controllerColorMap
+      displayName:      'Locations',
+      color:            '#0C1D31',
+      controllerColorMap: colorMap,
+      geojson:          geojson,
+      directTap:        !!(opts && opts.directTap),
+    });
+    renderer.showCustomLayers([layerId]);
   }
 
   // ── Static helper: renderSatelliteToggle ─────────────────────────────────
@@ -1092,6 +1151,7 @@
 
   window.VRTMapRenderer = {
     create:                  create,
+    sendBranchPins:          sendBranchPins,
     renderSatelliteToggle:   renderSatelliteToggle,
     renderExpandButton:      renderExpandButton,
     renderExpandedOverlays:  renderExpandedOverlays,

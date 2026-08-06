@@ -4258,8 +4258,10 @@ export async function getPortfolioBranches(orgId: string) {
   const t0 = Date.now();
   const currentYear = new Date().getFullYear();
 
-  // Grouped aggregates joined to the branch list — no correlated per-row subqueries
-  const [branchRows, groupMemberRows] = await Promise.all([
+  // Grouped aggregates joined to the branch list — no correlated per-row subqueries.
+  // getBranchMapPoints (cached) supplies lat/lng so the dashboard's map preview
+  // needs no second network request beyond this endpoint.
+  const [branchRows, groupMemberRows, mapPoints] = await Promise.all([
     pool.query<{
       id: string;
       code: string | null;
@@ -4380,6 +4382,8 @@ export async function getPortfolioBranches(orgId: string) {
         JOIN branch_groups bg ON bg.id = bgm.group_id
        WHERE bg.organization_id = $1
     `, [orgId]),
+
+    getBranchMapPoints(orgId),
   ]);
 
   console.log(`[portfolio/branches] org=${orgId} (${Date.now() - t0}ms)`);
@@ -4390,6 +4394,9 @@ export async function getPortfolioBranches(orgId: string) {
     if (!groupIdsByBranch.has(row.community_id)) groupIdsByBranch.set(row.community_id, []);
     groupIdsByBranch.get(row.community_id)!.push(row.group_id);
   }
+
+  // lat/lng lookup for the dashboard map preview (null when the branch is unmapped)
+  const coordById = new Map(mapPoints.branches.map(b => [b.id, b]));
 
   return branchRows.rows.map(r => ({
     id: r.id,
@@ -4405,6 +4412,8 @@ export async function getPortfolioBranches(orgId: string) {
     lastServiceAt: r.last_service_at ?? null,
     lastServiceLabel: r.last_service_label ?? null,
     openWorkOrders: Number(r.open_work_orders),
+    lat: coordById.get(r.id)?.lat ?? null,
+    lng: coordById.get(r.id)?.lng ?? null,
     // onTimePct: omitted — no service visit materialization (visits don't have on-time tracking yet)
   }));
 }

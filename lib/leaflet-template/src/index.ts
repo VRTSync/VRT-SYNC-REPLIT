@@ -159,6 +159,14 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
+  // Timestamp of the most recent direct feature tap — used to suppress the
+  // generic 'mapTap' post that would otherwise follow a bubbled feature click.
+  var lastFeatureTap = 0;
+  map.on('click', function () {
+    if (Date.now() - lastFeatureTap < 400) return;
+    post('mapTap', {});
+  });
+
   // ── Basemap config ─────────────────────────────────────────────────────────
   // Provider: Mapbox — two tokens in use:
   //   __MAPBOX_TOKEN__ is replaced at serve time by the web portal (MAPBOX_TOKEN env,
@@ -385,6 +393,16 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
             var ref = (feature.id != null && feature.id !== '' ? String(feature.id) : null) || props.featureId || props.id || props.featureRef || props.name;
             var label = props.label || props.name || props.displayName || props.title || (layer.displayName + (ref ? ' - ' + ref : ''));
             var assetType = props.assetType || layer.subLayerKey || layer.layerKey;
+            if (layer.directTap && ref) {
+              // Preview mode: tap a feature → immediately post viewAssetDetail,
+              // no popup. Record the tap so the generic mapTap is suppressed.
+              l.on('click', function(ev) {
+                lastFeatureTap = Date.now();
+                if (ev.originalEvent) L.DomEvent.stopPropagation(ev.originalEvent);
+                window.mapBridge._viewDetail(ref, layer.layerKey, label, assetType, layer.displayName || '');
+              });
+              return;
+            }
             var featureColor = layer.color || '#25C1AC';
             if (layer.subLayerKey === 'controller' && props) {
               var fid = props.featureId || feature.id;
@@ -609,6 +627,16 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
         if (show) { if (!map.hasLayer(cg)) map.addLayer(cg); }
         else { if (map.hasLayer(cg)) map.removeLayer(cg); }
       });
+    },
+
+    // Enable/disable all map interaction handlers and hide the zoom control.
+    // Used by preview surfaces (dashboard portfolio map) that must not hijack
+    // page scroll or offer zoom/pan.
+    setInteractive: function(on) {
+      var handlers = [map.dragging, map.scrollWheelZoom, map.doubleClickZoom, map.boxZoom, map.keyboard, map.touchZoom];
+      handlers.forEach(function(h) { if (h) { if (on) { h.enable(); } else { h.disable(); } } });
+      var zc = document.querySelector('.leaflet-control-zoom');
+      if (zc) zc.style.display = on ? '' : 'none';
     },
 
     setSatellite: function(on) {
