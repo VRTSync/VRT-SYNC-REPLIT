@@ -5869,6 +5869,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/portfolio/group-sets", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getPortfolioGroupSets(resolved.orgId);
+      console.log(`[GET /api/portfolio/group-sets] org=${resolved.orgId} count=${data.length} (${Date.now() - t0}ms)`);
+      return void res.json(data);
+    } catch (error) {
+      console.error("Portfolio group sets error:", error);
+      return void res.status(500).json({ error: "Failed to fetch portfolio group sets" });
+    }
+  });
+
   // ── Portfolio Phase 3d: Work Orders endpoints ────────────────────────────
   //
   // origin values in use across the codebase (grep 2024-08):
@@ -6944,6 +6958,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.setBranchGroupMembers(req.params.groupId as string, communityIds as string[]);
       return void res.json({ ok: true });
     } catch (error) {
+      // One-group-per-set violation: move semantics in setBranchGroupMembers
+      // should prevent this, but if a case is ever missed the admin gets a
+      // real explanation, not a generic 500.
+      if (isUniqueViolation(error, "branch_group_members_one_per_set_idx")) {
+        const pg = pgErrorOf(error);
+        // detail looks like: Key (community_id, set_id)=(abc, def) already exists.
+        const detailMatch = /\(community_id, set_id\)=\(([^,]+), ([^)]+)\)/.exec(pg?.detail ?? "");
+        let conflictMsg = "This location already belongs to another group in the same group set.";
+        if (detailMatch) {
+          try {
+            const { rows } = await pool.query<{ group_name: string }>(
+              `SELECT bg.name AS group_name
+                 FROM branch_group_members bgm
+                 JOIN branch_groups bg ON bg.id = bgm.group_id
+                WHERE bgm.community_id = $1 AND bgm.set_id = $2
+                LIMIT 1`,
+              [detailMatch[1], detailMatch[2]],
+            );
+            if (rows[0]) conflictMsg = `This location already belongs to "${rows[0].group_name}" in the same group set. A location can only be in one group per set.`;
+          } catch { /* best-effort lookup only */ }
+        }
+        return void res.status(409).json({ error: conflictMsg });
+      }
       console.error("Set branch group members error:", error);
       return void res.status(500).json({ error: "Failed to set branch group members" });
     }

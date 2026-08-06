@@ -7,7 +7,7 @@ import {
   taskSchedules, scheduleRuns, scheduleRunItems, serviceSchedules, serviceVisits, assetNotes,
   notifications, driveFolders, driveFiles, invoices, contracts, contacts, pushTickets,
   assetAttachments,
-  organizations, branchGroups, branchGroupMembers,
+  organizations, branchGroups, branchGroupMembers, branchGroupSets,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
@@ -19,7 +19,7 @@ import {
   type AssetAttachment,
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
   type Organization, type NewOrganization,
-  type BranchGroup, type NewBranchGroup,
+  type BranchGroup, type NewBranchGroup, type BranchGroupSet,
   userRoleEnum,
 } from "@workspace/db";
 
@@ -3898,8 +3898,24 @@ export async function deleteBranchGroup(id: string): Promise<boolean> {
 
 export async function setBranchGroupMembers(groupId: string, communityIds: string[]): Promise<void> {
   await db.transaction(async (tx) => {
+    const [group] = await tx.select().from(branchGroups).where(eq(branchGroups.id, groupId));
     await tx.delete(branchGroupMembers).where(eq(branchGroupMembers.groupId, groupId));
     if (communityIds.length > 0) {
+      // Move semantics: assigning a location to a group in a set removes its
+      // existing membership in any other group of the same set, in the same
+      // transaction.  Reassigning North → Central must not 500.
+      if (group?.setId) {
+        const siblingGroupIds = tx
+          .select({ id: branchGroups.id })
+          .from(branchGroups)
+          .where(and(eq(branchGroups.setId, group.setId), ne(branchGroups.id, groupId)));
+        await tx.delete(branchGroupMembers).where(and(
+          inArray(branchGroupMembers.communityId, communityIds),
+          inArray(branchGroupMembers.groupId, siblingGroupIds),
+        ));
+      }
+      // set_id is intentionally NOT supplied — a DB trigger derives it from
+      // branch_groups so bulk loads and future callers are covered too.
       await tx.insert(branchGroupMembers).values(
         communityIds.map((communityId) => ({ groupId, communityId }))
       );
@@ -4583,6 +4599,8 @@ export async function getPortfolioGroups(orgId: string) {
       id: string;
       name: string;
       color: string | null;
+      set_id: string | null;
+      set_name: string | null;
       branch_count: string;
       // services per branch (avg) — use per-branch totals and average them
       services_per_branch: string | null;
@@ -4593,6 +4611,8 @@ export async function getPortfolioGroups(orgId: string) {
         bg.id,
         bg.name,
         bg.color,
+        bg.set_id,
+        bgs.name AS set_name,
         COUNT(DISTINCT bgm.community_id)::text AS branch_count,
         -- servicesPerBranch: avg services per branch in group (per-branch average, not raw total)
         CASE WHEN COUNT(DISTINCT bgm.community_id) = 0 THEN NULL
@@ -4641,9 +4661,10 @@ export async function getPortfolioGroups(orgId: string) {
          )
         ) AS photo_proof_pct
       FROM branch_groups bg
+      LEFT JOIN branch_group_sets bgs ON bgs.id = bg.set_id
       LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
       WHERE bg.organization_id = $1
-      GROUP BY bg.id, bg.name, bg.color
+      GROUP BY bg.id, bg.name, bg.color, bg.set_id, bgs.name
       ORDER BY bg.sort_order, bg.name
     `, [orgId]),
 
@@ -4668,6 +4689,8 @@ export async function getPortfolioGroups(orgId: string) {
     id: r.id,
     name: r.name,
     color: r.color ?? null,
+    setId: r.set_id ?? null,
+    setName: r.set_name ?? null,
     branchIds: branchIdsByGroup.get(r.id) ?? [],
     metrics: {
       branches: Number(r.branch_count),
@@ -4676,6 +4699,62 @@ export async function getPortfolioGroups(orgId: string) {
       photoProofPct: Number(r.photo_proof_pct ?? 0),
     },
   }));
+}
+
+export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
+  id: string | null;
+  name: string;
+  sortOrder: number;
+  groups: Array<{
+    id: string;
+    name: string;
+    color: string | null;
+    branchIds: string[];
+    branchCount: number;
+    servicesPerBranch: number | null;
+    openItems: number;
+    photoProofPct: number;
+  }>;
+}>> {
+  // Reuses getPortfolioGroups' metric SQL wholesale — no parallel metrics
+  // implementation.  This function only buckets those groups by set.
+  const [sets, groups] = await Promise.all([
+    db.select().from(branchGroupSets)
+      .where(eq(branchGroupSets.organizationId, orgId))
+      .orderBy(branchGroupSets.sortOrder, branchGroupSets.name),
+    getPortfolioGroups(orgId),
+  ]);
+
+  const toSetGroup = (g: Awaited<ReturnType<typeof getPortfolioGroups>>[number]) => ({
+    id: g.id,
+    name: g.name,
+    color: g.color,
+    branchIds: g.branchIds,
+    branchCount: g.metrics.branches,
+    servicesPerBranch: g.metrics.servicesPerBranch,
+    openItems: g.metrics.openItems,
+    photoProofPct: g.metrics.photoProofPct,
+  });
+
+  const result = sets.map((s) => ({
+    id: s.id as string | null,
+    name: s.name,
+    sortOrder: s.sortOrder,
+    groups: groups.filter(g => g.setId === s.id).map(toSetGroup),
+  }));
+
+  // Groups with no set land in a synthetic trailing "Ungrouped" bucket.
+  const ungrouped = groups.filter(g => g.setId === null).map(toSetGroup);
+  if (ungrouped.length > 0) {
+    result.push({
+      id: null,
+      name: "Ungrouped",
+      sortOrder: Number.MAX_SAFE_INTEGER,
+      groups: ungrouped,
+    });
+  }
+
+  return result;
 }
 
 export async function getBranchMapPoints(orgId: string): Promise<{

@@ -74,11 +74,24 @@ export const communityMembers = pgTable("community_members", {
   uniqueIndex("community_members_community_user_idx").on(table.communityId, table.userId),
 ]);
 
+export const branchGroupSets = pgTable("branch_group_sets", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("branch_group_sets_org_name_unique").on(table.organizationId, table.name),
+]);
+
 export const branchGroups = pgTable("branch_groups", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  setId: varchar("set_id").references(() => branchGroupSets.id, { onDelete: 'set null' }),
   name: text("name").notNull(),
   color: varchar("color"),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -91,9 +104,17 @@ export const branchGroupMembers = pgTable("branch_group_members", {
     .default(sql`gen_random_uuid()`),
   groupId: varchar("group_id").notNull().references(() => branchGroups.id, { onDelete: 'cascade' }),
   communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
+  // Denormalized from branch_groups.set_id by a DB trigger — never set this
+  // from application code; the trigger overwrites it on insert/update.
+  setId: varchar("set_id"),
 }, (table) => [
   uniqueIndex("branch_group_members_group_community_idx").on(table.groupId, table.communityId),
 ]);
+
+export const insertBranchGroupSetSchema = createInsertSchema(branchGroupSets).omit({ id: true, createdAt: true });
+export const selectBranchGroupSetSchema = createInsertSchema(branchGroupSets);
+export type BranchGroupSet = typeof branchGroupSets.$inferSelect;
+export type NewBranchGroupSet = typeof branchGroupSets.$inferInsert;
 
 export const insertBranchGroupSchema = createInsertSchema(branchGroups).omit({ id: true, createdAt: true });
 export const selectBranchGroupSchema = createInsertSchema(branchGroups);
@@ -516,10 +537,17 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   communities: many(communities),
   users: many(users),
   branchGroups: many(branchGroups),
+  branchGroupSets: many(branchGroupSets),
+}));
+
+export const branchGroupSetsRelations = relations(branchGroupSets, ({ one, many }) => ({
+  organization: one(organizations, { fields: [branchGroupSets.organizationId], references: [organizations.id] }),
+  groups: many(branchGroups),
 }));
 
 export const branchGroupsRelations = relations(branchGroups, ({ one, many }) => ({
   organization: one(organizations, { fields: [branchGroups.organizationId], references: [organizations.id] }),
+  set: one(branchGroupSets, { fields: [branchGroups.setId], references: [branchGroupSets.id] }),
   members: many(branchGroupMembers),
 }));
 
