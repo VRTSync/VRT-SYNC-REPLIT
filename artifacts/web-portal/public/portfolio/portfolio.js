@@ -14,9 +14,10 @@
   /** @type {{ organization: object, branches: any[], groups: any[], organizationId: string|null, role: string } | null} */
   window.PortfolioState = null;
 
-  var AUTO_REFRESH_MS = 60 * 1000; // 60 s
+  var STALE_AFTER_MS  = 5 * 60 * 1000; // re-fetch on tab return if older than 5 min
   var _lastRefreshTs  = Date.now();
-  var _refreshTimer   = null;
+  var _refreshInfraStarted = false;
+  var _pendingVisibilityRefresh = false;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
@@ -258,21 +259,117 @@
     el.textContent = elapsedMin < 1 ? 'updated just now' : 'updated ' + elapsedMin + 'm ago';
   }
 
-  function scheduleAutoRefresh() {
-    if (_refreshTimer) clearInterval(_refreshTimer);
-    _refreshTimer = setInterval(function () {
-      updateRefreshLabel();
-      // Re-dispatch the current route to refresh data
-      var route  = PortfolioRouter.getCurrentRoute();
-      var params = PortfolioRouter.getParams();
-      if (route) {
-        _lastRefreshTs = Date.now();
-        PortfolioRouter.render(route, params);
-      }
-    }, AUTO_REFRESH_MS);
+  // ── Manual + visibility-based refresh (no timed re-renders) ─────────────
+  function refreshCurrentRoute() {
+    var route  = PortfolioRouter.getCurrentRoute();
+    var params = PortfolioRouter.getParams();
+    if (!route) return;
+    var btn = document.getElementById('pf-refresh-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Refreshing\u2026';
+    }
+    _lastRefreshTs = Date.now();
+    PortfolioRouter.render(route, params);
+    updateRefreshLabel();
+    // The render wipes the page (and the button with it); a fresh, enabled
+    // button is re-injected next to the new label by the content observer.
+  }
 
-    // Update the label every 30 s for display accuracy
-    setInterval(updateRefreshLabel, 30000);
+  // True while the user is mid-interaction: expanded map, open modal/menu,
+  // or focus inside a form control on the page.
+  function isInteractionActive() {
+    if (document.querySelector('.bmap-panel--expanded')) return true;
+
+    // Open dropdown menus (user menu, branch selector)
+    if (document.querySelector('.user-popup-menu.open, .bsel-menu.open')) return true;
+
+    // Work-order detail / approval dialogs
+    if (document.querySelector('.wo-detail-overlay.visible, #wo-approve-dialog')) return true;
+
+    // Any visible modal overlay (e.g. work-orders Submit Request modal)
+    var overlays = document.querySelectorAll('[id$="modal-overlay"], .modal-overlay');
+    for (var i = 0; i < overlays.length; i++) {
+      if (window.getComputedStyle(overlays[i]).display !== 'none') return true;
+    }
+
+    var page = document.getElementById('page-content');
+    var ae = document.activeElement;
+    if (page && ae && page.contains(ae)) {
+      var tag = ae.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    }
+    return false;
+  }
+
+  function maybeVisibilityRefresh() {
+    if (Date.now() - _lastRefreshTs <= STALE_AFTER_MS) {
+      _pendingVisibilityRefresh = false;
+      return;
+    }
+    if (isInteractionActive()) {
+      // Re-check later (on the label tick) once the interaction clears
+      _pendingVisibilityRefresh = true;
+      return;
+    }
+    _pendingVisibilityRefresh = false;
+    refreshCurrentRoute();
+  }
+
+  // Ensure the "updated Xm ago" label + manual Refresh button exist in the
+  // current page header, whichever route rendered it. Route-agnostic: pages
+  // that render their own #pf-refresh-label get the button next to it; pages
+  // that don't get both injected into their header row.
+  function ensureRefreshControl() {
+    if (document.getElementById('pf-refresh-btn')) return;
+
+    var label = document.getElementById('pf-refresh-label');
+    if (!label) {
+      var header = document.querySelector(
+        '#page-content .ctx, #page-content .pfm-header, #page-content .det-head'
+      );
+      if (!header) return; // page still loading / no header (e.g. org picker)
+      label = document.createElement('span');
+      label.id = 'pf-refresh-label';
+      label.className = 'refresh-label';
+      header.appendChild(label);
+    }
+
+    var btn = document.createElement('button');
+    btn.id = 'pf-refresh-btn';
+    btn.className = 'pf-refresh-btn';
+    btn.type = 'button';
+    btn.innerHTML = '\u21bb Refresh';
+    btn.addEventListener('click', refreshCurrentRoute);
+    label.insertAdjacentElement('afterend', btn);
+    updateRefreshLabel();
+  }
+
+  // Registered ONCE at boot (not per render) — no duplicate timers/listeners.
+  function startRefreshInfra() {
+    if (_refreshInfraStarted) return;
+    _refreshInfraStarted = true;
+
+    // Lightweight label tick: text-only, never re-renders. Also retries a
+    // deferred visibility refresh once the interaction guard clears.
+    setInterval(function () {
+      updateRefreshLabel();
+      if (_pendingVisibilityRefresh && document.visibilityState === 'visible') {
+        maybeVisibilityRefresh();
+      }
+    }, 30000);
+
+    // Inject the Refresh control whenever a page renders its header label.
+    var page = document.getElementById('page-content');
+    if (page) {
+      new MutationObserver(ensureRefreshControl).observe(page, { childList: true, subtree: true });
+    }
+    ensureRefreshControl();
+
+    // Quiet re-fetch when the user returns to the tab and data is stale.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') maybeVisibilityRefresh();
+    });
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
@@ -310,7 +407,7 @@
               };
               renderSidebar(user);
               PortfolioRouter.init();
-              scheduleAutoRefresh();
+              startRefreshInfra();
               fetchWorkOrderBadge();
               var route = PortfolioRouter.getRouteFromPath();
               PortfolioRouter.navigate(route, false, PortfolioRouter.getParams());
@@ -335,7 +432,7 @@
               };
               renderSidebar(user);
               PortfolioRouter.init();
-              scheduleAutoRefresh();
+              startRefreshInfra();
               fetchWorkOrderBadge();
               var route = PortfolioRouter.getRouteFromPath();
               PortfolioRouter.navigate(route, false, PortfolioRouter.getParams());
