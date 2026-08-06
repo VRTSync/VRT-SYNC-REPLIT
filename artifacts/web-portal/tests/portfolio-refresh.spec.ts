@@ -7,7 +7,8 @@
  *   • "updated Xm ago" label keeps ticking
  *   • manual Refresh button re-fetches and resets the label
  *   • visibilitychange → visible re-fetches only when data is > 5 min stale
- *   • interaction guard (focused input) defers the visibility refresh
+ *   • interaction guard (focused input) discards the visibility refresh
+ *     (no deferred retry — the next visibilitychange re-evaluates)
  *
  * All API calls are intercepted via page.route(); page.clock drives time.
  */
@@ -90,7 +91,7 @@ test('no timed re-render; label ticks; manual Refresh re-fetches', async ({ page
   await expect(page.locator('#pf-refresh-btn')).toBeEnabled();
 });
 
-test('visibility refresh: only when stale, deferred while input focused', async ({ page }) => {
+test('visibility refresh: only when stale, discarded while input focused', async ({ page }) => {
   const counters = { dashboard: 0 };
   await openDashboard(page, counters);
 
@@ -108,7 +109,7 @@ test('visibility refresh: only when stale, deferred while input focused', async 
   await expect(page.locator('#pf-refresh-label')).toHaveText('updated just now');
   expect(counters.dashboard).toBe(2);
 
-  // Away 6+ minutes but an input inside the page has focus → deferred
+  // Away 6+ minutes but an input inside the page has focus → discarded
   await page.evaluate(() => {
     const input = document.createElement('input');
     input.id = 'guard-input';
@@ -121,11 +122,19 @@ test('visibility refresh: only when stale, deferred while input focused', async 
   await page.waitForTimeout(50);
   expect(counters.dashboard).toBe(2); // guarded — no refresh
 
-  // Blur the input; the 30 s label tick retries the pending refresh
+  // Blur the input and wait well past the 30 s tick — the refresh was
+  // DISCARDED, not queued: nothing fires, the label keeps aging.
   await page.evaluate(() => {
     (document.getElementById('guard-input') as HTMLInputElement).blur();
   });
-  await page.clock.runFor(31 * 1000);
+  await page.clock.runFor(2 * 60 * 1000);
+  expect(counters.dashboard).toBe(2);
+  await expect(page.locator('#pf-refresh-label')).not.toHaveText('updated just now');
+
+  // A fresh visibilitychange → visible re-evaluates from scratch → refreshes
+  await setVisibility(page, 'hidden');
+  await page.clock.runFor(1000);
+  await setVisibility(page, 'visible');
   await expect(page.locator('#pf-refresh-label')).toHaveText('updated just now');
   expect(counters.dashboard).toBe(3);
 });
@@ -186,9 +195,15 @@ test('open Submit Request modal and open dropdowns block the visibility refresh'
   await expect(anyInput).toHaveValue('Sprinkler head broken near entrance');
   expect(woCalls.length).toBe(woCallsAfterLoad);
 
-  // Close the modal → pending refresh fires on the next 30 s tick
+  // Close the modal → nothing was queued; the 30 s tick only updates the label
   await page.locator('#wo-modal-cancel').click();
   await page.clock.runFor(31 * 1000);
+  expect(woCalls.length).toBe(woCallsAfterLoad);
+
+  // A fresh visibilitychange → visible now refreshes (stale, no guard)
+  await setVisibility(page, 'hidden');
+  await page.clock.runFor(1000);
+  await setVisibility(page, 'visible');
   await expect(page.locator('#pf-refresh-label')).toHaveText('updated just now');
   expect(woCalls.length).toBeGreaterThan(woCallsAfterLoad);
 
@@ -212,9 +227,16 @@ test('open Submit Request modal and open dropdowns block the visibility refresh'
     await page.clock.runFor(6 * 60 * 1000);
     await setVisibility(page, 'visible');
     await page.waitForTimeout(50);
-    expect(woCalls.length).toBe(before); // guarded
+    expect(woCalls.length).toBe(before); // guarded — discarded, not queued
     await page.evaluate(() => document.getElementById('guard-el')!.remove());
     await page.clock.runFor(31 * 1000);
+    expect(woCalls.length).toBe(before); // no deferred retry on the tick
+
+    // Re-trigger via a fresh visibilitychange so the next loop iteration
+    // starts from a just-refreshed state.
+    await setVisibility(page, 'hidden');
+    await page.clock.runFor(1000);
+    await setVisibility(page, 'visible');
     await expect(page.locator('#pf-refresh-label')).toHaveText('updated just now');
     expect(woCalls.length).toBeGreaterThan(before);
   }

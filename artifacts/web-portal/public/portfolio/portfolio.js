@@ -17,7 +17,6 @@
   var STALE_AFTER_MS  = 5 * 60 * 1000; // re-fetch on tab return if older than 5 min
   var _lastRefreshTs  = Date.now();
   var _refreshInfraStarted = false;
-  var _pendingVisibilityRefresh = false;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
@@ -303,16 +302,11 @@
   }
 
   function maybeVisibilityRefresh() {
-    if (Date.now() - _lastRefreshTs <= STALE_AFTER_MS) {
-      _pendingVisibilityRefresh = false;
-      return;
-    }
-    if (isInteractionActive()) {
-      // Re-check later (on the label tick) once the interaction clears
-      _pendingVisibilityRefresh = true;
-      return;
-    }
-    _pendingVisibilityRefresh = false;
+    if (Date.now() - _lastRefreshTs <= STALE_AFTER_MS) return;
+    // If the user is mid-interaction, discard the refresh entirely — the
+    // label keeps aging and the manual Refresh button stays available. The
+    // next visibilitychange → visible re-evaluates from scratch.
+    if (isInteractionActive()) return;
     refreshCurrentRoute();
   }
 
@@ -350,14 +344,8 @@
     if (_refreshInfraStarted) return;
     _refreshInfraStarted = true;
 
-    // Lightweight label tick: text-only, never re-renders. Also retries a
-    // deferred visibility refresh once the interaction guard clears.
-    setInterval(function () {
-      updateRefreshLabel();
-      if (_pendingVisibilityRefresh && document.visibilityState === 'visible') {
-        maybeVisibilityRefresh();
-      }
-    }, 30000);
+    // Lightweight label tick: text-only, never re-renders.
+    setInterval(updateRefreshLabel, 30000);
 
     // Inject the Refresh control whenever a page renders its header label.
     var page = document.getElementById('page-content');
