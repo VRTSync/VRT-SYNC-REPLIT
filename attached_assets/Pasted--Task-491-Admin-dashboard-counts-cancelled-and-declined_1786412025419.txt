@@ -1,0 +1,70 @@
+# Task #491: Admin dashboard counts cancelled and declined work as open
+
+## What & Why
+
+Cancelling a client work order stamps `cancelled_at` and **does not change `status`** (`routes.ts`, the cancel endpoint: `.set({ cancelledAt, cancelledBy, cancelReason })`, no status write). Declining does the same with `declined_at`. Both are terminal client states, and `status` stays whatever it was, usually `submitted`.
+
+`getAdminDashboard` has four queries that count tasks. **Only one of them accounts for that.**
+
+| Query | Filter today | Correct? |
+|---|---|---|
+| `communities_overdue` | `status NOT IN ('completed') AND cancelled_at IS NULL AND declined_at IS NULL` | ✅ |
+| `unack_count` | `status = 'submitted' AND created_at < now() - 48h` | ❌ |
+| `unack_oldest_days` | same | ❌ |
+| `activityTrend.open_count` | `status NOT IN ('completed')` | ❌ |
+
+The consequence in order of severity:
+
+1. **`unack_count` is the actionable one.** A client submits a work order, then cancels it. It keeps `status = 'submitted'`, so after 48 hours it appears on the VRT admin dashboard as an unacknowledged submission and stays there permanently. Staff will chase work the client already withdrew.
+2. **`unack_oldest_days`** uses `MIN(created_at)` over that same set, so a single old cancelled item pins the "oldest waiting" figure forever and it never recovers.
+3. **`activityTrend.open_count`** counts cancelled and declined tasks as open in the 8-week trend, so the headline overdue number and the trend line disagree with each other on the same screen.
+
+This was flagged as unverified in the review of 2026-08-04 and carried through two more reviews. It is now confirmed by reading the code.
+
+## Done looks like
+
+- All four task-counting queries in `getAdminDashboard` exclude `cancelled_at IS NOT NULL` and `declined_at IS NOT NULL`.
+- A cancelled client work order older than 48 hours does **not** appear in `unack_count` and does not influence `unack_oldest_days`.
+- A declined work order behaves the same way.
+- The 8-week `activityTrend.open_count` excludes both terminal states, so it reconciles with `communities_overdue`.
+- No other admin metric changes. Community counts, asset counts, map layer counts, `communities_quiet`, `onboarding_stalled`, and `photoProofPct30d` are untouched — none of them count tasks by status.
+- The exclusion is expressed **once**, not pasted four times. Extract a SQL fragment or a small helper and use it in each subquery, so the next person adding a task count inherits it. Two of these queries are byte-identical apart from the aggregate; they should share.
+
+## Steps
+
+1. In `storage.ts` `getAdminDashboard` (~3540), add `AND cancelled_at IS NULL AND declined_at IS NULL` to `unack_count`, `unack_oldest_days`, and `activityTrend.open_count`.
+2. Factor the predicate so it appears once. A `const NOT_TERMINAL = "cancelled_at IS NULL AND declined_at IS NULL"` interpolated into each subquery is fine and is the smallest change that removes the duplication. Keep the existing explanatory comment.
+3. Re-read the rest of `getAdminDashboard` and confirm no fifth task count was missed.
+4. **Also check the contractor and PM dashboards** for the same pattern. This bug class exists anywhere a query filters tasks by `status` alone. Report what you find; fix it in this task only if it is the same one-line predicate, otherwise raise it separately with the function names.
+
+## Verify
+
+- Submit a client work order, wait past the 48-hour threshold (or set `created_at` back in a scratch environment), confirm it appears in the admin unacknowledged count.
+- Cancel it. The count drops by one and `unack_oldest_days` recalculates off the next-oldest genuine submission.
+- Decline an estimate on another work order. Same result.
+- `communities_overdue` and `activityTrend.open_count` move together, not in opposite directions.
+- The client portal's own Work Orders page is unaffected — it already partitions cancelled and declined into a separate bucket (`routes.ts` ~6011) and must keep doing so.
+
+## Out of scope
+
+- Changing what cancel or decline write to the `tasks` row. Stamping a timestamp and leaving `status` alone is the existing model and other code depends on it.
+- Adding a `cancelled` or `declined` value to the status enum. That is a larger migration and a separate conversation.
+- Any UI change on the admin dashboard.
+
+## Relevant files
+
+- `artifacts/api-server/src/storage.ts` — `getAdminDashboard` ~3540 (`communities_overdue` ~3548 is the correct one to copy from; `unack_count` ~3556, `unack_oldest_days` ~3563, `activityTrend.open_count` ~3603)
+- `artifacts/api-server/src/routes/routes.ts` — cancel endpoint (for reference on what terminal states write)
+
+---
+
+## Addendum: unrelated one-line doc fix, do it in this commit
+
+`replit.md` contradicts itself and one of the two statements is wrong:
+
+- **Line 45:** "`artifacts/api-server/src/shared/` files are manually copied to `artifacts/vrtsync-mobile/shared/` because Metro bundler can't resolve outside the artifact directory."
+- **Line 73:** that directory's contents were removed in favour of the `/api/asset-types` endpoint.
+
+`artifacts/vrtsync-mobile/shared/` **does not exist** in the current tree. Line 45 is the one a future reader will act on, and it tells them to copy files into a directory that is gone.
+
+Correct line 45 to describe the actual rule: shared pure-logic files still cannot be reached by Metro from outside its project root, so any *new* one needs a manual copy, but no such copies exist today and `assetFieldTemplates.ts` is served over `/api/asset-types` instead. Keep line 73 as the fuller explanation.
