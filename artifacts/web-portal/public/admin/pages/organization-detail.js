@@ -56,7 +56,10 @@ AdminRouter.register('organization-detail', async function(container, params) {
       <div class="org-section">
         <div class="org-section-header">
           <h2>Groups</h2>
-          <button class="btn btn-primary btn-sm" id="add-group-btn">+ Add Group</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm" id="manage-sets-btn">Manage Sets</button>
+            <button class="btn btn-primary btn-sm" id="add-group-btn">+ Add Group</button>
+          </div>
         </div>
         <div id="groups-area"><div class="loading-spinner">Loading...</div></div>
       </div>
@@ -74,6 +77,7 @@ AdminRouter.register('organization-detail', async function(container, params) {
     document.getElementById('delete-org-btn').addEventListener('click', () => deleteOrg());
     document.getElementById('add-branch-btn').addEventListener('click', () => showAddBranchModal());
     document.getElementById('add-group-btn').addEventListener('click', () => showAddGroupModal());
+    document.getElementById('manage-sets-btn').addEventListener('click', () => showManageSetsModal());
     document.getElementById('add-client-user-btn').addEventListener('click', () => showAddClientUserModal());
 
     loadBranches();
@@ -241,40 +245,95 @@ AdminRouter.register('organization-detail', async function(container, params) {
 
   // ── Groups ────────────────────────────────────────────────────────────────
 
+  let groupSets = [];
+
   async function loadGroups() {
     const el = document.getElementById('groups-area');
     if (!el) return;
     try {
-      const groups = await apiFetch(`/api/admin/organizations/${orgId}/groups`);
-      renderGroups(el, groups);
+      const [groups, sets] = await Promise.all([
+        apiFetch(`/api/admin/organizations/${orgId}/groups`),
+        apiFetch(`/api/admin/organizations/${orgId}/group-sets`),
+      ]);
+      groupSets = sets;
+      renderGroups(el, groups, sets);
     } catch (err) {
       el.innerHTML = '<div class="empty-state"><p>Failed to load groups</p></div>';
     }
   }
 
-  function renderGroups(el, groups) {
-    if (groups.length === 0) {
+  function renderGroups(el, groups, sets) {
+    if (groups.length === 0 && sets.length === 0) {
       el.innerHTML = '<div class="empty-state" style="padding:24px 0">No groups yet.</div>';
       return;
     }
-    el.innerHTML = `
-      <div class="org-groups-list">
-        ${groups.map(g => `
-          <div class="org-group-row" data-id="${esc(g.id)}">
-            <div class="org-group-swatch" style="background:${esc(g.color || '#6b7280')}"></div>
-            <div class="org-group-info">
-              <strong>${esc(g.name)}</strong>
-              <span class="text-muted text-sm">${g.memberCount ?? (g.memberIds ? g.memberIds.length : 0)} branch(es)</span>
-            </div>
-            <div class="org-group-actions">
-              <button class="btn btn-ghost btn-xs edit-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}" data-color="${esc(g.color || '')}">Edit</button>
-              <button class="btn btn-ghost btn-xs members-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}">Members</button>
-              <button class="btn btn-danger btn-xs delete-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}">Delete</button>
-            </div>
-          </div>
-        `).join('')}
+
+    const setSelect = (g) => `
+      <select class="form-select set-select" data-id="${esc(g.id)}" style="width:auto;padding:2px 24px 2px 8px;font-size:12px;height:26px">
+        <option value="">Ungrouped</option>
+        ${sets.map(s => `<option value="${esc(s.id)}" ${g.setId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+      </select>
+    `;
+
+    const groupRow = (g) => `
+      <div class="org-group-row" data-id="${esc(g.id)}">
+        <div class="org-group-swatch" style="background:${esc(g.color || '#6b7280')}"></div>
+        <div class="org-group-info">
+          <strong>${esc(g.name)}</strong>
+          <span class="text-muted text-sm">${g.memberCount ?? (g.memberIds ? g.memberIds.length : 0)} branch(es)</span>
+        </div>
+        <div class="org-group-actions">
+          ${setSelect(g)}
+          <button class="btn btn-ghost btn-xs edit-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}" data-color="${esc(g.color || '')}">Edit</button>
+          <button class="btn btn-ghost btn-xs members-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}">Members</button>
+          <button class="btn btn-danger btn-xs delete-group-btn" data-id="${esc(g.id)}" data-name="${esc(g.name)}">Delete</button>
+        </div>
       </div>
     `;
+
+    // Sets in sortOrder (API returns them sorted), Ungrouped last.
+    const sections = sets.map(s => {
+      const inSet = groups.filter(g => g.setId === s.id);
+      return `
+        <div class="org-group-set-section" style="margin-bottom:12px">
+          <div class="text-sm" style="font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.04em;padding:6px 0;border-bottom:1px solid var(--gray-100);margin-bottom:4px">${esc(s.name)}</div>
+          ${inSet.length ? inSet.map(groupRow).join('') : '<div class="text-muted text-sm" style="padding:6px 0 10px">No groups in this set yet.</div>'}
+        </div>
+      `;
+    });
+    const ungrouped = groups.filter(g => !g.setId);
+    if (ungrouped.length > 0) {
+      sections.push(`
+        <div class="org-group-set-section">
+          <div class="text-sm" style="font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.04em;padding:6px 0;border-bottom:1px solid var(--gray-100);margin-bottom:4px">Ungrouped</div>
+          ${ungrouped.map(groupRow).join('')}
+        </div>
+      `);
+    }
+
+    el.innerHTML = `<div class="org-groups-list">${sections.join('')}</div>`;
+
+    el.querySelectorAll('.set-select').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const groupId = sel.dataset.id;
+        const newSetId = sel.value || null;
+        try {
+          await apiFetch(`/api/admin/groups/${groupId}`, {
+            method: 'PATCH',
+            body: { setId: newSetId },
+          });
+          showToast('Group set updated', 'success');
+          loadGroups();
+        } catch (err) {
+          if (err.status === 409) {
+            alert(err.message);
+          } else {
+            showToast(err.message, 'error');
+          }
+          loadGroups(); // revert the select to server state
+        }
+      });
+    });
 
     el.querySelectorAll('.edit-group-btn').forEach(btn => {
       btn.addEventListener('click', () => showEditGroupModal(btn.dataset.id, btn.dataset.name, btn.dataset.color));
@@ -431,6 +490,148 @@ AdminRouter.register('organization-detail', async function(container, params) {
     } catch (err) {
       showToast(err.message, 'error');
     }
+  }
+
+  // ── Group Sets ────────────────────────────────────────────────────────────
+
+  async function showManageSetsModal() {
+    let sets = [];
+    try {
+      sets = await apiFetch(`/api/admin/organizations/${orgId}/group-sets`);
+    } catch (err) {
+      showToast('Failed to load group sets', 'error');
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h2>Group Sets</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted text-sm" style="margin-top:0">Sets organize groups into categories (e.g. Region, Service Tier). Each location can only belong to one group per set.</p>
+          <div id="sets-list"></div>
+          <div class="form-error" id="set-error" style="display:none;color:var(--red);font-size:12px;margin:8px 0"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input type="text" class="form-input" id="new-set-name" placeholder="New set name" style="flex:1" />
+            <button class="btn btn-primary btn-sm" id="add-set-btn">Add Set</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary cancel-btn">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); loadGroups(); };
+    overlay.querySelector('.modal-close').addEventListener('click', close);
+    overlay.querySelector('.cancel-btn').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const errEl = overlay.querySelector('#set-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; };
+    const clearErr = () => { errEl.style.display = 'none'; };
+
+    async function refreshSets() {
+      try {
+        sets = await apiFetch(`/api/admin/organizations/${orgId}/group-sets`);
+      } catch { /* keep stale list */ }
+      renderSetsList();
+    }
+
+    function renderSetsList() {
+      const listEl = overlay.querySelector('#sets-list');
+      if (sets.length === 0) {
+        listEl.innerHTML = '<div class="text-muted text-sm" style="padding:8px 0">No group sets yet.</div>';
+        return;
+      }
+      listEl.innerHTML = sets.map((s, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--gray-100)">
+          <span style="flex:1"><strong>${esc(s.name)}</strong> <span class="text-muted text-sm">${s.groupCount} group(s)</span></span>
+          <button class="btn btn-ghost btn-xs set-up-btn" data-id="${esc(s.id)}" ${i === 0 ? 'disabled' : ''} title="Move up">&uarr;</button>
+          <button class="btn btn-ghost btn-xs set-down-btn" data-id="${esc(s.id)}" ${i === sets.length - 1 ? 'disabled' : ''} title="Move down">&darr;</button>
+          <button class="btn btn-ghost btn-xs set-rename-btn" data-id="${esc(s.id)}" data-name="${esc(s.name)}">Rename</button>
+          <button class="btn btn-danger btn-xs set-delete-btn" data-id="${esc(s.id)}" data-name="${esc(s.name)}" data-count="${s.groupCount}">Delete</button>
+        </div>
+      `).join('');
+
+      listEl.querySelectorAll('.set-rename-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          clearErr();
+          const newName = prompt(`Rename set "${btn.dataset.name}" to:`, btn.dataset.name);
+          if (!newName || !newName.trim() || newName.trim() === btn.dataset.name) return;
+          try {
+            await apiFetch(`/api/admin/group-sets/${btn.dataset.id}`, { method: 'PATCH', body: { name: newName.trim() } });
+            showToast('Set renamed', 'success');
+            refreshSets();
+          } catch (err) {
+            showErr(err.message);
+          }
+        });
+      });
+      listEl.querySelectorAll('.set-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          clearErr();
+          const count = Number(btn.dataset.count);
+          const warning = count > 0
+            ? `Delete set "${btn.dataset.name}"? Its ${count} group(s) will become Ungrouped.`
+            : `Delete set "${btn.dataset.name}"?`;
+          if (!confirm(warning)) return;
+          try {
+            await apiFetch(`/api/admin/group-sets/${btn.dataset.id}`, { method: 'DELETE' });
+            showToast('Set deleted', 'success');
+            refreshSets();
+          } catch (err) {
+            showErr(err.message);
+          }
+        });
+      });
+      const reorder = async (setId, dir) => {
+        clearErr();
+        const idx = sets.findIndex(s => s.id === setId);
+        const swapIdx = idx + dir;
+        if (idx < 0 || swapIdx < 0 || swapIdx >= sets.length) return;
+        try {
+          await Promise.all([
+            apiFetch(`/api/admin/group-sets/${sets[idx].id}`, { method: 'PATCH', body: { sortOrder: swapIdx } }),
+            apiFetch(`/api/admin/group-sets/${sets[swapIdx].id}`, { method: 'PATCH', body: { sortOrder: idx } }),
+          ]);
+          refreshSets();
+        } catch (err) {
+          showErr(err.message);
+        }
+      };
+      listEl.querySelectorAll('.set-up-btn').forEach(btn => {
+        btn.addEventListener('click', () => reorder(btn.dataset.id, -1));
+      });
+      listEl.querySelectorAll('.set-down-btn').forEach(btn => {
+        btn.addEventListener('click', () => reorder(btn.dataset.id, 1));
+      });
+    }
+
+    overlay.querySelector('#add-set-btn').addEventListener('click', async () => {
+      clearErr();
+      const nameInput = overlay.querySelector('#new-set-name');
+      const name = nameInput.value.trim();
+      if (!name) { showErr('Set name is required'); return; }
+      try {
+        await apiFetch(`/api/admin/organizations/${orgId}/group-sets`, {
+          method: 'POST',
+          body: { name, sortOrder: sets.length },
+        });
+        nameInput.value = '';
+        showToast('Set created', 'success');
+        refreshSets();
+      } catch (err) {
+        showErr(err.message);
+      }
+    });
+
+    renderSetsList();
   }
 
   // ── Client Users ──────────────────────────────────────────────────────────

@@ -6923,16 +6923,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.patch("/api/admin/groups/:groupId", requireAdmin, async (req: Request, res: Response) => {
+    const groupId = req.params.groupId as string;
     try {
-      const { name, color, sortOrder } = req.body;
+      const { name, color, sortOrder, setId } = req.body;
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (color !== undefined) updates.color = color;
       if (sortOrder !== undefined) updates.sortOrder = sortOrder;
-      const group = await storage.updateBranchGroup(req.params.groupId as string, updates as any);
+      if (setId !== undefined) updates.setId = setId; // a set id, or null to unassign
+      const group = await storage.updateBranchGroup(groupId, updates as any);
       if (!group) return void res.status(404).json({ error: "Branch group not found" });
       return void res.json(group);
     } catch (error) {
+      // Moving a group into a set fires the propagate trigger on member rows;
+      // if any member already belongs to another group of that set, the
+      // one-per-set index rejects it. Explain which group and how many
+      // locations conflict instead of surfacing a 500.
+      if (isUniqueViolation(error, "branch_group_members_one_per_set_idx") && req.body?.setId) {
+        let conflictMsg = "Some locations in this group already belong to another group in that set. Move them or choose a different set.";
+        try {
+          const { rows } = await pool.query<{ group_name: string; set_name: string; cnt: string }>(
+            `SELECT bg.name AS group_name, s.name AS set_name, COUNT(DISTINCT me.community_id) AS cnt
+               FROM branch_group_members me
+               JOIN branch_group_members other
+                 ON other.community_id = me.community_id AND other.group_id <> me.group_id
+               JOIN branch_groups bg ON bg.id = other.group_id AND bg.set_id = $2
+               JOIN branch_group_sets s ON s.id = $2
+              WHERE me.group_id = $1
+              GROUP BY bg.name, s.name
+              ORDER BY cnt DESC
+              LIMIT 1`,
+            [groupId, req.body.setId],
+          );
+          if (rows[0]) {
+            const n = Number(rows[0].cnt);
+            conflictMsg = `${n} location${n === 1 ? "" : "s"} in this group already belong${n === 1 ? "s" : ""} to ${rows[0].group_name} in the ${rows[0].set_name} set. Move them or choose a different set.`;
+          }
+        } catch { /* best-effort lookup only */ }
+        return void res.status(409).json({ error: conflictMsg });
+      }
       console.error("Update branch group error:", error);
       return void res.status(500).json({ error: "Failed to update branch group" });
     }
@@ -6983,6 +7012,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.error("Set branch group members error:", error);
       return void res.status(500).json({ error: "Failed to set branch group members" });
+    }
+  });
+
+  // ── Admin: Branch group set routes ────────────────────────────────────────
+
+  app.get("/api/admin/organizations/:id/group-sets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const sets = await storage.getGroupSets(req.params.id as string);
+      res.json(sets);
+    } catch (error) {
+      console.error("List group sets error:", error);
+      res.status(500).json({ error: "Failed to list group sets" });
+    }
+  });
+
+  app.post("/api/admin/organizations/:id/group-sets", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, sortOrder } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return void res.status(400).json({ error: "name is required" });
+      }
+      const orgId = req.params.id as string;
+      const org = await storage.getOrganizationById(orgId);
+      if (!org) return void res.status(404).json({ error: "Organization not found" });
+      const set = await storage.createGroupSet(orgId, {
+        name: name.trim(),
+        sortOrder: sortOrder ?? 0,
+      });
+      res.status(201).json(set);
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_sets_org_name_unique")) {
+        return void res.status(409).json({ error: `A group set named "${String(req.body?.name).trim()}" already exists in this organization.` });
+      }
+      console.error("Create group set error:", error);
+      res.status(500).json({ error: "Failed to create group set" });
+    }
+  });
+
+  app.patch("/api/admin/group-sets/:setId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { name, sortOrder } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) {
+        if (typeof name !== "string" || name.trim().length === 0) {
+          return void res.status(400).json({ error: "name must be a non-empty string" });
+        }
+        updates.name = name.trim();
+      }
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      const set = await storage.updateGroupSet(req.params.setId as string, updates as any);
+      if (!set) return void res.status(404).json({ error: "Group set not found" });
+      return void res.json(set);
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_sets_org_name_unique")) {
+        return void res.status(409).json({ error: `A group set named "${String(req.body?.name).trim()}" already exists in this organization.` });
+      }
+      console.error("Update group set error:", error);
+      return void res.status(500).json({ error: "Failed to update group set" });
+    }
+  });
+
+  app.delete("/api/admin/group-sets/:setId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      // ON DELETE SET NULL nulls branch_groups.set_id; that referential-action
+      // UPDATE fires the propagate trigger, which nulls member rows' set_id.
+      const deleted = await storage.deleteGroupSet(req.params.setId as string);
+      if (!deleted) return void res.status(404).json({ error: "Group set not found" });
+      return void res.status(204).send();
+    } catch (error) {
+      console.error("Delete group set error:", error);
+      return void res.status(500).json({ error: "Failed to delete group set" });
     }
   });
 

@@ -19,7 +19,7 @@ import {
   type AssetAttachment,
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
   type Organization, type NewOrganization,
-  type BranchGroup, type NewBranchGroup, type BranchGroupSet,
+  type BranchGroup, type NewBranchGroup, type BranchGroupSet, type NewBranchGroupSet,
   userRoleEnum,
 } from "@workspace/db";
 
@@ -3893,6 +3893,48 @@ export async function updateBranchGroup(id: string, data: Partial<NewBranchGroup
 
 export async function deleteBranchGroup(id: string): Promise<boolean> {
   const result = await db.delete(branchGroups).where(eq(branchGroups.id, id)).returning();
+  return result.length > 0;
+}
+
+// ─── Branch group sets ────────────────────────────────────────────────────────
+
+export async function getGroupSets(orgId: string): Promise<(BranchGroupSet & { groupCount: number })[]> {
+  const sets = await db.select().from(branchGroupSets)
+    .where(eq(branchGroupSets.organizationId, orgId))
+    .orderBy(branchGroupSets.sortOrder, branchGroupSets.name);
+  if (sets.length === 0) return [];
+  const groups = await db.select({ setId: branchGroups.setId })
+    .from(branchGroups)
+    .where(eq(branchGroups.organizationId, orgId));
+  const counts = new Map<string, number>();
+  for (const g of groups) {
+    if (g.setId) counts.set(g.setId, (counts.get(g.setId) ?? 0) + 1);
+  }
+  return sets.map(s => ({ ...s, groupCount: counts.get(s.id) ?? 0 }));
+}
+
+export async function createGroupSet(orgId: string, data: {
+  name: string;
+  sortOrder?: number;
+}): Promise<BranchGroupSet> {
+  const [set] = await db.insert(branchGroupSets).values({
+    organizationId: orgId,
+    name: data.name,
+    sortOrder: data.sortOrder ?? 0,
+  }).returning();
+  return set;
+}
+
+export async function updateGroupSet(id: string, data: Partial<NewBranchGroupSet>): Promise<BranchGroupSet | undefined> {
+  const [updated] = await db.update(branchGroupSets).set(data).where(eq(branchGroupSets.id, id)).returning();
+  return updated;
+}
+
+export async function deleteGroupSet(id: string): Promise<boolean> {
+  // Groups in the set fall back to set_id NULL via ON DELETE SET NULL, and
+  // the FK's referential-action UPDATE fires branch_groups_propagate_set_id_trg,
+  // which nulls member rows' set_id too (verified empirically).
+  const result = await db.delete(branchGroupSets).where(eq(branchGroupSets.id, id)).returning();
   return result.length > 0;
 }
 
