@@ -3459,6 +3459,11 @@ export interface AdminDashboardData {
   };
 }
 
+// Cancelling or declining a client work order stamps cancelled_at / declined_at and
+// deliberately leaves `status` unchanged. Every task count on the admin dashboard must
+// therefore exclude both terminal states, or withdrawn work shows up as open/unacknowledged.
+const NOT_TERMINAL = "cancelled_at IS NULL AND declined_at IS NULL";
+
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const t0 = Date.now();
 
@@ -3550,20 +3555,21 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
           FROM tasks
           WHERE due_date < now()
             AND status NOT IN ('completed')
-            AND cancelled_at IS NULL
-            AND declined_at IS NULL
+            AND ${NOT_TERMINAL}
         )::text AS communities_overdue,
         (
           SELECT COUNT(*)
           FROM tasks
           WHERE status = 'submitted'
             AND created_at < now() - interval '48 hours'
+            AND ${NOT_TERMINAL}
         )::text AS unack_count,
         (
           SELECT EXTRACT(DAY FROM now() - MIN(created_at))::text
           FROM tasks
           WHERE status = 'submitted'
             AND created_at < now() - interval '48 hours'
+            AND ${NOT_TERMINAL}
         ) AS unack_oldest_days,
         (
           SELECT COUNT(DISTINCT c.id)
@@ -3600,7 +3606,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       SELECT
         wb.iso_week,
         (SELECT COUNT(*) FROM task_completions tc WHERE tc.completed_at >= wb.week_start AND tc.completed_at < wb.week_end)::text AS completed_count,
-        (SELECT COUNT(*) FROM tasks t WHERE t.created_at >= wb.week_start AND t.created_at < wb.week_end AND t.status NOT IN ('completed'))::text AS open_count
+        (SELECT COUNT(*) FROM tasks t WHERE t.created_at >= wb.week_start AND t.created_at < wb.week_end AND t.status NOT IN ('completed') AND ${NOT_TERMINAL})::text AS open_count
       FROM week_bounds wb
       ORDER BY wb.week_start ASC
     `),
