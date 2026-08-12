@@ -1,0 +1,72 @@
+# Parity 1 of 4: Four small fixes — dashboard header, Locations totals, Work Orders layer column
+
+*Spec is complete and ready to hand over. Awaiting a task number from Randy — rename to `task-NNN-<slug>.md` once assigned.*
+
+## What & Why
+
+The parity audit (`docs/mockup-parity-audit-2026-08-11.md`) found four differences between the live portal and the approved marketing screenshots that are each a few lines. Grouped into one slice because they share no files and none needs design discussion.
+
+A fifth item is a genuine bug found while auditing, included here because it is one line.
+
+---
+
+### 1. Dashboard header leads with the wrong thing
+
+```js
+'<h1>' + esc(org.name || 'Portfolio') + '</h1>' + '<span class="sub">Dashboard</span>'
+```
+
+Every other page in the portal leads with the screen name and uses the subtitle for context. The dashboard inverts it, and the screenshot shows the correct form.
+
+**Change to:** `<h1>Portfolio Dashboard</h1>` with the subtitle carrying `{org.name} · N locations · N groups`. The org name is already in the sidebar, so leading with it is redundant as well as inconsistent.
+
+### 2. Locations table has no totals row
+
+Eleven rows of numbers with nothing summing them. The screenshot has a totals footer.
+
+**Add a `<tfoot>`** with: location count, "N regions · N group sets" in the address cell, and column totals for Assets, Zones, Trees, and Services YTD. Style it off `--surface-alt` with a heavier top border, following the `th` treatment already in `portfolio.css`. It must reflect the **filtered** set, not the full set — if a group chip is active, the totals are for that group.
+
+### 3. Work Orders table has no Layer column
+
+Columns today: Work Order, Location, Item, Source, Status, Estimate.
+
+The layer is what ties a work order back to the irrigation/trees/grounds/snow story the product is sold on, and the screenshot shows it. **Add a Layer column** after Item, rendering the work order's category. If a task carries no layer attribution, render an em dash rather than guessing.
+
+**Check first whether the payload carries it.** `/api/portfolio/work-orders` may not return a layer or category per task. If it does not, add it — the task's linked asset or map layer is the source. Say in the implementation notes where you got it from.
+
+### 4. "PNC Code" is hardcoded in the client portal
+
+```js
+'<span class="codes">PNC Code ' + esc(branch.code || '—') + '</span>'   // branch-detail.js:496
+```
+
+A second commercial client would open their own portal and see another client's name on it. #487 renamed Branch to Location but missed this because it was searching for "Branch".
+
+**Change to** `Location code {code}`, or just the code with no prefix. Also update the stale comment at `portfolio.css:3` ("Mirrors the PNC Branch Portfolio mockup v4 design language").
+
+**Then grep the whole client portal for any other client-specific string** — `PNC`, `First Bank`, `FB0`, `High Plains`, `HP` — and report what you find. This is a bug class, not a one-off.
+
+---
+
+## Done looks like
+
+- Dashboard heading reads "Portfolio Dashboard" with the org in the subtitle.
+- Locations table has a totals footer that respects the active filter.
+- Work Orders has a Layer column, or a note explaining why the data is not available.
+- No client-specific name appears anywhere in `artifacts/web-portal/public/portfolio/`.
+- Nothing else changes. No layout restructuring — the three larger parity slices are separate.
+
+## Verify
+
+- Dashboard, Locations, Work Orders, and branch detail all render with no console errors.
+- Apply a group filter on Locations → totals change to match the filtered rows.
+- A work order with no layer shows an em dash, not "undefined" or a blank.
+- Open the portal as a non-PNC org (or with PNC data absent) → no stray client name.
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/pages/dashboard.js` (~461, the `ctx` block)
+- `artifacts/web-portal/public/portfolio/pages/branches.js` (`renderBranchTable` ~146–205)
+- `artifacts/web-portal/public/portfolio/pages/work-orders.js` (table head ~191)
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js` (~496)
+- `artifacts/web-portal/public/portfolio/portfolio.css` (line 3 comment; `tfoot` styling)

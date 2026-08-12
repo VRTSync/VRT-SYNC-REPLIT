@@ -1,0 +1,73 @@
+# Parity 4 of 4 (awaiting number): Portfolio Map sidebar
+
+*Spec is complete and ready to hand over. Awaiting a task number from Randy — rename to `task-NNN-<slug>.md` once assigned.*
+
+## What & Why
+
+The Portfolio Map is a full-width map with a header strip of group chips and a card that floats in when a pin is clicked. The approved design has a **left control rail** beside the map.
+
+**Reference:** `marketing/portal-mockups/05-portfolio-map.png`.
+
+The rail is not just cosmetic. Two of its controls do not exist anywhere in the product today, and both are things a facilities director scanning eleven locations actually wants: *show me only what has open work*, and *show me what was serviced this week*.
+
+**Independent of slices B and C** — different file, no shared components. Can run in parallel.
+
+---
+
+## The rail, top to bottom, ~344px
+
+**1. Filter by group** — a checkbox row per group: checkbox, colour swatch, name, location count. Plus an "All locations" row with the total. Replaces the horizontal chips in the header.
+
+Note the behaviour change: chips are single-select today, checkboxes are multi-select. **Multi-select is the intent** — "show me North and Coastal" is a real question. Unchecking all should show all rather than an empty map, or disable the last checked box; pick one and say which.
+
+**2. Show** — two toggles:
+- *Locations with open work* — count alongside
+- *Serviced this week* — count alongside
+
+These filter the pins on top of the group filter. Both off means no additional filtering. Check whether `/api/portfolio/map` carries what these need — open work order counts are likely present, "serviced this week" may not be. **If the data is not there, add it to that endpoint rather than making a second request**, and say what you added.
+
+**3. Selected location** — the card that currently floats over the map, moved into the rail and always present. Name, code, address, three stats (assets, services, open), last service with photo chip, and an "Open property map →" button. When nothing is selected, show a quiet prompt rather than an empty card.
+
+**4. Layer breakdown** — for the currently filtered set, asset totals by layer with colour swatches. Heading names the scope, e.g. "Layer breakdown · Coastal", or "· All locations" when unfiltered.
+
+**Right:** the map, filling the remaining width and the full content height. Existing pins, group colours, amber ring for open work, expand and satellite controls, and the group legend bottom-left all stay as they are.
+
+**Not-yet-mapped list** stays below the map where it is.
+
+## Done looks like
+
+- Rail and map, matching mockup 05's structure.
+- Group filtering is multi-select and pins update live.
+- Both Show toggles work and compose with the group filter.
+- The selected-location card lives in the rail; clicking a pin fills it; "Open property map →" navigates to branch detail.
+- Layer breakdown reflects the filtered set and updates as filters change.
+- **Pin rendering still goes through `sendBranchPins` in `common/map-render.js`.** This page was refactored onto the shared function in #490 — do not fork it back.
+- No extra network request on page load beyond what happens today.
+- The map still expands, still toggles satellite, and satellite still persists across navigation.
+
+## Verify
+
+- Uncheck a group → its pins disappear, counts and layer breakdown update.
+- Check two groups → both show.
+- "Locations with open work" on → only amber-ringed pins remain; count matches.
+- Both filters together → intersection, not union.
+- Click a pin → rail card fills; click another → card swaps.
+- "Open property map →" opens the right location.
+- Expand the map → collapse → filters still applied.
+- Narrow viewport → rail stacks above the map and stays usable.
+- **Dashboard map preview and branch detail map are unaffected** — they share the renderer, so this is the regression surface.
+- Idle five minutes → nothing resets. (#481 / #486.)
+
+## Out of scope
+
+- Changing pin appearance or the shared renderer's API.
+- Clustering.
+- Saving filter state across sessions. Resetting on navigation is fine.
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/pages/map.js` (page render ~130–147, chips ~67, branch card ~79–110, unmapped ~113)
+- `artifacts/web-portal/public/common/map-render.js` (`sendBranchPins`)
+- `artifacts/api-server/src/routes/routes.ts` (`/api/portfolio/map` ~5727)
+- `artifacts/web-portal/public/portfolio/portfolio.css` (`pfm-*`)
+- `marketing/portal-mockups/05-portfolio-map.png`

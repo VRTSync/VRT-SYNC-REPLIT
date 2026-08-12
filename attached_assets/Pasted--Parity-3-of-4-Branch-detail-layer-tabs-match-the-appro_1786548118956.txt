@@ -1,0 +1,85 @@
+# Parity 3 of 4: Branch detail layer tabs — match the approved design
+
+*Spec is complete and ready to hand over. Awaiting a task number from Randy — rename to `task-NNN-<slug>.md` once assigned.*
+
+## What & Why
+
+The per-layer tabs are the furthest of any screen from their approved image, and this is the screen the marketing site leads with for the "organized by layer" argument.
+
+**Reference:** `marketing/portal-mockups/04-branch-detail-layers.png`. Open it before starting.
+
+Today a layer tab renders a KPI strip over a two-column Inventory table and Service History panel, with the map in a separate panel. The design is a **control rail beside a full-height map**.
+
+**Depends on slice B** (Summary rebuild). B sets the Summary composition; this makes the layer tabs their own thing.
+
+---
+
+## The design, left to right
+
+**Left rail, ~344px, full height of the content area:**
+
+1. **"{Category} sub-layers"** — one row per sub-layer: checkbox, colour swatch, name, asset count. Toggles the sub-layer on the map. This already exists as `bd-sublayer-panel`; it moves into the rail.
+2. **Category-specific grouping** — for irrigation, a "Controllers" list showing each controller with its zone count and colour. For other categories, whatever the equivalent grouping is; if there is none, omit the section rather than inventing one.
+3. **"Recent {category} work"** — a dated timeline of that layer's recent services with photo-count chips.
+4. **"Open item"** — an amber card per open work order on this layer: reference, title, who flagged it, estimate, and **Approve / Decline inline**.
+
+**Right, remaining width:** the property map, filtered to this category, full height, with zoom / expand / basemap / layers controls top-right and a category legend bottom-left explaining the marker vocabulary (controller colours, zone valve box, backflow, quick connect, and what a count badge means).
+
+## The two things that make this work
+
+**The map gets the height.** That is the whole point of the change. The map panel should fill the content area, not sit at a fixed 400px with panels stacked above it.
+
+**Sections 3 and 4 are per-layer, not per-property.** "Recent irrigation work" on the Irrigation tab, not the property's whole service list. Same for open items — only the ones on this layer.
+
+---
+
+## ⚠️ Two data problems to resolve before building
+
+**1. Per-layer service history does not exist.** The current code says so plainly:
+
+> *"Per-layer service history will appear here once service records include layer attribution."*
+
+Section 3 of the rail needs it. Options, in order of preference:
+
+- **(a)** If services can be attributed to a layer through their linked asset (`task → asset → map_layer`), derive it. Check whether that join is available and reliable.
+- **(b)** If not, render the property's recent services filtered to those whose linked asset belongs to this category, and label the section honestly.
+- **(c)** If neither is possible, keep the existing placeholder in the rail and **say so** — do not fabricate entries.
+
+**State which you chose and why.** This is the single most likely place for this slice to quietly go wrong.
+
+**2. Open work orders may not carry a layer either.** Same question. If a work order cannot be attributed to a layer, show all open items on every layer tab with the layer named on each card, rather than showing none.
+
+## Done looks like
+
+- Each layer tab is rail + full-height map, matching mockup 04's structure.
+- Sub-layer toggles work exactly as they do today — this is a relocation, not a rewrite. **Do not reimplement the toggle logic**; move the existing component.
+- Category colours come from `layers[].color`. No second colour source.
+- The map renders through `common/map-render.js`. No new rendering path.
+- Approve / Decline post to the existing endpoints and work from this tab.
+- Expand-to-full-screen still works and still survives collapse with category and sub-layer state intact (this was #466 and #467 — **do not regress it**).
+- The Summary tab from slice B is untouched.
+- The inventory data the current KPI strip and Inventory table provide is not simply deleted — the sub-layer rows carry per-sub-layer counts, which covers most of it. If the asset-type breakdown has nowhere to go, say so before dropping it.
+
+## Verify
+
+- Irrigation tab: sub-layer toggles show and hide markers; unchecking Zones removes zone markers and nothing else.
+- Pan and zoom, toggle a sub-layer → viewport is preserved, no refit. (This was #467; regressing it is the main risk here.)
+- Switch category tabs → map refits to the new category, rail contents change to match.
+- Expand → switch sub-layers → collapse → state intact.
+- Wait three minutes on a layer tab → nothing resets. (#481 / #486.)
+- Controller colours in the rail match the marker colours on the map.
+- A category with no open items renders the rail without an empty amber card.
+- Portfolio Map, dashboard map preview, and the HOA/PM/contractor portal maps are all unaffected.
+
+## Out of scope
+
+- Summary (slice B).
+- Adding layer attribution to service records if it does not exist — that is a data-model task, and this slice must degrade honestly instead.
+- Changing the shared renderer's public API.
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js` (category tab render ~690–730, sub-layer panel ~527, map panel ~562–573, `ready` guard ~406)
+- `artifacts/web-portal/public/common/map-render.js`
+- `artifacts/web-portal/public/portfolio/portfolio.css` (`bd-sublayer-*`, `branch-map-container`, `bmap-panel--expanded`)
+- `marketing/portal-mockups/04-branch-detail-layers.png`

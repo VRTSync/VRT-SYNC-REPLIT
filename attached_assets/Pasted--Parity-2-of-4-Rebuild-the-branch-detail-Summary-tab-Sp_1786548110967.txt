@@ -1,0 +1,97 @@
+# Parity 2 of 4: Rebuild the branch detail Summary tab
+
+*Spec is complete and ready to hand over. Awaiting a task number from Randy — rename to `task-NNN-<slug>.md` once assigned.*
+
+## What & Why
+
+Summary is the first thing a client sees when they open a location, and it is the only screen in the portal with no approved design. Today it renders a KPI strip, a clickable category-breakdown panel, and a two-column Recent Services / Open Work Orders pair. It reads as a list of components rather than a picture of a property.
+
+The approved direction (agreed 2026-08-11) is two rows:
+
+- **Row 1** — the property map on the left, asset count cards on the right. What this property *is*.
+- **Row 2** — service metrics, open items, recent activity. How it *is being looked after*.
+
+**Do slice C (layer tabs) after this**, not before. This slice establishes the Summary composition; C makes the per-layer tabs match mockup 04.
+
+---
+
+## ⚠️ Two numbers in the design do not exist in the payload
+
+`getPortfolioBranchDetail` returns `layers`, `inventory`, `recentServices` (latest 20 only), and `openWorkOrders`. It does **not** return:
+
+- a **total service count** — `recentServices` is capped at 20, so a season total cannot be derived from it
+- a **photo documentation rate** — computing it from the capped list would be a sample, not a rate
+
+Both must be added to the payload as real aggregates. **Do not derive either from `recentServices`.** A percentage computed off the most recent 20 records is a fabricated statistic that will look authoritative and be wrong.
+
+Add to `getPortfolioBranchDetail`:
+
+- `servicesTotal` — count of completed `task_completions` + completed `service_visits` for this community. Match however the Locations page computes "Services YTD" so the two screens agree; if that is YTD rather than all-time, use the same window and label it the same way.
+- `photoProofPct` — completions with at least one photo, over all completions, rounded. Reuse the existing `photoProofPct` SQL from `getPortfolioGroups` or `getAdminDashboard` rather than writing a third version.
+
+If either aggregate is expensive, say so and propose an alternative rather than approximating.
+
+---
+
+## Row 1 — map and asset cards
+
+**Left, roughly 1.35fr:** the property map, all layers visible, fit to the property. Rendered through `common/map-render.js` like every other map. Zoom, expand, and basemap controls; a small "All layers shown" caption bottom-left. Height around 250–280px — this is orientation, not the working surface. The layer tabs get the tall map in slice C.
+
+**Right, roughly 1fr:** a 2-up grid of asset cards, one per top-level layer category, in the same order as the tabs.
+
+Each card carries three things:
+
+1. Category name
+2. Total asset count for the category, large
+3. A **sub-line naming the two or three biggest asset types within it**, derived from `inventory` grouped by `layerId` → category
+
+The sub-line is what turns a number into a picture of the property: "39 zones · 2 controllers" rather than just "61". Derive it, do not hardcode type names — `inventory` is data-driven and asset types come from the DB.
+
+Each card has a left border in the category's color (from `layers[].color`, the admin-set value — **do not introduce a second colour source**) and navigates to that category's tab on click.
+
+**Below the cards, full width of the right column:** an unmapped-layer row. Any category with zero assets or no geometry renders as a dashed row reading "{Category} not yet mapped" with a "Request →" affordance. If everything is mapped, the row does not render.
+
+This row is deliberate. It is honest about what is documented, and it is the one place in the product where more mapping is suggested in context rather than as a sales pitch.
+
+## Row 2 — three panels
+
+**Service** — This season (`servicesTotal`), Last service (newest `recentServices` date), Photo proof (`photoProofPct`). Label-left, value-right rows.
+
+**Open items** — one card per open work order: title, reference, estimate, and **Approve / Decline actions inline**. These post to the existing `/api/portfolio/work-orders/:taskId/approve` and `/decline` endpoints. Today Summary shows open items as a count only; a number you cannot act on is just a reminder to go looking. If there are none, render a quiet empty state, not an empty panel.
+
+**Recent activity** — the four or five most recent services: date, title, and a photo-count chip where `photoCount > 0`. Footer link to the Service History tab.
+
+## Done looks like
+
+- Summary is the two rows above and nothing else. The current KPI strip and the category-breakdown panel are gone; the breakdown's job is now done by the asset cards, which also carry the navigation it provided.
+- Asset card sub-lines are derived from `inventory`, never hardcoded.
+- Category colors come from `layers[].color`.
+- `servicesTotal` and `photoProofPct` are real aggregates from new SQL, and `photoProofPct` reuses existing SQL rather than being a third implementation.
+- Approve and Decline work from Summary and update the panel without a full page re-render if that is straightforward; a re-render is acceptable if not.
+- A location with one mapped layer, or no services, or no open items renders sensibly at every one of those.
+- The map is not interactive-heavy: no scroll hijack. Reuse the `interactive: false` preview mode from #490 if that is the right fit, or allow pan/zoom but never scroll-wheel capture — **state which you chose and why**.
+- Layer tabs are untouched by this slice.
+
+## Verify
+
+- Willow Creek or the pilot equivalent: asset cards sum to the same total the Locations page shows for that location.
+- `servicesTotal` matches the Locations row's Services YTD for the same location. If they disagree, one of them is wrong — resolve before shipping.
+- `photoProofPct` is computed over all completions, not the recent 20. Check by counting directly in SQL.
+- A category with zero assets appears in the unmapped row and not as a card with 0.
+- Approve a work order from Summary → it leaves the open-items panel and the count updates.
+- Scroll the page with the cursor over the map → the page scrolls.
+- Click each asset card → lands on the matching tab.
+- Branch detail layer tabs, Portfolio Map, and the dashboard map preview all behave exactly as before.
+
+## Out of scope
+
+- The per-layer tabs (slice C).
+- Per-layer service history — blocked on service records carrying layer attribution.
+- The header. If it needs trimming once this lands, that is a follow-up.
+
+## Relevant files
+
+- `artifacts/web-portal/public/portfolio/pages/branch-detail.js` (`renderSummaryTab` ~631, `renderCategoryBreakdown` ~592, tab wiring ~766+)
+- `artifacts/api-server/src/storage.ts` (`getPortfolioBranchDetail` ~4469; `photoProofPct` SQL exists in `getPortfolioGroups` ~4593 and `getAdminDashboard` ~3540)
+- `artifacts/web-portal/public/common/map-render.js`
+- `artifacts/web-portal/public/portfolio/portfolio.css`
