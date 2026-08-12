@@ -5913,6 +5913,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           priority: string;
           origin: string | null;
           category: string | null;
+          layer_key: string | null;
           estimate_cents: number | null;
           approved_at: string | null;
           approved_by: string | null;
@@ -5939,6 +5940,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             t.priority,
             t.origin,
             t.category,
+            -- layer_key: derived from the task's linked asset → map_layer (authoritative layer attribution).
+            -- tasks.category is a manually-set field and may not reflect the mapped layer; the asset join is ground truth.
+            ml.layer_key,
             t.estimate_cents,
             t.approved_at::text,
             t.approved_by,
@@ -5959,6 +5963,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ORDER BY tc.completed_at DESC LIMIT 1) AS completed_at
           FROM tasks t
           JOIN org_coms c ON c.id = t.community_id
+          LEFT JOIN assets a ON a.id = t.asset_id
+          LEFT JOIN map_layers ml ON ml.id = a.map_layer_id
           ORDER BY t.created_at DESC
         `, [orgId]),
       ]);
@@ -5999,6 +6005,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source,
           origin: r.origin,
           category: r.category ?? null,
+          // layerKey: asset-derived layer attribution (authoritative; category field may differ)
+          layerKey: (r as any).layer_key ?? null,
           estimateCents: r.estimate_cents,
           approvedAt: r.approved_at,
           approvedBy: r.approved_by,

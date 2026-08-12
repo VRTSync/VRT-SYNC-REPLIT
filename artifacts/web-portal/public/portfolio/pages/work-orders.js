@@ -215,7 +215,7 @@
           + '<td><div class="bname">' + esc(t.title) + '</div>'
           + (t.description ? '<div class="bsub">' + esc(t.description.slice(0, 80)) + '</div>' : '')
           + photoBadge + '</td>'
-          + '<td class="bsub">' + esc(t.category || '—') + '</td>'
+          + '<td class="bsub">' + esc(t.layerKey || t.category || '—') + '</td>'
           + '<td class="bsub">' + esc(t.source) + '</td>'
           + (SHOW_WORK_ORDER_DATES
               ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '<div class="bsub">' + esc(t.daysOpen) + ' days open</div></td>'
@@ -255,7 +255,7 @@
           + '<td><span class="bcode">' + esc(t.branchCode || '—') + '</span></td>'
           + '<td><div class="bname">' + esc(t.title) + '</div>'
           + (t.photoCount > 0 ? '<div class="bsub">📷 ' + esc(t.photoCount) + ' photos</div>' : '') + '</td>'
-          + '<td class="bsub">' + esc(t.category || '—') + '</td>'
+          + '<td class="bsub">' + esc(t.layerKey || t.category || '—') + '</td>'
           + (SHOW_WORK_ORDER_DATES
               ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '</td>'
                 + '<td class="bsub">' + esc(fmtDate(t.completedAt)) + '</td>'

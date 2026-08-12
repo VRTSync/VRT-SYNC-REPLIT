@@ -2398,29 +2398,6 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
    SUMMARY TAB — Parity slice 2 of 4
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Branch Row 1: map (left 1.35fr) + asset cards (right 1fr) ─────────── */
-.branch-row1 {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 16px;
-  margin-bottom: 18px;
-  align-items: start;
-}
-/* Category tab active: map goes full-width, cards column hidden */
-.branch-row1--cat {
-  grid-template-columns: 1fr;
-}
-.branch-row1--cat .branch-row1-cards {
-  display: none;
-}
-/* Map panel in row1 context: shorter preview height for orientation */
-.branch-row1 #branch-map-panel .branch-map-container {
-  height: 262px;
-}
-/* Restore full height when category tab is active */
-.branch-row1--cat #branch-map-panel .branch-map-container {
-  height: 340px;
-}
 /* "All layers shown" caption — absolute bottom-left inside the map container.
    Visible only on Summary tab; _switchToTab / _syncTabUI toggle display. */
 .bmap-all-layers-caption {
@@ -2449,15 +2426,6 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   display: block;   /* visible by default (Summary is the default active tab) */
   cursor: default;
   background: transparent;
-}
-
-/* ── Asset cards right column ───────────────────────────────────────────── */
-.branch-row1-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  /* Align top of cards with the top of the map panel */
-  padding-top: 0;
 }
 
 .summ-cards-grid {
@@ -2546,8 +2514,6 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   .summ-metrics-panel { grid-column: 1 / -1; }
 }
 @media (max-width: 720px) {
-  .branch-row1 { grid-template-columns: 1fr; }
-  .branch-row1--cat .branch-row1-cards { display: none; }
   .summ-row2 { grid-template-columns: 1fr; }
   .summ-metrics-panel { grid-column: unset; }
 }
@@ -2676,3 +2642,372 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   border-top: 1px solid var(--gray-100);
 }
 .summ-activity-footer:hover { text-decoration: underline; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER TABS — Parity slice 3 of 4
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Branch detail: content wrapper (layer tabs — rail + full-height map) ── */
+#branch-content-wrapper {
+  /* default / summary-mode: normal block flow */
+  display: block;
+}
+
+/* Layer mode: left rail + right full-height map */
+#branch-content-wrapper.layer-mode {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-height: 640px;
+  height: calc(100vh - 190px);
+  max-height: 1080px;
+}
+
+/* Rail area (left) */
+#branch-content-wrapper.layer-mode #branch-pane-area {
+  width: 344px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  /* thin scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+/* Map panel (right) — fill remaining width, full height */
+#branch-content-wrapper.layer-mode #branch-map-panel {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#branch-content-wrapper.layer-mode #branch-map-panel .branch-map-container {
+  flex: 1;
+  height: auto; /* override fixed 340 px — flex grows this to fill the panel */
+}
+
+/* Summary mode: flex-column so we can use order to put the map ABOVE the pane content,
+   matching the pre-501 layout where the property map appeared before the KPI/breakdown rows. */
+#branch-content-wrapper.summary-mode {
+  display: flex;
+  flex-direction: column;
+}
+#branch-content-wrapper.summary-mode #branch-map-panel {
+  order: -1;       /* renders before #branch-pane-area visually */
+  margin-bottom: 18px;
+}
+#branch-content-wrapper.summary-mode #branch-pane-area {
+  order: 0;
+  display: block;
+}
+
+/* ── Layer rail sections ─────────────────────────────────────────────────── */
+.layer-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.lrail-sec {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.lrail-sec:last-child { margin-bottom: 0; }
+
+.lrail-sec-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .7px;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lrail-sec-note {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* ── Rail: sub-layer panel override (inside rail, not floating) ─────────── */
+/* In the rail the sub-layer rows stack vertically, not inline */
+.lrail-sec .bd-sublayer-panel {
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+}
+.lrail-sec .bd-sublayer-row {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* ── Rail: controller list ───────────────────────────────────────────────── */
+.rail-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 13px;
+}
+.rail-ctrl-row:last-child { border-bottom: none; }
+
+.rail-ctrl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.rail-ctrl-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--navy);
+}
+.rail-ctrl-zones {
+  font-size: 11.5px;
+  color: var(--gray-500);
+  flex-shrink: 0;
+}
+
+/* ── Rail: work timeline ─────────────────────────────────────────────────── */
+.rail-work-tl {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.rail-tl-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 4px 8px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.rail-tl-item:last-child { border-bottom: none; }
+.rail-tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.rail-tl-body { flex: 1; min-width: 0; }
+.rail-tl-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gray-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-tl-meta {
+  font-size: 11.5px;
+  color: var(--gray-500);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1px;
+}
+
+/* ── Rail: open-item cards ───────────────────────────────────────────────── */
+.oi-card {
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.22);
+  border-radius: var(--radius-sm);
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+.oi-card:last-child { margin-bottom: 0; }
+.oi-ref {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--gray-500);
+  font-family: 'SF Mono', Menlo, monospace;
+  margin-bottom: 3px;
+}
+.oi-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy);
+  margin-bottom: 3px;
+}
+.oi-meta {
+  font-size: 12px;
+  color: var(--gray-600);
+  margin-bottom: 2px;
+}
+.oi-flagged {
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-bottom: 8px;
+}
+.oi-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+.oi-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  border: none;
+  transition: opacity .12s;
+}
+.oi-btn:disabled { opacity: 0.55; cursor: default; }
+.oi-btn--approve {
+  background: var(--amber);
+  color: var(--navy);
+}
+.oi-btn--approve:hover:not(:disabled) { opacity: 0.85; }
+.oi-btn--decline {
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  color: var(--gray-600);
+}
+.oi-btn--decline:hover:not(:disabled) {
+  background: var(--red-light);
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* ── Branch detail map: category legend (bottom-left in layer mode) ──────── */
+.bmap-legend {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 5;
+  background: rgba(255,255,255,0.93);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 8px 12px;
+  pointer-events: none;
+  max-width: 200px;
+  display: none; /* hidden in summary mode — layer-mode enables it */
+}
+.bmap-legend:empty { display: none !important; }
+#branch-content-wrapper.layer-mode .bmap-legend { display: block; }
+/* Also show inside expanded panel (it's always layer-flavoured there) */
+#branch-map-panel.bmap-panel--expanded .bmap-legend { display: block; }
+.bmap-legend-title {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gray-400);
+  margin-bottom: 6px;
+}
+.bmap-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+.bmap-legend-item:last-of-type { margin-bottom: 0; }
+.bmap-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+  border: 2px solid rgba(255,255,255,0.7);
+  box-shadow: 0 0 0 1px rgba(12,29,49,0.12);
+}
+.bmap-legend-lbl {
+  font-size: 11.5px;
+  color: var(--gray-700);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bmap-legend-note {
+  font-size: 10.5px;
+  color: var(--gray-400);
+  margin-top: 5px;
+  line-height: 1.4;
+  font-style: italic;
+}
+.bmap-legend-section-head {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--gray-400);
+  margin: 6px 0 4px;
+}
+.bmap-legend-section-head:first-child { margin-top: 0; }
+.bmap-legend-divider {
+  height: 1px;
+  background: var(--gray-100);
+  margin: 6px 0;
+}
+.bmap-legend-dim {
+  font-size: 10px;
+  color: var(--gray-400);
+  font-weight: 400;
+}
+.bmap-legend-pin {
+  font-size: 11px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  display: inline-block;
+}
+.bmap-legend-badge-ex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--gray-700);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ── Rail: compact winter/snow stats ─────────────────────────────────────── */
+.winter-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wc-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy);
+  margin-bottom: 4px;
+}
+.wc-stat {
+  font-size: 12.5px;
+  color: var(--gray-600);
+}
+.wc-stat b {
+  font-weight: 700;
+  color: var(--navy);
+}

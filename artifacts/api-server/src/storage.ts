@@ -4504,7 +4504,10 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       ORDER BY a.asset_type, a.map_layer_id
     `, [communityId]),
 
-    // recentServices: latest 20 task completions + completed service visits, newest first
+    // recentServices: top 8 per layer_key (attributed task completions) + top 8 unattributed,
+    // using ROW_NUMBER windowed per-partition so each category always has its own allocation.
+    // task_completions are attributed to a layer via tasks.asset_id → assets.map_layer_id → map_layers.layer_key.
+    // service_visits have no asset link, so layer_key is NULL for them (grouped with other unattributed rows).
     pool.query<{
       id: string;
       date: string;
@@ -4512,36 +4515,51 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       type: string;
       photo_count: string;
       amount_cents: string | null;
+      layer_key: string | null;
     }>(`
-      SELECT * FROM (
+      SELECT id, date, title, type, photo_count, amount_cents, layer_key
+      FROM (
         SELECT
-          tc.id,
-          tc.completed_at::text AS date,
-          t.title,
-          'task_completion' AS type,
-          COALESCE((SELECT COUNT(*) FROM attachments att WHERE att.task_completion_id = tc.id), 0)::text AS photo_count,
-          NULL::text AS amount_cents
-        FROM task_completions tc
-        JOIN tasks t ON t.id = tc.task_id
-        WHERE t.community_id = $1
-        UNION ALL
-        SELECT
-          sv.id,
-          sv.completed_at::text AS date,
-          -- service_schedules has no name column; derive a readable label from service_type
-          INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS title,
-          'service_visit' AS type,
-          '0'::text AS photo_count,
-          NULL::text AS amount_cents
-        FROM service_visits sv
-        JOIN service_schedules ss ON ss.id = sv.schedule_id
-        WHERE sv.community_id = $1 AND sv.status = 'completed' AND sv.completed_at IS NOT NULL
-      ) combined
+          id, date, title, type, photo_count, amount_cents, layer_key,
+          ROW_NUMBER() OVER (
+            PARTITION BY COALESCE(layer_key, '__unattr__')
+            ORDER BY date DESC
+          ) AS rn
+        FROM (
+          SELECT
+            tc.id,
+            tc.completed_at::text AS date,
+            t.title,
+            'task_completion' AS type,
+            COALESCE((SELECT COUNT(*) FROM attachments att WHERE att.task_completion_id = tc.id), 0)::text AS photo_count,
+            NULL::text AS amount_cents,
+            ml.layer_key
+          FROM task_completions tc
+          JOIN tasks t ON t.id = tc.task_id
+          LEFT JOIN assets a ON a.id = t.asset_id
+          LEFT JOIN map_layers ml ON ml.id = a.map_layer_id
+          WHERE t.community_id = $1
+          UNION ALL
+          SELECT
+            sv.id,
+            sv.completed_at::text AS date,
+            INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS title,
+            'service_visit' AS type,
+            '0'::text AS photo_count,
+            NULL::text AS amount_cents,
+            NULL::text AS layer_key
+          FROM service_visits sv
+          JOIN service_schedules ss ON ss.id = sv.schedule_id
+          WHERE sv.community_id = $1 AND sv.status = 'completed' AND sv.completed_at IS NOT NULL
+        ) combined
+      ) ranked
+      WHERE rn <= 8
       ORDER BY date DESC
-      LIMIT 20
     `, [communityId]),
 
-    // openWorkOrders: non-completed, non-cancelled, non-declined tasks
+    // openWorkOrders: non-completed, non-cancelled, non-declined tasks.
+    // Attributed to a layer via tasks.asset_id → assets.map_layer_id → map_layers.layer_key (may be NULL).
+    // origin is returned so the UI can derive whether the item was flagged by HP or client.
     // NOTE: cancelled_at/declined_at IS NULL excludes both terminal client states from open counts
     pool.query<{
       id: string;
@@ -4550,6 +4568,8 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       estimate_cents: string | null;
       approved_at: string | null;
       created_at: string;
+      origin: string | null;
+      layer_key: string | null;
     }>(`
       SELECT
         t.id,
@@ -4557,8 +4577,12 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
         t.status,
         t.estimate_cents::text,
         t.approved_at::text,
-        t.created_at::text
+        t.created_at::text,
+        t.origin,
+        ml.layer_key
       FROM tasks t
+      LEFT JOIN assets a ON a.id = t.asset_id
+      LEFT JOIN map_layers ml ON ml.id = a.map_layer_id
       WHERE t.community_id = $1
         AND t.status != 'completed'
         AND t.cancelled_at IS NULL
@@ -4649,14 +4673,21 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       type: r.type,
       photoCount: Number(r.photo_count),
       amountCents: r.amount_cents != null ? Number(r.amount_cents) : null,
+      layerKey: r.layer_key ?? null,
     })),
     openWorkOrders: openWorkOrdersResult.rows.map(r => ({
       id: r.id,
+      // ref: short-form WO identifier, matching the work-orders endpoint convention
+      ref: 'WO-' + r.id.replace(/-/g, '').slice(0, 8).toUpperCase(),
       title: r.title,
       status: r.status,
       estimateCents: r.estimate_cents != null ? Number(r.estimate_cents) : null,
       approvedAt: r.approved_at ?? null,
       openedAt: r.created_at,
+      // origin drives the "flagged by" display: 'client' = client org, else Contractor
+      origin: r.origin ?? null,
+      // layerKey: derived via asset → map_layer; null when task has no linked asset
+      layerKey: r.layer_key ?? null,
     })),
     // servicesTotal: count of completed task_completions + completed service_visits YTD,
     // matching the Locations page "Services YTD" window (date_trunc('year', now())).

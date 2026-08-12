@@ -199,6 +199,7 @@
       _updateMapPanelTitle(_categoryLabel(categoryKey) + ' Map');
       _renderer.setActiveCategory(categoryKey);
     }
+    _updateMapLegend(categoryKey);
     // Keep the expanded overlay's active category in sync with the page tab bar
     if (_bMapPanel) {
       _bMapPanel.dispatchEvent(new CustomEvent('vrt-sync-overlay-category', {
@@ -229,7 +230,18 @@
     if (el) el.textContent = title;
   }
 
-  // ── Sub-layer overlay ─────────────────────────────────────────────────────
+  function _syncRailCheckboxes(categoryKey) {
+    if (!_container) return;
+    var checked  = _checkedSubLayers[categoryKey] || {};
+    var tabIdx   = _categoryOrder.indexOf(categoryKey) + 1;
+    if (tabIdx <= 0) return;
+    var pane = _container.querySelector('.tabpane[data-pane-idx="' + tabIdx + '"]');
+    if (!pane) return;
+    pane.querySelectorAll('input[type="checkbox"][data-category-key]').forEach(function (cb) {
+      var lid = cb.getAttribute('data-layer-id');
+      if (lid !== null) cb.checked = !!checked[lid];
+    });
+  }
   function _updateSublayerOverlay(tabIdx) {
     if (!_container) return;
     var overlay = _container.querySelector('#bmap-sublayer-overlay');
@@ -248,10 +260,43 @@
         if (!_checkedSubLayers[ck]) _checkedSubLayers[ck] = {};
         _checkedSubLayers[ck][lid] = cb.checked;
         _syncCategoryVisibility(ck);
+        // Keep rail checkboxes in sync when the expanded-overlay toggles
+        _syncRailCheckboxes(ck);
       });
     });
+
+    // Sync rail checkboxes to current _checkedSubLayers state
+    _syncRailCheckboxes(categoryKey);
   }
 
+  function _updateControllerRails() {
+    if (!_container || !_renderer) return;
+    var ctrlData = _renderer.getControllerData();
+    _categoryOrder.forEach(function (key, i) {
+      if (key !== 'irrigation') return;
+      var paneIdx = i + 1;
+      var pane = _container.querySelector('.tabpane[data-pane-idx="' + paneIdx + '"]');
+      if (!pane) return;
+      var listEl = pane.querySelector('#rail-ctrl-list');
+      if (!listEl) return;
+      if (!ctrlData || ctrlData.length === 0) {
+        listEl.innerHTML = '<div class="pf-empty" style="padding:8px 0;">No controllers found.</div>';
+        return;
+      }
+      listEl.innerHTML = ctrlData.map(function (c) {
+        var color     = c.controllerColor || '#25C1AC';
+        var zoneCount = c.zoneCount || (c.zones ? c.zones.length : 0);
+        return '<div class="rail-ctrl-row">'
+          + '<span class="rail-ctrl-dot" style="background:' + esc(color) + '"></span>'
+          + '<span class="rail-ctrl-name">' + esc(c.label || c.controllerKey || 'Controller') + '</span>'
+          + '<span class="rail-ctrl-zones">' + esc(zoneCount) + ' zone' + (zoneCount !== 1 ? 's' : '') + '</span>'
+          + '</div>';
+      }).join('');
+    });
+    // Refresh the map legend so controller-colour entries appear now that data is loaded.
+    var activeCatKey = _categoryOrder[_activeTabIdx - 1] || null;
+    _updateMapLegend(activeCatKey);
+  }
   function _syncCategoryVisibility(categoryKey) {
     if (!_renderer) return;
     var catLayers = (_categoryGroups && _categoryGroups[categoryKey]) || [];
@@ -427,10 +472,14 @@
       var isInitial = !_initialReadyDone;
       _initialReadyDone = true;
 
+      // Populate controller list in irrigation rail section (data available after load)
+      _updateControllerRails();
+
       if (isInitial && _activeTabIdx === 0) {
         // First load: Summary tab, all layers visible, fit to content.
         _updateSublayerOverlay(0);
         _renderer.setActiveCategory(null);
+        _updateMapLegend(null);
         return;
       }
 
@@ -441,6 +490,8 @@
       // may have panned/zoomed, and their viewport must be preserved.
       var fitOpts = { fit: isInitial };
       _updateSublayerOverlay(_activeTabIdx);
+      var restoreCatForLegend = _activeTabIdx > 0 ? _categoryOrder[_activeTabIdx - 1] : null;
+      _updateMapLegend(restoreCatForLegend);
       if (_activeTabIdx === 0) {
         _renderer.setActiveCategory(null, fitOpts);
       } else {
@@ -600,11 +651,73 @@
         + '<div class="summ-map-overlay" id="summ-map-overlay"></div>'
         // Caption shown on Summary (all-layers mode); hidden on category tabs
         + '<div class="bmap-all-layers-caption" id="bmap-all-layers-caption">All layers shown</div>'
+        + '<div id="bmap-legend" class="bmap-legend"></div>'
       + '</div>'
       + '</div>';
   }
 
-  // ── Service row ───────────────────────────────────────────────────────────
+  function _updateMapLegend(categoryKey) {
+    if (!_container) return;
+    var legendEl = _container.querySelector('#bmap-legend');
+    if (!legendEl) return;
+    if (!categoryKey) { legendEl.innerHTML = ''; return; }
+
+    var catLayers = (_categoryGroups && _categoryGroups[categoryKey]) || [];
+    if (catLayers.length === 0) { legendEl.innerHTML = ''; return; }
+
+    var body = '';
+
+    if (categoryKey === 'irrigation') {
+      // ── Irrigation: controller colours + marker vocabulary ──────────────────
+      var controllers = (_renderer && typeof _renderer.getControllerData === 'function')
+        ? (_renderer.getControllerData() || []) : [];
+
+      if (controllers.length > 0) {
+        // Show one coloured dot per controller, labelled with its name.
+        // Controller colour = the zone colour the renderer assigns (same colour used on map markers).
+        body += '<div class="bmap-legend-section-head">Controllers</div>'
+          + controllers.slice(0, 8).map(function (c) {
+              var color = c.controllerColor || '#25C1AC';
+              var zc    = c.zoneCount || (c.zones ? c.zones.length : 0);
+              return '<div class="bmap-legend-item">'
+                + '<span class="bmap-legend-dot" style="background:' + esc(color) + '"></span>'
+                + '<span class="bmap-legend-lbl">' + esc(c.label || c.controllerKey || 'Controller')
+                  + (zc ? ' <span class="bmap-legend-dim">(' + zc + ')</span>' : '') + '</span>'
+                + '</div>';
+            }).join('');
+      } else {
+        // Fallback before renderer ready: show sub-layer zone colours.
+        body += '<div class="bmap-legend-section-head">Zones</div>'
+          + catLayers.slice(0, 8).map(function (layer) {
+              var color = _layerColor(layer);
+              return '<div class="bmap-legend-item">'
+                + '<span class="bmap-legend-dot" style="background:' + esc(color) + '"></span>'
+                + '<span class="bmap-legend-lbl">' + esc(layer.name || '') + '</span>'
+                + '</div>';
+            }).join('');
+      }
+
+      // Marker vocabulary for irrigation
+      body += '<div class="bmap-legend-divider"></div>'
+        + '<div class="bmap-legend-section-head">Markers</div>'
+        + '<div class="bmap-legend-item"><span class="bmap-legend-pin">📍</span><span class="bmap-legend-lbl">Valve box / zone</span></div>'
+        + '<div class="bmap-legend-item"><span class="bmap-legend-badge-ex">3</span><span class="bmap-legend-lbl">= multiple zones in box</span></div>'
+        + '<div class="bmap-legend-item"><span class="bmap-legend-pin">🔵</span><span class="bmap-legend-lbl">Backflow preventer</span></div>'
+        + '<div class="bmap-legend-item"><span class="bmap-legend-pin">⚡</span><span class="bmap-legend-lbl">Quick connect</span></div>';
+    } else {
+      // Non-irrigation: plain sub-layer colour swatches.
+      body = catLayers.map(function (layer) {
+        var color = _layerColor(layer);
+        return '<div class="bmap-legend-item">'
+          + '<span class="bmap-legend-dot" style="background:' + esc(color) + '"></span>'
+          + '<span class="bmap-legend-lbl">' + esc(layer.name || '') + '</span>'
+          + '</div>';
+      }).join('');
+    }
+
+    legendEl.innerHTML = '<div class="bmap-legend-title">' + esc(_categoryLabel(categoryKey)) + '</div>'
+      + body;
+  }
   function renderServiceRow(svc) {
     var dotCls = svc.type === 'task_completion' ? 'teal' : 'blue';
     var photos = svc.photoCount > 0 ? '<span class="sr-photos">📷 ' + esc(svc.photoCount) + '</span>' : '';
@@ -844,72 +957,136 @@
     return '<div class="summ-row2">' + metricsPanel + woPanel + activityPanel + '</div>';
   }
 
-  // ── Category tab content ──────────────────────────────────────────────────
+  // ── Category tab content — left rail layout ───────────────────────────────
+  //
+  // Data decisions:
+  //   Services:  option (b) — property-level services shown with an honest
+  //              "branch-level" label. Layer attribution does not exist in the
+  //              current data model; a blank placeholder is less useful.
+  //   Open WOs:  no layer attribution → show all branch open WOs on every tab.
+  //              Hiding actionable items when attribution is absent is worse
+  //              than over-showing them.
+  //
   function renderCategoryContent(categoryKey, categoryLayers, data) {
-    var accent        = categoryAccent(categoryKey);
     var categoryLabel = _categoryLabel(categoryKey);
-    var inventory     = data.inventory || [];
-    var svcs          = data.recentServices || [];
+    // Filter services to those attributed to this category via task → asset → map_layer.
+    // Services without a layerKey (service_visits, or tasks with no linked asset) are
+    // excluded from category tabs — they cannot be reliably assigned to a category.
+    var allSvcs  = data.recentServices  || [];
+    var svcs     = allSvcs.filter(function (svc) { return svc.layerKey === categoryKey; });
+    var openWOs  = data.openWorkOrders  || [];
 
-    var catLayerIds = categoryLayers.map(function (l) { return l.id; });
-    var catInv = inventory.filter(function (inv) { return catLayerIds.indexOf(inv.layerId) !== -1; });
-
-    var totalAssets   = categoryLayers.reduce(function (s, l) { return s + (l.assetCount || 0); }, 0);
-    var distinctTypes = catInv.length;
-    var lastSvcDate   = svcs.length > 0 ? fmtDate(svcs[0].date) : '—';
-
-    var kpiStrip = renderKpiStrip([
-      { label: 'Assets',       value: totalAssets,                        border: accent.invcBorder },
-      { label: 'Asset Types',  value: distinctTypes,                      border: accent.invcBorder },
-      { label: 'Last Service', value: lastSvcDate,                        border: 'b-teal'          },
-      { label: 'Open Items',   value: (data.openWorkOrders || []).length, border: 'b-amber'         },
-    ]);
-
-    var invRows = catInv.length === 0
-      ? '<div class="pf-empty">No assets mapped for this category yet.</div>'
-      : '<table><thead><tr><th>Asset Type</th><th class="num">Count</th></tr></thead><tbody>'
-        + catInv.map(function (inv) {
-            var typeName = (inv.assetType || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-            return '<tr><td class="bname">' + esc(typeName) + '</td><td class="num">' + esc(inv.count) + '</td></tr>';
-          }).join('')
-        + '</tbody></table>';
-
-    var invPanel = '<div class="panel ' + esc(accent.panel) + '">'
-      + '<div class="panel-head"><h2>' + esc(categoryLabel) + ' Inventory</h2></div>'
-      + invRows + '</div>';
-
-    var svcContent = '<div class="pf-empty" style="font-style:italic;color:var(--gray-400);">'
-      + 'Per-layer service history will appear here once service records include layer attribution.'
+    // ── Section 1: Sub-layer toggles ───────────────────────────────────────
+    var sublayerHtml = '<div class="lrail-sec">'
+      + '<div class="lrail-sec-title">' + esc(categoryLabel) + ' sub-layers</div>'
+      + '<div class="rail-sublayers">' + renderSubLayerPanel(categoryKey, categoryLayers) + '</div>'
       + '</div>';
-    var svcPanel = '<div class="panel ' + esc(accent.panel) + '">'
-      + '<div class="panel-head"><h2>' + esc(categoryLabel) + ' Service History</h2>'
-      + (svcs.length > 0 ? '<span class="hint">' + esc(svcs.length) + ' recent</span>' : '')
-      + '</div>' + svcContent + '</div>';
 
-    var contentHtml = kpiStrip + '<div class="two-col">' + invPanel + svcPanel + '</div>';
-
-    if (categoryKey === 'snow') {
-      var snowSeason = data.snowSeason;
-      var snowBlock;
-      if (snowSeason) {
-        snowBlock = '<div class="winter" style="margin-bottom:18px;">'
-          + '<div><div class="w-label">Winter Operations</div>'
-          + '<div class="w-main">' + esc(snowSeason.seasonLabel || 'Season') + '</div></div>'
-          + (snowSeason.events    != null ? '<div class="w-stat"><b>' + esc(snowSeason.events)      + '</b><span>snow events</span></div>'  : '')
-          + (snowSeason.clearings != null ? '<div class="w-stat"><b>' + esc(snowSeason.clearings)   + '</b><span>clearings</span></div>'    : '')
-          + (snowSeason.photoPct  != null ? '<div class="w-stat"><b>' + esc(snowSeason.photoPct)    + '%</b><span>photo + timestamp</span></div>' : '')
-          + (snowSeason.avgResponse       ? '<div class="w-stat"><b>' + esc(snowSeason.avgResponse) + '</b><span>avg response</span></div>' : '')
-          + '</div>';
-      } else {
-        snowBlock = '<div class="panel p-slate" style="margin-bottom:18px;">'
-          + '<div class="panel-head"><h2>Winter Season Data</h2></div>'
-          + '<div class="pf-empty">No winter season data recorded yet.</div>'
-          + '</div>';
-      }
-      contentHtml = snowBlock + contentHtml;
+    // ── Section 2: Category-specific grouping ──────────────────────────────
+    // Irrigation: controller list (populated async after renderer 'ready').
+    // Other categories: no equivalent grouping exists — section is omitted.
+    var groupingHtml = '';
+    if (categoryKey === 'irrigation') {
+      groupingHtml = '<div class="lrail-sec" id="rail-ctrl-section">'
+        + '<div class="lrail-sec-title">Controllers</div>'
+        + '<div class="rail-ctrl-list" id="rail-ctrl-list">'
+          + '<div class="pf-empty" style="padding:8px 0;font-style:italic;">Loading map data…</div>'
+        + '</div>'
+        + '</div>';
     }
 
-    return contentHtml;
+    // ── Snow season block (compact) ────────────────────────────────────────
+    var snowHtml = '';
+    if (categoryKey === 'snow') {
+      var s = data.snowSeason;
+      if (s) {
+        snowHtml = '<div class="lrail-sec">'
+          + '<div class="lrail-sec-title">Winter season</div>'
+          + '<div class="winter-compact">'
+          + '<div class="wc-label">' + esc(s.seasonLabel || 'Season') + '</div>'
+          + (s.events    != null ? '<div class="wc-stat"><b>' + esc(s.events)    + '</b> snow events</div>'   : '')
+          + (s.clearings != null ? '<div class="wc-stat"><b>' + esc(s.clearings) + '</b> clearings</div>'     : '')
+          + (s.photoPct  != null ? '<div class="wc-stat"><b>' + esc(s.photoPct)  + '%</b> photo+timestamp</div>' : '')
+          + (s.avgResponse       ? '<div class="wc-stat"><b>' + esc(s.avgResponse) + '</b> avg response</div>' : '')
+          + '</div>'
+          + '</div>';
+      } else {
+        snowHtml = '<div class="lrail-sec">'
+          + '<div class="lrail-sec-title">Winter season</div>'
+          + '<div class="pf-empty" style="padding:8px 0;">No winter season data recorded yet.</div>'
+          + '</div>';
+      }
+    }
+
+    // ── Section 3: Recent work (branch-level — layer attribution pending) ──
+    var svcItems;
+    if (svcs.length === 0) {
+      svcItems = '<div class="pf-empty" style="padding:8px 0;">No recent ' + esc(categoryLabel.toLowerCase()) + ' services recorded.</div>';
+    } else {
+      svcItems = '<div class="rail-work-tl">'
+        + svcs.slice(0, 6).map(function (svc) {
+            var photos = svc.photoCount > 0
+              ? ' <span class="sr-photos">📷 ' + esc(svc.photoCount) + '</span>'
+              : '';
+            return '<div class="rail-tl-item">'
+              + '<div class="rail-tl-dot"></div>'
+              + '<div class="rail-tl-body">'
+                + '<div class="rail-tl-title">' + esc(svc.title || '—') + '</div>'
+                + '<div class="rail-tl-meta">' + esc(fmtDate(svc.date)) + photos + '</div>'
+              + '</div>'
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
+    var recentWorkHtml = '<div class="lrail-sec">'
+      + '<div class="lrail-sec-title">Recent ' + esc(categoryLabel) + ' work</div>'
+      + svcItems
+      + '</div>';
+
+    // ── Section 4: Open items with inline Approve / Decline ────────────────
+    // Show WOs attributed to this category, plus genuinely unattributed ones
+    // (layerKey === null means no asset link exists on the task).
+    // WOs attributed to a DIFFERENT category are excluded from this tab.
+    var tabWOs = openWOs.filter(function (wo) {
+      return wo.layerKey === categoryKey || wo.layerKey === null;
+    });
+    var openItemsHtml = '';
+    if (tabWOs.length > 0) {
+      var cards = tabWOs.map(function (wo) {
+        var canApprove = wo.estimateCents != null && !wo.approvedAt;
+        var approveBtn = canApprove
+          ? '<button class="oi-btn oi-btn--approve" data-task-id="' + esc(wo.id) + '"'
+            + ' data-task-title="' + esc(wo.title) + '"'
+            + ' data-est="' + esc(wo.estimateCents) + '">Approve</button>'
+          : '';
+        var declineBtn = canApprove
+          ? '<button class="oi-btn oi-btn--decline" data-task-id="' + esc(wo.id) + '"'
+            + ' data-task-title="' + esc(wo.title) + '">Decline</button>'
+          : '';
+        var statusLabel = wo.approvedAt
+          ? 'Approved — awaiting schedule'
+          : wo.estimateCents != null
+            ? 'Estimate ' + fmtMoney(wo.estimateCents)
+            : (wo.status || '').replace(/_/g, ' ');
+        // Derive who flagged the item: origin 'client' = client org request, else Contractor (field crews).
+        var source = wo.origin === 'client' ? 'Client request' : 'Contractor';
+        return '<div class="oi-card">'
+          + (wo.ref ? '<div class="oi-ref">' + esc(wo.ref) + '</div>' : '')
+          + '<div class="oi-title">' + esc(wo.title || '—') + '</div>'
+          + '<div class="oi-meta">' + esc(statusLabel) + '</div>'
+          + '<div class="oi-flagged">flagged by ' + esc(source) + '</div>'
+          + (canApprove ? '<div class="oi-actions">' + approveBtn + declineBtn + '</div>' : '')
+          + '</div>';
+      }).join('');
+      openItemsHtml = '<div class="lrail-sec">'
+        + '<div class="lrail-sec-title">Open items</div>'
+        + cards
+        + '</div>';
+    }
+
+    return '<div class="layer-rail">'
+      + sublayerHtml + snowHtml + groupingHtml + recentWorkHtml + openItemsHtml
+      + '</div>';
   }
 
   // ── Full detail page ───────────────────────────────────────────────────────
@@ -930,20 +1107,9 @@
     var titleHtml    = renderTitleRow(branch, groupLookup);
     var tabBarHtml   = renderTabBar(categoryOrder, categoryGroups, 0);
 
-    // Row 1: map (left, 1.35fr) + asset cards (right, 1fr).
-    // The map panel is inside #branch-row1 so it sits side-by-side with the
-    // cards on Summary and goes full-width when a category tab is active
-    // (branch-row1--cat hides the cards column and expands the map column).
-    var assetCardsHtml = renderAssetCards(data, categoryOrder, categoryGroups);
-    var row1Html = '<div class="branch-row1" id="branch-row1">'
-      + renderStableMapPanel()
-      + '<div class="branch-row1-cards" id="branch-row1-cards">' + assetCardsHtml + '</div>'
-      + '</div>';
-
     // Service History tab is always the last tab.
     var histTabIdx = categoryOrder.length + 1;
 
-    // Summary pane: Row 2 only (map+cards live in branch-row1 above).
     var summaryPane = '<div class="tabpane on" data-pane-idx="0">' + renderSummaryTab(data, histTabIdx) + '</div>';
 
     var categoryPanes = categoryOrder.map(function (key, i) {
@@ -979,12 +1145,18 @@
       + '</div>';
 
     container.innerHTML = selectorHtml + titleHtml + tabBarHtml
-      + row1Html
-      + summaryPane + categoryPanes + historyPane;
+      + '<div id="branch-content-wrapper" class="summary-mode">'
+      + '<div id="branch-pane-area">'
+      + summaryPane + categoryPanes + historyPane
+      + '</div>'
+      + renderStableMapPanel()
+      + '</div>';
 
     wireSelectorBlock(container, branchId, allBranches);
     wireTabBar(container);
     wireSummaryActions(container, branchId);
+    wireRailCheckboxes(container);
+    wireRailOpenItems(container);
     setupBranchRenderer(container, data, branchId);
   }
 
@@ -1145,6 +1317,18 @@
     var tabs  = container.querySelectorAll('#branch-tab-bar .tab');
     var panes = container.querySelectorAll('.tabpane[data-pane-idx]');
 
+    function _setWrapperMode(idx) {
+      var wrapper = container.querySelector('#branch-content-wrapper');
+      if (!wrapper) return;
+      if (idx === 0) {
+        wrapper.classList.add('summary-mode');
+        wrapper.classList.remove('layer-mode');
+      } else {
+        wrapper.classList.add('layer-mode');
+        wrapper.classList.remove('summary-mode');
+      }
+    }
+
     function activateTab(idx) {
       tabs.forEach(function (t) { t.classList.remove('on'); });
       panes.forEach(function (p) { p.classList.remove('on'); });
@@ -1152,6 +1336,7 @@
       if (tab) tab.classList.add('on');
       var pane = container.querySelector('.tabpane[data-pane-idx="' + idx + '"]');
       if (pane) pane.classList.add('on');
+      _setWrapperMode(idx);
       _switchToTab(idx);
     }
 
@@ -1185,14 +1370,20 @@
     var pane = _container.querySelector('.tabpane[data-pane-idx="' + tabIdx + '"]');
     if (tab)  tab.classList.add('on');
     if (pane) pane.classList.add('on');
-    // Keep branch-row1 layout, scroll-block overlay, and caption in sync
-    var row1    = _container.querySelector('#branch-row1');
+    // Keep content-wrapper layout mode in sync
+    var wrapper = _container.querySelector('#branch-content-wrapper');
+    if (wrapper) {
+      if (tabIdx === 0) {
+        wrapper.classList.add('summary-mode');
+        wrapper.classList.remove('layer-mode');
+      } else {
+        wrapper.classList.add('layer-mode');
+        wrapper.classList.remove('summary-mode');
+      }
+    }
+    // Keep scroll-block overlay and "All layers shown" caption in sync
     var overlay = _container.querySelector('#summ-map-overlay');
     var caption = _container.querySelector('#bmap-all-layers-caption');
-    if (row1) {
-      if (tabIdx === 0) { row1.classList.remove('branch-row1--cat'); }
-      else              { row1.classList.add('branch-row1--cat');    }
-    }
     if (overlay) { overlay.style.display = tabIdx === 0 ? 'block' : 'none'; }
     if (caption) { caption.style.display = tabIdx === 0 ? 'block' : 'none'; }
   }
@@ -1226,6 +1417,60 @@
       if (window.PortfolioRouter) PortfolioRouter.register('branch-detail', renderBranchDetail);
     });
   }
+  // ── Rail: Approve / Decline dialogs and wiring (inside IIFE for closure access) ──
+
+  function _showApproveDialog(taskId, taskTitle, estimateCents, suffix, onSuccess) {
+    var existing = document.getElementById('oi-approve-dialog');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'oi-approve-dialog';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9800;background:rgba(12,29,49,0.55);display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(12,29,49,0.18);padding:28px 32px;max-width:420px;width:calc(100vw - 48px);">'
+      + '<h3 style="font-family:Outfit,sans-serif;font-size:18px;font-weight:700;color:var(--navy);margin-bottom:10px;">Approve estimate</h3>'
+      + '<p style="font-size:13.5px;color:var(--gray-600);margin-bottom:16px;">Approve the estimate'
+        + (estimateCents ? ' of <b>' + fmtMoney(estimateCents) + '</b>' : '') + ' for:<br>'
+        + '<b style="color:var(--navy)">' + esc(taskTitle) + '</b></p>'
+      + '<div id="oi-approve-err" style="display:none;background:var(--red-light);color:var(--red);border-radius:6px;padding:8px 12px;font-size:12.5px;margin-bottom:14px;"></div>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="oi-approve-cancel" style="background:var(--gray-100);border:1px solid var(--gray-200);color:var(--gray-600);border-radius:999px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>'
+        + '<button id="oi-approve-confirm" style="background:var(--amber);color:var(--navy);border:none;border-radius:999px;padding:8px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Confirm Approval</button>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#oi-approve-cancel').addEventListener('click', function () { overlay.remove(); });
+    overlay.querySelector('#oi-approve-confirm').addEventListener('click', function () {
+      var confirmBtn = overlay.querySelector('#oi-approve-confirm');
+      var errEl      = overlay.querySelector('#oi-approve-err');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Approving…';
+      var url = '/api/portfolio/work-orders/' + encodeURIComponent(taskId) + '/approve' + suffix;
+      fetch(url, { method: 'POST', credentials: 'same-origin' })
+        .then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); });
+          return r.json();
+        })
+        .then(function () {
+          overlay.remove();
+          if (typeof onSuccess === 'function') onSuccess();
+          if (window.showToast) showToast('Work order approved');
+        })
+        .catch(function (err) {
+          errEl.textContent = err.message || 'Failed to approve. Please try again.';
+          errEl.style.display = 'block';
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Confirm Approval';
+        });
+    });
+  }
+
+  // ── Register ───────────────────────────────────────────────────────────────
+  if (window.PortfolioRouter) {
+    PortfolioRouter.register('branch-detail', renderBranchDetail);
+  } else {
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.PortfolioRouter) PortfolioRouter.register('branch-detail', renderBranchDetail);
+    });
+  }
 })();
 
   function _removeWOCard(container, woId) {
@@ -1248,4 +1493,107 @@
         }
       }
     }
+  }
+
+  function wireRailCheckboxes(container) {
+    container.querySelectorAll('.tabpane[data-pane-idx]').forEach(function (pane) {
+      var paneIdx = parseInt(pane.getAttribute('data-pane-idx'), 10);
+      if (paneIdx === 0) return;
+      pane.querySelectorAll('.rail-sublayers input[type="checkbox"]').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+          var ck  = cb.getAttribute('data-category-key');
+          var lid = cb.getAttribute('data-layer-id');
+          if (!ck || !lid) return;
+          if (!_checkedSubLayers[ck]) _checkedSubLayers[ck] = {};
+          _checkedSubLayers[ck][lid] = cb.checked;
+          _syncCategoryVisibility(ck);
+          // Keep the expanded-overlay in sync with rail state
+          _updateSublayerOverlay(paneIdx);
+        });
+      });
+    });
+  }
+
+  function _showDeclineDialog(taskId, taskTitle, suffix, onSuccess) {
+    var existing = document.getElementById('oi-decline-dialog');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'oi-decline-dialog';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9800;background:rgba(12,29,49,0.55);display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(12,29,49,0.18);padding:28px 32px;max-width:420px;width:calc(100vw - 48px);">'
+      + '<h3 style="font-family:Outfit,sans-serif;font-size:18px;font-weight:700;color:var(--navy);margin-bottom:10px;">Decline estimate</h3>'
+      + '<p style="font-size:13.5px;color:var(--gray-600);margin-bottom:10px;">Decline the estimate for:<br><b style="color:var(--navy)">' + esc(taskTitle) + '</b></p>'
+      + '<label style="font-size:13px;color:var(--gray-700);font-weight:600;display:block;margin-bottom:6px;">Reason <span style="font-weight:400;color:var(--gray-400)">(required)</span></label>'
+      + '<textarea id="oi-decline-reason" rows="3" placeholder="e.g. out of budget for this season" style="width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:8px 12px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:14px;"></textarea>'
+      + '<div id="oi-decline-err" style="display:none;background:var(--red-light);color:var(--red);border-radius:6px;padding:8px 12px;font-size:12.5px;margin-bottom:14px;"></div>'
+      + '<div style="display:flex;gap:10px;justify-content:flex-end;">'
+        + '<button id="oi-decline-cancel" style="background:var(--gray-100);border:1px solid var(--gray-200);color:var(--gray-600);border-radius:999px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Cancel</button>'
+        + '<button id="oi-decline-confirm" style="background:var(--red);color:#fff;border:none;border-radius:999px;padding:8px 22px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Decline Estimate</button>'
+      + '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector('#oi-decline-cancel').addEventListener('click', function () { overlay.remove(); });
+    overlay.querySelector('#oi-decline-confirm').addEventListener('click', function () {
+      var confirmBtn = overlay.querySelector('#oi-decline-confirm');
+      var errEl      = overlay.querySelector('#oi-decline-err');
+      var reason     = (overlay.querySelector('#oi-decline-reason').value || '').trim();
+      if (!reason) {
+        errEl.textContent = 'Please provide a reason for declining.';
+        errEl.style.display = 'block';
+        return;
+      }
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Declining…';
+      var url = '/api/portfolio/work-orders/' + encodeURIComponent(taskId) + '/decline' + suffix;
+      fetch(url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason }),
+      })
+        .then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || 'HTTP ' + r.status); });
+          return r.json();
+        })
+        .then(function () {
+          overlay.remove();
+          if (typeof onSuccess === 'function') onSuccess();
+          if (window.showToast) showToast('Estimate declined');
+        })
+        .catch(function (err) {
+          errEl.textContent = err.message || 'Failed to decline. Please try again.';
+          errEl.style.display = 'block';
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = 'Decline Estimate';
+        });
+    });
+  }
+
+  function wireRailOpenItems(container) {
+    var suffix = orgParam();
+    container.querySelectorAll('.oi-btn--approve').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-task-id');
+        var title  = btn.getAttribute('data-task-title');
+        var est    = parseInt(btn.getAttribute('data-est'), 10);
+        _showApproveDialog(taskId, title, est, suffix, function () {
+          var card = btn.closest('.oi-card');
+          if (card) card.remove();
+          // Remove empty section header if no cards remain
+          var sec = btn.closest('.lrail-sec');
+          if (sec && sec.querySelectorAll('.oi-card').length === 0) sec.remove();
+        });
+      });
+    });
+    container.querySelectorAll('.oi-btn--decline').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var taskId = btn.getAttribute('data-task-id');
+        var title  = btn.getAttribute('data-task-title');
+        _showDeclineDialog(taskId, title, suffix, function () {
+          var card = btn.closest('.oi-card');
+          if (card) card.remove();
+          var sec = btn.closest('.lrail-sec');
+          if (sec && sec.querySelectorAll('.oi-card').length === 0) sec.remove();
+        });
+      });
+    });
   }
