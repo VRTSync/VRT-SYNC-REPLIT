@@ -1120,57 +1120,305 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
 
 /* ── Portfolio Map page ──────────────────────────────────────────────────── */
 .pfm-page {
-  max-width: 1200px;
+  max-width: none;
 }
-.pfm-header {
+
+/* ── Rail + map side-by-side layout ─────────────────────────────────────── */
+.pfm-body {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  min-height: 600px;
+}
+
+/* Left control rail */
+.pfm-rail {
+  width: 344px;
+  flex-shrink: 0;
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  align-self: stretch;
+  margin-right: 16px;
+}
+
+.pfm-rail-head {
+  background: linear-gradient(135deg, var(--navy) 0%, var(--navy-light) 100%);
+  padding: 16px 18px 14px;
+}
+.pfm-rail-head h1 {
+  font-family: 'Outfit', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.pfm-rail-section {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.pfm-rail-section:last-child {
+  border-bottom: none;
+  flex: 1;
+}
+.pfm-rail-section-title {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--gray-400);
+  margin-bottom: 10px;
+}
+
+/* ── Group checkboxes ───────────────────────────────────────────────────── */
+.pfm-group-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.pfm-header h1 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--navy);
-  margin: 0;
-  flex-shrink: 0;
-}
-.pfm-chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.pfm-chip {
-  padding: 5px 14px;
-  border-radius: 20px;
-  border: 1.5px solid var(--gray-300);
-  background: var(--white);
-  color: var(--gray-700);
-  font-size: 13px;
-  font-weight: 500;
+  gap: 9px;
+  padding: 7px 0;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  border-radius: var(--radius-sm);
+  transition: background 0.1s;
 }
-.pfm-chip:hover { border-color: var(--teal); color: var(--teal-dark); }
-.pfm-chip--active {
+.pfm-group-row:hover { background: var(--gray-50); margin: 0 -4px; padding-left: 4px; padding-right: 4px; }
+.pfm-group-row--all { border-bottom: 1px solid var(--gray-100); margin-bottom: 4px; padding-bottom: 10px; }
+.pfm-group-row input[type="checkbox"] { display: none; }
+.pfm-group-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  opacity: 0.35;
+  transition: opacity 0.12s;
+}
+.pfm-group-row--checked .pfm-group-swatch { opacity: 1; }
+.pfm-group-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--gray-600);
+  font-weight: 500;
+  transition: color 0.12s;
+}
+.pfm-group-row--checked .pfm-group-name { color: var(--navy); font-weight: 600; }
+.pfm-group-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border-radius: 999px;
+  padding: 1px 7px;
+  min-width: 24px;
+  text-align: center;
+}
+
+/* Checkbox visual (custom) */
+.pfm-group-row::before {
+  content: '';
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--gray-300);
+  flex-shrink: 0;
+  background: var(--white);
+  transition: background 0.1s, border-color 0.1s;
+  order: -1;
+}
+.pfm-group-row--checked::before {
   background: var(--navy);
   border-color: var(--navy);
-  color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M2 6l3 3 5-5'/%3E%3C/svg%3E");
+  background-size: 10px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* ── Show toggles ───────────────────────────────────────────────────────── */
+.pfm-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.pfm-toggle-row + .pfm-toggle-row { border-top: 1px solid var(--gray-100); }
+.pfm-toggle-row input[type="checkbox"] { display: none; }
+.pfm-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.pfm-toggle-dot--amber { background: var(--amber); }
+.pfm-toggle-dot--green { background: var(--green); }
+.pfm-toggle-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--gray-600);
+}
+.pfm-toggle-row--on .pfm-toggle-label { color: var(--navy); font-weight: 600; }
+.pfm-toggle-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-400);
+  background: var(--gray-100);
+  border-radius: 999px;
+  padding: 1px 7px;
+  min-width: 22px;
+  text-align: center;
+}
+/* Toggle switch track */
+.pfm-toggle-switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--gray-200);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.18s;
+}
+.pfm-toggle-switch::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.18s;
+}
+.pfm-toggle-switch--on {
+  background: var(--teal);
+}
+.pfm-toggle-switch--on::after {
+  transform: translateX(14px);
+}
+
+/* ── Rail card ──────────────────────────────────────────────────────────── */
+.pfm-card-placeholder {
+  text-align: center;
+  padding: 20px 12px;
+  color: var(--gray-400);
+}
+.pfm-card-placeholder-icon { font-size: 22px; margin-bottom: 6px; }
+.pfm-card-placeholder-text { font-size: 12.5px; }
+
+.pfm-rail-card-inner { }
+
+/* ── Layer breakdown ────────────────────────────────────────────────────── */
+.pfm-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--gray-50);
+}
+.pfm-breakdown-row:last-child { border-bottom: none; }
+.pfm-breakdown-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.pfm-breakdown-label {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--gray-700);
+  font-weight: 500;
+}
+.pfm-breakdown-label small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--gray-400);
+  font-weight: 400;
+}
+.pfm-breakdown-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--navy);
+}
+.pfm-breakdown-empty {
+  font-size: 12px;
+  color: var(--gray-400);
+  font-style: italic;
+  padding: 6px 0;
+}
+.pfm-breakdown-scope {
+  font-size: 11px;
+  color: var(--gray-400);
+  font-weight: 600;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Rail card last-service row ─────────────────────────────────────────── */
+.pfm-card-last-svc {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--gray-50);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--green);
+}
+.pfm-card-last-svc-lbl {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--gray-400);
+}
+.pfm-card-last-svc-val {
+  font-size: 12px;
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+/* ── Map area (right of rail) ───────────────────────────────────────────── */
+.pfm-map-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .pfm-map-wrap {
   position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-md);
-  margin-bottom: 20px;
-  height: 520px;
+  margin-bottom: 14px;
+  height: 560px;
 }
 .pfm-iframe {
   width: 100%;
   height: 100%;
   border: none;
   display: block;
+}
+
+/* Narrow-viewport stacking: rail above map */
+@media (max-width: 860px) {
+  .pfm-body {
+    flex-direction: column;
+  }
+  .pfm-rail {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 14px;
+  }
+  .pfm-map-area {
+    width: 100%;
+  }
+  .pfm-map-wrap {
+    min-height: 380px;
+  }
 }
 
 /* ── Branch card popup (portal DOM, overlaid on map wrap) ────────────────── */
@@ -1248,14 +1496,18 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
 }
 .pfm-card-link {
   display: block;
+  width: 100%;
   text-align: center;
   background: var(--navy);
   color: #fff;
+  border: none;
   border-radius: var(--radius-sm);
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
+  font-family: inherit;
   text-decoration: none;
+  cursor: pointer;
   transition: background 0.15s;
 }
 .pfm-card-link:hover { background: var(--navy-light); }

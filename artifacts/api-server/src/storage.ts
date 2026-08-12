@@ -4892,84 +4892,239 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
   return result;
 }
 
+// Layer display metadata for the Portfolio Map rail breakdown.
+// Colours match the representative sublayer defaults in common/map-render.js.
+const MAP_LAYER_DISPLAY: Record<string, { name: string; color: string; assetTypes: readonly string[] }> = {
+  community:  { name: 'Landscape',  color: '#2E8B57', assetTypes: ['bluegrass_area','native_area','landscape_bed','pet_station'] },
+  irrigation: { name: 'Irrigation', color: '#3498db', assetTypes: ['backflow','controller','zone','master_valve','flow_meter','qc_iso_valve','isolation_valve','quick_connect','wire_splice'] },
+  snow:       { name: 'Snow',       color: '#4A90E2', assetTypes: ['plow','atv','hand_shovel','ice_melt','slicer','storage_area'] },
+  trees:      { name: 'Trees',      color: '#006400', assetTypes: ['tree'] },
+};
+
+// Reverse lookup: assetType → layerKey (built once at module load)
+const _assetTypeToLayerKey: Record<string, string> = {};
+for (const [lk, info] of Object.entries(MAP_LAYER_DISPLAY)) {
+  for (const at of info.assetTypes) _assetTypeToLayerKey[at] = lk;
+}
+
+export type BranchMapLayerCount = { key: string; name: string; count: number; color: string };
+
 export async function getBranchMapPoints(orgId: string): Promise<{
-  branches: Array<{ id: string; code: string | null; name: string; city: string | null; lat: number; lng: number; assetCount: number; openWorkOrders: number; hasGeometry: boolean }>;
+  branches: Array<{
+    id: string; code: string | null; name: string; city: string | null; address: string | null;
+    lat: number; lng: number;
+    assetCount: number; openWorkOrders: number; servicesYtd: number;
+    servicedThisWeek: boolean;
+    lastServiceAt: string | null; lastServiceLabel: string | null;
+    layerCounts: BranchMapLayerCount[];
+    hasGeometry: boolean;
+  }>;
   unmapped: Array<{ id: string; code: string | null; name: string }>;
 }> {
   const cached = branchMapPointsCache.get(orgId);
   if (cached && cached.expiresAt > Date.now()) return cached.data;
 
-  // Load all communities for this org
+  // 1. Load all communities for this org
   const comms = await db.select().from(communities).where(eq(communities.organizationId, orgId)).orderBy(communities.name);
+  const communityIds = comms.map(c => c.id);
 
-  const branches: Array<{ id: string; code: string | null; name: string; city: string | null; lat: number; lng: number; assetCount: number; openWorkOrders: number; servicesYtd: number; hasGeometry: boolean }> = [];
+  if (communityIds.length === 0) {
+    const result = { branches: [], unmapped: [] };
+    branchMapPointsCache.set(orgId, { data: result, expiresAt: Date.now() + 60_000 });
+    return result;
+  }
+
+  // 2. Batch-load all map layers for centroid computation (one query instead of N)
+  const allLayers = await db
+    .select({ communityId: mapLayers.communityId, layerKey: mapLayers.layerKey, geojsonData: mapLayers.geojsonData })
+    .from(mapLayers)
+    .where(inArray(mapLayers.communityId, communityIds));
+
+  // Group layers by communityId
+  const layersByCommunity = new Map<string, typeof allLayers>();
+  for (const l of allLayers) {
+    if (!layersByCommunity.has(l.communityId)) layersByCommunity.set(l.communityId, []);
+    layersByCommunity.get(l.communityId)!.push(l);
+  }
+
+  // 3. Batch queries for all per-community stats — run in parallel
+  const [
+    assetTypeRows,
+    openWoRows,
+    svcYtdRows,
+    lastSvcRows,
+    svcWeekRows,
+  ] = await Promise.all([
+    // 3a. Asset counts by community + asset_type (for assetCount and layerCounts)
+    pool.query<{ community_id: string; asset_type: string; cnt: string }>(
+      `SELECT community_id, asset_type, COUNT(*)::text AS cnt
+         FROM assets
+        WHERE community_id = ANY($1) AND is_archived = false
+        GROUP BY community_id, asset_type`,
+      [communityIds]
+    ),
+
+    // 3b. Open work orders: excludes completed, cancelled, and declined tasks
+    pool.query<{ community_id: string; cnt: string }>(
+      `SELECT community_id, COUNT(*)::text AS cnt
+         FROM tasks
+        WHERE community_id = ANY($1)
+          AND status != 'completed'
+          AND cancelled_at IS NULL
+          AND declined_at IS NULL
+        GROUP BY community_id`,
+      [communityIds]
+    ),
+
+    // 3c. Services YTD: task completions + completed service visits this calendar year
+    pool.query<{ community_id: string; cnt: string }>(
+      `SELECT t.community_id, COUNT(*)::text AS cnt
+         FROM task_completions tc
+         JOIN tasks t ON t.id = tc.task_id
+        WHERE t.community_id = ANY($1)
+          AND tc.completed_at >= date_trunc('year', now())
+        GROUP BY t.community_id
+       UNION ALL
+       SELECT community_id, COUNT(*)::text AS cnt
+         FROM service_visits
+        WHERE community_id = ANY($1)
+          AND status = 'completed'
+          AND completed_at >= date_trunc('year', now())
+        GROUP BY community_id`,
+      [communityIds]
+    ),
+
+    // 3d. Most-recent completed service per community (label + timestamp)
+    pool.query<{ community_id: string; completed_at: string; label: string }>(
+      `SELECT DISTINCT ON (community_id) community_id, completed_at, label
+         FROM (
+           SELECT t.community_id,
+                  tc.completed_at::text AS completed_at,
+                  t.title               AS label
+             FROM task_completions tc
+             JOIN tasks t ON t.id = tc.task_id
+            WHERE t.community_id = ANY($1)
+           UNION ALL
+           SELECT sv.community_id,
+                  sv.completed_at::text AS completed_at,
+                  INITCAP(REPLACE(ss.service_type::text, '_', ' ')) AS label
+             FROM service_visits sv
+             JOIN service_schedules ss ON ss.id = sv.schedule_id
+            WHERE sv.community_id = ANY($1)
+              AND sv.status = 'completed'
+         ) combined
+        ORDER BY community_id, completed_at DESC NULLS LAST`,
+      [communityIds]
+    ),
+
+    // 3e. Serviced this week: task_completions or completed service_visits in the last 7 days
+    pool.query<{ community_id: string }>(
+      `SELECT DISTINCT t.community_id
+         FROM task_completions tc
+         JOIN tasks t ON t.id = tc.task_id
+        WHERE t.community_id = ANY($1)
+          AND tc.completed_at >= NOW() - INTERVAL '7 days'
+       UNION
+       SELECT DISTINCT community_id
+         FROM service_visits
+        WHERE community_id = ANY($1)
+          AND status = 'completed'
+          AND completed_at >= NOW() - INTERVAL '7 days'`,
+      [communityIds]
+    ),
+  ]);
+
+  // 4. Build lookup maps from batch results
+  // Asset counts: community → layerKey → count
+  const assetCountByComm   = new Map<string, number>();
+  const layerCountByComm   = new Map<string, Map<string, number>>(); // communityId → layerKey → count
+  for (const row of assetTypeRows.rows) {
+    const prev = assetCountByComm.get(row.community_id) ?? 0;
+    assetCountByComm.set(row.community_id, prev + Number(row.cnt));
+    const lk = _assetTypeToLayerKey[row.asset_type];
+    if (lk) {
+      if (!layerCountByComm.has(row.community_id)) layerCountByComm.set(row.community_id, new Map());
+      const m = layerCountByComm.get(row.community_id)!;
+      m.set(lk, (m.get(lk) ?? 0) + Number(row.cnt));
+    }
+  }
+
+  // Open WOs
+  const openWoByComm = new Map<string, number>();
+  for (const row of openWoRows.rows) openWoByComm.set(row.community_id, Number(row.cnt));
+
+  // Services YTD (sum task_completions + service_visits rows)
+  const svcYtdByComm = new Map<string, number>();
+  for (const row of svcYtdRows.rows) {
+    svcYtdByComm.set(row.community_id, (svcYtdByComm.get(row.community_id) ?? 0) + Number(row.cnt));
+  }
+
+  // Last service
+  const lastSvcByComm = new Map<string, { at: string; label: string }>();
+  for (const row of lastSvcRows.rows) lastSvcByComm.set(row.community_id, { at: row.completed_at, label: row.label });
+
+  // Serviced this week
+  const servicedThisWeekSet = new Set<string>(svcWeekRows.rows.map(r => r.community_id));
+
+  // 5. Compute centroids and assemble result
+  const branches: Array<{
+    id: string; code: string | null; name: string; city: string | null; address: string | null;
+    lat: number; lng: number;
+    assetCount: number; openWorkOrders: number; servicesYtd: number;
+    servicedThisWeek: boolean;
+    lastServiceAt: string | null; lastServiceLabel: string | null;
+    layerCounts: BranchMapLayerCount[];
+    hasGeometry: boolean;
+  }> = [];
   const unmapped: Array<{ id: string; code: string | null; name: string }> = [];
 
   for (const community of comms) {
-    // Load layers with geojsonData for this community
-    const layers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, community.id));
+    const layers = layersByCommunity.get(community.id) ?? [];
 
     // Compute centroid: prefer outline layer, else bbox of all layers
     let centroid: [number, number] | null = null;
-
     const outlineLayer = layers.find(l => l.layerKey === 'outline' && l.geojsonData);
-    if (outlineLayer && outlineLayer.geojsonData) {
-      try {
-        const parsed = JSON.parse(outlineLayer.geojsonData);
-        centroid = bboxCentroid(extractAllCoords(parsed));
-      } catch (_) { /* unparseable — skip */ }
+    if (outlineLayer?.geojsonData) {
+      try { centroid = bboxCentroid(extractAllCoords(JSON.parse(outlineLayer.geojsonData))); } catch (_) {}
     }
-
     if (!centroid) {
       const allCoords: number[][] = [];
       for (const layer of layers) {
         if (!layer.geojsonData) continue;
-        try {
-          const parsed = JSON.parse(layer.geojsonData);
-          allCoords.push(...extractAllCoords(parsed));
-        } catch (_) { /* skip */ }
+        try { allCoords.push(...extractAllCoords(JSON.parse(layer.geojsonData))); } catch (_) {}
       }
       centroid = bboxCentroid(allCoords);
     }
 
-    // Asset count and open work orders
-    const yearStart = new Date(new Date().getFullYear(), 0, 1);
-    const [acResult, woResult, svcResult] = await Promise.all([
-      db.select({ cnt: count() }).from(assets)
-        .where(and(eq(assets.communityId, community.id), eq(assets.isArchived, false)))
-        .then(r => r[0]),
-      db.select({ cnt: count() }).from(tasks)
-        .where(and(eq(tasks.communityId, community.id), ne(tasks.status, 'completed')))
-        .then(r => r[0]),
-      // servicesYtd: task completions this calendar year for this community
-      pool.query<{ cnt: string }>(
-        `SELECT COUNT(*)::text AS cnt FROM task_completions tc
-         JOIN tasks t ON t.id = tc.task_id
-         WHERE t.community_id = $1 AND tc.completed_at >= $2`,
-        [community.id, yearStart]
-      ).then(r => r.rows[0]),
-    ]);
+    // Build layerCounts array (only layers with count > 0)
+    const lkMap = layerCountByComm.get(community.id);
+    const layerCounts: BranchMapLayerCount[] = Object.entries(MAP_LAYER_DISPLAY)
+      .map(([key, info]) => ({ key, name: info.name, count: lkMap?.get(key) ?? 0, color: info.color }))
+      .filter(lc => lc.count > 0);
 
-    const assetCount = Number(acResult?.cnt ?? 0);
-    const openWorkOrders = Number(woResult?.cnt ?? 0);
-    const servicesYtd = Number(svcResult?.cnt ?? 0);
+    const lastSvc = lastSvcByComm.get(community.id);
 
     if (centroid) {
       branches.push({
-        id: community.id,
-        code: (community as any).code ?? null,
-        name: community.name,
-        city: (community as any).city ?? null,
-        lat: centroid[0],
-        lng: centroid[1],
-        assetCount,
-        openWorkOrders,
-        servicesYtd,
+        id:               community.id,
+        code:             (community as any).code ?? null,
+        name:             community.name,
+        city:             (community as any).city ?? null,
+        address:          (community as any).address ?? null,
+        lat:              centroid[0],
+        lng:              centroid[1],
+        assetCount:       assetCountByComm.get(community.id) ?? 0,
+        openWorkOrders:   openWoByComm.get(community.id) ?? 0,
+        servicesYtd:      svcYtdByComm.get(community.id) ?? 0,
+        servicedThisWeek: servicedThisWeekSet.has(community.id),
+        lastServiceAt:    lastSvc?.at ?? null,
+        lastServiceLabel: lastSvc?.label ?? null,
+        layerCounts,
         hasGeometry: true,
       });
     } else {
       unmapped.push({
-        id: community.id,
+        id:   community.id,
         code: (community as any).code ?? null,
         name: community.name,
       });
