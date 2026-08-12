@@ -142,8 +142,60 @@
     return '<div class="filter-bar" id="branches-filter-bar">' + chips + '</div>';
   }
 
+  // ── Build groupId → setId map from PortfolioState.groups ──────────────────
+  // PortfolioState.groups is the full BranchGroup list (includes .setId).
+  // Returns: { [groupId]: setId | null }
+  function buildGroupSetMap(stateGroups) {
+    var map = {};
+    (stateGroups || []).forEach(function (g) {
+      map[g.id] = g.setId || null;
+    });
+    return map;
+  }
+
+  // ── Totals footer ──────────────────────────────────────────────────────────
+  // groupSetMap: { [groupId]: setId | null } — used to count distinct group sets.
+  function renderTotalsFooter(branches, groupSetMap) {
+    var count = branches.length;
+    if (count === 0) return '';
+    var totalAssets  = 0;
+    var totalZones   = 0;
+    var totalTrees   = 0;
+    var totalSvcs    = 0;
+    var uniqueCities = {};
+    var uniqueSetIds = {};   // distinct non-null setIds across all filtered branches
+    branches.forEach(function (b) {
+      totalAssets += Number(b.assetCount      || 0);
+      totalZones  += Number(b.irrigationZones  || 0);
+      totalTrees  += Number(b.trees            || 0);
+      totalSvcs   += Number(b.servicesYtd      || 0);
+      if (b.city) uniqueCities[b.city] = true;
+      (Array.isArray(b.groupIds) ? b.groupIds : []).forEach(function (gid) {
+        var sid = groupSetMap ? groupSetMap[gid] : null;
+        if (sid) uniqueSetIds[sid] = true;
+      });
+    });
+    var regionCount  = Object.keys(uniqueCities).length;
+    var setCount     = Object.keys(uniqueSetIds).length;
+    var regionText   = regionCount + ' ' + (regionCount === 1 ? 'region' : 'regions')
+      + ' · ' + setCount + ' ' + (setCount === 1 ? 'group set' : 'group sets');
+    return '<tfoot><tr class="totals-row">'
+      + '<td class="bcode">' + esc(count) + '</td>'
+      + '<td><div class="bname">Totals</div></td>'
+      + '<td class="bsub">' + esc(regionText) + '</td>'
+      + '<td class="bsub"></td>'
+      + '<td></td>'
+      + '<td class="num">' + esc(totalAssets) + '</td>'
+      + '<td class="num">' + esc(totalZones) + '</td>'
+      + '<td class="num">' + esc(totalTrees) + '</td>'
+      + '<td class="num">' + esc(totalSvcs) + '</td>'
+      + '<td class="bsub"></td>'
+      + '<td class="num"></td>'
+      + '</tr></tfoot>';
+  }
+
   // ── Branch table ───────────────────────────────────────────────────────────
-  function renderBranchTable(branches, groupLookup) {
+  function renderBranchTable(branches, groupLookup, groupSetMap) {
     var rows;
     if (branches.length === 0) {
       rows = '<tr class="pf-empty-row"><td colspan="11">No locations match this filter.</td></tr>';
@@ -198,12 +250,14 @@
       + '<th>Code</th><th>Location</th><th>Address</th><th>City</th><th>Group</th>'
       + '<th class="num">Assets</th><th class="num">Zones</th><th class="num">Trees</th>'
       + '<th class="num">Services YTD</th><th>Last Service</th><th class="num">Open WOs</th>'
-      + '</tr></thead><tbody>' + rows + '</tbody></table>'
+      + '</tr></thead><tbody>' + rows + '</tbody>'
+      + renderTotalsFooter(branches, groupSetMap)
+      + '</table>'
       + '</div>';
   }
 
   // ── Wire up interactions ───────────────────────────────────────────────────
-  function wireInteractions(container, allBranches, groupLookup) {
+  function wireInteractions(container, allBranches, groupLookup, groupSetMap) {
     var activeFilter = 'all';
 
     function getFiltered() {
@@ -218,7 +272,7 @@
     function rerenderTable() {
       var tableEl = container.querySelector('.branches-table-wrap');
       if (tableEl) {
-        tableEl.innerHTML = renderBranchTable(getFiltered(), groupLookup);
+        tableEl.innerHTML = renderBranchTable(getFiltered(), groupLookup, groupSetMap);
         wireTableClicks(tableEl);
       }
       // Update chip active state
@@ -259,7 +313,8 @@
     var orgSuffix = orgParam();
     var state     = window.PortfolioState || {};
     var groups    = Array.isArray(state.groups) ? state.groups : [];
-    var groupLookup = buildGroupLookup(groups);
+    var groupLookup  = buildGroupLookup(groups);
+    var groupSetMap  = buildGroupSetMap(groups);   // groupId → setId | null
 
     var url = '/api/portfolio/branches' + orgSuffix;
 
@@ -273,11 +328,11 @@
         + renderAnchorBand(branches)
         + renderFilterChips(branches, groupLookup, 'all')
         + '<div class="branches-table-wrap">'
-        + renderBranchTable(branches, groupLookup)
+        + renderBranchTable(branches, groupLookup, groupSetMap)
         + '</div>';
 
       container.innerHTML = html;
-      wireInteractions(container, branches, groupLookup);
+      wireInteractions(container, branches, groupLookup, groupSetMap);
 
     }).catch(function (err) {
       console.error('[portfolio/branches] fetch failed:', err);

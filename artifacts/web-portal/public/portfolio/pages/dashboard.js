@@ -457,10 +457,15 @@
         });
       }
 
-      var org  = state.organization || {};
+      var org      = state.organization || {};
+      var locCount = Array.isArray(branches) ? branches.length : 0;
+      var grpCount = orderedGroups.length;
+      var dashSubtitle = (org.name ? esc(org.name) + ' · ' : '')
+        + locCount + ' ' + (locCount === 1 ? 'location' : 'locations')
+        + ' · ' + grpCount + ' ' + (grpCount === 1 ? 'group' : 'groups');
       var html = '<div class="ctx">'
-        + '<h1>' + esc(org.name || 'Portfolio') + '</h1>'
-        + '<span class="sub">Dashboard</span>'
+        + '<h1>Portfolio Dashboard</h1>'
+        + '<span class="sub">' + dashSubtitle + '</span>'
         + refreshLabel()
         + '</div>'
         + renderKpiRow(dash.totals, dash.openWorkOrders)

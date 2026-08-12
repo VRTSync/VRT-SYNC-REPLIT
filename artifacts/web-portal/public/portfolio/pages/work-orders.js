@@ -3,7 +3,7 @@
  * Registered as PortfolioRouter.register('work-orders', fn).
  *
  * Fetches GET /api/portfolio/work-orders and renders:
- *   • Pipeline band (Flagged by HP → Awaiting approval → Scheduled → Completed)
+ *   • Pipeline band (Flagged by Contractor → Awaiting approval → Scheduled → Completed)
  *   • KPI row
  *   • Filter chips + search
  *   • Open Work Orders table (with Approve button for qualifying rows)
@@ -118,7 +118,7 @@
       + '</div>'
       + '<div class="a-mid">'
         + '<div class="flow">'
-          + '<div class="flow-step"><b>' + esc(flagged) + '</b>Flagged by HP</div>'
+          + '<div class="flow-step"><b>' + esc(flagged) + '</b>Flagged by Contractor</div>'
           + '<span class="flow-arrow">→</span>'
           + '<div class="flow-step hot"><b>' + esc(awaiting) + '</b>Awaiting approval</div>'
           + '<span class="flow-arrow">→</span>'
@@ -149,7 +149,7 @@
     return '<div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">'
       + kpi('Awaiting Your Approval', awaiting, 'estimate provided, pending approval', 'amber')
       + kpi('Scheduled', scheduled, 'crew visit booked', 'blue')
-      + kpi('Flagged by HP', flagged, 'crews identified in the field', 'navy')
+      + kpi('Flagged by Contractor', flagged, 'crews identified in the field', 'navy')
       + kpi('Closed (30d)', comp30, 'completed last 30 days', 'green')
       + '</div>';
   }
@@ -178,18 +178,18 @@
 
   // ── Open Work Orders table ─────────────────────────────────────────────────
   function renderOpenTable(rows) {
-    var colCount = SHOW_WORK_ORDER_DATES ? 7 : 6;
+    var colCount = SHOW_WORK_ORDER_DATES ? 8 : 7;
     var header = '<div class="panel p-amber">'
       + '<div class="panel-head"><h2>Open Work Orders</h2>'
-      + '<span class="hint">flagged by HP or submitted by client</span></div>'
+      + '<span class="hint">flagged by contractor or submitted by client</span></div>'
       + '<table>'
       + (SHOW_WORK_ORDER_DATES
-          ? '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
-            + '<col style="width:100px"><col style="width:150px"><col style="width:110px"></colgroup>'
-          : '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:160px">'
-            + '<col style="width:150px"><col style="width:110px"></colgroup>')
+          ? '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:100px">'
+            + '<col style="width:160px"><col style="width:100px"><col style="width:150px"><col style="width:110px"></colgroup>'
+          : '<colgroup><col style="width:130px"><col style="width:150px"><col><col style="width:100px">'
+            + '<col style="width:160px"><col style="width:150px"><col style="width:110px"></colgroup>')
       + '<thead><tr>'
-      + '<th>Work Order</th><th>Location</th><th>Item</th><th>Source</th>'
+      + '<th>Work Order</th><th>Location</th><th>Item</th><th>Layer</th><th>Source</th>'
       + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th>' : '')
       + '<th>Status</th><th class="num">Estimate</th>'
       + '</tr></thead><tbody>';
@@ -215,6 +215,7 @@
           + '<td><div class="bname">' + esc(t.title) + '</div>'
           + (t.description ? '<div class="bsub">' + esc(t.description.slice(0, 80)) + '</div>' : '')
           + photoBadge + '</td>'
+          + '<td class="bsub">' + esc(t.category || '—') + '</td>'
           + '<td class="bsub">' + esc(t.source) + '</td>'
           + (SHOW_WORK_ORDER_DATES
               ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '<div class="bsub">' + esc(t.daysOpen) + ' days open</div></td>'
@@ -230,17 +231,17 @@
 
   // ── Recently Closed table ──────────────────────────────────────────────────
   function renderClosedTable(rows) {
-    var colCount = SHOW_WORK_ORDER_DATES ? 6 : 3;
+    var colCount = SHOW_WORK_ORDER_DATES ? 7 : 4;
     var header = '<div class="panel p-green">'
       + '<div class="panel-head"><h2>Recently Closed</h2>'
       + '<span class="view-all">Service history →</span></div>'
       + '<table>'
       + (SHOW_WORK_ORDER_DATES
-          ? '<colgroup><col style="width:130px"><col style="width:100px"><col>'
+          ? '<colgroup><col style="width:130px"><col style="width:100px"><col><col style="width:100px">'
             + '<col style="width:100px"><col style="width:100px"><col style="width:100px"></colgroup>'
-          : '<colgroup><col style="width:130px"><col style="width:100px"><col></colgroup>')
+          : '<colgroup><col style="width:130px"><col style="width:100px"><col><col style="width:100px"></colgroup>')
       + '<thead><tr>'
-      + '<th>Work Order</th><th>Location</th><th>Item</th>'
+      + '<th>Work Order</th><th>Location</th><th>Item</th><th>Layer</th>'
       + (SHOW_WORK_ORDER_DATES ? '<th>Opened</th><th>Closed</th><th class="num">Days Open</th>' : '')
       + '</tr></thead><tbody>';
 
@@ -254,6 +255,7 @@
           + '<td><span class="bcode">' + esc(t.branchCode || '—') + '</span></td>'
           + '<td><div class="bname">' + esc(t.title) + '</div>'
           + (t.photoCount > 0 ? '<div class="bsub">📷 ' + esc(t.photoCount) + ' photos</div>' : '') + '</td>'
+          + '<td class="bsub">' + esc(t.category || '—') + '</td>'
           + (SHOW_WORK_ORDER_DATES
               ? '<td class="bsub">' + esc(fmtDate(t.createdAt)) + '</td>'
                 + '<td class="bsub">' + esc(fmtDate(t.completedAt)) + '</td>'
@@ -522,7 +524,7 @@
           if (_data) {
             _data.open.unshift(newTask);
             if (_data.pipeline) {
-              _data.pipeline.flaggedByHp = (_data.pipeline.flaggedByHp || 0); // HP flag unchanged
+              _data.pipeline.flaggedByHp = (_data.pipeline.flaggedByHp || 0); // contractor-flagged count unchanged
             }
             renderPage(container, _data);
           } else {
@@ -1138,7 +1140,7 @@
             + '</div>'
             + '<div class="pf-empty" style="text-align:center;padding:48px 0;">'
             + '<p style="font-size:15px;font-weight:600;color:var(--navy);">No work orders yet.</p>'
-            + '<p style="color:var(--gray-500);font-size:13px;margin-top:6px;">Work orders appear when HP crews flag issues or you submit a service request.</p>'
+            + '<p style="color:var(--gray-500);font-size:13px;margin-top:6px;">Work orders appear when contractor crews flag issues or you submit a service request.</p>'
             + '</div>'
             + renderSubmitModal();
           wireModal(container);

@@ -493,7 +493,7 @@
     var location = [branch.address, branch.city].filter(Boolean).join(', ');
     return '<div class="det-head">'
       + '<h2>' + esc(branch.name || '—') + '</h2>'
-      + '<span class="codes">PNC Code ' + esc(branch.code || '—') + '</span>'
+      + '<span class="codes">' + esc(branch.code || '—') + '</span>'
       + (location ? '<span class="sub">' + esc(location) + (groupChip ? ' · ' + groupChip : '') + '</span>' : (groupChip ? groupChip : ''))
       + '</div>';
   }

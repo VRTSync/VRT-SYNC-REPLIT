@@ -5912,6 +5912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: string;
           priority: string;
           origin: string | null;
+          category: string | null;
           estimate_cents: number | null;
           approved_at: string | null;
           approved_by: string | null;
@@ -5937,6 +5938,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             t.status,
             t.priority,
             t.origin,
+            t.category,
             t.estimate_cents,
             t.approved_at::text,
             t.approved_by,
@@ -5975,14 +5977,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const ref = 'WO-' + r.id.replace(/-/g, '').slice(0, 8).toUpperCase();
 
         // source: derive display from origin
-        // origin = 'client' → "<orgName> request" (e.g. "PNC request")
-        // origin = 'HOA' → "HP" (HOA portal — shouldn't appear in portfolio but handle gracefully)
-        // origin = null/other → "HP"
+        // origin = 'client' → "<orgName> request" (e.g. "Acme Corp request")
+        // origin = 'HOA' / null / other → "Contractor report" (generic — not branded)
         let source: string;
         if (r.origin === 'client') {
           source = orgName ? orgName + ' request' : 'Client request';
         } else {
-          source = 'HP';
+          source = 'Contractor report';
         }
 
         const row = {
@@ -5997,6 +5998,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           priority: r.priority,
           source,
           origin: r.origin,
+          category: r.category ?? null,
           estimateCents: r.estimate_cents,
           approvedAt: r.approved_at,
           approvedBy: r.approved_by,
