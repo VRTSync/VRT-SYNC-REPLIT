@@ -4473,7 +4473,7 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
   const community = await getCommunityById(communityId);
   if (!community || community.organizationId !== orgId) return null;
 
-  const [layersResult, inventoryResult, recentServicesResult, openWorkOrdersResult, groupIdsResult] = await Promise.all([
+  const [layersResult, inventoryResult, recentServicesResult, openWorkOrdersResult, groupIdsResult, servicesTotalResult, photoProofResult] = await Promise.all([
     // layers: data-driven from DB (never hardcoded list)
     pool.query<{ id: string; name: string; type: string; sub_layer_key: string | null; asset_count: string; color: string | null; stroke_color: string | null; stroke_weight: string | null; fill_opacity: string | null; has_geometry: boolean }>(`
       SELECT
@@ -4574,6 +4574,44 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
        WHERE bgm.community_id = $1
          AND bg.organization_id = $2
     `, [communityId, orgId]),
+
+    // servicesTotal: task completions + completed service visits YTD (same window as Locations page)
+    pool.query<{ total: string }>(`
+      SELECT (
+        COALESCE((
+          SELECT COUNT(*) FROM task_completions tc
+          JOIN tasks t ON t.id = tc.task_id
+          WHERE t.community_id = $1
+            AND tc.completed_at >= date_trunc('year', now())
+        ), 0)
+        +
+        COALESCE((
+          SELECT COUNT(*) FROM service_visits
+          WHERE community_id = $1
+            AND status = 'completed'
+            AND completed_at >= date_trunc('year', now())
+        ), 0)
+      )::text AS total
+    `, [communityId]),
+
+    // photoProofPct: completions with ≥1 photo / all completions, rounded 1 dp.
+    // Reuses the same SQL pattern as getPortfolioGroups — computed over ALL completions,
+    // not the capped recent-20 list, so it is a real rate, not a sample.
+    pool.query<{ pct: string }>(`
+      SELECT
+        CASE WHEN COUNT(DISTINCT tc.id) > 0
+          THEN ROUND(
+            COUNT(DISTINCT tc.id) FILTER (WHERE att.id IS NOT NULL)::numeric
+            / COUNT(DISTINCT tc.id)::numeric * 100,
+            1
+          )::text
+          ELSE '0'
+        END AS pct
+      FROM task_completions tc
+      JOIN tasks t ON t.id = tc.task_id
+      LEFT JOIN attachments att ON att.task_completion_id = tc.id
+      WHERE t.community_id = $1
+    `, [communityId]),
   ]);
 
   console.log(`[portfolio/branch-detail] org=${orgId} branch=${communityId} (${Date.now() - t0}ms)`);
@@ -4620,6 +4658,12 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       approvedAt: r.approved_at ?? null,
       openedAt: r.created_at,
     })),
+    // servicesTotal: count of completed task_completions + completed service_visits YTD,
+    // matching the Locations page "Services YTD" window (date_trunc('year', now())).
+    servicesTotal: Number(servicesTotalResult.rows[0]?.total ?? 0),
+    // photoProofPct: completions with ≥1 photo / all completions (rounded 1 dp).
+    // Computed over ALL completions for this community, not the capped recent-20 list.
+    photoProofPct: Number(photoProofResult.rows[0]?.pct ?? 0),
     // snowSeason: null — service_type enum only contains 'mowing_visit';
     // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)
     snowSeason: null,

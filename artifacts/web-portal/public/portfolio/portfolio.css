@@ -2141,3 +2141,286 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   background: rgba(239,68,68,0.10);
   color: var(--red);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SUMMARY TAB — Parity slice 2 of 4
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Branch Row 1: map (left 1.35fr) + asset cards (right 1fr) ─────────── */
+.branch-row1 {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+  align-items: start;
+}
+/* Category tab active: map goes full-width, cards column hidden */
+.branch-row1--cat {
+  grid-template-columns: 1fr;
+}
+.branch-row1--cat .branch-row1-cards {
+  display: none;
+}
+/* Map panel in row1 context: shorter preview height for orientation */
+.branch-row1 #branch-map-panel .branch-map-container {
+  height: 262px;
+}
+/* Restore full height when category tab is active */
+.branch-row1--cat #branch-map-panel .branch-map-container {
+  height: 340px;
+}
+/* "All layers shown" caption — absolute bottom-left inside the map container.
+   Visible only on Summary tab; _switchToTab / _syncTabUI toggle display. */
+.bmap-all-layers-caption {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 6;           /* above the scroll-block overlay (z-index 5) */
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-600);
+  background: rgba(255,255,255,0.88);
+  border-radius: 4px;
+  padding: 3px 8px;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  display: block;       /* visible by default; hidden when category tab activates */
+}
+
+/* ── Scroll-hijack overlay (covers only the iframe, not the panel-head) ─── */
+/* Sits above the iframe; scroll events bubble to the page, not the map.
+   Hidden on category tabs so the map is fully interactive there.            */
+.summ-map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: block;   /* visible by default (Summary is the default active tab) */
+  cursor: default;
+  background: transparent;
+}
+
+/* ── Asset cards right column ───────────────────────────────────────────── */
+.branch-row1-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Align top of cards with the top of the map panel */
+  padding-top: 0;
+}
+
+.summ-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.summ-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  border-left: 4px solid var(--teal);
+  cursor: pointer;
+  transition: box-shadow .15s, transform .1s;
+  outline: none;
+}
+.summ-card:hover,
+.summ-card:focus-visible {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.summ-card-cat {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--gray-400);
+  margin-bottom: 4px;
+}
+.summ-card-count {
+  font-family: 'Outfit', sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.summ-card-sub {
+  font-size: 11.5px;
+  color: var(--gray-500);
+  line-height: 1.4;
+}
+
+/* ── Unmapped-layer rows ─────────────────────────────────────────────────── */
+.summ-unmapped-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.summ-unmapped-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border: 1.5px dashed var(--gray-300);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--gray-500);
+  background: var(--white);
+  transition: border-color .12s, color .12s;
+}
+.summ-unmapped-row:hover {
+  border-color: var(--teal);
+  color: var(--teal-dark);
+}
+.summ-unmapped-label { font-weight: 500; }
+.summ-unmapped-req {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--gray-400);
+  flex-shrink: 0;
+}
+.summ-unmapped-row:hover .summ-unmapped-req { color: var(--teal-dark); }
+
+/* ── Row 2: three panels ─────────────────────────────────────────────────── */
+.summ-row2 {
+  display: grid;
+  grid-template-columns: 190px 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .summ-row2 { grid-template-columns: 1fr 1fr; }
+  .summ-metrics-panel { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .branch-row1 { grid-template-columns: 1fr; }
+  .branch-row1--cat .branch-row1-cards { display: none; }
+  .summ-row2 { grid-template-columns: 1fr; }
+  .summ-metrics-panel { grid-column: unset; }
+}
+
+/* ── Service metrics panel ─────────────────────────────────────────────── */
+.summ-metric-rows { padding: 4px 0 6px; }
+.summ-metric-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.summ-metric-row:last-child { border-bottom: none; }
+.smr-label {
+  font-size: 12px;
+  color: var(--gray-500);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.smr-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--navy);
+  white-space: nowrap;
+}
+.smr-date { font-size: 14px; }
+
+/* ── Open items panel ───────────────────────────────────────────────────── */
+.summ-wo-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.summ-wo-card:last-child { border-bottom: none; }
+.summ-wo-main { flex: 1; min-width: 0; }
+.summ-wo-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.summ-wo-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--gray-500);
+}
+.summ-wo-ref {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--gray-400);
+}
+.summ-wo-est { font-weight: 600; color: var(--navy); }
+.summ-wo-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.summ-wo-btn {
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  cursor: pointer;
+  transition: background .1s, color .1s, border-color .1s;
+  line-height: 1.2;
+}
+.summ-wo-approve { color: #047857; border-color: rgba(16,185,129,0.35); }
+.summ-wo-approve:hover:not(:disabled) { background: var(--green-light); border-color: var(--green); }
+.summ-wo-decline { color: var(--gray-500); }
+.summ-wo-decline:hover:not(:disabled) { background: var(--red-light); border-color: var(--red); color: var(--red); }
+.summ-wo-btn:disabled { opacity: 0.45; cursor: default; }
+.summ-wo-approved-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #047857;
+  background: var(--green-light);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Recent activity panel ─────────────────────────────────────────────── */
+.summ-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.summ-activity-row:last-child { border-bottom: none; }
+.summ-act-main { flex: 1; min-width: 0; }
+.summ-act-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.summ-act-date { font-size: 11.5px; color: var(--gray-400); margin-top: 2px; }
+.summ-photo-chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--teal-dark);
+  background: var(--teal-light);
+  border-radius: 999px;
+  padding: 2px 9px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.summ-activity-footer {
+  padding: 10px 22px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal-dark);
+  cursor: pointer;
+  border-top: 1px solid var(--gray-100);
+}
+.summ-activity-footer:hover { text-decoration: underline; }
