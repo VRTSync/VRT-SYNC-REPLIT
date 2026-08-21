@@ -41,6 +41,7 @@ import {
 import {
   parseSeasonal, previewSeasonal, commitSeasonal,
 } from "../seasonalImporter";
+import { normalizeAcknowledgedCodes } from "../importAcknowledgements";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
 import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments, communities } from "@workspace/db";
@@ -4657,7 +4658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!parsed?.batchLabel || !preview) {
         return void res.status(400).json({ error: "Missing parsed or preview data" });
       }
-      const codes = Array.isArray(acknowledgedCodes) ? acknowledgedCodes : [];
+      const codes = normalizeAcknowledgedCodes(acknowledgedCodes);
       const result = await commitMasterBill(parsed, preview, pool, req.session.userId!, codes);
       res.json(result);
     } catch (error: any) {
@@ -4698,15 +4699,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/import/seasonal/commit", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { allRows }: { allRows: Record<string, any>[] } = req.body;
+      const { allRows, acknowledgedCodes }: {
+        allRows: Record<string, any>[];
+        acknowledgedCodes?: string[];
+      } = req.body;
       if (!allRows || !Array.isArray(allRows)) {
         return void res.status(400).json({ error: "Missing allRows in request body" });
       }
-      const result = await commitSeasonal(allRows, pool, req.session.userId!);
+      const codes  = normalizeAcknowledgedCodes(acknowledgedCodes);
+      const result = await commitSeasonal(allRows, pool, req.session.userId!, codes);
       res.json(result);
     } catch (error: any) {
       console.error("Seasonal commit error:", error);
-      res.status(500).json({ error: error.message || "Failed to commit seasonal import" });
+      // Acknowledgement failures are caller-correctable and carry their own
+      // status; anything else is a genuine server error.
+      const status = typeof error?.statusCode === "number" ? error.statusCode : 500;
+      res.status(status).json({ error: error.message || "Failed to commit seasonal import" });
     }
   });
 

@@ -42,7 +42,17 @@
 
 import * as XLSX from "xlsx";
 import pg from "pg";
-import { KNOWN_PNC_CODES, SERVICE_ACCOUNT_USERNAME, SERVICE_ACCOUNT_DISPLAY_NAME } from "./masterBillImporter";
+import {
+  KNOWN_PNC_CODES,
+  PILOT_COMMUNITY_NAMES,
+  SERVICE_ACCOUNT_USERNAME,
+  SERVICE_ACCOUNT_DISPLAY_NAME,
+} from "./masterBillImporter";
+import {
+  ImportAcknowledgementError,
+  reconcileAcknowledgements,
+  type UnmatchedEntry,
+} from "./importAcknowledgements";
 
 const { Pool } = pg;
 
@@ -123,8 +133,24 @@ export interface SeasonalSchedulePlan {
   scheduledVisits: number;
 }
 
+/**
+ * A pilot community that has no matching row in the database.
+ *
+ * Unlike the master bill's unmatched codes, this carries no row count or
+ * amount: the seasonal programme is expanded across the communities that
+ * *did* resolve, so a missing one contributes nothing to skip — it simply is
+ * not expanded into. Acknowledging it therefore lifts the commit block without
+ * changing a single projected figure. The name is a label only.
+ */
+export interface SeasonalUnmatchedCommunity extends UnmatchedEntry {}
+
 export interface SeasonalPreviewResult {
   blockingErrors: string[];
+  /**
+   * Pilot communities the resolver could not find. Not blocking errors: each
+   * one is an acknowledgeable exclusion the admin ticks to enable Commit.
+   */
+  unmatchedCommunities: SeasonalUnmatchedCommunity[];
   warnings: string[];
   communityMapping: CommunityMappingRow[];
   schedulePlans: SeasonalSchedulePlan[];
@@ -142,6 +168,8 @@ export interface SeasonalPreviewResult {
     completionsToInsert: number;
     skippedRows: number;
     communities: number;
+    /** Size of the fixed pilot allowlist — the denominator for the scope line. */
+    pilotCommunities: number;
   };
 }
 
@@ -154,6 +182,12 @@ export interface SeasonalCommitResult {
   completionsInserted: number;
   batchId: string;
   undoSQL: string;
+  /** Pilot communities the admin explicitly acknowledged as excluded. */
+  acknowledgedCodes: string[];
+  /** How many pilot communities this run actually wrote to. */
+  communitiesImported: number;
+  /** Size of the pilot allowlist, so the summary can read "10 of 11". */
+  pilotCommunities: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +401,11 @@ export function parseSeasonal(buffer: Buffer, filename?: string): SeasonalParseR
 
 async function resolvePilotCommunities(
   client: pg.PoolClient | InstanceType<typeof Pool>,
-): Promise<{ communityMapping: CommunityMappingRow[]; blockingErrors: string[] }> {
+): Promise<{
+  communityMapping: CommunityMappingRow[];
+  unmatchedCommunities: SeasonalUnmatchedCommunity[];
+  blockingErrors: string[];
+}> {
   const codes = [...KNOWN_PNC_CODES];
   const placeholders = codes.map((_, i) => `$${i + 1}`).join(", ");
 
@@ -382,6 +420,7 @@ async function resolvePilotCommunities(
   );
 
   const blockingErrors: string[] = [];
+  const unmatchedCommunities: SeasonalUnmatchedCommunity[] = [];
 
   // Group by code — flag missing and ambiguous
   const byCode = new Map<string, typeof result.rows[0][]>();
@@ -394,7 +433,15 @@ async function resolvePilotCommunities(
   for (const code of codes) {
     const matches = byCode.get(code) ?? [];
     if (matches.length === 0) {
-      blockingErrors.push(`Pilot community "${code}" — not found in the database`);
+      // Not a blocking error string: a pilot branch that is simply not in this
+      // organisation is an acknowledgeable exclusion, surfaced as structured
+      // data so the preview can render a checkbox for it. Ambiguous and
+      // cross-org cases below stay hard blocks — they are data faults, not
+      // portfolio decisions.
+      unmatchedCommunities.push({
+        code,
+        ...(PILOT_COMMUNITY_NAMES[code] ? { name: PILOT_COMMUNITY_NAMES[code] } : {}),
+      });
     } else if (matches.length > 1) {
       blockingErrors.push(`Pilot community "${code}" — ${matches.length} communities share this code (ambiguous)`);
     } else {
@@ -421,7 +468,7 @@ async function resolvePilotCommunities(
     }
   }
 
-  return { communityMapping, blockingErrors };
+  return { communityMapping, unmatchedCommunities, blockingErrors };
 }
 
 // ---------------------------------------------------------------------------
@@ -486,8 +533,14 @@ export async function previewSeasonal(
   const layoutErrors = assertContractLayout(allRows);
   blockingErrors.push(...layoutErrors);
 
-  // Resolve pilot-org communities (read-only pool)
-  const { communityMapping, blockingErrors: communityErrors } = await resolvePilotCommunities(pool);
+  // Resolve pilot-org communities (read-only pool). Unmatched communities are
+  // returned separately from blockingErrors: they gate Commit through the
+  // acknowledgement checkboxes, not through the error panel.
+  const {
+    communityMapping,
+    unmatchedCommunities,
+    blockingErrors: communityErrors,
+  } = await resolvePilotCommunities(pool);
   blockingErrors.push(...communityErrors);
 
   // Resolve service account
@@ -586,6 +639,7 @@ export async function previewSeasonal(
 
   return {
     blockingErrors,
+    unmatchedCommunities,
     warnings,
     communityMapping,
     schedulePlans,
@@ -603,6 +657,7 @@ export async function previewSeasonal(
       completionsToInsert: totalCompletions,
       skippedRows,
       communities:         communityMapping.length,
+      pilotCommunities:    KNOWN_PNC_CODES.size,
     },
   };
 }
@@ -615,6 +670,7 @@ export async function commitSeasonal(
   allRows: Record<string, any>[],
   pool: InstanceType<typeof Pool>,
   runByUserId: string,
+  acknowledgedCodes: string[] = [],
 ): Promise<SeasonalCommitResult> {
   // ── Server-side guard: re-run fixed-layout assertions ─────────────────────
   // This prevents a client from bypassing parse validation and committing
@@ -633,6 +689,8 @@ export async function commitSeasonal(
   let tasksInserted       = 0;
   let tasksSkipped        = 0;
   let completionsInserted = 0;
+  let acknowledgedForRun: string[] = [];
+  let communitiesImported = 0;
 
   // Generate batchId upfront so we can embed it in notes/fingerprints
   const { randomUUID } = await import("node:crypto");
@@ -645,19 +703,40 @@ export async function commitSeasonal(
     // ── Service account ──────────────────────────────────────────────────────
     const serviceAccountId = await resolveOrCreateServiceAccount(client);
 
-    // ── Resolve pilot-org communities — must ALL resolve ─────────────────────
-    const { communityMapping, blockingErrors: communityErrors } = await resolvePilotCommunities(client);
+    // ── Resolve pilot-org communities — resolved + acknowledged must be all ──
+    // Community resolution is re-derived here against the transaction client.
+    // Nothing the client posted (preview object, acknowledgement list) is
+    // trusted as the authority for which communities exist.
+    const {
+      communityMapping,
+      unmatchedCommunities,
+      blockingErrors: communityErrors,
+    } = await resolvePilotCommunities(client);
+
+    // Ambiguous codes and cross-tenant spans remain hard blocks.
     if (communityErrors.length > 0) {
       throw new Error(
-        `Cannot commit — ${communityErrors.length} community code(s) did not resolve:\n` +
+        `Cannot commit — ${communityErrors.length} community resolution error(s):\n` +
         communityErrors.map(e => `  • ${e}`).join("\n"),
       );
     }
-    // All KNOWN_PNC_CODES must have exactly one match
-    if (communityMapping.length !== KNOWN_PNC_CODES.size) {
+
+    // An acknowledged code must genuinely be unmatched server-side, and every
+    // server-unmatched community must be acknowledged.
+    const { acknowledged } = reconcileAcknowledgements({
+      serverUnmatched:   unmatchedCommunities.map(u => u.code),
+      acknowledgedCodes,
+      codeNoun:          "pilot community",
+    });
+
+    // Resolved + acknowledged must still account for the whole pilot list;
+    // anything short of that means the allowlist and the database disagree in
+    // a way nobody signed off on, so abort rather than import partially.
+    if (communityMapping.length + acknowledged.size !== KNOWN_PNC_CODES.size) {
       throw new Error(
-        `Cannot commit — expected ${KNOWN_PNC_CODES.size} pilot communities but only ` +
-        `${communityMapping.length} resolved. Aborting to prevent partial import.`,
+        `Cannot commit — expected ${KNOWN_PNC_CODES.size} pilot communities but ` +
+        `${communityMapping.length} resolved and ${acknowledged.size} were acknowledged ` +
+        `as excluded. Aborting to prevent partial import.`,
       );
     }
 
@@ -773,7 +852,7 @@ export async function commitSeasonal(
                (community_id, title, description, status, priority, origin, category,
                 schedule_instance_key, window_start, window_end, due_date,
                 created_by, import_fingerprint)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11, $12)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date, $10::timestamp, $11, $12)
              RETURNING id`,
             [
               com.id,
@@ -807,10 +886,14 @@ export async function commitSeasonal(
     }
 
     // ── Log import batch ──────────────────────────────────────────────────────
+    // acknowledged_codes records which pilot branches were deliberately left
+    // out, so a later reader can tell "10 of 11 on purpose" from "one silently
+    // went missing" without the original upload.
     await client.query(
       `INSERT INTO import_batches
-         (id, mode, batch_label, run_by, schedule_count, visit_count, task_count, completion_count)
-       VALUES ($1, 'seasonal', $2, $3, $4, $5, $6, $7)`,
+         (id, mode, batch_label, run_by, schedule_count, visit_count, task_count,
+          completion_count, acknowledged_codes)
+       VALUES ($1, 'seasonal', $2, $3, $4, $5, $6, $7, $8::jsonb)`,
       [
         batchId,
         `contract_schedule_${new Date().toISOString().slice(0, 10)}`,
@@ -819,8 +902,12 @@ export async function commitSeasonal(
         visitsInserted,
         tasksInserted,
         completionsInserted,
+        JSON.stringify([...acknowledged].sort()),
       ],
     );
+
+    acknowledgedForRun  = [...acknowledged].sort();
+    communitiesImported = communityMapping.length;
 
     await client.query("COMMIT");
   } catch (err) {
@@ -859,5 +946,8 @@ export async function commitSeasonal(
     completionsInserted,
     batchId,
     undoSQL,
+    acknowledgedCodes: acknowledgedForRun,
+    communitiesImported,
+    pilotCommunities: KNOWN_PNC_CODES.size,
   };
 }

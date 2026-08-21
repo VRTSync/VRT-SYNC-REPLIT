@@ -14,11 +14,12 @@ AdminRouter.register('imports/seed', async function(container) {
   let mbAcknowledgedSet = new Set(); // codes explicitly acknowledged by the admin
 
   // Seasonal state
-  let seFile          = null;
-  let seParseResult   = null;
-  let seAllRows       = null;
-  let sePreviewResult = null;
-  let seFileToken     = 0;
+  let seFile            = null;
+  let seParseResult     = null;
+  let seAllRows         = null;
+  let sePreviewResult   = null;
+  let seFileToken       = 0;
+  let seAcknowledgedSet = new Set(); // pilot codes explicitly acknowledged as excluded
 
   const PERIOD_OPTIONS = [
     { value: 'master_bill_2026_05', label: 'May 2026 (master_bill_2026_05)' },
@@ -54,7 +55,7 @@ AdminRouter.register('imports/seed', async function(container) {
     });
     document.getElementById('si-mode-se').addEventListener('click', () => {
       mode = 'seasonal'; currentStep = 1;
-      seParseResult = null; sePreviewResult = null;
+      seParseResult = null; sePreviewResult = null; seAcknowledgedSet = new Set();
       render();
     });
 
@@ -96,6 +97,57 @@ AdminRouter.register('imports/seed', async function(container) {
       if (currentStep===3) return renderSeStep3();  // Commit result
     }
     return '';
+  }
+
+  // ── Shared acknowledgement plumbing (master bill + seasonal) ──────────────
+  // An unmatched code is never a hard block and never a bulk action: each one
+  // gets its own checkbox, because each exclusion is a separate decision that
+  // is recorded individually on the batch. Both importers render the same
+  // panel and share the same gate, so they cannot drift apart again.
+
+  function renderAckPanel({ title, entries, ackSet, checkboxClass, describe }) {
+    if (!entries || entries.length === 0) return '';
+    return `
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:16px">
+        <div style="font-weight:600;color:#92400e;margin-bottom:10px;font-size:13px">
+          ⚠ ${esc(title)}
+        </div>
+        ${entries.map(u => `
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" class="${checkboxClass}" data-code="${esc(u.code)}"
+                   ${ackSet.has(u.code) ? 'checked' : ''}>
+            <strong>${esc(u.code)}</strong>
+            ${describe(u)}
+          </label>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // Commit stays disabled while any other blocking error exists AND until every
+  // unmatched entry is ticked; the button label always says which one applies.
+  function ackCommitGate({ hasBlockingErrors, entries, ackSet, pendingLabel }) {
+    const list           = entries ?? [];
+    const allAcknowledged = list.every(u => ackSet.has(u.code));
+    return {
+      allAcknowledged,
+      canCommit: !hasBlockingErrors && allAcknowledged,
+      label: hasBlockingErrors
+        ? 'Fix Errors Before Committing'
+        : !allAcknowledged ? pendingLabel : 'Commit to Production →',
+    };
+  }
+
+  function bindAckCheckboxes(checkboxClass, ackSet, onChange) {
+    document.querySelectorAll('.' + checkboxClass).forEach(cb => {
+      cb.addEventListener('change', () => {
+        const code = cb.dataset.code;
+        if (!code) return;
+        if (cb.checked) ackSet.add(code);
+        else ackSet.delete(code);
+        onChange();
+      });
+    });
   }
 
   // ── Master Bill Step 1 — Upload ───────────────────────────────────────────
@@ -227,21 +279,24 @@ AdminRouter.register('imports/seed', async function(container) {
       <strong>Completion Rows:</strong> ${eff.completionRows}`;
   }
 
+  function mbGate() {
+    const p = mbPreviewResult;
+    return ackCommitGate({
+      hasBlockingErrors: ((p?.blockingErrors) ?? []).length > 0,
+      entries:           (p?.unmatchedCodes) ?? [],
+      ackSet:            mbAcknowledgedSet,
+      pendingLabel:      'Acknowledge All Unmatched Codes to Commit',
+    });
+  }
+
   function mbUpdateCommitGate() {
     const p = mbPreviewResult;
     if (!p) return;
-    const hasBlockingErrors = (p.blockingErrors ?? []).length > 0;
-    const unmatchedCodes    = p.unmatchedCodes ?? [];
-    const allAcknowledged   = unmatchedCodes.every(u => mbAcknowledgedSet.has(u.code));
-    const canCommit         = !hasBlockingErrors && allAcknowledged;
+    const gate = mbGate();
     const btn = document.getElementById('mb-commit-btn');
     if (btn) {
-      btn.disabled = !canCommit;
-      btn.textContent = hasBlockingErrors
-        ? 'Fix Errors Before Committing'
-        : !allAcknowledged
-          ? 'Acknowledge All Unmatched Codes to Commit'
-          : 'Commit to Production →';
+      btn.disabled = !gate.canCommit;
+      btn.textContent = gate.label;
     }
     // Refresh every derived figure together so the cards, the skip table and
     // the totals bar can never disagree with each other.
@@ -262,8 +317,7 @@ AdminRouter.register('imports/seed', async function(container) {
     const hasBlockingErrors = (p.blockingErrors ?? []).length > 0;
     const unmatchedCodes    = p.unmatchedCodes ?? [];
     const hasUnmatched      = unmatchedCodes.length > 0;
-    const allAcknowledged   = !hasUnmatched || unmatchedCodes.every(u => mbAcknowledgedSet.has(u.code));
-    const canCommit         = !hasBlockingErrors && allAcknowledged;
+    const gate              = mbGate();
 
     return `
       <div style="max-width:860px">
@@ -280,22 +334,16 @@ AdminRouter.register('imports/seed', async function(container) {
           </div>
         ` : '')}
 
-        ${hasUnmatched ? `
-          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:16px">
-            <div style="font-weight:600;color:#92400e;margin-bottom:10px;font-size:13px">
-              ⚠ Unmatched PNC Codes — acknowledge each to enable Commit
-            </div>
-            ${unmatchedCodes.map(u => `
-              <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer">
-                <input type="checkbox" class="mb-ack-checkbox" data-code="${esc(u.code)}"
-                       ${mbAcknowledgedSet.has(u.code) ? 'checked' : ''}>
-                <strong>${esc(u.code)}</strong>
-                <span style="color:#374151">${u.rowCount} row${u.rowCount !== 1 ? 's' : ''} / $${u.totalAmount.toFixed(2)}</span>
-                <span style="color:#9ca3af;font-size:12px">— no matching community; rows will be skipped</span>
-              </label>
-            `).join('')}
-          </div>
-        ` : ''}
+        ${renderAckPanel({
+          title: 'Unmatched PNC Codes — acknowledge each to enable Commit',
+          entries: unmatchedCodes,
+          ackSet: mbAcknowledgedSet,
+          checkboxClass: 'mb-ack-checkbox',
+          describe: u => `
+            <span style="color:#374151">${u.rowCount} row${u.rowCount !== 1 ? 's' : ''} / $${u.totalAmount.toFixed(2)}</span>
+            <span style="color:#9ca3af;font-size:12px">— no matching community; rows will be skipped</span>
+          `,
+        })}
 
         <!-- Community Mapping Table — always visible, prominent -->
         <div style="background:#fff;border:2px solid #25C1AC;border-radius:8px;padding:16px;margin-bottom:16px">
@@ -398,8 +446,8 @@ AdminRouter.register('imports/seed', async function(container) {
 
         <div style="display:flex;justify-content:space-between">
           <button class="btn btn-ghost" id="mb-back-step1">← Back to Upload</button>
-          <button class="btn btn-primary" id="mb-commit-btn" ${canCommit ? '' : 'disabled'}>
-            ${hasBlockingErrors ? 'Fix Errors Before Committing' : !allAcknowledged ? 'Acknowledge All Unmatched Codes to Commit' : 'Commit to Production →'}
+          <button class="btn btn-primary" id="mb-commit-btn" ${gate.canCommit ? '' : 'disabled'}>
+            ${gate.label}
           </button>
         </div>
       </div>
@@ -444,10 +492,60 @@ AdminRouter.register('imports/seed', async function(container) {
   }
 
   // ── Seasonal Step 2 — Preview ─────────────────────────────────────────────
+
+  function seGate() {
+    const p = sePreviewResult;
+    return ackCommitGate({
+      hasBlockingErrors: ((p?.blockingErrors) ?? []).length > 0,
+      entries:           (p?.unmatchedCommunities) ?? [],
+      ackSet:            seAcknowledgedSet,
+      pendingLabel:      'Acknowledge All Unmatched Communities to Commit',
+    });
+  }
+
+  // The projected counts are computed from the communities that RESOLVED, so
+  // they are already correct for a short portfolio and must never be
+  // recalculated when a checkbox is ticked. This line only labels their scope
+  // so nobody reads them as full-portfolio figures.
+  function seScopeLine() {
+    const p = sePreviewResult;
+    if (!p) return '';
+    const excluded = (p.unmatchedCommunities ?? []).map(u => u.code);
+    if (excluded.length === 0) return '';
+    const resolved = p.counts?.communities ?? 0;
+    const total    = p.counts?.pilotCommunities ?? (resolved + excluded.length);
+    return `Projected for ${resolved} of ${total} pilot locations — ${esc(excluded.join(', '))} excluded.`;
+  }
+
+  // Human-readable note about the exclusions, reused by the confirm dialog.
+  function seExclusionNote() {
+    const excluded = [...seAcknowledgedSet].sort();
+    if (excluded.length === 0) return '';
+    return `\n\nExcluding ${excluded.join(', ')} as acknowledged unmatched pilot ` +
+           `${excluded.length === 1 ? 'community' : 'communities'} — no rows will reference ` +
+           `${excluded.length === 1 ? 'it' : 'them'}.`;
+  }
+
+  function seUpdateCommitGate() {
+    if (!sePreviewResult) return;
+    const gate = seGate();
+    const btn = document.getElementById('se-commit-btn');
+    if (btn) {
+      btn.disabled = !gate.canCommit;
+      btn.textContent = gate.label;
+    }
+    // Deliberately nothing else refreshes here: acknowledging a community
+    // lifts the commit block, it does not change a single projected figure.
+  }
+
   function renderSeStep2() {
     if (!sePreviewResult) return '<p style="color:#6b7280">Generating preview…</p>';
     const p = sePreviewResult;
     const hasErrors = (p.blockingErrors && p.blockingErrors.length > 0);
+    const unmatchedCommunities = p.unmatchedCommunities ?? [];
+    const hasUnmatched = unmatchedCommunities.length > 0;
+    const gate = seGate();
+    const scopeLine = seScopeLine();
 
     // Build unique list of schedules grouped by community for the per-branch table
     const communitySchedules = {};
@@ -480,11 +578,22 @@ AdminRouter.register('imports/seed', async function(container) {
             <div style="font-weight:600;color:#dc2626;margin-bottom:8px;font-size:13px">⛔ Blocking Errors — Commit is disabled</div>
             ${p.blockingErrors.map(e => `<div style="color:#dc2626;font-size:13px;margin-bottom:4px">• ${esc(e)}</div>`).join('')}
           </div>
-        ` : `
+        ` : (!hasUnmatched ? `
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#15803d">
             ✓ All validations passed — ready to commit
           </div>
-        `}
+        ` : '')}
+
+        ${renderAckPanel({
+          title: 'Unmatched Pilot Communities — acknowledge each to enable Commit',
+          entries: unmatchedCommunities,
+          ackSet: seAcknowledgedSet,
+          checkboxClass: 'se-ack-checkbox',
+          describe: u => `
+            ${u.name ? `<span style="color:#374151">— ${esc(u.name)}</span>` : ''}
+            <span style="color:#9ca3af;font-size:12px">— not in this organisation — proceed without it</span>
+          `,
+        })}
 
         ${p.warnings && p.warnings.length > 0 ? `
           <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#92400e">
@@ -540,6 +649,12 @@ AdminRouter.register('imports/seed', async function(container) {
           `).join('')}
         </div>
 
+        ${scopeLine ? `
+          <div id="se-scope-line" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:13px;color:#374151">
+            <strong>Scope:</strong> ${scopeLine}
+          </div>
+        ` : ''}
+
         <!-- Per-branch projected counts -->
         ${branchRows.length > 0 ? `
           <div style="margin-bottom:16px">
@@ -570,8 +685,8 @@ AdminRouter.register('imports/seed', async function(container) {
 
         <div style="display:flex;justify-content:space-between">
           <button class="btn btn-ghost" id="se-back-step1">← Back to Upload</button>
-          <button class="btn btn-primary" id="se-commit-btn" ${hasErrors?'disabled':''}>
-            ${hasErrors ? 'Fix Errors Before Committing' : 'Commit to Production →'}
+          <button class="btn btn-primary" id="se-commit-btn" ${gate.canCommit ? '' : 'disabled'}>
+            ${gate.label}
           </button>
         </div>
       </div>
@@ -703,15 +818,7 @@ AdminRouter.register('imports/seed', async function(container) {
       if (commitBtn) commitBtn.addEventListener('click', handleMbCommit);
 
       // Bind acknowledgement checkboxes for unmatched codes
-      document.querySelectorAll('.mb-ack-checkbox').forEach(cb => {
-        cb.addEventListener('change', () => {
-          const code = cb.dataset.code;
-          if (!code) return;
-          if (cb.checked) mbAcknowledgedSet.add(code);
-          else mbAcknowledgedSet.delete(code);
-          mbUpdateCommitGate();
-        });
-      });
+      bindAckCheckboxes('mb-ack-checkbox', mbAcknowledgedSet, mbUpdateCommitGate);
     }
 
     // ── Seasonal handlers ──
@@ -742,12 +849,16 @@ AdminRouter.register('imports/seed', async function(container) {
       const backStep1 = document.getElementById('se-back-step1');
       if (backStep1) backStep1.addEventListener('click', () => {
         currentStep = 1; seParseResult = null; sePreviewResult = null;
+        seAcknowledgedSet = new Set();
         document.getElementById('si-stepper').innerHTML = renderStepper();
         bindStepHandlers();
       });
 
       const commitBtn = document.getElementById('se-commit-btn');
       if (commitBtn) commitBtn.addEventListener('click', handleSeCommit);
+
+      // Acknowledgement checkboxes for unmatched pilot communities
+      bindAckCheckboxes('se-ack-checkbox', seAcknowledgedSet, seUpdateCommitGate);
     }
   }
 
@@ -933,7 +1044,10 @@ AdminRouter.register('imports/seed', async function(container) {
     if (nameEl) nameEl.textContent = `${file.name} (${(file.size/1024).toFixed(1)} KB)`;
     const btn = document.getElementById('se-parse-btn');
     if (btn) btn.disabled = false;
-    seParseResult = null; sePreviewResult = null; seFileToken++;
+    // Reset preview/commit/acknowledgements when a new file is selected —
+    // an acknowledgement belongs to the upload it was made against.
+    seParseResult = null; sePreviewResult = null; seAcknowledgedSet = new Set();
+    seFileToken++;
   }
 
   // ── Seasonal parse + auto-preview ────────────────────────────────────────
@@ -988,11 +1102,15 @@ AdminRouter.register('imports/seed', async function(container) {
     if (!sePreviewResult || !seAllRows) return;
     if (sePreviewResult.blockingErrors?.length > 0) return;
 
+    // Hard guard: every unmatched pilot community must be acknowledged first.
+    const unmatchedCommunities = sePreviewResult.unmatchedCommunities ?? [];
+    if (unmatchedCommunities.some(u => !seAcknowledgedSet.has(u.code))) return;
+
     const c = sePreviewResult.counts;
     const confirmed = window.confirm(
       `This will write ${c.schedulesToCreate} schedule(s), ${c.visitsToInsert} visits, ` +
       `${c.tasksToInsert} tasks, and ${c.completionsToInsert} completions to PRODUCTION ` +
-      `across ${c.communities} communities.\n\nProceed?`
+      `across ${c.communities} communities.${seExclusionNote()}\n\nProceed?`
     );
     if (!confirmed) return;
 
@@ -1002,7 +1120,10 @@ AdminRouter.register('imports/seed', async function(container) {
     try {
       const result = await apiFetch('/api/admin/import/seasonal/commit', {
         method: 'POST',
-        body: JSON.stringify({ allRows: seAllRows }),
+        body: JSON.stringify({
+          allRows: seAllRows,
+          acknowledgedCodes: [...seAcknowledgedSet],
+        }),
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
@@ -1026,6 +1147,17 @@ AdminRouter.register('imports/seed', async function(container) {
               </div>
               <div style="margin-top:8px;font-size:12px;color:#6b7280">Batch ID: <code>${esc(result.batchId)}</code></div>
             </div>
+            ${(result.acknowledgedCodes ?? []).length > 0 ? `
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:16px">
+                <h4 style="font-size:13px;font-weight:600;margin-bottom:8px;color:#92400e">Acknowledged Exclusions</h4>
+                <p style="font-size:12px;color:#92400e;margin:0">
+                  Imported ${result.communitiesImported ?? 0} of ${result.pilotCommunities ?? 0} pilot
+                  communities. Excluded by explicit acknowledgement:
+                  <strong>${esc((result.acknowledgedCodes ?? []).join(', '))}</strong>.
+                  Recorded on batch <code style="font-size:11px">${esc(result.batchId)}</code>.
+                </p>
+              </div>
+            ` : ''}
             <div>
               <h4 style="font-size:13px;font-weight:600;margin-bottom:8px">Undo SQL (copy before leaving this page)</h4>
               <div style="position:relative">
@@ -1043,6 +1175,7 @@ AdminRouter.register('imports/seed', async function(container) {
         });
         document.getElementById('se-new-import')?.addEventListener('click', () => {
           currentStep = 1; seParseResult = null; sePreviewResult = null; seFile = null;
+          seAcknowledgedSet = new Set();
           document.getElementById('si-stepper').innerHTML = renderStepper();
           bindStepHandlers();
         });

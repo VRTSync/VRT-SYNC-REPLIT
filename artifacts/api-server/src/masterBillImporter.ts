@@ -11,6 +11,11 @@
 
 import * as XLSX from "xlsx";
 import pg from "pg";
+import {
+  ImportAcknowledgementError,
+  reconcileAcknowledgements,
+  type UnmatchedEntry,
+} from "./importAcknowledgements";
 
 const { Pool } = pg;
 
@@ -22,6 +27,25 @@ export const KNOWN_PNC_CODES = new Set([
   "FB01", "FB02", "FB08", "FB15", "FB16",
   "FB1B", "FB36", "FB45", "FB4F", "FB5F", "FB65",
 ]);
+
+/**
+ * Display names for the eleven pilot branches, used to label an unmatched code
+ * in an acknowledgement checkbox. Purely cosmetic: a code with no entry here
+ * renders on its own, and nothing downstream depends on the name.
+ */
+export const PILOT_COMMUNITY_NAMES: Record<string, string> = {
+  FB01: "104th and Federal",
+  FB02: "136th and Colorado",
+  FB08: "104th and Colorado",
+  FB15: "50th and Bridge",
+  FB16: "Brighton",
+  FB1B: "104th and Chambers",
+  FB36: "Colfax and Wadsworth",
+  FB45: "88th and Wadsworth",
+  FB4F: "120th and Sheridan",
+  FB5F: "Baseline and Sheridan",
+  FB65: "136th and Zuni",
+};
 
 export const MONTHLY_CONTRACT_TYPE = "Monthly Landscape Contract";
 export const IMPORT_ORIGIN = "master_bill_import";
@@ -92,9 +116,20 @@ export interface CommunityRecord {
   organizationId: string;
 }
 
+/**
+ * The shared unmatched-entry shape plus the master bill's own descriptive
+ * fields: acknowledging a code here skips real invoice rows, so the admin has
+ * to see how many rows and how many dollars the exclusion costs.
+ */
+export interface MasterBillUnmatchedCode extends UnmatchedEntry {
+  rowCount: number;
+  totalAmount: number;
+  excelRows: number[];
+}
+
 export interface MasterBillPreviewResult {
   blockingErrors: string[];
-  unmatchedCodes: Array<{ code: string; rowCount: number; totalAmount: number; excelRows: number[] }>;
+  unmatchedCodes: MasterBillUnmatchedCode[];
   communityMapping: Array<{ code: string; name: string; id: string; orgId: string }>;
   skippedRows: MasterBillParseResult["skippedRows"];
   clampedRows: MasterBillParseResult["clampedRows"];
@@ -138,11 +173,11 @@ export interface MasterBillCommitResult {
 
 /**
  * Thrown when a commit request is rejected for a caller-correctable reason
- * (bad acknowledgement list, unacknowledged unmatched code, …). Carries an
- * HTTP status so the route layer does not have to string-match messages.
+ * (bad acknowledgement list, unacknowledged unmatched code, …). Extends the
+ * shared acknowledgement error so both importers surface the same HTTP status
+ * to the route layer, which therefore never has to string-match messages.
  */
-export class MasterBillValidationError extends Error {
-  readonly statusCode = 400;
+export class MasterBillValidationError extends ImportAcknowledgementError {
   constructor(message: string) {
     super(message);
     this.name = "MasterBillValidationError";
@@ -627,25 +662,14 @@ export async function commitMasterBill(
       );
     }
 
-    const serverUnmatched = new Set(resolution.unmatched);
-
-    // (a) Every acknowledged code must genuinely be unmatched on the server.
-    for (const code of acknowledgedSet) {
-      if (!serverUnmatched.has(code)) {
-        throw new MasterBillValidationError(
-          `Acknowledged code "${code}" was not flagged as unmatched in the preview — request rejected.`,
-        );
-      }
-    }
-
-    // (b) Every unmatched code must be acknowledged, or commit still blocks.
-    for (const code of serverUnmatched) {
-      if (!acknowledgedSet.has(code)) {
-        throw new MasterBillValidationError(
-          `Cannot commit — unmatched PNC code "${code}" has not been acknowledged.`,
-        );
-      }
-    }
+    // (a) Every acknowledged code must genuinely be unmatched on the server, and
+    // (b) every unmatched code must be acknowledged, or commit still blocks.
+    // Both directions live in the shared reconciler the seasonal importer uses.
+    reconcileAcknowledgements({
+      serverUnmatched:   resolution.unmatched,
+      acknowledgedCodes: acknowledgedSet,
+      codeNoun:          "PNC code",
+    });
 
     const orgIds = new Set(resolution.mapping.map(c => c.orgId));
     if (orgIds.size > 1) {
