@@ -3532,7 +3532,7 @@ const NOT_TERMINAL = "cancelled_at IS NULL AND declined_at IS NULL";
 
 // Origins whose completions are never eligible for the photo-rate KPI — these are
 // historical imports that never carried a field photo opportunity.
-export const IMPORT_ORIGINS = ['master_bill_import'] as const;
+export const IMPORT_ORIGINS = ['master_bill_import', 'contract_schedule'] as const;
 /** Returns SQL predicate fragments (IS DISTINCT FROM) excluding import-origin rows for the given tasks-table alias.
  *  Uses IS DISTINCT FROM instead of NOT IN so that NULL-origin rows (ordinary contractor/admin work) are never dropped. */
 export function importOriginExclude(tableAlias: string = 't'): string {

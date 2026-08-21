@@ -40,7 +40,6 @@ import {
 } from "../masterBillImporter";
 import {
   parseSeasonal, previewSeasonal, commitSeasonal,
-  type SeasonalColumnMappings,
 } from "../seasonalImporter";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
@@ -4677,11 +4676,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/import/seasonal/preview", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { allRows, mappings }: { allRows: Record<string, any>[]; mappings: SeasonalColumnMappings } = req.body;
-      if (!allRows || !mappings?.communityCode || !mappings?.serviceDate || !mappings?.serviceType || !mappings?.taskTitle) {
-        return void res.status(400).json({ error: "Missing allRows or required column mappings" });
+      const { allRows }: { allRows: Record<string, any>[] } = req.body;
+      if (!allRows || !Array.isArray(allRows)) {
+        return void res.status(400).json({ error: "Missing allRows in request body" });
       }
-      const result = await previewSeasonal(allRows, mappings, pool);
+      const result = await previewSeasonal(allRows, pool);
       res.json(result);
     } catch (error: any) {
       console.error("Seasonal preview error:", error);
@@ -4691,11 +4690,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/import/seasonal/commit", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { allRows, mappings }: { allRows: Record<string, any>[]; mappings: SeasonalColumnMappings } = req.body;
-      if (!allRows || !mappings?.communityCode || !mappings?.serviceDate || !mappings?.serviceType || !mappings?.taskTitle) {
-        return void res.status(400).json({ error: "Missing allRows or required column mappings" });
+      const { allRows }: { allRows: Record<string, any>[] } = req.body;
+      if (!allRows || !Array.isArray(allRows)) {
+        return void res.status(400).json({ error: "Missing allRows in request body" });
       }
-      const result = await commitSeasonal(allRows, mappings, pool, req.session.userId!);
+      const result = await commitSeasonal(allRows, pool, req.session.userId!);
       res.json(result);
     } catch (error: any) {
       console.error("Seasonal commit error:", error);
@@ -4765,21 +4764,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
           tasksDeleted = taskResult.rowCount ?? 0;
         } else if (batch.mode === "seasonal") {
+          // 1. Delete task completions scoped to this batch (cascade would handle it, but be explicit)
+          await client.query(
+            `DELETE FROM task_completions
+              WHERE task_id IN (
+                SELECT id FROM tasks
+                 WHERE import_fingerprint = $1
+                   AND origin = 'contract_schedule'
+              )`,
+            [id],
+          );
+
+          // 2. Delete tasks scoped to this batch only — never touches other orgs
+          const taskResult = await client.query(
+            `DELETE FROM tasks
+              WHERE import_fingerprint = $1
+                AND origin = 'contract_schedule'`,
+            [id],
+          );
+          tasksDeleted = taskResult.rowCount ?? 0;
+
+          // 3. Delete service_visits that were inserted by this batch.
+          //    Each newly-inserted visit carries notes = 'batch:{id}', covering
+          //    both new schedules and pre-existing (reused) schedules alike.
           const visitResult = await client.query(
-            `DELETE FROM service_visits sv
-              USING tasks t
-              WHERE t.origin = 'seasonal_import'
-                AND sv.service_date = ANY(
-                  SELECT DISTINCT window_start FROM tasks
-                  WHERE origin = 'seasonal_import'
-                )`,
+            `DELETE FROM service_visits WHERE notes = $1`,
+            [`batch:${id}`],
           );
           visitsDeleted = visitResult.rowCount ?? 0;
 
-          const taskResult = await client.query(
-            `DELETE FROM tasks WHERE origin = 'seasonal_import'`,
+          // 4. Delete service_schedules created by this batch — but only if they
+          //    have no visits outside this batch. A schedule reused by a later
+          //    batch will have visits with different (or null) notes; retain it.
+          await client.query(
+            `DELETE FROM service_schedules
+              WHERE notes LIKE $1
+                AND NOT EXISTS (
+                  SELECT 1 FROM service_visits sv
+                   WHERE sv.schedule_id = service_schedules.id
+                     AND (sv.notes IS NULL OR sv.notes != $2)
+                )`,
+            [`%batch:${id}%`, `batch:${id}`],
           );
-          tasksDeleted = taskResult.rowCount ?? 0;
         }
 
         await client.query(`DELETE FROM import_batches WHERE id = $1`, [id]);

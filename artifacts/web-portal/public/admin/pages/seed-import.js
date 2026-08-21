@@ -13,12 +13,11 @@ AdminRouter.register('imports/seed', async function(container) {
   let mbFileToken    = 0;      // increments on new upload, resets commit availability
 
   // Seasonal state
-  let seFile       = null;
-  let seParseResult = null;
-  let seAllRows    = null;
-  let seMappings   = null;
+  let seFile          = null;
+  let seParseResult   = null;
+  let seAllRows       = null;
   let sePreviewResult = null;
-  let seFileToken  = 0;
+  let seFileToken     = 0;
 
   const PERIOD_OPTIONS = [
     { value: 'master_bill_2026_05', label: 'May 2026 (master_bill_2026_05)' },
@@ -64,9 +63,7 @@ AdminRouter.register('imports/seed', async function(container) {
 
   // ── Stepper ────────────────────────────────────────────────────────────────
   function renderStepper() {
-    const steps = mode === 'master_bill'
-      ? [{num:1,label:'Upload'},{num:2,label:'Preview'},{num:3,label:'Commit'}]
-      : [{num:1,label:'Upload'},{num:2,label:'Map Columns'},{num:3,label:'Preview'},{num:4,label:'Commit'}];
+    const steps = [{num:1,label:'Upload'},{num:2,label:'Preview'},{num:3,label:'Commit'}];
 
     return `
       <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid #e5e7eb;padding-bottom:12px">
@@ -94,9 +91,8 @@ AdminRouter.register('imports/seed', async function(container) {
       if (currentStep===3) return renderMbStep3();
     } else {
       if (currentStep===1) return renderSeStep1();
-      if (currentStep===2) return renderSeStep2();
-      if (currentStep===3) return renderSeStep3();
-      if (currentStep===4) return renderSeStep4();
+      if (currentStep===2) return renderSeStep2();  // Preview
+      if (currentStep===3) return renderSeStep3();  // Commit result
     }
     return '';
   }
@@ -299,18 +295,19 @@ AdminRouter.register('imports/seed', async function(container) {
   function renderSeStep1() {
     return `
       <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:24px;max-width:560px">
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:4px">Upload Seasonal Contract File</h3>
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:4px">Upload Contract Task List</h3>
         <p style="font-size:13px;color:#6b7280;margin-bottom:16px">
-          Upload a .xlsx or .csv file containing the seasonal task list.
-          Column mapping will be configured in the next step.
+          Upload the <strong>Contract Task List - VRT.xlsx</strong> file. The importer uses a
+          fixed layout (8 columns, 18 rows) and applies the programme to all 11 pilot-org
+          branches automatically — no column mapping required.
         </p>
         <div style="border:2px dashed #d1d5db;border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s" id="se-dropzone">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" style="margin:0 auto 8px">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p style="color:#6b7280;font-size:13px;margin-bottom:8px">Drag & drop or click to browse</p>
-          <p style="color:#9ca3af;font-size:11px">.xlsx, .csv — Max 50MB</p>
-          <input type="file" id="se-file-input" accept=".xlsx,.csv,.xls" style="display:none">
+          <p style="color:#9ca3af;font-size:11px">.xlsx — Max 50MB</p>
+          <input type="file" id="se-file-input" accept=".xlsx,.xls" style="display:none">
         </div>
         <div id="se-file-info" style="display:none;margin-top:12px;padding:12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px">
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -319,102 +316,44 @@ AdminRouter.register('imports/seed', async function(container) {
           </div>
         </div>
         <div style="margin-top:16px;text-align:right">
-          <button class="btn btn-primary" id="se-parse-btn" disabled>Parse & Continue →</button>
+          <button class="btn btn-primary" id="se-parse-btn" disabled>Parse & Preview →</button>
         </div>
         <div id="se-parse-error" style="display:none;margin-top:12px;color:#ef4444;font-size:13px;background:#fef2f2;padding:8px 12px;border-radius:6px"></div>
       </div>
     `;
   }
 
-  // ── Seasonal Step 2 — Map Columns ─────────────────────────────────────────
+  // ── Seasonal Step 2 — Preview ─────────────────────────────────────────────
   function renderSeStep2() {
-    if (!seParseResult) return '<p>No data parsed yet.</p>';
-    const cols = seParseResult.columns;
-
-    function colOpts(selected) {
-      return `<option value="">— Select column —</option>` +
-        cols.map(c => `<option value="${esc(c)}" ${c===selected?'selected':''}>${esc(c)}</option>`).join('');
-    }
-    function optOpts(selected) {
-      return `<option value="">— None —</option>` +
-        cols.map(c => `<option value="${esc(c)}" ${c===selected?'selected':''}>${esc(c)}</option>`).join('');
-    }
-
-    return `
-      <div style="max-width:700px">
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:4px">Map Columns</h3>
-        <p style="font-size:13px;color:#6b7280;margin-bottom:16px">${seParseResult.totalRows} data rows detected. Map spreadsheet columns to import fields.</p>
-
-        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px">
-          <h4 style="font-size:13px;font-weight:600;margin-bottom:12px">Required Columns</h4>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group">
-              <label class="form-label">Community Code *</label>
-              <select class="form-select se-map" data-field="communityCode">${colOpts('')}</select>
-              <p style="font-size:11px;color:#9ca3af;margin-top:3px">e.g. FB01, FB02 (must match community codes in DB)</p>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Service Date *</label>
-              <select class="form-select se-map" data-field="serviceDate">${colOpts('')}</select>
-              <p style="font-size:11px;color:#9ca3af;margin-top:3px">All dates must be 2026 Wednesdays</p>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Service Type *</label>
-              <select class="form-select se-map" data-field="serviceType">${colOpts('')}</select>
-              <p style="font-size:11px;color:#9ca3af;margin-top:3px">Used to group schedules</p>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Task Title *</label>
-              <select class="form-select se-map" data-field="taskTitle">${colOpts('')}</select>
-            </div>
-          </div>
-        </div>
-
-        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:16px">
-          <h4 style="font-size:13px;font-weight:600;margin-bottom:12px">Optional Columns</h4>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group">
-              <label class="form-label">Description / Notes</label>
-              <select class="form-select se-map" data-field="description">${optOpts('')}</select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Status</label>
-              <select class="form-select se-map" data-field="status">${optOpts('')}</select>
-              <p style="font-size:11px;color:#9ca3af;margin-top:3px">Rows with "completed" create task_completions</p>
-            </div>
-          </div>
-        </div>
-
-        <div style="margin-bottom:16px">
-          <h4 style="font-size:13px;font-weight:600;margin-bottom:8px">Data Preview (first 10 rows)</h4>
-          <div class="table-container" style="max-height:280px;overflow:auto">
-            <table style="font-size:12px">
-              <thead><tr>${cols.map(c => `<th style="white-space:nowrap">${esc(c)}</th>`).join('')}</tr></thead>
-              <tbody>
-                ${seParseResult.rowsPreview.slice(0,10).map(row => `<tr>${cols.map(c => `<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(row[c]??''))}</td>`).join('')}</tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div style="display:flex;justify-content:space-between">
-          <button class="btn btn-ghost" id="se-back-step1">← Back</button>
-          <button class="btn btn-primary" id="se-preview-btn">Generate Preview →</button>
-        </div>
-        <div id="se-map-error" style="display:none;margin-top:12px;color:#ef4444;font-size:13px;background:#fef2f2;padding:8px 12px;border-radius:6px"></div>
-      </div>
-    `;
-  }
-
-  // ── Seasonal Step 3 — Preview ─────────────────────────────────────────────
-  function renderSeStep3() {
-    if (!sePreviewResult) return '<p>Generating preview…</p>';
+    if (!sePreviewResult) return '<p style="color:#6b7280">Generating preview…</p>';
     const p = sePreviewResult;
-    const hasErrors = p.blockingErrors && p.blockingErrors.length > 0;
+    const hasErrors = (p.blockingErrors && p.blockingErrors.length > 0);
+
+    // Build unique list of schedules grouped by community for the per-branch table
+    const communitySchedules = {};
+    (p.schedulePlans || []).forEach(sp => {
+      if (!communitySchedules[sp.communityCode]) {
+        communitySchedules[sp.communityCode] = {
+          code: sp.communityCode, name: sp.communityName, id: sp.communityId,
+          schedules: 0, visits: 0, completed: 0, scheduled: 0,
+        };
+      }
+      const c = communitySchedules[sp.communityCode];
+      c.schedules++;
+      c.visits    += sp.visitCount;
+      c.completed += sp.completedVisits;
+      c.scheduled += sp.scheduledVisits;
+    });
+
+    const branchRows = Object.values(communitySchedules).sort((a, b) => a.code.localeCompare(b.code));
+    const oneTimePerBranch  = p.counts.oneTimeRows   || 0;
+    const completionsPerBranch = Math.round((p.counts.completionsToInsert || 0) / Math.max(1, (p.counts.communities || 11)));
 
     return `
-      <div style="max-width:800px">
-        <h3 style="font-size:14px;font-weight:600;margin-bottom:16px">Seasonal Import Preview</h3>
+      <div style="max-width:860px">
+        <h3 style="font-size:14px;font-weight:600;margin-bottom:16px">
+          Contract Import Preview — ${esc(seParseResult?.totalRows ?? 0)} rows parsed
+        </h3>
 
         ${hasErrors ? `
           <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin-bottom:16px">
@@ -427,41 +366,81 @@ AdminRouter.register('imports/seed', async function(container) {
           </div>
         `}
 
-        <!-- Counts -->
+        ${p.warnings && p.warnings.length > 0 ? `
+          <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#92400e">
+            ${p.warnings.map(w => `<div>⚠ ${esc(w)}</div>`).join('')}
+          </div>
+        ` : ''}
+
+        <!-- Community Mapping Table — prominent, same style as Master Bill -->
+        <div style="background:#fff;border:2px solid #25C1AC;border-radius:8px;padding:16px;margin-bottom:16px">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;color:#0C1D31">Pilot Community Mapping (${(p.communityMapping||[]).length} branches)</h4>
+          <div class="table-container" style="box-shadow:none;border:none">
+            <table style="font-size:13px">
+              <thead><tr>
+                <th>Code</th><th>Community Name</th><th>Community ID</th><th>Org ID</th>
+              </tr></thead>
+              <tbody>
+                ${(p.communityMapping || []).map(c => `<tr>
+                  <td><strong>${esc(c.code)}</strong></td>
+                  <td>${esc(c.name)}</td>
+                  <td style="font-family:monospace;font-size:11px;color:#6b7280">${esc(c.id)}</td>
+                  <td style="font-family:monospace;font-size:11px;color:#6b7280">${esc(c.orgId)}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Service Account -->
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+          <strong>Attribution:</strong>
+          ${p.serviceAccountResolution?.exists
+            ? `<span style="color:#16a34a">✓ Existing service account — "${esc(p.serviceAccountResolution.displayName)}"</span>`
+            : `<span style="color:#d97706">⚠ Will create: "${esc(p.serviceAccountResolution?.displayName ?? '')}"</span>`
+          }
+        </div>
+
+        <!-- Org-level totals -->
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-bottom:16px">
           ${[
-            {label:'Schedules to Create', val: p.counts.schedulesToCreate, color:'#25C1AC', bg:'#f0fdfa', border:'#99f6e4'},
-            {label:'Existing Schedules',  val: p.counts.schedulesExisting,  color:'#6b7280', bg:'#f9fafb', border:'#e5e7eb'},
-            {label:'Visits to Insert',    val: p.counts.visitsToInsert,    color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe'},
-            {label:'Tasks to Insert',     val: p.counts.tasksToInsert,     color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0'},
-            {label:'Completions',         val: p.counts.completionsToInsert, color:'#7c3aed', bg:'#f3e8ff', border:'#ddd6fe'},
-            {label:'Skipped Rows',        val: p.counts.skippedRows,        color:'#dc2626', bg:'#fef2f2', border:'#fecaca'},
+            {label:'Schedules',         val: p.counts.schedulesToCreate + p.counts.schedulesExisting, color:'#25C1AC', bg:'#f0fdfa', border:'#99f6e4'},
+            {label:'Total Visits',      val: p.counts.visitsToInsert,     color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe'},
+            {label:'Completed Visits',  val: p.counts.completedVisits,    color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0'},
+            {label:'Scheduled Visits',  val: p.counts.scheduledVisits,    color:'#0369a1', bg:'#e0f2fe', border:'#bae6fd'},
+            {label:'Tasks',             val: p.counts.tasksToInsert,      color:'#7c3aed', bg:'#f3e8ff', border:'#ddd6fe'},
+            {label:'Completions',       val: p.counts.completionsToInsert,color:'#059669', bg:'#d1fae5', border:'#6ee7b7'},
+            {label:'Skipped Rows',      val: p.counts.skippedRows,        color:'#dc2626', bg:'#fef2f2', border:'#fecaca'},
+            {label:'Communities',       val: p.counts.communities,        color:'#6b7280', bg:'#f9fafb', border:'#e5e7eb'},
           ].map(c => `
             <div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:12px;text-align:center">
-              <div style="font-size:20px;font-weight:700;color:${c.color}">${c.val}</div>
+              <div style="font-size:20px;font-weight:700;color:${c.color}">${c.val ?? 0}</div>
               <div style="font-size:11px;color:#6b7280">${c.label}</div>
             </div>
           `).join('')}
         </div>
 
-        <!-- Schedule Plans -->
-        ${p.schedulePlans.length > 0 ? `
+        <!-- Per-branch projected counts -->
+        ${branchRows.length > 0 ? `
           <div style="margin-bottom:16px">
-            <h4 style="font-size:13px;font-weight:600;margin-bottom:8px">Schedule Plans</h4>
+            <h4 style="font-size:13px;font-weight:600;margin-bottom:8px">Per-Branch Projected Counts</h4>
             <div class="table-container">
               <table style="font-size:12px">
-                <thead><tr><th>Community</th><th>Code</th><th>Service Type</th><th>Action</th><th>Visits</th><th>Tasks</th></tr></thead>
+                <thead><tr>
+                  <th>Code</th><th>Community</th><th>Schedules</th>
+                  <th>Total Visits</th><th>Completed</th><th>Scheduled</th>
+                  <th>Tasks</th><th>Completions</th>
+                </tr></thead>
                 <tbody>
-                  ${p.schedulePlans.map(sp => `<tr>
-                    <td>${esc(sp.communityName)}</td>
-                    <td>${esc(sp.communityCode)}</td>
-                    <td>${esc(sp.serviceType)}</td>
-                    <td>
-                      <span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;color:#fff;
-                           background:${sp.action==='create'?'#25C1AC':'#9ca3af'}">${sp.action}</span>
-                    </td>
-                    <td>${sp.visitCount}</td>
-                    <td>${sp.taskCount}</td>
+                  ${branchRows.map(br => `<tr>
+                    <td><strong>${esc(br.code)}</strong></td>
+                    <td>${esc(br.name)}</td>
+                    <td>${br.schedules}</td>
+                    <td>${br.visits}</td>
+                    <td style="color:#16a34a">${br.completed}</td>
+                    <td style="color:#0369a1">${br.scheduled}</td>
+                    <td>${oneTimePerBranch}</td>
+                    <td>${completionsPerBranch}</td>
                   </tr>`).join('')}
                 </tbody>
               </table>
@@ -470,7 +449,7 @@ AdminRouter.register('imports/seed', async function(container) {
         ` : ''}
 
         <div style="display:flex;justify-content:space-between">
-          <button class="btn btn-ghost" id="se-back-step2">← Back to Mapping</button>
+          <button class="btn btn-ghost" id="se-back-step1">← Back to Upload</button>
           <button class="btn btn-primary" id="se-commit-btn" ${hasErrors?'disabled':''}>
             ${hasErrors ? 'Fix Errors Before Committing' : 'Commit to Production →'}
           </button>
@@ -479,8 +458,8 @@ AdminRouter.register('imports/seed', async function(container) {
     `;
   }
 
-  // ── Seasonal Step 4 — Commit result ──────────────────────────────────────
-  function renderSeStep4() {
+  // ── Seasonal Step 3 — Commit result ───────────────────────────────────────
+  function renderSeStep3() {
     return `<div id="se-commit-result">Loading…</div>`;
   }
 
@@ -636,16 +615,6 @@ AdminRouter.register('imports/seed', async function(container) {
         bindStepHandlers();
       });
 
-      const backStep2 = document.getElementById('se-back-step2');
-      if (backStep2) backStep2.addEventListener('click', () => {
-        currentStep = 2; sePreviewResult = null;
-        document.getElementById('si-stepper').innerHTML = renderStepper();
-        bindStepHandlers();
-      });
-
-      const previewBtn = document.getElementById('se-preview-btn');
-      if (previewBtn) previewBtn.addEventListener('click', handleSeGeneratePreview);
-
       const commitBtn = document.getElementById('se-commit-btn');
       if (commitBtn) commitBtn.addEventListener('click', handleSeCommit);
     }
@@ -800,7 +769,7 @@ AdminRouter.register('imports/seed', async function(container) {
     seParseResult = null; sePreviewResult = null; seFileToken++;
   }
 
-  // ── Seasonal parse ────────────────────────────────────────────────────────
+  // ── Seasonal parse + auto-preview ────────────────────────────────────────
   async function handleSeParse() {
     const btn   = document.getElementById('se-parse-btn');
     const errEl = document.getElementById('se-parse-error');
@@ -816,61 +785,47 @@ AdminRouter.register('imports/seed', async function(container) {
         method: 'POST', body: formData, timeout: 60000,
       });
       seAllRows = seParseResult.allRows;
-      currentStep = 2;
-      document.getElementById('si-stepper').innerHTML = renderStepper();
-      bindStepHandlers();
-      showToast(`Parsed ${seParseResult.totalRows} rows with ${seParseResult.columns.length} columns`, 'success');
-    } catch (err) {
-      if (errEl) { errEl.textContent = err.message; errEl.style.display = 'block'; }
-      btn.disabled = false; btn.textContent = 'Parse & Continue →';
-    }
-  }
 
-  // ── Seasonal generate preview ─────────────────────────────────────────────
-  async function handleSeGeneratePreview() {
-    const btn   = document.getElementById('se-preview-btn');
-    const errEl = document.getElementById('se-map-error');
-    if (errEl) errEl.style.display = 'none';
+      // If parse-level errors, show them immediately on the upload step
+      if (seParseResult.parseErrors && seParseResult.parseErrors.length > 0) {
+        const msgs = seParseResult.parseErrors.join('\n• ');
+        if (errEl) {
+          errEl.innerHTML = `<strong>File rejected:</strong><br>• ${msgs.split('\n').map(l => l).join('<br>')}`;
+          errEl.style.display = 'block';
+        }
+        btn.disabled = false; btn.textContent = 'Parse & Preview →';
+        return;
+      }
 
-    const mappings = {};
-    document.querySelectorAll('.se-map').forEach(sel => {
-      mappings[sel.dataset.field] = sel.value || null;
-    });
-
-    if (!mappings.communityCode || !mappings.serviceDate || !mappings.serviceType || !mappings.taskTitle) {
-      if (errEl) { errEl.textContent = 'Community Code, Service Date, Service Type, and Task Title are required.'; errEl.style.display = 'block'; }
-      return;
-    }
-
-    seMappings = mappings;
-    btn.disabled = true; btn.textContent = 'Generating preview…';
-
-    try {
+      // Auto-run preview
+      btn.textContent = 'Generating preview…';
       sePreviewResult = await apiFetch('/api/admin/import/seasonal/preview', {
         method: 'POST',
-        body: JSON.stringify({ allRows: seAllRows, mappings }),
+        body: JSON.stringify({ allRows: seAllRows }),
         headers: { 'Content-Type': 'application/json' },
         timeout: 60000,
       });
 
-      currentStep = 3;
+      currentStep = 2;
       document.getElementById('si-stepper').innerHTML = renderStepper();
       bindStepHandlers();
+      showToast(`Parsed ${seParseResult.totalRows} rows — preview ready`, 'success');
     } catch (err) {
       if (errEl) { errEl.textContent = err.message; errEl.style.display = 'block'; }
-      btn.disabled = false; btn.textContent = 'Generate Preview →';
+      btn.disabled = false; btn.textContent = 'Parse & Preview →';
     }
   }
 
   // ── Seasonal commit ───────────────────────────────────────────────────────
   async function handleSeCommit() {
-    if (!sePreviewResult || !seMappings || !seAllRows) return;
+    if (!sePreviewResult || !seAllRows) return;
     if (sePreviewResult.blockingErrors?.length > 0) return;
 
     const c = sePreviewResult.counts;
     const confirmed = window.confirm(
-      `This will write ${c.schedulesToCreate} schedules, ${c.visitsToInsert} visits, ` +
-      `${c.tasksToInsert} tasks, and ${c.completionsToInsert} completions to PRODUCTION.\n\nProceed?`
+      `This will write ${c.schedulesToCreate} schedule(s), ${c.visitsToInsert} visits, ` +
+      `${c.tasksToInsert} tasks, and ${c.completionsToInsert} completions to PRODUCTION ` +
+      `across ${c.communities} communities.\n\nProceed?`
     );
     if (!confirmed) return;
 
@@ -880,12 +835,12 @@ AdminRouter.register('imports/seed', async function(container) {
     try {
       const result = await apiFetch('/api/admin/import/seasonal/commit', {
         method: 'POST',
-        body: JSON.stringify({ allRows: seAllRows, mappings: seMappings }),
+        body: JSON.stringify({ allRows: seAllRows }),
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
 
-      currentStep = 4;
+      currentStep = 3;
       document.getElementById('si-stepper').innerHTML = renderStepper();
 
       const resultEl = document.getElementById('se-commit-result');
@@ -893,7 +848,7 @@ AdminRouter.register('imports/seed', async function(container) {
         resultEl.innerHTML = `
           <div style="max-width:700px">
             <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin-bottom:16px">
-              <h4 style="color:#16a34a;font-weight:700;margin-bottom:8px">✓ Seasonal Import Complete</h4>
+              <h4 style="color:#16a34a;font-weight:700;margin-bottom:8px">✓ Contract Import Complete</h4>
               <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
                 <div><strong>Schedules created:</strong> ${result.schedulesCreated}</div>
                 <div><strong>Visits inserted:</strong> ${result.visitsInserted}</div>
@@ -920,13 +875,13 @@ AdminRouter.register('imports/seed', async function(container) {
           navigator.clipboard.writeText(result.undoSQL).then(() => showToast('Copied to clipboard', 'success'));
         });
         document.getElementById('se-new-import')?.addEventListener('click', () => {
-          currentStep = 1; seParseResult = null; sePreviewResult = null; seFile = null; seMappings = null;
+          currentStep = 1; seParseResult = null; sePreviewResult = null; seFile = null;
           document.getElementById('si-stepper').innerHTML = renderStepper();
           bindStepHandlers();
         });
       }
 
-      showToast('Seasonal import committed successfully.', 'success');
+      showToast('Contract import committed successfully.', 'success');
       loadHistory();
     } catch (err) {
       showToast(`Commit failed: ${err.message}`, 'error');
