@@ -118,10 +118,12 @@
     });
   }
 
-  // Fallback palette when a group has no stored color
-  var _GROUP_PALETTE = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4'];
+  // Fallback colour via shared palette (window.VRTGroupColors loaded before this script)
   function _groupColor(idx) {
-    return _GROUP_PALETTE[idx % _GROUP_PALETTE.length];
+    var palette = window.VRTGroupColors && window.VRTGroupColors.GROUP_PALETTE;
+    if (palette) return palette[idx % palette.length];
+    // Ultra-safe fallback: blue
+    return '#3b82f6';
   }
 
   // ── Show toggles ─────────────────────────────────────────────────────────────

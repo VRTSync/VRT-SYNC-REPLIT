@@ -43,6 +43,7 @@
     { route: 'dashboard',    label: 'Dashboard'     },
     { route: 'branches',     label: 'Locations'     },
     { route: 'map',          label: 'Portfolio Map' },
+    { route: 'analytics',    label: 'Analytics'     },
     { route: 'work-orders',  label: 'Work Orders'   },
     { route: 'groups',       label: 'Groups'        },
   ];

@@ -62,8 +62,12 @@
   var NEUTRAL = '#94a3b8';
   var PANEL_ACCENTS = ['p-blue', 'p-green', 'p-amber', 'p-navy'];
 
-  function groupColor(g) {
-    return (g && g.color) ? g.color : NEUTRAL;
+  function groupColor(g, idx) {
+    if (g && g.color) return g.color;
+    if (window.VRTGroupColors && idx != null) {
+      return window.VRTGroupColors.resolveGroupColor(null, idx);
+    }
+    return NEUTRAL;
   }
 
   function hexToRgba(hex, alpha) {
@@ -73,9 +77,10 @@
     return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
   }
 
-  function groupChip(g) {
-    var c = groupColor(g);
-    return '<span class="gchip" style="background:' + esc(hexToRgba(c, 0.12)) + ';color:' + esc(c) + ';">' + esc(g.name) + '</span>';
+  function groupChip(g, idx) {
+    var c = groupColor(g, idx);
+    return '<span class="gchip" style="background:' + esc(hexToRgba(c, 0.12))
+      + ';color:' + esc(c) + ';">' + esc(g.name) + '</span>';
   }
 
   // ── Branch lookup ─────────────────────────────────────────────────────────
@@ -102,11 +107,11 @@
     var covered = firstGroups.reduce(function (acc, g) { return acc + Number(g.branchCount || 0); }, 0);
     var barHtml = '', legendHtml = '';
     if (covered > 0) {
-      firstGroups.forEach(function (g) {
+      firstGroups.forEach(function (g, idx) {
         var n = Number(g.branchCount || 0);
         if (n <= 0) return;
         var pct = Math.round((n / covered) * 100);
-        var c = groupColor(g);
+        var c = groupColor(g, idx);
         barHtml += '<i style="width:' + pct + '%;background:' + esc(c) + '"></i>';
         legendHtml += '<span><i style="background:' + esc(c) + '"></i>' + esc(g.name) + ' · ' + n + '</span>';
       });
@@ -142,8 +147,8 @@
     var groups = (set && set.groups) || [];
     var setId = set ? set.id : null;
 
-    var cards = groups.map(function (g) {
-      var c = groupColor(g);
+    var cards = groups.map(function (g, idx) {
+      var c = groupColor(g, idx);
       var branches = Number(g.branchCount || 0);
       var openItems = Number(g.openItems || 0);
       var photoPct = g.photoProofPct != null ? Number(g.photoProofPct) : null;
@@ -181,13 +186,13 @@
     if (groups.length === 0) {
       rows = '<tr class="pf-empty-row"><td colspan="9">No groups in this set yet.</td></tr>';
     } else {
-      rows = groups.map(function (g) {
+      rows = groups.map(function (g, gIdx) {
         var codes = (Array.isArray(g.branchIds) ? g.branchIds : [])
           .map(function (id) { return codeLookup[id] || '—'; })
           .join(', ');
         var svcs = g.servicesPerBranch != null ? g.servicesPerBranch : '—';
         return '<tr data-group-id="' + esc(g.id) + '">'
-          + '<td>' + groupChip(g) + '</td>'
+          + '<td>' + groupChip(g, gIdx) + '</td>'
           + '<td class="bsub">' + (codes ? esc(codes) : '—') + '</td>'
           + '<td class="num">' + esc(Number(g.assets || 0)) + '</td>'
           + '<td class="num">' + esc(Number(g.irrigationZones || 0)) + '</td>'
@@ -295,6 +300,8 @@
   // ── Event delegation ──────────────────────────────────────────────────────
   function _bindContainerEvents() {
     if (!_container) return;
+    // Remove before adding so re-draws never stack duplicate listeners.
+    _container.removeEventListener('click', _onContainerClick);
     _container.addEventListener('click', _onContainerClick);
   }
 
@@ -312,9 +319,8 @@
     else if (action === 'edit-group') { showGroupForm(groupId, null); }
     else if (action === 'delete-group') { showDeleteGroupConfirm(groupId); }
     else if (action === 'assign-members') { showLocationPicker(groupId); }
-
-    // Remove listener after first delegation – _drawPage re-adds it
-    _container.removeEventListener('click', _onContainerClick);
+    // Do NOT remove the listener here. It must survive modal open/cancel cycles
+    // that don't trigger _drawPage. _bindContainerEvents de-dupes on next draw.
   }
 
   // ── Modal helpers ─────────────────────────────────────────────────────────
@@ -497,9 +503,9 @@
 
       var promise;
       if (group) {
-        promise = apiMutate('PATCH', '/api/portfolio/groups/' + group.id, { name: name, color: color, setId: setId });
+        promise = apiMutate('PATCH', '/api/portfolio/groups/' + group.id + orgParam(), { name: name, color: color, setId: setId });
       } else {
-        promise = apiMutate('POST', '/api/portfolio/groups', { name: name, color: color, setId: setId });
+        promise = apiMutate('POST', '/api/portfolio/groups' + orgParam(), { name: name, color: color, setId: setId });
       }
 
       promise.then(function () {
@@ -534,7 +540,7 @@
     ov.querySelector('#gs-cancel-btn').onclick = closeModal;
     ov.querySelector('#gs-confirm-del-btn').onclick = function () {
       this.disabled = true;
-      apiMutate('DELETE', '/api/portfolio/groups/' + groupId, null)
+      apiMutate('DELETE', '/api/portfolio/groups/' + groupId + orgParam(), null)
         .then(function () { closeModal(); _refresh(); })
         .catch(function (err) { _modalError(err.message || 'Delete failed.'); });
     };
@@ -570,8 +576,8 @@
       submitBtn.disabled = true;
 
       var promise = set
-        ? apiMutate('PATCH', '/api/portfolio/group-sets/' + set.id, { name: name })
-        : apiMutate('POST', '/api/portfolio/group-sets', { name: name });
+        ? apiMutate('PATCH', '/api/portfolio/group-sets/' + set.id + orgParam(), { name: name })
+        : apiMutate('POST', '/api/portfolio/group-sets' + orgParam(), { name: name });
 
       promise.then(function () { closeModal(); _refresh(); })
         .catch(function (err) {
@@ -603,7 +609,7 @@
     ov.querySelector('#gs-cancel-btn').onclick = closeModal;
     ov.querySelector('#gs-confirm-del-btn').onclick = function () {
       this.disabled = true;
-      apiMutate('DELETE', '/api/portfolio/group-sets/' + setId, null)
+      apiMutate('DELETE', '/api/portfolio/group-sets/' + setId + orgParam(), null)
         .then(function () { closeModal(); _refresh(); })
         .catch(function (err) { _modalError(err.message || 'Delete failed.'); });
     };
@@ -711,7 +717,7 @@
       var ids = [];
       cbs.forEach(function (cb) { if (cb.checked) ids.push(cb.value); });
       this.disabled = true;
-      apiMutate('PUT', '/api/portfolio/groups/' + groupId + '/members', { communityIds: ids })
+      apiMutate('PUT', '/api/portfolio/groups/' + groupId + '/members' + orgParam(), { communityIds: ids })
         .then(function () { closeModal(); _refresh(); })
         .catch(function (err) {
           ov.querySelector('#gs-picker-save-btn').disabled = false;

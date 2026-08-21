@@ -5009,8 +5009,211 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
   return result;
 }
 
-// Layer display metadata for the Portfolio Map rail breakdown.
-// Colours match the representative sublayer defaults in common/map-render.js.
+export async function getPortfolioAnalytics(orgId: string) {
+  const t0 = Date.now();
+
+  // ── 1. All communities for this org ──────────────────────────────────────
+  const comms = await db
+    .select({ id: communities.id, code: (communities as any).code, name: communities.name, city: (communities as any).city, address: (communities as any).address })
+    .from(communities)
+    .where(eq(communities.organizationId, orgId))
+    .orderBy((communities as any).code, communities.name);
+
+  const communityIds = comms.map(c => c.id);
+
+  if (communityIds.length === 0) {
+    return { locations: [], groupSets: [], assetTypes: [] };
+  }
+
+  // ── 2. Parallel aggregate queries ─────────────────────────────────────────
+  const [assetCountRows, sqFtRows, svcYtdRows, spendYtdRows, groupMemberRows, groupSetsData] = await Promise.all([
+
+    // 2a. Asset counts by community + asset_type
+    pool.query<{ community_id: string; asset_type: string; cnt: string }>(`
+      SELECT community_id, asset_type, COUNT(*)::text AS cnt
+        FROM assets
+       WHERE community_id = ANY($1) AND is_archived = false
+       GROUP BY community_id, asset_type
+    `, [communityIds]),
+
+    // 2b. sqFt totals by community + asset_type from asset_properties.
+    //     total_count = ALL non-archived assets of that type (denominator for coverage note).
+    //     covered_count = assets with a valid numeric sqFt value.
+    //     sqft_total = sum of those valid values.
+    //     The EXISTS filter is intentionally absent so total_count is never understated.
+    pool.query<{
+      community_id: string;
+      asset_type: string;
+      sqft_total: string;
+      covered_count: string;
+      total_count: string;
+    }>(`
+      SELECT
+        a.community_id,
+        a.asset_type,
+        COALESCE(SUM(
+          CASE WHEN ap.value ~ '^[0-9]+(\\.[0-9]+)?$'
+               THEN ap.value::numeric ELSE 0 END
+        ), 0)::text AS sqft_total,
+        COUNT(ap.id) FILTER (WHERE ap.value ~ '^[0-9]+(\\.[0-9]+)?$')::text AS covered_count,
+        COUNT(a.id)::text AS total_count
+      FROM assets a
+      LEFT JOIN asset_properties ap ON ap.asset_id = a.id AND ap.key = 'sqFt'
+      WHERE a.community_id = ANY($1) AND a.is_archived = false
+      GROUP BY a.community_id, a.asset_type
+    `, [communityIds]),
+
+    // 2c. Services YTD: task_completions + completed service_visits this year
+    pool.query<{ community_id: string; cnt: string }>(`
+      SELECT t.community_id, COUNT(*)::text AS cnt
+        FROM task_completions tc
+        JOIN tasks t ON t.id = tc.task_id
+       WHERE t.community_id = ANY($1)
+         AND tc.completed_at >= date_trunc('year', now())
+       GROUP BY t.community_id
+      UNION ALL
+      SELECT community_id, COUNT(*)::text AS cnt
+        FROM service_visits
+       WHERE community_id = ANY($1)
+         AND status = 'completed'
+         AND completed_at >= date_trunc('year', now())
+       GROUP BY community_id
+    `, [communityIds]),
+
+    // 2d. Spend YTD from invoices (cost column, dollars)
+    pool.query<{ community_id: string; spend_cents: string }>(`
+      SELECT community_id,
+             COALESCE(SUM(cost * 100), 0)::text AS spend_cents
+        FROM invoices
+       WHERE community_id = ANY($1)
+         AND completion_date >= date_trunc('year', now())
+       GROUP BY community_id
+    `, [communityIds]),
+
+    // 2e. Group membership: community → group_id
+    pool.query<{ community_id: string; group_id: string; group_name: string; group_color: string | null; set_id: string | null; set_name: string | null; set_sort_order: string }>(`
+      SELECT
+        bgm.community_id,
+        bg.id AS group_id,
+        bg.name AS group_name,
+        bg.color AS group_color,
+        bg.set_id,
+        bgs.name AS set_name,
+        COALESCE(bgs.sort_order, 2147483647)::text AS set_sort_order
+      FROM branch_group_members bgm
+      JOIN branch_groups bg ON bg.id = bgm.group_id
+      LEFT JOIN branch_group_sets bgs ON bgs.id = bg.set_id
+      WHERE bg.organization_id = $1
+      ORDER BY bgs.sort_order NULLS LAST, bg.sort_order, bg.name
+    `, [orgId]),
+
+    // 2f. Group sets (for filter chips) — reuse existing function
+    getPortfolioGroupSets(orgId),
+  ]);
+
+  console.log(`[portfolio/analytics] org=${orgId} communities=${communityIds.length} (${Date.now() - t0}ms)`);
+
+  // ── 3. Build lookup maps ──────────────────────────────────────────────────
+
+  // Asset counts: communityId → assetType → count
+  const assetCountMap = new Map<string, Map<string, number>>();
+  for (const row of assetCountRows.rows) {
+    if (!assetCountMap.has(row.community_id)) assetCountMap.set(row.community_id, new Map());
+    assetCountMap.get(row.community_id)!.set(row.asset_type, Number(row.cnt));
+  }
+
+  // sqFt totals: communityId → assetType → { total, covered, count }
+  const sqFtMap = new Map<string, Map<string, { total: number; covered: number; totalCount: number }>>();
+  for (const row of sqFtRows.rows) {
+    if (!sqFtMap.has(row.community_id)) sqFtMap.set(row.community_id, new Map());
+    sqFtMap.get(row.community_id)!.set(row.asset_type, {
+      total:      Number(row.sqft_total),
+      covered:    Number(row.covered_count),
+      totalCount: Number(row.total_count),
+    });
+  }
+
+  // Services YTD: communityId → total count
+  const svcYtdMap = new Map<string, number>();
+  for (const row of svcYtdRows.rows) {
+    svcYtdMap.set(row.community_id, (svcYtdMap.get(row.community_id) ?? 0) + Number(row.cnt));
+  }
+
+  // Spend YTD: communityId → cents
+  const spendYtdMap = new Map<string, number>();
+  for (const row of spendYtdRows.rows) {
+    spendYtdMap.set(row.community_id, Number(row.spend_cents));
+  }
+
+  // Group membership: communityId → array of { groupId, groupName, color, setId, setName }
+  const groupsByComm = new Map<string, Array<{ groupId: string; groupName: string; color: string | null; setId: string | null; setName: string | null }>>();
+  for (const row of groupMemberRows.rows) {
+    if (!groupsByComm.has(row.community_id)) groupsByComm.set(row.community_id, []);
+    groupsByComm.get(row.community_id)!.push({
+      groupId:   row.group_id,
+      groupName: row.group_name,
+      color:     row.group_color,
+      setId:     row.set_id,
+      setName:   row.set_name,
+    });
+  }
+
+  // ── 4. Collect distinct asset types ordered by catalogue sort_order ─────────
+  //     Use the live asset_types catalogue (cached) for sort_order and label;
+  //     fall back to alphabetical key for types not in the catalogue.
+  const assetTypeSet = new Set<string>();
+  for (const typeMap of assetCountMap.values()) {
+    for (const [at, cnt] of typeMap.entries()) {
+      if (cnt > 0) assetTypeSet.add(at);
+    }
+  }
+  const catalogueRows = await getAssetTypeCache();
+  const catalogueMap = new Map(catalogueRows.map(r => [r.key, r]));
+  const assetTypes = Array.from(assetTypeSet)
+    .map(key => {
+      const cat = catalogueMap.get(key);
+      return {
+        key,
+        label:     cat?.label ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        sortOrder: cat?.sortOrder ?? 9999,
+        layerKey:  cat?.layerKey ?? null,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+
+  // ── 5. Assemble per-location rows ─────────────────────────────────────────
+  const locations = comms.map(c => {
+    const typeMap  = assetCountMap.get(c.id) ?? new Map<string, number>();
+    const sqMap    = sqFtMap.get(c.id)       ?? new Map<string, { total: number; covered: number; totalCount: number }>();
+    const groups   = groupsByComm.get(c.id)  ?? [];
+
+    // Per-type breakdown (all types, 0 if absent)
+    const assetBreakdown: Record<string, { count: number; sqFtTotal: number; sqFtCovered: number; sqFtCount: number }> = {};
+    for (const { key: at } of assetTypes) {
+      const sq = sqMap.get(at);
+      assetBreakdown[at] = {
+        count:       typeMap.get(at) ?? 0,
+        sqFtTotal:   sq ? sq.total      : 0,
+        sqFtCovered: sq ? sq.covered    : 0,
+        sqFtCount:   sq ? sq.totalCount : 0,
+      };
+    }
+
+    return {
+      id:         c.id,
+      code:       c.code       ?? null,
+      name:       c.name,
+      city:       c.city       ?? null,
+      address:    c.address    ?? null,
+      servicesYtd: svcYtdMap.get(c.id) ?? 0,
+      spendYtdCents: spendYtdMap.get(c.id) ?? 0,
+      groupIds:   groups.map(g => g.groupId),
+      assets:     assetBreakdown,
+    };
+  });
+
+  return { locations, groupSets: groupSetsData, assetTypes };
+}
 const MAP_LAYER_DISPLAY: Record<string, { name: string; color: string; assetTypes: readonly string[] }> = {
   community:  { name: 'Landscape',  color: '#2E8B57', assetTypes: ['bluegrass_area','native_area','landscape_bed','pet_station'] },
   irrigation: { name: 'Irrigation', color: '#3498db', assetTypes: ['backflow','controller','zone','master_valve','flow_meter','qc_iso_valve','isolation_valve','quick_connect','wire_splice'] },

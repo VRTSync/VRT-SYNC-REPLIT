@@ -42,9 +42,9 @@ import {
   parseSeasonal, previewSeasonal, commitSeasonal,
   type SeasonalColumnMappings,
 } from "../seasonalImporter";
-import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
+import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments, communities } from "@workspace/db";
 
 export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
 export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
@@ -6080,6 +6080,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/portfolio/analytics", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const data = await storage.getPortfolioAnalytics(resolved.orgId);
+      console.log(`[GET /api/portfolio/analytics] org=${resolved.orgId} locations=${data.locations.length} (${Date.now() - t0}ms)`);
+      return void res.json(data);
+    } catch (error) {
+      console.error("Portfolio analytics error:", error);
+      return void res.status(500).json({ error: "Failed to fetch portfolio analytics" });
+    }
+  });
+
   app.get("/api/portfolio/group-sets", requireClientOrAdmin, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {
@@ -6141,6 +6155,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "Group not found or does not belong to this organization" });
       }
       const { name, color, sortOrder, setId } = req.body;
+      // Validate setId belongs to this org before accepting it.
+      if (setId !== undefined && setId !== null) {
+        const sets = await storage.getGroupSets(orgId);
+        if (!sets.find(s => s.id === setId)) {
+          return void res.status(403).json({ error: "Group set not found or does not belong to this organization" });
+        }
+      }
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (color !== undefined) updates.color = color;
@@ -6190,6 +6211,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { communityIds } = req.body;
       if (!Array.isArray(communityIds)) {
         return void res.status(400).json({ error: "communityIds must be an array" });
+      }
+      // Validate every supplied community belongs to the caller's org.
+      // This prevents a client_admin from attaching another org's locations.
+      if ((communityIds as string[]).length > 0) {
+        const orgComms = await db
+          .select({ id: communities.id })
+          .from(communities)
+          .where(eq(communities.organizationId, orgId));
+        const orgCommSet = new Set(orgComms.map(c => c.id));
+        const invalid = (communityIds as string[]).filter(id => !orgCommSet.has(id));
+        if (invalid.length > 0) {
+          return void res.status(403).json({ error: "One or more locations do not belong to this organization" });
+        }
       }
       // Pass directly to setBranchGroupMembers — it handles move semantics atomically.
       await storage.setBranchGroupMembers(groupId, communityIds as string[]);
