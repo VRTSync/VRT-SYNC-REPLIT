@@ -1,0 +1,191 @@
+# Task #541: Rebuild the seasonal importer to expand the contract task list
+
+*Number assigned by Randy. Fixes `seasonalImporter.ts`, which cannot consume the file it exists to import. Diagnosis in `reviews/review-2026-08-21-import-batch.md`. Verified at `2cb0c9d`.*
+
+## 🚨 Two additions to the handover draft — one is a data-loss bug
+
+### 1. The seasonal undo route deletes unrelated production data
+
+The draft describes this as *"an incorrect join [that] leaves service_schedules orphaned."* **It is much worse than that.** `routes.ts:4768`:
+
+```sql
+DELETE FROM service_visits sv
+  USING tasks t
+  WHERE t.origin = 'seasonal_import'
+    AND sv.service_date = ANY(
+      SELECT DISTINCT window_start FROM tasks
+      WHERE origin = 'seasonal_import'
+    )
+```
+
+**`USING tasks t` has no join condition tying `sv` to `t`.** Nothing correlates the two tables. The `t.origin` test is satisfied if *any* seasonal task exists anywhere, and then the only effective predicate is:
+
+```sql
+sv.service_date = ANY(<list of seasonal window_start dates>)
+```
+
+That matches **every `service_visit` in the entire database** whose date collides with any seasonal window start — across every organization, every schedule, including visits a real crew logged in the field. One click of Undo on a seasonal batch destroys unrelated client data.
+
+The task delete is unscoped too:
+
+```sql
+DELETE FROM tasks WHERE origin = 'seasonal_import'
+```
+
+No batch filter — it removes **every** seasonal task ever imported, not the batch being undone.
+
+**Required:**
+
+- Correlate deletes to the batch. Add a `batch_id` column on the rows this importer writes, or key on the idempotency values it already sets. **A delete whose only predicate is a bare `origin =` is not an undo.**
+- Delete `service_visits` via their `schedule_id`, letting the FK cascade from `service_schedules` do the work — never by matching dates.
+- Delete the `service_schedules` the batch created. The draft is right that they are currently orphaned.
+- **Scope every statement to the organization**, so an undo can never reach another tenant's rows.
+- Verify by seeding two organizations, undoing one batch, and confirming the other org's counts are untouched. **Do not ship this without that test.**
+
+### 2. Every seeded task would be attributed to whoever clicks Commit
+
+`seasonalImporter.ts:482` and `:493` pass `runByUserId` straight into `created_by` and `completed_by`.
+
+`runByUserId` is `req.session.userId` — **the admin who pressed the button.** So all 165 tasks and 88 completions would show as Randy's personal work throughout the product: in activity feeds, on task cards, anywhere a completer is named.
+
+#518 forbids this explicitly: *"Do not attach these to Randy's user or any admin account; they will show as that person's work throughout the product."*
+
+**Required:** resolve the **same High Plains service account `masterBillImporter.ts` uses** — `SERVICE_ACCOUNT_DISPLAY_NAME = "High Plains Property Maintenance — historical import"`. Reuse that resolution helper rather than writing a second one, and use it for `tasks.created_by`, `task_completions.completed_by` and `service_visits.completed_by`.
+
+Keep `runByUserId` for `import_batches.run_by` — recording who *ran the import* is correct. Attributing the *work* to them is not.
+
+### Also worth pinning down
+
+- **`SEASONAL_ORIGIN` is currently `"seasonal_import"`** (`seasonalImporter.ts:84`), but #518 and the work-orders exclusion both specify **`'contract_schedule'`**. Pick one and make it consistent everywhere, including the exclusion list — otherwise 165 tasks reappear on the client Work Orders page.
+- **`employee_sign_off_name` stays at its `''` default** on both visits and completions. Do not invent a crew member's name.
+- **Schedule idempotency key**: `notes = 'contract_schedule:{Ticket Title}'` per #518. The current code uses `notes LIKE '%seasonal_key:...%'`.
+
+---
+
+*Everything below is the original spec. Where it conflicts with the above, the above wins.*
+
+## What & Why
+
+`seasonalImporter.ts` was built as a **dated-visit importer**: one spreadsheet row becomes one service visit, with the row supplying the community code and the service date.
+
+`Contract Task List - VRT.xlsx` supplies neither. Its columns are **Ticket Title, Ticket Type, Priority, Start Date, End Date, Frequency, Total Visits, Description** — 18 rows describing a seasonal programme that applies identically to all 11 branches. There is no community column because every branch gets the same list, and no service date because the dates are **derived** from the season window and the visit count.
+
+Uploading it fails at the column-mapping step: the required columns do not exist to map.
+
+### The direction was inverted
+
+The module header states:
+
+```
+- Every service_date must be a Wednesday (day-of-week = 3)
+```
+
+#518 said to **generate** evenly-spaced Wednesdays. The implementation **validates** that supplied dates are Wednesdays. Same for the 2026 rule — specced as an assertion on the source file's *start dates*, implemented as a per-row *service date* check.
+
+**The input is 18 rows. The output is 803 records.** That expansion is the entire job and it is absent — no handling of `Frequency`, `Total Visits`, or a season window exists anywhere in the module.
+
+## The fix, precisely
+
+### 1. Drop the column-mapping step for this mode
+
+The contract task list has a fixed layout, like the master bill. Read it by header name, assert the eight expected columns are present, and fail with a clear message naming any that are missing.
+
+**Seasonal becomes 3 steps: Upload → Preview → Commit.** Delete `SeasonalColumnMappings` and every parameter that carries it. The `parse` route keeps `upload.single("file")`; `preview` and `commit` take the parsed rows only.
+
+### 2. Assert the source file on load
+
+- Exactly **18 rows**
+- Every **Start Date in 2026**
+- Every **End Date after its Start Date**
+
+Any failure is a blocking error naming the offending row. This is what stops someone uploading `Contract Task List - VRT (ORIGINAL uncorrected).xlsx`, which has 2025 starts and one row ending before it starts.
+
+### 3. Split the 18 rows by Frequency
+
+| Frequency | Rows | Destination |
+|---|---|---|
+| `Weekly` / `Monthly` | 3 | `service_schedules` + `service_visits` |
+| `One-Time` | 15 | `tasks` (+ `task_completions` where past) |
+
+Applied to **all 11 communities in the pilot org** — resolve them by `organization_id`, not from a column in the file.
+
+### 4. Generate the visit dates
+
+Season is `2026-04-01 → 2026-10-31`, taken from the recurring rows' own Start/End dates. It contains **31 Wednesdays**.
+
+For a schedule with *n* total visits, select Wednesdays by index:
+
+```
+idx = round(i × 30 / (n − 1))   for i in 0 .. n−1
+```
+
+| Ticket Title | serviceType | n | First | Last | completed / scheduled |
+|---|---|---|---|---|---|
+| Weekly Landscape Maintenance | `mowing_visit` | 26 | 2026-04-01 | 2026-10-28 | **18 / 8** |
+| Roundup Spot Spray | `landscape_service` | 26 | 2026-04-01 | 2026-10-28 | **18 / 8** |
+| Bluegrass Edging Service | `landscape_service` | 6 | 2026-04-01 | 2026-10-28 | **4 / 2** |
+
+Every date is a Wednesday, no two collide, and the last lands in the season's final week. A visit is `completed` if its date is on or before today, `scheduled` otherwise.
+
+**`serviceType` comes from the mapping above, per schedule.** The current `commitSeasonal` hardcodes `general_service` for every schedule; that is wrong and loses the distinction the This Week grid needs.
+
+### 5. One-time tasks carry windows, not dates
+
+The 15 one-time rows become `tasks` with `window_start` / `window_end` / `due_date` from the sheet's Start and End dates, `origin = 'contract_schedule'`, `ticket_type` verbatim, and priority mapped `High→high, Medium→medium, Critical→urgent, Core→medium, Ongoing→medium`.
+
+The 8 whose `window_end` has passed also get a `task_completions` row so they count toward Services Logged.
+
+### 6. Fix the task idempotency key
+
+The current key is `seasonal:<scheduleId>:<serviceDate>:<titleHash>`. **One-time seasonal tasks have neither a schedule nor a single service date**, so that shape cannot express them.
+
+Use `schedule_instance_key = 'contract_schedule:{communityId}:{Ticket Title}'` — unique per branch per contract task, which is exactly the grain. The existing `tasks_schedule_instance_key_idx` unique index enforces it.
+
+Visit idempotency is already correct: `(schedule_id, service_date)` via `service_visits_schedule_date_idx`. Keep it.
+
+### 7. Three defects in `commitSeasonal` to fix while rebuilding
+
+**a. Silent skips.** The loop does `if (!dateObj || dateObj.getFullYear() !== 2026 || !isWednesday(dateObj)) continue;` and the same for unresolved communities. Rows vanish with no report. **Every skip must be counted and surfaced**; a commit that quietly drops rows cannot be reconciled afterwards.
+
+**b. N+1 community lookup.** `SELECT id FROM communities WHERE code = $1 LIMIT 1` runs inside the per-row loop. Resolve all communities once, before the loop.
+
+**c. `LIMIT 1` hides ambiguity.** `previewSeasonal` correctly blocks when a code matches two communities; `commitSeasonal` silently takes the first. **Preview and commit must agree.** Resolve by `organization_id` and fail on ambiguity in both.
+
+## What to keep
+
+- **`parseSeasonal`** — generic xlsx reading is fine; it just needs the fixed-layout assertions added.
+- **The parse/preview/commit split and the three routes.** Signatures change; the shape does not.
+- **`requireAdmin` on all three.**
+- **The transaction wrapper**, the `import_batches` row, and the batch-history/undo path from #532.
+- **The blocking-errors-disable-Commit contract** in `seed-import.js`.
+
+## What must NOT change
+
+- **`masterBillImporter.ts` and its routes.** Working and reviewed; untouched by this.
+- **`contractImporter.ts`** and its three `contract-tasks` routes.
+- **The `import_batches` schema** — migration `0017` is applied; no new migration should be needed.
+- **`origin = 'contract_schedule'`**, and its membership in the work-orders exclusion.
+- **The Wednesday crew day and even-spread cadence.** The reasoning is settled in `docs/contract-task-list-validation-2026-08-11.md`; do not re-derive it.
+
+## How to verify
+
+- [ ] Upload `Contract Task List - VRT.xlsx`. Preview succeeds with **no column-mapping step**.
+- [ ] Preview reports **18 rows parsed**, all starts in 2026, all ends after starts.
+- [ ] Preview shows the **11-community mapping table**, resolved from the org — as prominent as the master bill's.
+- [ ] Preview projects per branch: **3 schedules, 58 visits (40 completed / 18 scheduled), 15 tasks (8 completed / 7 pending), 8 completions.**
+- [ ] Totals: **33 schedules, 638 visits, 165 tasks, 88 completions — 803 records.**
+- [ ] Preview writes nothing — confirm row counts across a preview call.
+- [ ] **Upload `(ORIGINAL uncorrected)` → blocked**, naming the 2025 starts and the row ending before it starts. *This is the test that proves the assertions point at the source file rather than at generated dates.*
+- [ ] After commit: `SELECT DISTINCT EXTRACT(DOW FROM service_date) FROM service_visits` returns **one row, value 3**.
+- [ ] No visit falls outside `2026-04-01 … 2026-10-31`. Most recent completed is **2026-08-19**; next scheduled **2026-09-02**.
+- [ ] Schedules carry `mowing_visit` and `landscape_service` — **not** `general_service` for all three.
+- [ ] **Commit the same file twice — nothing is added.**
+- [ ] Any skipped row is reported with a count and a reason; none are silent.
+- [ ] Client Work Orders page shows **zero** `contract_schedule` rows.
+- [ ] Undo the batch from the history panel; counts return to their prior values, no orphans.
+
+## Out of scope
+
+- Importing dated-visit spreadsheets. If a generic per-row visit importer is wanted later it is a separate mode with its own file format — **do not try to make one importer serve both**, which is how this divergence happened.
+- Per-branch crew days.
+- Changing the master bill path.
