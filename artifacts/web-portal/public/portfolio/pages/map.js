@@ -48,10 +48,38 @@
   var _resizeObserver  = null;
   var _resizeTimer     = null;
 
+  // ── Colour-by state (module-level so sendBranchPins can read it) ─────────────
+  var _colorBySetId = null;
+
   function _teardown() {
     if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
     if (_resizeTimer)    { clearTimeout(_resizeTimer);   _resizeTimer    = null; }
     if (_renderer) { _renderer.destroy(); _renderer = null; }
+  }
+
+  // ── Pin colouring helpers ────────────────────────────────────────────────────
+  /**
+   * Build a (branch) → hex colour function for the given "Colour by" set.
+   * Branches not in any group of the set render grey (#9ca3af = Unassigned).
+   * Returns null when no set is selected or the set has no groups.
+   */
+  function makeColorFor(colorBySetId, groups) {
+    // Only skip the callback entirely when no set is selected.
+    // An empty set (no groups yet) still means every branch is Unassigned → grey.
+    if (!colorBySetId) return null;
+    var setGroups = (groups || []).filter(function (g) { return g.setId === colorBySetId; });
+    // branchId → { group, perSetIdx } — first-group-wins when a branch is in multiple
+    var lookup = {};
+    setGroups.forEach(function (g, perSetIdx) {
+      (g.branchIds || []).forEach(function (bId) {
+        if (!lookup[bId]) lookup[bId] = { group: g, perSetIdx: perSetIdx };
+      });
+    });
+    return function (branch) {
+      var entry = lookup[branch.id];
+      if (!entry) return '#9ca3af'; // Unassigned
+      return window.VRTGroupColors.resolveGroupColor(entry.group, entry.perSetIdx);
+    };
   }
 
   // ── Pin rendering via shared renderer ────────────────────────────────────────
@@ -68,13 +96,55 @@
     }
     _pinVersion++;
     var layerId = 'portfolio-branches-v' + _pinVersion;
+    // Compute colour-by callback from current module state
+    var groups = (window.PortfolioState && window.PortfolioState.groups) || [];
+    var colorFor = makeColorFor(_colorBySetId, groups);
+    var opts = colorFor ? { directTap: false, colorFor: colorFor } : {};
     // Pin building/colouring is shared with the dashboard preview — one copy only.
-    window.VRTMapRenderer.sendBranchPins(_renderer, branches, layerId);
+    window.VRTMapRenderer.sendBranchPins(_renderer, branches, layerId, opts);
     _renderer.fit();
   }
 
+  // ── "Colour by" selector ─────────────────────────────────────────────────────
+  /**
+   * Renders a compact "Colour by" control above the group filter.
+   * - 0 sets  → hides the container
+   * - 1 set   → static label (no dropdown)
+   * - 2+ sets → <select> dropdown
+   * onChange(newSetId) is called when the selection changes.
+   */
+  function renderColorBySelector(groupSets, currentSetId, onChange) {
+    var el = document.getElementById('pfm-color-by');
+    if (!el) return;
+    if (!groupSets || groupSets.length === 0) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    if (groupSets.length === 1) {
+      el.innerHTML = '<div class="pfm-color-selector">'
+        + '<span class="pfm-color-selector-label">Colour by</span>'
+        + '<span class="pfm-color-selector-static">' + esc(groupSets[0].name) + '</span>'
+        + '</div>';
+      return;
+    }
+    el.innerHTML = '<div class="pfm-color-selector">'
+      + '<span class="pfm-color-selector-label">Colour by</span>'
+      + '<select class="pfm-color-selector-select" id="pfm-color-by-select">'
+      + groupSets.map(function (s) {
+          return '<option value="' + esc(s.id) + '"' + (currentSetId === s.id ? ' selected' : '') + '>'
+            + esc(s.name) + '</option>';
+        }).join('')
+      + '</select>'
+      + '</div>';
+    var sel = document.getElementById('pfm-color-by-select');
+    if (sel) {
+      sel.addEventListener('change', function () { onChange(sel.value); });
+    }
+  }
+
   // ── Group rail checkboxes ────────────────────────────────────────────────────
-  function renderGroupRail(groups, allBranches, activeGroupIds, onGroupToggle) {
+  function renderGroupRail(groups, allBranches, activeGroupIds, onGroupToggle, colorBySetId) {
     var el = document.getElementById('pfm-rail-groups');
     if (!el) return;
 
@@ -97,8 +167,9 @@
       + '<span class="pfm-group-count">' + totalCount + '</span>'
       + '</label>';
 
-    groups.forEach(function (g, idx) {
-      var color = g.color || _groupColor(idx);
+    groups.forEach(function (g) {
+      var perSetIdx = groups.filter(function (x) { return x.setId === g.setId; }).indexOf(g);
+      var color = window.VRTGroupColors.resolveGroupColor(g, perSetIdx);
       var checked = activeGroupIds.has(g.id);
       html += '<label class="pfm-group-row' + (checked ? ' pfm-group-row--checked' : '') + '">'
         + '<input type="checkbox" class="pfm-group-cb" data-group="' + esc(g.id) + '" ' + (checked ? 'checked' : '') + '>'
@@ -108,6 +179,25 @@
         + '</label>';
     });
 
+    // Unassigned legend row — locations in no group of the active "Colour by" set.
+    // Non-interactive: these pins stay visible and clickable on the map; this row
+    // only explains the grey swatch they render with.
+    if (colorBySetId) {
+      var assignedIds = {};
+      groups.forEach(function (g) {
+        if (g.setId !== colorBySetId) return;
+        (g.branchIds || []).forEach(function (id) { assignedIds[id] = true; });
+      });
+      var unassignedCount = allBranches.filter(function (b) { return !assignedIds[b.id]; }).length;
+      if (unassignedCount > 0) {
+        html += '<div class="pfm-group-row pfm-group-row--unassigned" title="Not in any group of the selected set — shown grey on the map">'
+          + '<span class="pfm-group-swatch" style="background:#9ca3af"></span>'
+          + '<span class="pfm-group-name">Unassigned</span>'
+          + '<span class="pfm-group-count">' + unassignedCount + '</span>'
+          + '</div>';
+      }
+    }
+
     el.innerHTML = html;
 
     el.querySelectorAll('.pfm-group-cb').forEach(function (cb) {
@@ -116,14 +206,6 @@
         onGroupToggle(groupId || null, cb.checked);
       });
     });
-  }
-
-  // Fallback colour via shared palette (window.VRTGroupColors loaded before this script)
-  function _groupColor(idx) {
-    var palette = window.VRTGroupColors && window.VRTGroupColors.GROUP_PALETTE;
-    if (palette) return palette[idx % palette.length];
-    // Ultra-safe fallback: blue
-    return '#3b82f6';
   }
 
   // ── Show toggles ─────────────────────────────────────────────────────────────
@@ -256,14 +338,23 @@
       rows = [{ name: 'Total assets', color: '#0C1D31', count: total }];
     }
 
+    // Proportional bar denominator
+    var totalCount = rows.reduce(function (s, r) { return s + r.count; }, 0);
+
     var locLabel = filteredBranches.length + ' location' + (filteredBranches.length === 1 ? '' : 's');
     rowsEl.innerHTML = ''
       + '<div class="pfm-breakdown-scope">' + esc(locLabel) + '</div>'
       + rows.map(function (r) {
+          var pct = totalCount > 0 ? Math.round(r.count / totalCount * 100) : 100;
           return '<div class="pfm-breakdown-row">'
+            + '<div class="pfm-breakdown-row-top">'
             + '<span class="pfm-breakdown-swatch" style="background:' + esc(r.color) + '"></span>'
             + '<span class="pfm-breakdown-label">' + esc(r.name) + '</span>'
             + '<span class="pfm-breakdown-count">' + r.count + '</span>'
+            + '</div>'
+            + '<div class="pfm-breakdown-bar-wrap">'
+            + '<div class="pfm-breakdown-bar" style="width:' + pct + '%;background:' + esc(r.color) + '"></div>'
+            + '</div>'
             + '</div>';
         }).join('');
   }
@@ -296,6 +387,9 @@
           + '<div class="pfm-rail" id="pfm-rail">'
             + '<div class="pfm-rail-head"><h1>Portfolio Map</h1></div>'
             + '<div class="pfm-rail-body">'
+
+              // 0. Colour by selector (hidden when no group sets)
+              + '<div class="pfm-rail-section" id="pfm-color-by" style="display:none"></div>'
 
               // 1. Filter by group
               + '<div class="pfm-rail-section">'
@@ -348,6 +442,37 @@
     var branchById  = {};
     allBranches.forEach(function (b) { branchById[b.id] = b; });
 
+    // ── Colour-by initialisation ───────────────────────────────────────────────
+    var state     = window.PortfolioState || {};
+    var groupSets = Array.isArray(state.groupSets) ? state.groupSets : [];
+    // client_admin bootstrap sets organizationId to null (server uses the session),
+    // so fall back to the organization record's id to keep the key per-org.
+    var orgId     = state.organizationId || (state.organization && state.organization.id) || '';
+    var lsKey     = 'pfm-color-by-' + orgId;
+    var storedColorBy = null;
+    try { storedColorBy = localStorage.getItem(lsKey); } catch (_) {}
+    // Validate stored id; fall back to first set
+    if (storedColorBy && groupSets.some(function (s) { return s.id === storedColorBy; })) {
+      _colorBySetId = storedColorBy;
+    } else if (groupSets.length > 0) {
+      _colorBySetId = groupSets[0].id;
+    } else {
+      _colorBySetId = null;
+    }
+
+    function onColorByChange(newSetId) {
+      _colorBySetId = newSetId;
+      try { localStorage.setItem(lsKey, newSetId); } catch (_) {}
+      // Recolour pins AND rebuild the rail so swatch colours and the Unassigned
+      // row (count, and whether it appears at all) match the newly selected set.
+      // Filter state lives in closure vars, so it survives untouched — and no
+      // network request is made; everything below reuses already-loaded data.
+      // The selector itself is deliberately not re-rendered, so the dropdown
+      // keeps focus while the user arrows through options.
+      sendBranchPins(getFilteredBranches());
+      renderGroupRail(groups, allBranches, activeGroupIds, onGroupToggle, _colorBySetId);
+    }
+
     // ── Filter state ──────────────────────────────────────────────────────────
     // activeGroupIds: Set of group IDs currently checked.
     // Empty set means "no group constraint" → show all pins.
@@ -385,7 +510,8 @@
     function refreshAll() {
       var filtered = getFilteredBranches();
       sendBranchPins(filtered);
-      renderGroupRail(groups, allBranches, activeGroupIds, onGroupToggle);
+      renderColorBySelector(groupSets, _colorBySetId, onColorByChange);
+      renderGroupRail(groups, allBranches, activeGroupIds, onGroupToggle, _colorBySetId);
       renderShowToggles(filtered, showOpenWork, showServicedWeek, onShowToggle);
       renderLayerBreakdown(filtered, groups, activeGroupIds);
       // If the selected branch is no longer in the filtered set, clear it

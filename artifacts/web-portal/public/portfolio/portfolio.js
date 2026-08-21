@@ -392,6 +392,7 @@
                 organization:   portfolioData.organization || {},
                 branches:       portfolioData.branches     || [],
                 groups:         portfolioData.groups       || [],
+                groupSets:      portfolioData.groupSets    || [],
                 organizationId: orgId,
                 role:           'admin',
               };
@@ -417,6 +418,7 @@
                 organization:   portfolioData.organization || {},
                 branches:       portfolioData.branches     || [],
                 groups:         portfolioData.groups       || [],
+                groupSets:      portfolioData.groupSets    || [],
                 organizationId: null, // client_admin: server uses session
                 role:           'client_admin',
               };

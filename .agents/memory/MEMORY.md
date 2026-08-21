@@ -4,3 +4,4 @@
 - [Migrations inSync 0011 drift](migrations-insync-0011-drift.md) — /api/admin/migrations reports inSync false from a pre-existing 0011 hash edit; verify your own tag applied instead.
 - [Web-portal static serving](web-portal-static-serving.md) — dev server serves a built copy from dist/; restart the workflow after editing public/ or templates/ or you'll test stale files.
 - [Pilot org data location](pilot-org-data-location.md) — pilot (PNC) org exists only in prod; dev has zero organizations, so pilot-keyed seeds/data steps are no-ops in dev.
+- [PortfolioState org id](portfolio-state-org-id.md) — organizationId is null for client_admin; derive per-org keys via `organizationId || organization.id` or preferences collide across orgs.

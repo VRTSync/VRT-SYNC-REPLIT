@@ -825,7 +825,9 @@
     }
     var colorMap = {};
     branches.forEach(function (b) {
-      colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31';
+      colorMap[b.id] = (opts && typeof opts.colorFor === 'function')
+        ? opts.colorFor(b)
+        : (b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31');
     });
     var geojson = {
       type: 'FeatureCollection',

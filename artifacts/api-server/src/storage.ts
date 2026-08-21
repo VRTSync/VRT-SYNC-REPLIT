@@ -4056,13 +4056,17 @@ export async function getPortfolioForOrg(orgId: string): Promise<{
   organization: Organization;
   branches: Community[];
   groups: (BranchGroup & { branchIds: string[] })[];
+  groupSets: BranchGroupSet[];
 } | null> {
   const org = await getOrganizationById(orgId);
   if (!org) return null;
 
-  const [branches, groups] = await Promise.all([
+  const [branches, groups, rawGroupSets] = await Promise.all([
     listBranchesByOrg(orgId),
     listBranchGroups(orgId),
+    db.select().from(branchGroupSets)
+      .where(eq(branchGroupSets.organizationId, orgId))
+      .orderBy(branchGroupSets.sortOrder, branchGroupSets.name),
   ]);
 
   // Load all group members for this org's groups in one query
@@ -4086,7 +4090,7 @@ export async function getPortfolioForOrg(orgId: string): Promise<{
     branchIds: membersByGroup.get(g.id) ?? [],
   }));
 
-  return { organization: org, branches, groups: groupsWithMembers };
+  return { organization: org, branches, groups: groupsWithMembers, groupSets: rawGroupSets };
 }
 
 // ─── Portfolio Phase 2b: read aggregates ─────────────────────────────────────

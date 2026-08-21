@@ -1249,6 +1249,18 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   background-position: center;
 }
 
+/* Unassigned legend row — explains the grey pins; not a filter, so no checkbox */
+.pfm-group-row--unassigned {
+  cursor: default;
+  border-top: 1px solid var(--gray-100);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+.pfm-group-row--unassigned::before { content: none; }
+.pfm-group-row--unassigned:hover { background: transparent; margin: 4px 0 0; padding-left: 0; padding-right: 0; }
+.pfm-group-row--unassigned .pfm-group-swatch { opacity: 1; margin-left: 24px; }
+.pfm-group-row--unassigned .pfm-group-name { color: var(--gray-500); font-style: italic; }
+
 /* ── Show toggles ───────────────────────────────────────────────────────── */
 .pfm-toggle-row {
   display: flex;
@@ -1323,15 +1335,58 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
 
 .pfm-rail-card-inner { }
 
+/* ── Colour-by selector ─────────────────────────────────────────────────── */
+.pfm-color-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pfm-color-selector-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--gray-400);
+  flex-shrink: 0;
+}
+.pfm-color-selector-static {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+.pfm-color-selector-select {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--gray-700);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+}
+.pfm-color-selector-select:focus {
+  border-color: var(--teal);
+}
+
 /* ── Layer breakdown ────────────────────────────────────────────────────── */
 .pfm-breakdown-row {
   display: flex;
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  gap: 4px;
   padding: 6px 0;
   border-bottom: 1px solid var(--gray-50);
 }
 .pfm-breakdown-row:last-child { border-bottom: none; }
+.pfm-breakdown-row-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
 .pfm-breakdown-swatch {
   width: 10px;
   height: 10px;
@@ -1368,6 +1423,18 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+.pfm-breakdown-bar-wrap {
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--gray-100);
+  overflow: hidden;
+}
+.pfm-breakdown-bar {
+  height: 3px;
+  border-radius: 2px;
+  transition: width 0.2s ease;
 }
 
 /* ── Rail card last-service row ─────────────────────────────────────────── */
