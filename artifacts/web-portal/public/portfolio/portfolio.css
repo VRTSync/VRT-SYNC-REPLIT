@@ -2445,6 +2445,7 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   display: block;   /* visible by default (Summary is the default active tab) */
   cursor: default;
   background: transparent;
+  pointer-events: none; /* let clicks/drags/scroll reach the map iframe */
 }
 
 .summ-cards-grid {
