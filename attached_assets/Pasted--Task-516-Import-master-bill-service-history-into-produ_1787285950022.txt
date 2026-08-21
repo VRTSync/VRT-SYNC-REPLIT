@@ -1,0 +1,307 @@
+# Task #516: Import master bill service history into production
+
+*Ready to hand over.*
+
+> **Number check:** Randy asked me to assign this one rather than wait. #516 follows #515 (invoice record integrity), the highest number this project has seen. If it collides with something tracked outside this folder, say so and I'll renumber the file and every cross-reference.
+
+## What & Why
+
+The pilot org's portal shows zero services logged, because no service history has ever been entered. Meanwhile three master bills from High Plains Property Maintenance record every service actually performed on the PNC branches, with dates, descriptions, invoice numbers, and amounts.
+
+Importing them makes the pilot portal show real work instead of empty panels, and puts the billing records where they belong.
+
+**This writes to production.** Every requirement about dry runs, idempotency, and reversibility below is load-bearing, not ceremony.
+
+## Source data
+
+**All three workbooks have been validated. See `docs/master-bill-data-validation-2026-08-11.md` for the full findings — read it before building.** Headlines: identical sheet structure across periods, 139 usable rows, $53,120.90, 11 branches, idempotency key proven collision-free against real data.
+
+Excel workbooks, one per billing period, in `PNC Master Bill/`. Each has two sheets; **only `Service Detail` is imported** — `Master Bill Summary` is a rollup and would double-count.
+
+`Service Detail` columns — **header on row 4, data from row 5**, identical in all three files:
+
+| Column | Example | Maps to |
+|---|---|---|
+| PNC Code | `FB01` | `communities.code` lookup |
+| FB Code | `104TH` | secondary lookup / sanity check |
+| PNC Building Name | `104th and Federal` | sanity check only, never authoritative |
+| Invoice # | `19425` | `invoices.invoice_number` |
+| Reference # | `WC-2026-1112`, `LC`, `Line 14` | idempotency key component |
+| Service Date | `2026-07-31` | `invoices.completion_date`, `task_completions.completed_at` |
+| Service Type | `Irrigation Repair` | `invoices.service_type` verbatim |
+| Description | `22 repairs / 13 zones — …` | `tasks.title` / `invoices.notes` |
+| Amount | `1341.25` | `invoices.cost`, `tasks.estimate_cents` |
+
+Across the three bills: **139 usable rows, $53,120.90, 11 branches, 11 distinct service types.** After the date normalisation below, every service falls within 2026-05-01 to 2026-07-31.
+
+### ⚠️ All 139 rows become invoices. Only 110 become completions.
+
+**Decision 2026-08-20.** The 29 `Monthly Landscape Contract` lines are *the same work* as the Weekly Landscape Maintenance visits being seeded separately from the contract task list. Writing both would count routine mowing twice, and the two records would disagree about how it happened — one row saying "we maintained this property in May for $690" alongside sixteen logged visits covering the same weeks.
+
+**The weekly visits carry routine maintenance. The bill import carries extra work only.**
+
+| Row type | Count | `invoices` | `tasks` + `task_completions` |
+|---|---|---|---|
+| Monthly Landscape Contract | 29 | ✅ yes | ❌ **no** |
+| Everything else | 110 | ✅ yes | ✅ yes |
+| **Total** | **139** | **139** | **110** |
+
+**The dollar total is unaffected — $53,120.90 across 139 invoice rows.** Contract revenue is fully preserved in the billing record. What changes is only that contract lines don't manufacture a completion event that the weekly schedule already accounts for.
+
+Filter on `Service Type = 'Monthly Landscape Contract'` exactly, and **report the count of contract-only rows in the dry run**. It must be 29 — 10 May, 10 June, 9 July. A different count means the input differs from what was validated.
+
+### ⚠️ The `GRAND TOTAL` row will corrupt the import if not filtered
+
+Every bill has exactly one — row 51 (May), 53 (June), 50 (July) — carrying the period total in the Amount column and the literal string `GRAND TOTAL` in the PNC Code column.
+
+This is not hypothetical. A first pass over July without the filter produced **$30,504.92 — exactly double** the real $15,252.46, and would have created a phantom location named "GRAND TOTAL".
+
+**Skip any row whose PNC Code does not match a real community, and report every skipped row by line number.** Do not silently drop them.
+
+No null-service-type rows exist in the validated set, but keep a guard.
+
+### ⚠️ Required: normalise 20 out-of-period contract dates
+
+The May and June bills date their **Monthly Landscape Contract** lines to the *first of the following month* — one day past their own billing period. July dates its contract lines to the last day of the month, which is correct. This is an error in the source files, confirmed against the raw cells (plain text strings, not misconverted dates) and against each sheet's own header:
+
+| Bill | Header period | Contract lines dated | Correct? |
+|---|---|---|---|
+| May | May 1 – May 31, 2026 | `2026-06-01` | ✗ |
+| June | June 1 – June 30, 2026 | `2026-07-01` | ✗ |
+| July | July 1 – July 31, 2026 | `2026-07-31` | ✓ |
+
+**Every service must fall inside the billing period of the bill it appears on.** Normalise the affected rows to the last day of their period: May → `2026-05-31`, June → `2026-06-30`.
+
+Exactly **20 rows** are affected, all of them Monthly Landscape Contract lines, one per contracted branch per month:
+
+| Bill | Row | PNC | As written | Normalised |
+|---|---|---|---|---|
+| May | 5, 10, 16, 21, 24, 28, 31, 40, 43, 47 | FB01, FB02, FB08, FB15, FB16, FB1B, FB36, FB4F, FB5F, FB65 | `2026-06-01` | `2026-05-31` |
+| June | 5, 9, 13, 18, 24, 29, 36, 40, 43, 49 | FB01, FB02, FB08, FB15, FB16, FB1B, FB36, FB4F, FB5F, FB65 | `2026-07-01` | `2026-06-30` |
+
+**Implement this as a general rule, not a hardcoded row list:** if a row's service date falls outside its bill's billing period, clamp it to the nearest period boundary. Then **assert that exactly 20 rows were clamped** and print each one. If the count is not 20, or a clamped row is not a Monthly Landscape Contract line, stop — the input differs from what was validated.
+
+Normalisation applies to `invoices.completion_date`. **Note that all 20 clamped rows are Monthly Landscape Contract lines, and contract lines no longer produce a `task_completions` row** — so in practice no completion date is ever clamped. Clamp anyway, as a general rule: if a future bill puts an extra-work line outside its period, the rule must catch it.
+
+This also removes a symptom flagged earlier: with contract lines no longer producing completions, **"Last service" can no longer read `2026-07-01`** for branches whose most recent record was a mis-dated June contract line.
+
+### ⚠️ No "First Bank" reference may reach the database
+
+**Requirement 2026-08-20.** The bills carry the former owner's name in three places. None of them is a data value, so this is cheap to guarantee — but it must be asserted, not assumed.
+
+| Where | Text | Currently reaches the DB? |
+|---|---|---|
+| Rows 1–3, both sheets | `PNC / First Bank — Service Detail by Location` | No — parsing starts at row 4 |
+| Column B header | `FB Code` | No — sanity check only, never stored |
+| Filenames | `PNC_FirstBank_MasterBill_*.xlsx` / `.pdf` | **Only if `source_batch` is derived from the filename** |
+
+Requirements:
+
+1. **Never read rows 1–3.** Parsing starts at the row-4 header and row-5 data, as already specified. Do not add a "grab the title for the batch label" convenience.
+2. **`source_batch` is a literal**, e.g. `'master_bill_2026_05'`, passed as the billing-period argument. **Never derive it from the filename**, and never fall back to the filename if the argument is absent — fail instead.
+3. **Do not store the FB Code or PNC Building Name columns.** They stay sanity checks, as already specified.
+4. **Do not attach the master bill PDFs** to invoice rows. Already out of scope; the filenames are a second reason.
+5. **Assert before commit.** In the same transaction, before writing, check every string bound for the database — `service_type`, `notes`, `invoice_number`, `reference_number`, `source`, `source_batch`, `contractor`, and every `tasks.title` — against `/first\s*-?_?bank/i`. **Any match aborts the run** and reports the offending row and column. This is a guard against a future bill whose Description column mentions it, which no assertion on today's files would catch.
+
+`contractor` is the literal `'High Plains Property Maintenance'` and is clean.
+
+**The `FB01`…`FB65` codes stay as they are.** *Decision 2026-08-20.* They are the client's own asset identifiers and the key that joins bills to locations; re-keying `communities.code` would break the mapping table below and the verified idempotency key for no real gain. `FB01` reads as an opaque code, not a brand.
+
+### The 11 branches — use this table, do not derive it
+
+**July alone shows only 9.** Building the mapping from a single bill misses FB36 and FB65.
+
+| PNC | FB | Building name | Lines | Total | |
+|---|---|---|---|---|---|
+| FB01 | 104TH | 104th and Federal | 12 | $3,933.94 |
+| FB02 | 136TH | 136th and Colorado | 17 | $6,969.27 |
+| FB08 | ADCO | 104th and Colorado | 17 | $5,522.58 |
+| FB15 | BRIDGE | 50th and Bridge | 15 | $4,783.00 |
+| FB16 | BRIGHT | Brighton | 12 | $3,400.71 |
+| FB1B | CHAM | 104th and Chambers | 17 | $6,152.90 |
+| FB36 | JEFF | Colfax and Wadsworth | 12 | $10,983.52 | ← off contract after June, see note |
+| FB45 | NRTH | 88th and Wadsworth | 1 | $425.00 |
+| FB4F | SHER | 120th and Sheridan | 9 | $1,971.79 |
+| FB5F | VISTA | Baseline and Sheridan | 16 | $5,753.75 |
+| FB65 | ZUNI | 136th and Zuni | 11 | $3,224.44 |
+
+If any code here fails to match a `communities.code` in the pilot org, **stop and report** — that is a data problem to fix before importing, not something to resolve at runtime.
+
+**FB36 was removed from the contract at the end of June — this is intentional, not missing data.** Its May and June work is real and imports normally; it simply has no July activity. Do not treat its absence from the July bill as an error. Whether the location should also be marked inactive in the portal is a separate decision and is out of scope here.
+
+### ⚠️ Imported tasks will flood the client Work Orders page unless excluded
+
+Verified against `566ac51`. `GET /api/portfolio/work-orders` selects **every task for the org with no filter**:
+
+```sql
+FROM tasks t
+JOIN org_coms c ON c.id = t.community_id
+ORDER BY t.created_at DESC
+```
+
+No predicate on `status`, `origin`, or anything else. The route then partitions rows into open / closed / cancelled in JS.
+
+So importing 139 tasks with `status = 'completed'` puts **139 rows into the "closed" bucket of the client Work Orders page** — every historical bill line re-presented as a work order the client supposedly raised.
+
+Two things make that worse than merely noisy:
+
+1. **The reference is meaningless.** The route derives `ref = 'WO-' + first 8 chars of the task uuid`. A billed service line would show as `WO-A1B2C3D4` — a work-order number that never existed.
+2. **The source label is wrong.** Source is derived from origin, and the branches are `origin === 'client'` → "PNC request", **everything else → `'HP'`**. So `master_bill_import` falls through to `'HP'`, presenting historical billing as though HP raised 139 work orders.
+
+**A work order is a request that was tracked. A billed service line is history.** These records already surface correctly as Services Logged, Last Service, Recent Activity, and Service History. Showing them a second time as closed work orders double-represents the same work and clutters the one screen the client uses for actionable items.
+
+**Required:** exclude `origin = 'master_bill_import'` from the client Work Orders query. Use the same shared exclusion constant #514 introduces for the photo rate — do not define a second list of import origins.
+
+Check the same question for the **flow-diagram counts and the sidebar badge** on that page. The badge counts awaiting-approval only, so it should be unaffected, but confirm rather than assume.
+
+## What gets written
+
+Each detail row produces an `invoices` row. **Rows that are not `Monthly Landscape Contract` additionally produce a `tasks` + `task_completions` pair** — see the split table above.
+
+**1. An `invoices` row** — the billing record of truth. **All 139 rows.**
+
+```
+community_id      resolved from PNC Code
+contractor        'High Plains Property Maintenance'
+completion_date   Service Date
+service_type      the bill's own wording, verbatim (free text column, no enum)
+cost              Amount
+notes             Description
+invoice_number    Invoice #
+reference_number  Reference #        (idempotency key component, added by #515)
+source            'master_bill_import'
+source_batch      e.g. 'master_bill_2026_05'
+status            LEAVE NULL         ← see below
+due_date          LEAVE NULL
+paid_at           LEAVE NULL
+```
+
+#### Do not set `status`, `due_date`, or `paid_at`
+
+**Decision 2026-08-20: VRTSync is not bookkeeping software and will not track paid/unpaid here.**
+
+`invoices` in this product is a **service record that happens to carry an amount** — what work was done, where, when, by whom, for how much. It is not an accounts-receivable ledger, and the moment it starts asserting payment state it acquires an obligation to be *right* about payment state, which nothing in this system can honour. There is no payment event, no reconciliation, and no source of truth for settlement. A `status` column that says `'paid'` because an importer guessed is worse than a null one.
+
+The schema permits this cleanly — `status: invoiceStatusEnum("status")` at `schema.ts` is **nullable with no default**, as are `due_date` and `paid_at`. Leaving all three null is a legal row, not a workaround.
+
+**Concretely:** omit these three fields from the insert. Do not substitute `'draft'`, `'approved'`, or any other enum value as a "neutral" placeholder — every one of them is a claim. Null is the honest value, and it is the one that reads correctly if a real billing integration is ever added.
+
+If any UI surfaces an invoice status for these rows, it should render blank — not "Unpaid", which is itself an assertion.
+
+**2. A `tasks` row plus a `task_completions` row** — what makes the portal show it. **Only the 110 non-contract rows.**
+
+```
+tasks
+  community_id    same
+  title           Description, trimmed
+  status          'completed'
+  origin          'master_bill_import'
+  estimate_cents  round(Amount * 100)
+
+task_completions
+  task_id         the task above
+  completed_by    see below
+  completed_at    Service Date
+  notes           '{Service Type} · Invoice {Invoice #} · Ref {Reference #}'
+```
+
+Both are needed. `invoices` is never read by the client portal (billing is deliberately excluded from it); `task_completions` is what `Services Logged`, `Last Service`, and `Recent Activity` actually count. That asymmetry is exactly why the contract lines can be held out of `task_completions` without losing a cent of revenue from the billing record.
+
+### Expected completion counts per branch
+
+Read this in the dry run. The right-hand column is what the portal will show as services logged from the bill import alone, before any seasonal visits are seeded.
+
+| PNC | Lines | Invoices | Completions |
+|---|---|---|---|
+| FB01 | 12 | 12 | 9 |
+| FB02 | 17 | 17 | 14 |
+| FB08 | 17 | 17 | 14 |
+| FB15 | 15 | 15 | 12 |
+| FB16 | 12 | 12 | 9 |
+| FB1B | 17 | 17 | 14 |
+| FB36 | 12 | 12 | 10 |
+| FB45 | 1 | 1 | 1 |
+| FB4F | 9 | 9 | 6 |
+| FB5F | 16 | 16 | 13 |
+| FB65 | 11 | 11 | 8 |
+| **Total** | **139** | **139** | **110** |
+
+FB36 shows 10 rather than 9 because it has only two contract lines — it left the contract after June. FB45's single line is a planter-box install, not a contract line, so it survives the filter and the branch still shows one service.
+
+### `completed_by` is NOT NULL and needs a real user
+
+`task_completions.completed_by` references `users.id`. Historical bill lines have no individual crew member attached.
+
+**Resolve, do not invent:** use an existing High Plains contractor user if one exists, otherwise create a single clearly-labelled service account (e.g. "High Plains Property Maintenance — historical import") and use it for every row. **State which you did.** Do not attach these completions to Randy's own user or to an admin account — they will show as that person's work everywhere in the product.
+
+## Non-negotiables
+
+**Dry run by default.** Running the script with no flags **prints and writes nothing**. It reports: rows parsed, rows matched to a community, rows skipped and why, per-branch counts and totals, the resolved `completed_by` user, and a full sample of what a row would become. It writes only when passed an explicit confirm flag.
+
+**Idempotent.** Re-running must not double anything. The natural key is `invoice_number + reference_number + community_id + service_date`, **verified collision-free across all 139 rows** (139 rows → 139 distinct keys). Store the reference on the invoice row (add a column, or fold it into `notes` in a parseable form) and skip any row already present. Say which approach you took.
+
+Note `LC` appears 29 times as a bare reference; it is unique only in combination with the other three fields, so do not key on reference alone.
+
+**Reversible.** Tag everything with a batch identifier — `tasks.origin = 'master_bill_import'` plus the billing period. Include a documented delete for a batch. If a code mapping turns out wrong, the fix must not be archaeology.
+
+**Fail loudly on ambiguity.** If a PNC Code matches zero communities, or more than one, stop and report — do not guess from the building name. A wrong community assignment is worse than an unimported row.
+
+**Transactional per bill.** One billing period, one transaction. A partial import is the worst outcome.
+
+## Steps
+
+1. Script at `scripts/import-master-bill.ts` (or wherever the repo keeps one-offs). Arguments: path to the xlsx, billing period label, `--confirm` to write.
+2. Parse `Service Detail` only, from row 5.
+3. Resolve each PNC Code against `communities.code` **scoped to the pilot organization**. Report the mapping table before doing anything else.
+4. Resolve or create the `completed_by` user.
+5. Dry-run report.
+6. On `--confirm`: insert inside a transaction, skipping rows already imported.
+7. Print a post-import summary and the exact command to undo the batch.
+
+## Verify
+
+- Dry run on all three bills first. **The mapping table is the thing to read carefully** — every PNC Code resolving to the community you expect is the single most important check.
+- `GRAND TOTAL` and null-service-type rows appear in the skipped list, not the imported list.
+- **Exactly 20 rows are reported as date-normalised**, all Monthly Landscape Contract lines, 10 in May and 10 in June. Any other count means the input differs from what was validated — stop.
+- **Exactly 29 rows are reported as contract-only** (invoice written, no completion) — 10 May, 10 June, 9 July.
+- `SELECT COUNT(*) FROM invoices WHERE source_batch LIKE 'master_bill%'` → **139**. `SELECT COUNT(*) FROM tasks WHERE origin = 'master_bill_import'` → **110**. Both numbers, explicitly, in the post-import summary.
+- Per-branch completion counts match the table above.
+- `SUM(cost)` across the 139 invoice rows → **$53,120.90**. Dropping contract completions must not move this.
+- After import, `MIN(completion_date)` and `MAX(completion_date)` per billing period fall inside that period. No May record dated in June.
+- Import one bill. Portal: Services Logged is non-zero, Last Service shows a real date, Recent Activity lists real descriptions.
+- Locations page Services YTD reconciles with the bill's line count per branch.
+- **Re-run the same bill.** Nothing is added. This is the test most likely to fail.
+- Import the other two. Counts accumulate correctly across periods.
+- Delete a batch. Counts return to their prior values, no orphans in `tasks` or `invoices`.
+- Admin dashboard totals still reconcile.
+
+## Known consequences, both correct
+
+- **Photo documentation is unaffected**, because #514 excludes `origin = 'master_bill_import'` from both numerator and denominator. The 110 imported completions have no photos, which is accurate — the work predates photo capture — but they are held out of the rate entirely rather than dragging it toward zero. Do not fabricate attachments to prop the number up.
+- **The Work Orders Layer column will be empty for these**, since bill lines carry no layer attribution. Irrigation Repair descriptions do name zones ("Zones 11 & 14"), so layer attribution is derivable later — out of scope here.
+
+## Out of scope
+
+- Parsing the PDFs. The Excel files carry the same data in a structured form.
+- An admin upload UI.
+- Attaching the master bill PDFs to the invoice rows (`pdf_object_key` exists if wanted later).
+- Linking irrigation repairs to specific zone assets.
+
+## Open questions for Randy
+
+*None. All previously open questions are resolved.*
+
+~~**Invoice status**~~ **Resolved 2026-08-20:** do not track paid/unpaid. `status`, `due_date` and `paid_at` are all left null. This is not bookkeeping software.
+
+~~**Contract lines vs weekly visits**~~ **Resolved 2026-08-20:** the weekly maintenance schedule carries routine mowing. The 29 contract lines write an invoice row but no completion. Dollar total unchanged.
+
+~~**Contract line dates**~~ **Resolved 2026-08-11:** normalise. Every service must fall inside its bill's billing period. See the normalisation section above — 20 rows, clamped to period end.
+
+~~**FB36**~~ **Resolved 2026-08-11:** removed from the contract at the end of June, deliberately. Not missing data. Import its May and June history as normal.
+
+~~**FB45**~~ **Resolved:** one line ever, a $425 planter-box install on 2026-05-18, no address in any summary. Real branch, minimal activity. **Include it.**
+
+## Relevant files
+
+- `lib/db/src/schema/schema.ts` — `invoices` ~1039, `tasks` ~130, `taskCompletions` ~177, `communities` ~50
+- `artifacts/api-server/src/storage.ts` — `getPortfolioBranchDetail` ~4469 (`recentServices` = task_completions + service_visits, confirming why tasks are required)
