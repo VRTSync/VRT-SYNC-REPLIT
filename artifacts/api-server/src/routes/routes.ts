@@ -5987,6 +5987,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           JOIN org_coms c ON c.id = t.community_id
           LEFT JOIN assets a ON a.id = t.asset_id
           LEFT JOIN map_layers ml ON ml.id = a.map_layer_id
+          WHERE ${storage.importOriginExclude('t')}
           ORDER BY t.created_at DESC
         `, [orgId]),
       ]);
