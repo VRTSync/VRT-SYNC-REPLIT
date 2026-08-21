@@ -5171,12 +5171,16 @@ export async function getPortfolioAnalytics(orgId: string) {
   const catalogueMap = new Map(catalogueRows.map(r => [r.key, r]));
   const assetTypes = Array.from(assetTypeSet)
     .map(key => {
-      const cat = catalogueMap.get(key);
+      const cat      = catalogueMap.get(key);
+      const layerKey = cat?.layerKey ?? null;
+      const layerInfo = layerKey ? (MAP_LAYER_DISPLAY[layerKey] ?? null) : null;
       return {
         key,
-        label:     cat?.label ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        sortOrder: cat?.sortOrder ?? 9999,
-        layerKey:  cat?.layerKey ?? null,
+        label:      cat?.label ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        sortOrder:  cat?.sortOrder ?? 9999,
+        layerKey,
+        layerName:  layerInfo ? layerInfo.name  : null,
+        layerColor: layerInfo ? layerInfo.color : null,
       };
     })
     .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));

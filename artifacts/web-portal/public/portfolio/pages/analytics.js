@@ -297,43 +297,94 @@
       totalSpendCents  += loc.spendYtdCents || 0;
     });
 
-    var typeCards = visibleTypes.map(function (at) {
-      var totalCount   = 0;
-      var totalSqFt    = 0;
-      var coveredCount = 0;
-      var totalPoly    = 0;
-
-      locations.forEach(function (loc) {
-        var b = loc.assets[at.key];
-        if (!b) return;
-        totalCount   += b.count;
-        totalSqFt    += b.sqFtTotal;
-        coveredCount += b.sqFtCovered;
-        totalPoly    += b.sqFtCount;
-      });
-
-      if (totalCount === 0) return '';
-
-      var hasSqFt = totalSqFt > 0;
-      var coverageNote = (totalPoly > 0 && coveredCount < totalPoly)
-        ? '<div class="pa-card-coverage">based on ' + coveredCount + ' of ' + totalPoly + ' areas</div>'
-        : '';
-      var sqFtHtml = hasSqFt
-        ? '<div class="pa-card-sqft">' + _fmtSqFt(totalSqFt) + ' ft²' + coverageNote + '</div>'
-        : '';
-
-      return '<div class="pa-card">'
-        + '<div class="pa-card-label">' + esc(at.label) + '</div>'
-        + '<div class="pa-card-value">' + totalCount.toLocaleString() + '</div>'
-        + sqFtHtml
-        + '</div>';
-    }).join('');
-
     var totalAssets = 0;
     locations.forEach(function (loc) {
       Object.values(loc.assets).forEach(function (b) { totalAssets += b.count; });
     });
 
+    // ── Group asset types by layer, preserving sort order ─────────────────
+    var layerBands = [];      // [{layerKey, layerName, layerColor, types:[]}]
+    var layerKeyIndex = {};   // layerKey → index in layerBands
+
+    visibleTypes.forEach(function (at) {
+      var lk = at.layerKey || '__other__';
+      if (layerKeyIndex[lk] === undefined) {
+        layerKeyIndex[lk] = layerBands.length;
+        layerBands.push({
+          layerKey:   lk,
+          layerName:  at.layerName  || null,
+          layerColor: at.layerColor || null,
+          types: [],
+        });
+      }
+      layerBands[layerKeyIndex[lk]].types.push(at);
+    });
+
+    // ── Build per-band HTML ────────────────────────────────────────────────
+    var typeSectionHtml = layerBands.map(function (band) {
+      var cardsHtml = band.types.map(function (at) {
+        var totalCount   = 0;
+        var totalSqFt    = 0;
+        var coveredCount = 0;
+        var totalPoly    = 0;
+
+        locations.forEach(function (loc) {
+          var b = loc.assets[at.key];
+          if (!b) return;
+          totalCount   += b.count;
+          totalSqFt    += b.sqFtTotal;
+          coveredCount += b.sqFtCovered;
+          totalPoly    += b.sqFtCount;
+        });
+
+        if (totalCount === 0) return '';
+
+        // Inline style from API-supplied layer colour — no hex hardcoded here
+        var styleAttr = '';
+        if (at.layerColor) {
+          var hex = at.layerColor.replace('#', '');
+          var r   = parseInt(hex.substring(0, 2), 16);
+          var g   = parseInt(hex.substring(2, 4), 16);
+          var bl  = parseInt(hex.substring(4, 6), 16);
+          styleAttr = ' style="border-bottom-color:' + at.layerColor
+            + ';background:linear-gradient(160deg,rgba(' + r + ',' + g + ',' + bl + ',0.08),#fff 62%)"';
+        }
+
+        var hasSqFt = totalSqFt > 0;
+        var cardHtml;
+        if (hasSqFt) {
+          // Area-first layout: ft² headline, count/coverage sub-line
+          var isPartial = totalPoly > 0 && coveredCount < totalPoly;
+          var subLine = isPartial
+            ? '<span class="pa-card-coverage">' + coveredCount + ' of ' + totalPoly + ' areas measured</span>'
+            : totalCount.toLocaleString() + ' area' + (totalCount !== 1 ? 's' : '');
+          cardHtml = '<div class="pa-card"' + styleAttr + '>'
+            + '<div class="pa-card-label">' + esc(at.label) + '</div>'
+            + '<div class="pa-card-value">' + _fmtSqFtFull(totalSqFt) + ' ft²</div>'
+            + '<div class="pa-card-sqft">' + subLine + '</div>'
+            + '</div>';
+        } else {
+          // Point type: count headline, no area line
+          cardHtml = '<div class="pa-card"' + styleAttr + '>'
+            + '<div class="pa-card-label">' + esc(at.label) + '</div>'
+            + '<div class="pa-card-value">' + totalCount.toLocaleString() + '</div>'
+            + '</div>';
+        }
+        return cardHtml;
+      }).join('');
+
+      if (!cardsHtml) return '';
+
+      var labelHtml = band.layerName
+        ? '<div class="pa-layer-band-label">' + esc(band.layerName) + '</div>'
+        : '';
+      return '<div class="pa-layer-band">'
+        + labelHtml
+        + '<div class="pa-layer-cards">' + cardsHtml + '</div>'
+        + '</div>';
+    }).join('');
+
+    // ── Assemble final HTML ────────────────────────────────────────────────
     container.innerHTML = '<div class="pa-summary-row">'
       + '<div class="pa-card pa-card--teal">'
         + '<div class="pa-card-label">Locations</div>'
@@ -353,8 +404,8 @@
               + '<div class="pa-card-label">Spend YTD</div>'
               + '<div class="pa-card-value">' + fmtC(Math.round(totalSpendCents / 100)) + '</div>'
             + '</div>' : '')
-      + typeCards
-      + '</div>';
+      + '</div>'
+      + '<div class="pa-type-section">' + typeSectionHtml + '</div>';
   }
 
   // ── Tier 2: location table ─────────────────────────────────────────────────
@@ -741,6 +792,12 @@
     if (n == null || isNaN(n)) return '—';
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000)    return (n / 1000).toFixed(1)    + 'K';
+    return Math.round(n).toLocaleString();
+  }
+
+  // Full number with thousands separators — used for area-card headlines
+  function _fmtSqFtFull(n) {
+    if (n == null || isNaN(n)) return '—';
     return Math.round(n).toLocaleString();
   }
 
