@@ -5225,8 +5225,8 @@ export async function getPortfolioAnalytics(orgId: string) {
 const MAP_LAYER_DISPLAY: Record<string, { name: string; color: string; assetTypes: readonly string[] }> = {
   community:  { name: 'Landscape',  color: '#2E8B57', assetTypes: ['bluegrass_area','native_area','landscape_bed','pet_station'] },
   irrigation: { name: 'Irrigation', color: '#3498db', assetTypes: ['backflow','controller','zone','master_valve','flow_meter','qc_iso_valve','isolation_valve','quick_connect','wire_splice'] },
-  snow:       { name: 'Snow',       color: '#4A90E2', assetTypes: ['plow','atv','hand_shovel','ice_melt','slicer','storage_area'] },
-  trees:      { name: 'Trees',      color: '#006400', assetTypes: ['tree'] },
+  snow:       { name: 'Snow',       color: '#64748b', assetTypes: ['plow','atv','hand_shovel','ice_melt','slicer','storage_area'] },
+  trees:      { name: 'Trees',      color: '#7c9a3f', assetTypes: ['tree'] },
 };
 
 // Reverse lookup: assetType → layerKey (built once at module load)

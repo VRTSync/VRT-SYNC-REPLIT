@@ -26,7 +26,7 @@ PortalRouter.register('map', async function (container) {
       { key: 'qc_iso_valve', label: 'QC/ISO Valve', color: '#87CEEB' },
     ],
     snow: [
-      { key: 'plow', label: 'Plow', color: '#4A90E2' },
+      { key: 'plow', label: 'Plow', color: '#64748b' },
       { key: 'atv', label: 'ATV', color: '#6A5ACD' },
       { key: 'hand_shovel', label: 'Hand Shovel', color: '#E83E8C' },
       { key: 'ice_melt', label: 'Ice Melt', color: '#FF8C00' },
@@ -34,7 +34,7 @@ PortalRouter.register('map', async function (container) {
       { key: 'storage_area', label: 'Storage Area', color: '#708090' },
     ],
     trees: [
-      { key: 'tree', label: 'Trees', color: '#006400' },
+      { key: 'tree', label: 'Trees', color: '#7c9a3f' },
     ],
   };
 

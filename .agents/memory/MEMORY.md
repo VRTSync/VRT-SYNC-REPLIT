@@ -6,4 +6,5 @@
 - [Pilot org data location](pilot-org-data-location.md) — pilot (PNC) org exists only in prod; dev has zero organizations, so pilot-keyed seeds/data steps are no-ops in dev.
 - [PortfolioState org id](portfolio-state-org-id.md) — organizationId is null for client_admin; derive per-org keys via `organizationId || organization.id` or preferences collide across orgs.
 - [Import commit trust boundary](import-commit-trust-boundary.md) — commit must re-derive community/service-account resolution in its own txn; the posted preview object is untrusted input.
+- [Layer colour duplication](layer-colour-duplication.md) — layer palette is one constant, but pin defaults are copied 4x (incl. a shared lib + a dead unserved copy); stored map_layers.color still wins.
 - [Import batch skip audit](import-batch-skip-audit.md) — batch records need the per-row skip report + acknowledged codes, not just aggregate counts, or omissions are unexplainable later.

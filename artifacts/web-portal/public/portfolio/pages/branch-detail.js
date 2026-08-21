@@ -80,13 +80,13 @@
     'isolation_valve':  '#F39C12',
     'quick_connect':    '#E67E22',
     'wire_splice':      '#9B59B6',
-    'plow':             '#4A90E2',
+    'plow':             '#64748b',
     'atv':              '#6A5ACD',
     'hand_shovel':      '#E83E8C',
     'ice_melt':         '#FF8C00',
     'slicer':           '#D62828',
     'storage_area':     '#708090',
-    'tree':             '#006400',
+    'tree':             '#7c9a3f',
   };
 
   function _dotHex(accent) {
