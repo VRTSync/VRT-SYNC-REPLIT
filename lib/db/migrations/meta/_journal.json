@@ -120,6 +120,13 @@
       "when": 1786037468276,
       "tag": "0016_invoice_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0017_import_batches",
+      "breakpoints": true
     }
   ]
 }

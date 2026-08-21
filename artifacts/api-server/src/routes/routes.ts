@@ -34,6 +34,14 @@ import {
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
 import { parseFile, generatePreview, commitImport } from "../contractImporter";
+import {
+  parseMasterBill, previewMasterBill, commitMasterBill,
+  type MasterBillParseResult, type MasterBillPreviewResult,
+} from "../masterBillImporter";
+import {
+  parseSeasonal, previewSeasonal, commitSeasonal,
+  type SeasonalColumnMappings,
+} from "../seasonalImporter";
 import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments } from "@workspace/db";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
@@ -4610,6 +4618,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: "Failed to log service visit" });
     }
   });
+
+  // ── Master Bill import routes ────────────────────────────────────────────
+
+  app.post("/api/admin/import/master-bill/parse", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return void res.status(400).json({ error: "No file uploaded" });
+      const batchLabel = (req.body?.batchLabel ?? "").trim();
+      if (!batchLabel) return void res.status(400).json({ error: "batchLabel is required" });
+      const result = parseMasterBill(req.file.buffer, batchLabel);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Master-bill parse error:", error);
+      res.status(400).json({ error: error.message || "Failed to parse file" });
+    }
+  });
+
+  app.post("/api/admin/import/master-bill/preview", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const parsed: MasterBillParseResult = req.body;
+      if (!parsed?.batchLabel || !parsed?.rows) {
+        return void res.status(400).json({ error: "Missing parsed data — run /parse first" });
+      }
+      const result = await previewMasterBill(parsed, pool);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Master-bill preview error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate preview" });
+    }
+  });
+
+  app.post("/api/admin/import/master-bill/commit", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { parsed, preview }: { parsed: MasterBillParseResult; preview: MasterBillPreviewResult } = req.body;
+      if (!parsed?.batchLabel || !preview) {
+        return void res.status(400).json({ error: "Missing parsed or preview data" });
+      }
+      const result = await commitMasterBill(parsed, preview, pool, req.session.userId!);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Master-bill commit error:", error);
+      res.status(500).json({ error: error.message || "Failed to commit import" });
+    }
+  });
+
+  // ── Seasonal import routes ───────────────────────────────────────────────
+
+  app.post("/api/admin/import/seasonal/parse", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return void res.status(400).json({ error: "No file uploaded" });
+      const result = parseSeasonal(req.file.buffer, req.file.originalname);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Seasonal parse error:", error);
+      res.status(400).json({ error: error.message || "Failed to parse file" });
+    }
+  });
+
+  app.post("/api/admin/import/seasonal/preview", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { allRows, mappings }: { allRows: Record<string, any>[]; mappings: SeasonalColumnMappings } = req.body;
+      if (!allRows || !mappings?.communityCode || !mappings?.serviceDate || !mappings?.serviceType || !mappings?.taskTitle) {
+        return void res.status(400).json({ error: "Missing allRows or required column mappings" });
+      }
+      const result = await previewSeasonal(allRows, mappings, pool);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Seasonal preview error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate preview" });
+    }
+  });
+
+  app.post("/api/admin/import/seasonal/commit", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { allRows, mappings }: { allRows: Record<string, any>[]; mappings: SeasonalColumnMappings } = req.body;
+      if (!allRows || !mappings?.communityCode || !mappings?.serviceDate || !mappings?.serviceType || !mappings?.taskTitle) {
+        return void res.status(400).json({ error: "Missing allRows or required column mappings" });
+      }
+      const result = await commitSeasonal(allRows, mappings, pool, req.session.userId!);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Seasonal commit error:", error);
+      res.status(500).json({ error: error.message || "Failed to commit seasonal import" });
+    }
+  });
+
+  // ── Import batch history ─────────────────────────────────────────────────
+
+  app.get("/api/admin/import/batches", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const result = await pool.query<{
+        id: string; mode: string; batch_label: string; run_by: string | null;
+        run_at: string; invoice_count: number | null; task_count: number | null;
+        completion_count: number | null; schedule_count: number | null;
+        visit_count: number | null; runner_name: string | null;
+      }>(
+        `SELECT b.id, b.mode, b.batch_label, b.run_by, b.run_at,
+                b.invoice_count, b.task_count, b.completion_count,
+                b.schedule_count, b.visit_count,
+                u.display_name AS runner_name
+           FROM import_batches b
+           LEFT JOIN users u ON u.id = b.run_by
+          ORDER BY b.run_at DESC`,
+      );
+      res.json(result.rows);
+    } catch (error: any) {
+      console.error("Import batches list error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch import batches" });
+    }
+  });
+
+  app.delete("/api/admin/import/batches/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const batchRow = await pool.query<{
+        id: string; mode: string; batch_label: string;
+      }>(
+        `SELECT id, mode, batch_label FROM import_batches WHERE id = $1`,
+        [id],
+      );
+      if (batchRow.rows.length === 0) {
+        return void res.status(404).json({ error: "Batch not found" });
+      }
+      const batch = batchRow.rows[0]!;
+
+      let invoicesDeleted = 0;
+      let tasksDeleted    = 0;
+      let visitsDeleted   = 0;
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        if (batch.mode === "master_bill") {
+          const invResult = await client.query(
+            `DELETE FROM invoices WHERE source_batch = $1`,
+            [batch.batch_label],
+          );
+          invoicesDeleted = invResult.rowCount ?? 0;
+
+          const taskResult = await client.query(
+            `DELETE FROM tasks
+              WHERE origin = 'master_bill_import'
+                AND import_fingerprint LIKE $1`,
+            [`${batch.batch_label}:%`],
+          );
+          tasksDeleted = taskResult.rowCount ?? 0;
+        } else if (batch.mode === "seasonal") {
+          const visitResult = await client.query(
+            `DELETE FROM service_visits sv
+              USING tasks t
+              WHERE t.origin = 'seasonal_import'
+                AND sv.service_date = ANY(
+                  SELECT DISTINCT window_start FROM tasks
+                  WHERE origin = 'seasonal_import'
+                )`,
+          );
+          visitsDeleted = visitResult.rowCount ?? 0;
+
+          const taskResult = await client.query(
+            `DELETE FROM tasks WHERE origin = 'seasonal_import'`,
+          );
+          tasksDeleted = taskResult.rowCount ?? 0;
+        }
+
+        await client.query(`DELETE FROM import_batches WHERE id = $1`, [id]);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      res.json({ id, invoicesDeleted, tasksDeleted, visitsDeleted });
+    } catch (error: any) {
+      console.error("Import batch delete error:", error);
+      res.status(500).json({ error: error.message || "Failed to undo batch" });
+    }
+  });
+
+  // ── Contract-tasks import routes (unchanged) ─────────────────────────────
 
   app.post("/api/admin/import/contract-tasks/parse", requireAdmin, upload.single("file"), async (req: Request, res: Response) => {
     try {

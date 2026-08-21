@@ -60,6 +60,9 @@ async function runStartupMigrations() {
       CREATE INDEX IF NOT EXISTS asset_attachments_asset_idx ON asset_attachments(asset_id);
       CREATE INDEX IF NOT EXISTS asset_attachments_community_idx ON asset_attachments(community_id);
       CREATE UNIQUE INDEX IF NOT EXISTS attachments_task_idempotency_partial_idx ON attachments(task_id, idempotency_key) WHERE task_completion_id IS NULL;
+      CREATE TABLE IF NOT EXISTS import_batches (id varchar PRIMARY KEY DEFAULT gen_random_uuid(), mode varchar NOT NULL, batch_label varchar NOT NULL, run_by varchar REFERENCES users(id) ON DELETE SET NULL, run_at timestamp NOT NULL DEFAULT now(), invoice_count integer, task_count integer, completion_count integer, schedule_count integer, visit_count integer);
+      CREATE INDEX IF NOT EXISTS import_batches_run_at_idx ON import_batches(run_at);
+      CREATE INDEX IF NOT EXISTS import_batches_mode_idx ON import_batches(mode);
     `);
     logger.info("Startup migrations applied.");
   } catch (err) {

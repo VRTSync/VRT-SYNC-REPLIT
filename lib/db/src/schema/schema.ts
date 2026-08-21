@@ -1333,3 +1333,27 @@ export type TaskPageViewModel =
   | HoaMemberTaskPageViewModel
   | PropertyManagerTaskPageViewModel
   | AdminTaskPageViewModel;
+
+// ---------------------------------------------------------------------------
+// Import Batches — admin seed-import audit log
+// ---------------------------------------------------------------------------
+
+export const importBatches = pgTable("import_batches", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  mode: varchar("mode").notNull(),           // 'master_bill' | 'seasonal'
+  batchLabel: varchar("batch_label").notNull(),
+  runBy: varchar("run_by").references(() => users.id, { onDelete: "set null" }),
+  runAt: timestamp("run_at").defaultNow().notNull(),
+  invoiceCount: integer("invoice_count"),
+  taskCount: integer("task_count"),
+  completionCount: integer("completion_count"),
+  scheduleCount: integer("schedule_count"),
+  visitCount: integer("visit_count"),
+}, (table) => [
+  index("import_batches_run_at_idx").on(table.runAt),
+  index("import_batches_mode_idx").on(table.mode),
+]);
+
+export type ImportBatch = typeof importBatches.$inferSelect;
