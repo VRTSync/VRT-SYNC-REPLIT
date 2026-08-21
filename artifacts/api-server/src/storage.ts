@@ -3201,8 +3201,20 @@ export async function createInvoice(data: {
   pdfObjectKey?: string | null;
   attachmentLabel?: string | null;
   attachmentLayerId?: string | null;
+  status?: "draft" | "submitted" | "approved" | "paid" | "void" | null;
+  invoiceNumber?: string | null;
+  dueDate?: string | null;
+  /** ISO-8601 string or null; coerced to Date before writing. */
+  paidAt?: string | null;
+  referenceNumber?: string | null;
+  source?: string | null;
+  sourceBatch?: string | null;
 }): Promise<Invoice> {
-  const [invoice] = await db.insert(invoices).values(data).returning();
+  const { paidAt, ...rest } = data;
+  const [invoice] = await db.insert(invoices).values({
+    ...rest,
+    paidAt: paidAt != null ? new Date(paidAt) : null,
+  }).returning();
   return invoice;
 }
 
@@ -3215,9 +3227,23 @@ export async function updateInvoice(id: string, data: Partial<{
   pdfObjectKey: string | null;
   attachmentLabel: string | null;
   attachmentLayerId: string | null;
+  status: "draft" | "submitted" | "approved" | "paid" | "void" | null;
+  invoiceNumber: string | null;
+  dueDate: string | null;
+  /** ISO-8601 string or null; coerced to Date before writing. */
+  paidAt: string | null;
+  referenceNumber: string | null;
+  source: string | null;
+  sourceBatch: string | null;
 }>): Promise<Invoice | null> {
+  const { paidAt, ...restData } = data;
+  // Only include paidAt in the SET clause when the caller explicitly passed it
+  // (undefined = caller did not mention this field → leave it alone in the DB).
+  const paidAtPatch = paidAt !== undefined
+    ? { paidAt: paidAt != null ? new Date(paidAt) : null }
+    : {};
   const [invoice] = await db.update(invoices)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ ...restData, ...paidAtPatch, updatedAt: new Date() })
     .where(eq(invoices.id, id))
     .returning();
   return invoice || null;
@@ -3225,6 +3251,35 @@ export async function updateInvoice(id: string, data: Partial<{
 
 export async function deleteInvoice(id: string): Promise<void> {
   await db.delete(invoices).where(eq(invoices.id, id));
+}
+
+/**
+ * Atomically delete all invoices and tasks belonging to a specific import batch.
+ *
+ * The shared batch identifier must be the value stored in both
+ * `invoices.source_batch` and `tasks.origin` for the import run.
+ * Both deletes run in a single transaction — either both commit or neither does,
+ * so there are no orphaned rows in either direction.
+ *
+ * Returns the count of rows removed from each table.
+ */
+export async function deleteImportBatch(
+  sourceBatch: string,
+): Promise<{ invoicesDeleted: number; tasksDeleted: number }> {
+  return db.transaction(async (tx) => {
+    const deletedInvoices = await tx
+      .delete(invoices)
+      .where(eq(invoices.sourceBatch, sourceBatch))
+      .returning({ id: invoices.id });
+    const deletedTasks = await tx
+      .delete(tasks)
+      .where(eq(tasks.origin, sourceBatch))
+      .returning({ id: tasks.id });
+    return {
+      invoicesDeleted: deletedInvoices.length,
+      tasksDeleted: deletedTasks.length,
+    };
+  });
 }
 
 export async function getContracts(communityId?: string, contractorUserId?: string): Promise<(Contract & { communityName?: string; contractorName?: string })[]> {

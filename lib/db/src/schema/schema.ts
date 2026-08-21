@@ -1053,12 +1053,20 @@ export const invoices = pgTable("invoices", {
   invoiceNumber: varchar("invoice_number"),
   dueDate: date("due_date"),
   paidAt: timestamp("paid_at"),
+  // Import idempotency: reference_number + invoice_number + community_id + completion_date
+  // is the four-column unique key enforced by invoices_source_line_unique_idx (partial).
+  referenceNumber: varchar("reference_number"),
+  // Batch marker — mirrors tasks.origin so a bad import batch can be deleted
+  // by one predicate from both tables with no orphans.
+  source: varchar("source"),
+  sourceBatch: varchar("source_batch"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("invoices_community_idx").on(table.communityId),
   index("invoices_completion_date_idx").on(table.completionDate),
   index("invoices_status_idx").on(table.status),
+  index("invoices_source_batch_idx").on(table.sourceBatch),
 ]);
 
 export type Invoice = typeof invoices.$inferSelect;
@@ -1077,6 +1085,9 @@ export const insertInvoiceSchema = z.object({
   invoiceNumber: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
   paidAt: z.string().optional().nullable(),
+  referenceNumber: z.string().optional().nullable(),
+  source: z.string().optional().nullable(),
+  sourceBatch: z.string().optional().nullable(),
 });
 
 export const updateInvoiceSchema = z.object({
@@ -1092,6 +1103,9 @@ export const updateInvoiceSchema = z.object({
   invoiceNumber: z.string().optional().nullable(),
   dueDate: z.string().optional().nullable(),
   paidAt: z.string().optional().nullable(),
+  referenceNumber: z.string().optional().nullable(),
+  source: z.string().optional().nullable(),
+  sourceBatch: z.string().optional().nullable(),
 });
 
 export const invoicesRelations = relations(invoices, ({ one }) => ({
