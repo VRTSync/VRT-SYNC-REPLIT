@@ -7,10 +7,11 @@ AdminRouter.register('imports/seed', async function(container) {
   let currentStep  = 1;
 
   // Master Bill state
-  let mbFile         = null;
-  let mbParseResult  = null;   // returned from /parse
-  let mbPreviewResult = null;  // returned from /preview
-  let mbFileToken    = 0;      // increments on new upload, resets commit availability
+  let mbFile            = null;
+  let mbParseResult     = null;   // returned from /parse
+  let mbPreviewResult   = null;   // returned from /preview
+  let mbFileToken       = 0;      // increments on new upload, resets commit availability
+  let mbAcknowledgedSet = new Set(); // codes explicitly acknowledged by the admin
 
   // Seasonal state
   let seFile          = null;
@@ -48,7 +49,7 @@ AdminRouter.register('imports/seed', async function(container) {
 
     document.getElementById('si-mode-mb').addEventListener('click', () => {
       mode = 'master_bill'; currentStep = 1;
-      mbParseResult = null; mbPreviewResult = null;
+      mbParseResult = null; mbPreviewResult = null; mbAcknowledgedSet = new Set();
       render();
     });
     document.getElementById('si-mode-se').addEventListener('click', () => {
@@ -138,26 +139,163 @@ AdminRouter.register('imports/seed', async function(container) {
   }
 
   // ── Master Bill Step 2 — Preview ──────────────────────────────────────────
+
+  // Every figure the admin sees before committing must reflect the rows that
+  // will actually be written — acknowledged codes are subtracted from the
+  // invoice, completion, contract and dollar figures alike, and added to the
+  // skip count. Per-code completion/contract splits come from perBranchCounts,
+  // which is populated for every known PNC code that has rows (including
+  // unmatched ones).
+  function mbCalcEffectiveTotals() {
+    const p = mbPreviewResult;
+    if (!p) {
+      return { invoiceRows: 0, completionRows: 0, contractRows: 0, totalAmount: 0, skippedRows: 0 };
+    }
+    const branch = p.perBranchCounts ?? {};
+    let subRows = 0, subCompletions = 0, subContracts = 0, subAmount = 0;
+    for (const u of p.unmatchedCodes ?? []) {
+      if (!mbAcknowledgedSet.has(u.code)) continue;
+      subRows   += u.rowCount;
+      subAmount += u.totalAmount;
+      const b = branch[u.code];
+      if (b) {
+        subCompletions += b.completions ?? 0;
+        subContracts   += b.contracts ?? 0;
+      }
+    }
+    return {
+      invoiceRows:    (p.totals?.invoiceRows    ?? 0) - subRows,
+      completionRows: (p.totals?.completionRows ?? 0) - subCompletions,
+      contractRows:   (p.totals?.contractOnlyCount ?? p.totals?.contractRows ?? 0) - subContracts,
+      totalAmount:    (p.totals?.totalAmount    ?? 0) - subAmount,
+      skippedRows:    (p.skippedRows ?? []).length + subRows,
+    };
+  }
+
+  // Parse-stage skips merged with the rows the acknowledged codes will skip —
+  // the same unified view the post-import summary shows.
+  function mbUnifiedPreviewSkips() {
+    const p = mbPreviewResult;
+    if (!p) return [];
+    const all = (p.skippedRows ?? []).slice();
+    for (const u of p.unmatchedCodes ?? []) {
+      if (!mbAcknowledgedSet.has(u.code)) continue;
+      for (const r of u.excelRows ?? []) {
+        all.push({ excelRow: r, reason: 'acknowledged_unmatched' });
+      }
+    }
+    return all.sort((a, b) => a.excelRow - b.excelRow);
+  }
+
+  function mbRenderCountCards() {
+    const p = mbPreviewResult;
+    if (!p) return '';
+    const eff = mbCalcEffectiveTotals();
+    return [
+      {label:'Invoice Rows',    val: eff.invoiceRows,    color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe'},
+      {label:'Completion Rows', val: eff.completionRows, color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0'},
+      {label:'Contract-Only',   val: eff.contractRows,   color:'#d97706', bg:'#fefce8', border:'#fde68a'},
+      {label:'Skipped Rows',    val: eff.skippedRows,    color:'#6b7280', bg:'#f5f5f4', border:'#d6d3d1'},
+      {label:'Date-Clamped',    val: (p.clampedRows ?? []).length, color:'#7c3aed', bg:'#f3e8ff', border:'#ddd6fe'},
+    ].map(c => `
+      <div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:12px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:${c.color}">${c.val}</div>
+        <div style="font-size:11px;color:#6b7280">${c.label}</div>
+      </div>
+    `).join('');
+  }
+
+  function mbRenderSkippedRowsBody() {
+    const skips = mbUnifiedPreviewSkips();
+    if (skips.length === 0) {
+      return '<p style="font-size:12px;color:#6b7280;padding:8px 0">No rows skipped.</p>';
+    }
+    return `<table style="font-size:12px">
+      <thead><tr><th>Excel Row</th><th>Reason</th></tr></thead>
+      <tbody>
+        ${skips.map(s => `<tr><td>${s.excelRow}</td><td>${esc(s.reason)}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  function mbRenderEffectiveTotals() {
+    const eff = mbCalcEffectiveTotals();
+    return `<strong>Total Amount:</strong> $${eff.totalAmount.toFixed(2)}
+      &nbsp;|&nbsp;
+      <strong>Invoice Rows:</strong> ${eff.invoiceRows}
+      &nbsp;|&nbsp;
+      <strong>Completion Rows:</strong> ${eff.completionRows}`;
+  }
+
+  function mbUpdateCommitGate() {
+    const p = mbPreviewResult;
+    if (!p) return;
+    const hasBlockingErrors = (p.blockingErrors ?? []).length > 0;
+    const unmatchedCodes    = p.unmatchedCodes ?? [];
+    const allAcknowledged   = unmatchedCodes.every(u => mbAcknowledgedSet.has(u.code));
+    const canCommit         = !hasBlockingErrors && allAcknowledged;
+    const btn = document.getElementById('mb-commit-btn');
+    if (btn) {
+      btn.disabled = !canCommit;
+      btn.textContent = hasBlockingErrors
+        ? 'Fix Errors Before Committing'
+        : !allAcknowledged
+          ? 'Acknowledge All Unmatched Codes to Commit'
+          : 'Commit to Production →';
+    }
+    // Refresh every derived figure together so the cards, the skip table and
+    // the totals bar can never disagree with each other.
+    const totalsEl = document.getElementById('mb-effective-totals');
+    if (totalsEl) totalsEl.innerHTML = mbRenderEffectiveTotals();
+    const cardsEl = document.getElementById('mb-count-cards');
+    if (cardsEl) cardsEl.innerHTML = mbRenderCountCards();
+    const skipCountEl = document.getElementById('mb-skipped-count');
+    if (skipCountEl) skipCountEl.textContent = String(mbUnifiedPreviewSkips().length);
+    const skipBodyEl = document.getElementById('mb-skipped-body');
+    if (skipBodyEl) skipBodyEl.innerHTML = mbRenderSkippedRowsBody();
+  }
+
   function renderMbStep2() {
     if (!mbPreviewResult) return '<p style="color:#6b7280">Generating preview…</p>';
     const p = mbPreviewResult;
 
-    const hasErrors = p.blockingErrors && p.blockingErrors.length > 0;
+    const hasBlockingErrors = (p.blockingErrors ?? []).length > 0;
+    const unmatchedCodes    = p.unmatchedCodes ?? [];
+    const hasUnmatched      = unmatchedCodes.length > 0;
+    const allAcknowledged   = !hasUnmatched || unmatchedCodes.every(u => mbAcknowledgedSet.has(u.code));
+    const canCommit         = !hasBlockingErrors && allAcknowledged;
 
     return `
       <div style="max-width:860px">
         <h3 style="font-size:14px;font-weight:600;margin-bottom:16px">Import Preview — ${esc(mbParseResult?.batchLabel ?? '')}</h3>
 
-        ${hasErrors ? `
+        ${hasBlockingErrors ? `
           <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin-bottom:16px">
             <div style="font-weight:600;color:#dc2626;margin-bottom:8px;font-size:13px">⛔ Blocking Errors — Commit is disabled</div>
             ${p.blockingErrors.map(e => `<div style="color:#dc2626;font-size:13px;margin-bottom:4px">• ${esc(e)}</div>`).join('')}
           </div>
-        ` : `
+        ` : (!hasUnmatched ? `
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;color:#15803d">
             ✓ All validations passed — ready to commit
           </div>
-        `}
+        ` : '')}
+
+        ${hasUnmatched ? `
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:16px">
+            <div style="font-weight:600;color:#92400e;margin-bottom:10px;font-size:13px">
+              ⚠ Unmatched PNC Codes — acknowledge each to enable Commit
+            </div>
+            ${unmatchedCodes.map(u => `
+              <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer">
+                <input type="checkbox" class="mb-ack-checkbox" data-code="${esc(u.code)}"
+                       ${mbAcknowledgedSet.has(u.code) ? 'checked' : ''}>
+                <strong>${esc(u.code)}</strong>
+                <span style="color:#374151">${u.rowCount} row${u.rowCount !== 1 ? 's' : ''} / $${u.totalAmount.toFixed(2)}</span>
+                <span style="color:#9ca3af;font-size:12px">— no matching community; rows will be skipped</span>
+              </label>
+            `).join('')}
+          </div>
+        ` : ''}
 
         <!-- Community Mapping Table — always visible, prominent -->
         <div style="background:#fff;border:2px solid #25C1AC;border-radius:8px;padding:16px;margin-bottom:16px">
@@ -179,20 +317,9 @@ AdminRouter.register('imports/seed', async function(container) {
           </div>
         </div>
 
-        <!-- Counts -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-bottom:16px">
-          ${[
-            {label:'Invoice Rows', val: p.totals?.invoiceRows ?? 0, color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe'},
-            {label:'Completion Rows', val: p.totals?.completionRows ?? 0, color:'#16a34a', bg:'#f0fdf4', border:'#bbf7d0'},
-            {label:'Contract-Only', val: p.totals?.contractOnlyCount ?? p.totals?.contractRows ?? 0, color:'#d97706', bg:'#fefce8', border:'#fde68a'},
-            {label:'Skipped Rows', val: (p.skippedRows ?? []).length, color:'#6b7280', bg:'#f5f5f4', border:'#d6d3d1'},
-            {label:'Date-Clamped', val: (p.clampedRows ?? []).length, color:'#7c3aed', bg:'#f3e8ff', border:'#ddd6fe'},
-          ].map(c => `
-            <div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:12px;text-align:center">
-              <div style="font-size:20px;font-weight:700;color:${c.color}">${c.val}</div>
-              <div style="font-size:11px;color:#6b7280">${c.label}</div>
-            </div>
-          `).join('')}
+        <!-- Counts (recalculated as codes are acknowledged) -->
+        <div id="mb-count-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+          ${mbRenderCountCards()}
         </div>
 
         <!-- Service Account Resolution -->
@@ -228,19 +355,16 @@ AdminRouter.register('imports/seed', async function(container) {
           </div>
         ` : ''}
 
-        <!-- Skipped Rows -->
-        ${(p.skippedRows ?? []).length > 0 ? `
+        <!-- Skipped Rows — parse-stage skips plus acknowledged codes.
+             Rendered whenever either source could contribute, so the container
+             exists for in-place updates when a checkbox is ticked. -->
+        ${((p.skippedRows ?? []).length > 0 || hasUnmatched) ? `
           <details style="margin-bottom:16px">
             <summary style="font-size:13px;font-weight:600;cursor:pointer;padding:8px 0">
-              Skipped Rows (${p.skippedRows.length})
+              Skipped Rows (<span id="mb-skipped-count">${mbUnifiedPreviewSkips().length}</span>)
             </summary>
-            <div class="table-container" style="margin-top:8px;max-height:300px;overflow:auto">
-              <table style="font-size:12px">
-                <thead><tr><th>Excel Row</th><th>Reason</th></tr></thead>
-                <tbody>
-                  ${p.skippedRows.map(s => `<tr><td>${s.excelRow}</td><td>${esc(s.reason)}</td></tr>`).join('')}
-                </tbody>
-              </table>
+            <div id="mb-skipped-body" class="table-container" style="margin-top:8px;max-height:300px;overflow:auto">
+              ${mbRenderSkippedRowsBody()}
             </div>
           </details>
         ` : ''}
@@ -267,19 +391,15 @@ AdminRouter.register('imports/seed', async function(container) {
           </details>
         ` : ''}
 
-        <!-- Totals -->
-        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
-          <strong>Total Amount:</strong> $${((p.totals?.totalAmount ?? 0)).toFixed(2)}
-          &nbsp;|&nbsp;
-          <strong>Invoice Rows:</strong> ${p.totals?.invoiceRows ?? 0}
-          &nbsp;|&nbsp;
-          <strong>Completion Rows:</strong> ${p.totals?.completionRows ?? 0}
+        <!-- Effective Totals (updates dynamically as codes are acknowledged) -->
+        <div id="mb-effective-totals" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+          ${mbRenderEffectiveTotals()}
         </div>
 
         <div style="display:flex;justify-content:space-between">
           <button class="btn btn-ghost" id="mb-back-step1">← Back to Upload</button>
-          <button class="btn btn-primary" id="mb-commit-btn" ${hasErrors?'disabled':''}>
-            ${hasErrors ? 'Fix Errors Before Committing' : 'Commit to Production →'}
+          <button class="btn btn-primary" id="mb-commit-btn" ${canCommit ? '' : 'disabled'}>
+            ${hasBlockingErrors ? 'Fix Errors Before Committing' : !allAcknowledged ? 'Acknowledge All Unmatched Codes to Commit' : 'Commit to Production →'}
           </button>
         </div>
       </div>
@@ -574,13 +694,24 @@ AdminRouter.register('imports/seed', async function(container) {
 
       const backStep1 = document.getElementById('mb-back-step1');
       if (backStep1) backStep1.addEventListener('click', () => {
-        currentStep = 1; mbParseResult = null; mbPreviewResult = null;
+        currentStep = 1; mbParseResult = null; mbPreviewResult = null; mbAcknowledgedSet = new Set();
         document.getElementById('si-stepper').innerHTML = renderStepper();
         bindStepHandlers();
       });
 
       const commitBtn = document.getElementById('mb-commit-btn');
       if (commitBtn) commitBtn.addEventListener('click', handleMbCommit);
+
+      // Bind acknowledgement checkboxes for unmatched codes
+      document.querySelectorAll('.mb-ack-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const code = cb.dataset.code;
+          if (!code) return;
+          if (cb.checked) mbAcknowledgedSet.add(code);
+          else mbAcknowledgedSet.delete(code);
+          mbUpdateCommitGate();
+        });
+      });
     }
 
     // ── Seasonal handlers ──
@@ -634,8 +765,8 @@ AdminRouter.register('imports/seed', async function(container) {
     if (info) info.style.display = 'block';
     if (nameEl) nameEl.textContent = `${file.name} (${(file.size/1024).toFixed(1)} KB)`;
     updateMbParseBtn();
-    // Reset preview/commit when new file selected
-    mbParseResult = null; mbPreviewResult = null;
+    // Reset preview/commit/acknowledgements when new file selected
+    mbParseResult = null; mbPreviewResult = null; mbAcknowledgedSet = new Set();
     mbFileToken++;
   }
 
@@ -691,10 +822,20 @@ AdminRouter.register('imports/seed', async function(container) {
     if (!mbParseResult || !mbPreviewResult) return;
     if (mbPreviewResult.blockingErrors?.length > 0) return;
 
-    const totalRows = (mbPreviewResult.totals?.invoiceRows ?? 0);
+    // Hard guard: all unmatched codes must be acknowledged before commit
+    const unmatchedCodes = mbPreviewResult.unmatchedCodes ?? [];
+    if (unmatchedCodes.some(u => !mbAcknowledgedSet.has(u.code))) return;
+
+    const eff = mbCalcEffectiveTotals();
+    const skippedCodes = unmatchedCodes.filter(u => mbAcknowledgedSet.has(u.code));
+    const skipNote = skippedCodes.length > 0
+      ? `\n\nSkipping ${skippedCodes.map(u => u.code).join(', ')} ` +
+        `(${skippedCodes.reduce((s,u)=>s+u.rowCount,0)} rows, ` +
+        `$${skippedCodes.reduce((s,u)=>s+u.totalAmount,0).toFixed(2)}) as acknowledged unmatched.`
+      : '';
     const confirmed = window.confirm(
-      `This will write ${totalRows} invoice rows and ${mbPreviewResult.totals?.completionRows ?? 0} task rows ` +
-      `to PRODUCTION for billing period "${mbParseResult.batchLabel}".\n\nProceed?`
+      `This will write ${eff.invoiceRows} invoice rows and ${eff.completionRows} task rows ` +
+      `to PRODUCTION for billing period "${mbParseResult.batchLabel}".${skipNote}\n\nProceed?`
     );
     if (!confirmed) return;
 
@@ -704,7 +845,11 @@ AdminRouter.register('imports/seed', async function(container) {
     try {
       const result = await apiFetch('/api/admin/import/master-bill/commit', {
         method: 'POST',
-        body: JSON.stringify({ parsed: mbParseResult, preview: mbPreviewResult }),
+        body: JSON.stringify({
+          parsed: mbParseResult,
+          preview: mbPreviewResult,
+          acknowledgedCodes: [...mbAcknowledgedSet],
+        }),
         headers: { 'Content-Type': 'application/json' },
         timeout: 120000,
       });
@@ -714,6 +859,7 @@ AdminRouter.register('imports/seed', async function(container) {
 
       const resultEl = document.getElementById('mb-commit-result');
       if (resultEl) {
+        const skippedRows = result.skippedRows ?? [];
         resultEl.innerHTML = `
           <div style="max-width:700px">
             <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:20px;margin-bottom:16px">
@@ -727,6 +873,26 @@ AdminRouter.register('imports/seed', async function(container) {
                 <div><strong>Batch ID:</strong> <code style="font-size:11px">${esc(result.batchId)}</code></div>
               </div>
             </div>
+            ${skippedRows.length > 0 ? `
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin-bottom:16px">
+                <h4 style="font-size:13px;font-weight:600;margin-bottom:8px;color:#92400e">Skipped Rows (${skippedRows.length})</h4>
+                ${(result.acknowledgedCodes ?? []).length > 0 ? `
+                  <p style="font-size:12px;color:#92400e;margin-bottom:8px">
+                    ${result.acknowledgedSkipCount ?? 0} row(s) skipped by explicit acknowledgement of unmatched
+                    PNC code(s): <strong>${esc((result.acknowledgedCodes ?? []).join(', '))}</strong>.
+                    Recorded on batch <code style="font-size:11px">${esc(result.batchId)}</code>.
+                  </p>
+                ` : ''}
+                <div class="table-container" style="max-height:200px;overflow:auto">
+                  <table style="font-size:12px">
+                    <thead><tr><th>Excel Row</th><th>Reason</th></tr></thead>
+                    <tbody>
+                      ${skippedRows.map(s => `<tr><td>${s.excelRow}</td><td>${esc(s.reason)}</td></tr>`).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ` : ''}
             <div>
               <h4 style="font-size:13px;font-weight:600;margin-bottom:8px">Undo SQL (copy before leaving this page)</h4>
               <div style="position:relative">
@@ -744,6 +910,7 @@ AdminRouter.register('imports/seed', async function(container) {
         });
         document.getElementById('mb-new-import')?.addEventListener('click', () => {
           currentStep = 1; mbParseResult = null; mbPreviewResult = null; mbFile = null;
+          mbAcknowledgedSet = new Set();
           document.getElementById('si-stepper').innerHTML = renderStepper();
           bindStepHandlers();
         });

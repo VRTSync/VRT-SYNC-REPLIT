@@ -1351,6 +1351,11 @@ export const importBatches = pgTable("import_batches", {
   completionCount: integer("completion_count"),
   scheduleCount: integer("schedule_count"),
   visitCount: integer("visit_count"),
+  // Durable audit trail: every row the import did NOT write, with its reason
+  // (parse-stage skips plus explicitly acknowledged unmatched PNC codes).
+  skippedRows: jsonb("skipped_rows").$type<Array<{ excelRow: number; reason: string }>>(),
+  // The PNC codes an admin explicitly ticked to skip on this run.
+  acknowledgedCodes: jsonb("acknowledged_codes").$type<string[]>(),
 }, (table) => [
   index("import_batches_run_at_idx").on(table.runAt),
   index("import_batches_mode_idx").on(table.mode),

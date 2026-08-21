@@ -94,6 +94,7 @@ export interface CommunityRecord {
 
 export interface MasterBillPreviewResult {
   blockingErrors: string[];
+  unmatchedCodes: Array<{ code: string; rowCount: number; totalAmount: number; excelRows: number[] }>;
   communityMapping: Array<{ code: string; name: string; id: string; orgId: string }>;
   skippedRows: MasterBillParseResult["skippedRows"];
   clampedRows: MasterBillParseResult["clampedRows"];
@@ -122,6 +123,30 @@ export interface MasterBillCommitResult {
   batchId: string;
   batchLabel: string;
   undoSQL: string;
+  /**
+   * Unified report of every row this import did NOT write: parse-stage skips
+   * (unknown PNC code, unparseable amount, GRAND TOTAL, …) merged with rows
+   * skipped because their PNC code was explicitly acknowledged as unmatched.
+   * Sorted by Excel row so the post-import summary reads like the source file.
+   */
+  skippedRows: Array<{ excelRow: number; reason: string }>;
+  /** How many of `skippedRows` were skipped via explicit acknowledgement. */
+  acknowledgedSkipCount: number;
+  /** The PNC codes the admin explicitly acknowledged for this run. */
+  acknowledgedCodes: string[];
+}
+
+/**
+ * Thrown when a commit request is rejected for a caller-correctable reason
+ * (bad acknowledgement list, unacknowledged unmatched code, …). Carries an
+ * HTTP status so the route layer does not have to string-match messages.
+ */
+export class MasterBillValidationError extends Error {
+  readonly statusCode = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = "MasterBillValidationError";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +381,95 @@ export function parseMasterBill(buffer: Buffer, batchLabel: string): MasterBillP
 }
 
 // ---------------------------------------------------------------------------
+// Shared DB resolution — used by BOTH preview and commit
+//
+// Commit must never trust the client-supplied `preview` object to decide which
+// codes are unmatched or which community a row belongs to; it re-runs these
+// against its own transaction client and uses that as the authority.
+// ---------------------------------------------------------------------------
+
+/** Minimal surface shared by `Pool` and a checked-out `PoolClient`. */
+interface Queryable {
+  query<R extends Record<string, any> = any>(
+    text: string,
+    values?: any[],
+  ): Promise<{ rows: R[] }>;
+}
+
+interface CommunityResolution {
+  /** Codes resolving to exactly one community. */
+  mapping: Array<{ code: string; name: string; id: string; orgId: string }>;
+  /** Codes with no community record at all. */
+  unmatched: string[];
+  /** Codes matching more than one community — always blocking. */
+  ambiguous: Array<{
+    code: string;
+    matches: Array<{ id: string; name: string; organizationId: string }>;
+  }>;
+}
+
+async function resolveCommunitiesForCodes(
+  codes: string[],
+  db: Queryable,
+): Promise<CommunityResolution> {
+  const mapping: CommunityResolution["mapping"]     = [];
+  const unmatched: string[]                         = [];
+  const ambiguous: CommunityResolution["ambiguous"] = [];
+
+  if (codes.length === 0) return { mapping, unmatched, ambiguous };
+
+  const placeholders = codes.map((_, i) => `$${i + 1}`).join(", ");
+  const result = await db.query<{
+    id: string; name: string; code: string; organization_id: string;
+  }>(
+    `SELECT id, name, code, organization_id FROM communities WHERE code IN (${placeholders})`,
+    codes,
+  );
+
+  const byCode = new Map<string, typeof result.rows>();
+  for (const row of result.rows) {
+    if (!byCode.has(row.code)) byCode.set(row.code, []);
+    byCode.get(row.code)!.push(row);
+  }
+
+  for (const code of codes) {
+    const matches = byCode.get(code) ?? [];
+    if (matches.length === 0) {
+      unmatched.push(code);
+    } else if (matches.length > 1) {
+      ambiguous.push({
+        code,
+        matches: matches.map(m => ({
+          id: m.id, name: m.name, organizationId: m.organization_id,
+        })),
+      });
+    } else {
+      mapping.push({
+        code, name: matches[0]!.name, id: matches[0]!.id, orgId: matches[0]!.organization_id,
+      });
+    }
+  }
+
+  return { mapping, unmatched, ambiguous };
+}
+
+async function resolveServiceAccount(
+  db: Queryable,
+): Promise<MasterBillPreviewResult["serviceAccountResolution"]> {
+  const saResult = await db.query<{ id: string; display_name: string }>(
+    `SELECT id, display_name FROM users
+     WHERE role = 'contractor'
+       AND (display_name ILIKE '%High Plains%' OR username = $1)
+     ORDER BY created_at ASC LIMIT 1`,
+    [SERVICE_ACCOUNT_USERNAME],
+  );
+
+  return saResult.rows.length > 0
+    ? { exists: true, displayName: saResult.rows[0]!.display_name, id: saResult.rows[0]!.id }
+    : { exists: false, displayName: SERVICE_ACCOUNT_DISPLAY_NAME };
+}
+
+// ---------------------------------------------------------------------------
 // previewMasterBill — reads DB to resolve communities; never writes
 // ---------------------------------------------------------------------------
 
@@ -366,6 +480,7 @@ export async function previewMasterBill(
   const { rows, skippedRows, clampedRows, batchLabel, baseline } = parsed;
 
   const blockingErrors: string[] = [];
+  const unmatchedCodes: MasterBillPreviewResult["unmatchedCodes"] = [];
 
   // Validate First Bank sentinel on constants (belt-and-suspenders)
   try {
@@ -395,62 +510,40 @@ export async function previewMasterBill(
     );
   }
 
-  // Resolve communities
+  // Resolve communities. A code with zero matches is NOT a blocking error
+  // string — it becomes an entry the admin can explicitly acknowledge. Codes
+  // rejected at the parse stage (unknown PNC code, e.g. GRAND TOTAL) never
+  // reach here, so they can never appear in the acknowledgement panel.
   const codes = [...new Set(rows.map(r => r.pncCode))];
-  const communityMapping: MasterBillPreviewResult["communityMapping"] = [];
+  const resolution = await resolveCommunitiesForCodes(codes, pool);
+  const communityMapping = resolution.mapping;
 
-  if (codes.length > 0) {
-    const placeholders = codes.map((_, i) => `$${i + 1}`).join(", ");
-    const result = await pool.query<{
-      id: string; name: string; code: string; organization_id: string;
-    }>(
-      `SELECT id, name, code, organization_id FROM communities WHERE code IN (${placeholders})`,
-      codes,
-    );
-
-    const byCode = new Map<string, typeof result.rows[0][]>();
-    for (const row of result.rows) {
-      if (!byCode.has(row.code)) byCode.set(row.code, []);
-      byCode.get(row.code)!.push(row);
-    }
-
-    for (const code of codes) {
-      const matches = byCode.get(code) ?? [];
-      if (matches.length === 0) {
-        blockingErrors.push(`PNC Code "${code}" — no matching community found in database`);
-      } else if (matches.length > 1) {
-        blockingErrors.push(
-          `PNC Code "${code}" — ${matches.length} communities match: ` +
-          matches.map(m => `${m.name} (org: ${m.organization_id})`).join(", "),
-        );
-      } else {
-        communityMapping.push({
-          code, name: matches[0]!.name, id: matches[0]!.id, orgId: matches[0]!.organization_id,
-        });
-      }
-    }
-
-    // Cross-org check
-    const orgIds = new Set(communityMapping.map(c => c.orgId));
-    if (orgIds.size > 1) {
-      blockingErrors.push(
-        `PNC codes span ${orgIds.size} organizations — cross-org contamination prevented.`,
-      );
-    }
+  for (const code of resolution.unmatched) {
+    const codeRows = rows.filter(r => r.pncCode === code);
+    unmatchedCodes.push({
+      code,
+      rowCount: codeRows.length,
+      totalAmount: codeRows.reduce((s, r) => s + r.cost, 0),
+      excelRows: codeRows.map(r => r.excelRow),
+    });
   }
 
-  // Resolve service account
-  const saResult = await pool.query<{ id: string; display_name: string }>(
-    `SELECT id, display_name FROM users
-     WHERE role = 'contractor'
-       AND (display_name ILIKE '%High Plains%' OR username = $1)
-     ORDER BY created_at ASC LIMIT 1`,
-    [SERVICE_ACCOUNT_USERNAME],
-  );
+  for (const amb of resolution.ambiguous) {
+    blockingErrors.push(
+      `PNC Code "${amb.code}" — ${amb.matches.length} communities match: ` +
+      amb.matches.map(m => `${m.name} (org: ${m.organizationId})`).join(", "),
+    );
+  }
 
-  const serviceAccountResolution = saResult.rows.length > 0
-    ? { exists: true, displayName: saResult.rows[0]!.display_name, id: saResult.rows[0]!.id }
-    : { exists: false, displayName: SERVICE_ACCOUNT_DISPLAY_NAME };
+  // Cross-org check
+  const previewOrgIds = new Set(communityMapping.map(c => c.orgId));
+  if (previewOrgIds.size > 1) {
+    blockingErrors.push(
+      `PNC codes span ${previewOrgIds.size} organizations — cross-org contamination prevented.`,
+    );
+  }
+
+  const serviceAccountResolution = await resolveServiceAccount(pool);
 
   // Per-branch counts
   const perBranchCounts: MasterBillPreviewResult["perBranchCounts"] = {};
@@ -467,6 +560,7 @@ export async function previewMasterBill(
 
   return {
     blockingErrors,
+    unmatchedCodes,
     communityMapping: communityMapping.sort((a, b) => a.code.localeCompare(b.code)),
     skippedRows,
     clampedRows,
@@ -493,6 +587,7 @@ export async function commitMasterBill(
   preview: MasterBillPreviewResult,
   pool: InstanceType<typeof Pool>,
   runByUserId: string,
+  acknowledgedCodes: string[] = [],
 ): Promise<MasterBillCommitResult> {
   if (preview.blockingErrors.length > 0) {
     throw new Error(
@@ -502,27 +597,75 @@ export async function commitMasterBill(
   }
 
   const { rows, batchLabel } = parsed;
-
-  // Build community map from preview data
-  const communityMap = new Map<string, { id: string; name: string }>();
-  for (const c of preview.communityMapping) {
-    communityMap.set(c.code, { id: c.id, name: c.name });
-  }
+  const acknowledgedSet = new Set(acknowledgedCodes);
 
   let invoicesInserted = 0;
   let invoicesSkipped  = 0;
   let tasksInserted    = 0;
   let tasksSkipped     = 0;
   let batchId          = "";
+  const acknowledgedSkips: Array<{ excelRow: number; reason: string }> = [];
+  let unifiedSkippedRows: Array<{ excelRow: number; reason: string }> = [];
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // Resolve / create service account
+    // ---- Server-authoritative validation -------------------------------
+    // `preview` arrives in the request body and is therefore untrusted. Every
+    // decision that controls what gets written — which codes are unmatched,
+    // which community a row lands in, which service account owns the tasks —
+    // is re-derived here against the transaction client. A tampered preview
+    // cannot smuggle a code into the acknowledged set or redirect a row.
+    const codes      = [...new Set(rows.map(r => r.pncCode))];
+    const resolution = await resolveCommunitiesForCodes(codes, client);
+
+    if (resolution.ambiguous.length > 0) {
+      throw new MasterBillValidationError(
+        `Cannot commit — ${resolution.ambiguous.length} PNC code(s) match multiple communities: ` +
+        resolution.ambiguous.map(a => a.code).join(", "),
+      );
+    }
+
+    const serverUnmatched = new Set(resolution.unmatched);
+
+    // (a) Every acknowledged code must genuinely be unmatched on the server.
+    for (const code of acknowledgedSet) {
+      if (!serverUnmatched.has(code)) {
+        throw new MasterBillValidationError(
+          `Acknowledged code "${code}" was not flagged as unmatched in the preview — request rejected.`,
+        );
+      }
+    }
+
+    // (b) Every unmatched code must be acknowledged, or commit still blocks.
+    for (const code of serverUnmatched) {
+      if (!acknowledgedSet.has(code)) {
+        throw new MasterBillValidationError(
+          `Cannot commit — unmatched PNC code "${code}" has not been acknowledged.`,
+        );
+      }
+    }
+
+    const orgIds = new Set(resolution.mapping.map(c => c.orgId));
+    if (orgIds.size > 1) {
+      throw new MasterBillValidationError(
+        `PNC codes span ${orgIds.size} organizations — cross-org contamination prevented.`,
+      );
+    }
+
+    // Build the community map from the server's own resolution, not the
+    // client's `preview.communityMapping`.
+    const communityMap = new Map<string, { id: string; name: string }>();
+    for (const c of resolution.mapping) {
+      communityMap.set(c.code, { id: c.id, name: c.name });
+    }
+
+    // Resolve / create service account (also re-derived server-side)
+    const serviceAccount = await resolveServiceAccount(client);
     let contractorId: string;
-    if (preview.serviceAccountResolution.exists && preview.serviceAccountResolution.id) {
-      contractorId = preview.serviceAccountResolution.id;
+    if (serviceAccount.exists && serviceAccount.id) {
+      contractorId = serviceAccount.id;
     } else {
       const ins = await client.query<{ id: string }>(
         `INSERT INTO users (username, password, display_name, role, is_active)
@@ -536,6 +679,12 @@ export async function commitMasterBill(
 
     // Process rows
     for (const row of rows) {
+      // Skip rows for explicitly acknowledged unmatched codes
+      if (acknowledgedSet.has(row.pncCode)) {
+        acknowledgedSkips.push({ excelRow: row.excelRow, reason: "acknowledged_unmatched" });
+        continue;
+      }
+
       const com = communityMap.get(row.pncCode);
       if (!com) continue;
 
@@ -621,13 +770,25 @@ export async function commitMasterBill(
       );
     }
 
-    // Log to import_batches
+    // Unified skip report: parse-stage skips (unknown PNC code, unparseable
+    // amount, GRAND TOTAL, …) merged with acknowledged-unmatched skips, in
+    // source-file order.
+    unifiedSkippedRows = [...parsed.skippedRows, ...acknowledgedSkips]
+      .sort((a, b) => a.excelRow - b.excelRow);
+
+    // Log to import_batches, persisting the full skip audit alongside the
+    // aggregate counts so the record explains itself without the source file.
     const batchResult = await client.query<{ id: string }>(
       `INSERT INTO import_batches
-         (mode, batch_label, run_by, invoice_count, task_count, completion_count)
-       VALUES ('master_bill', $1, $2, $3, $4, $5)
+         (mode, batch_label, run_by, invoice_count, task_count, completion_count,
+          skipped_rows, acknowledged_codes)
+       VALUES ('master_bill', $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
        RETURNING id`,
-      [batchLabel, runByUserId, invoicesInserted, tasksInserted, tasksInserted],
+      [
+        batchLabel, runByUserId, invoicesInserted, tasksInserted, tasksInserted,
+        JSON.stringify(unifiedSkippedRows),
+        JSON.stringify([...acknowledgedSet].sort()),
+      ],
     );
     batchId = batchResult.rows[0]!.id;
 
@@ -639,6 +800,9 @@ export async function commitMasterBill(
     client.release();
   }
 
+  // Count acknowledged skips toward invoicesSkipped total
+  invoicesSkipped += acknowledgedSkips.length;
+
   const undoSQL =
     `DELETE FROM invoices WHERE source_batch = '${batchLabel}';\n` +
     `DELETE FROM tasks\n` +
@@ -646,5 +810,11 @@ export async function commitMasterBill(
     `    AND import_fingerprint LIKE '${batchLabel}:%';\n` +
     `-- task_completions CASCADE-deletes when tasks are deleted.`;
 
-  return { invoicesInserted, invoicesSkipped, tasksInserted, tasksSkipped, batchId, batchLabel, undoSQL };
+  return {
+    invoicesInserted, invoicesSkipped, tasksInserted, tasksSkipped,
+    batchId, batchLabel, undoSQL,
+    skippedRows: unifiedSkippedRows,
+    acknowledgedSkipCount: acknowledgedSkips.length,
+    acknowledgedCodes: [...acknowledgedSet].sort(),
+  };
 }

@@ -4649,15 +4649,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/import/master-bill/commit", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { parsed, preview }: { parsed: MasterBillParseResult; preview: MasterBillPreviewResult } = req.body;
+      const { parsed, preview, acknowledgedCodes }: {
+        parsed: MasterBillParseResult;
+        preview: MasterBillPreviewResult;
+        acknowledgedCodes?: string[];
+      } = req.body;
       if (!parsed?.batchLabel || !preview) {
         return void res.status(400).json({ error: "Missing parsed or preview data" });
       }
-      const result = await commitMasterBill(parsed, preview, pool, req.session.userId!);
+      const codes = Array.isArray(acknowledgedCodes) ? acknowledgedCodes : [];
+      const result = await commitMasterBill(parsed, preview, pool, req.session.userId!, codes);
       res.json(result);
     } catch (error: any) {
       console.error("Master-bill commit error:", error);
-      res.status(500).json({ error: error.message || "Failed to commit import" });
+      // Validation failures (bad/absent acknowledgements) carry their own
+      // status; anything else is a genuine server error.
+      const status = typeof error?.statusCode === "number" ? error.statusCode : 500;
+      res.status(status).json({ error: error.message || "Failed to commit import" });
     }
   });
 
