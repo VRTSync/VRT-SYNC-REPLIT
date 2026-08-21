@@ -41,6 +41,11 @@ window.PortfolioRouter = (function () {
       link.classList.toggle('active', link.dataset.route === routeName);
     });
 
+    // Run any page-level teardown registered by the outgoing route (e.g. map ResizeObserver)
+    if (typeof window._portfolioMapCleanup === 'function') {
+      window._portfolioMapCleanup();
+    }
+
     if (routes[routeName]) {
       container.innerHTML = '<div class="pf-spinner">Loading\u2026</div>';
       try {

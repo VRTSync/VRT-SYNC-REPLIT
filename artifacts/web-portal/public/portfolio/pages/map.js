@@ -43,10 +43,14 @@
   }
 
   // ── Per-render cleanup ───────────────────────────────────────────────────────
-  var _renderer   = null;
-  var _pinVersion = 0;
+  var _renderer        = null;
+  var _pinVersion      = 0;
+  var _resizeObserver  = null;
+  var _resizeTimer     = null;
 
   function _teardown() {
+    if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
+    if (_resizeTimer)    { clearTimeout(_resizeTimer);   _resizeTimer    = null; }
     if (_renderer) { _renderer.destroy(); _renderer = null; }
   }
 
@@ -289,29 +293,32 @@
           // ── Left rail ──
           + '<div class="pfm-rail" id="pfm-rail">'
             + '<div class="pfm-rail-head"><h1>Portfolio Map</h1></div>'
+            + '<div class="pfm-rail-body">'
 
-            // 1. Filter by group
-            + '<div class="pfm-rail-section">'
-              + '<div class="pfm-rail-section-title">Filter by group</div>'
-              + '<div id="pfm-rail-groups"></div>'
-            + '</div>'
+              // 1. Filter by group
+              + '<div class="pfm-rail-section">'
+                + '<div class="pfm-rail-section-title">Filter by group</div>'
+                + '<div id="pfm-rail-groups"></div>'
+              + '</div>'
 
-            // 2. Show toggles
-            + '<div class="pfm-rail-section">'
-              + '<div class="pfm-rail-section-title">Show</div>'
-              + '<div id="pfm-rail-toggles"></div>'
-            + '</div>'
+              // 2. Show toggles
+              + '<div class="pfm-rail-section">'
+                + '<div class="pfm-rail-section-title">Show</div>'
+                + '<div id="pfm-rail-toggles"></div>'
+              + '</div>'
 
-            // 3. Selected location card
-            + '<div class="pfm-rail-section pfm-rail-section--card">'
-              + '<div class="pfm-rail-section-title">Selected location</div>'
-              + '<div id="pfm-rail-card"></div>'
-            + '</div>'
+              // 3. Selected location card
+              + '<div class="pfm-rail-section pfm-rail-section--card">'
+                + '<div class="pfm-rail-section-title">Selected location</div>'
+                + '<div id="pfm-rail-card"></div>'
+              + '</div>'
 
-            // 4. Layer breakdown
-            + '<div class="pfm-rail-section pfm-rail-section--breakdown" id="pfm-rail-breakdown">'
-              + '<div class="pfm-breakdown-heading pfm-rail-section-title">Layer breakdown</div>'
-              + '<div class="pfm-breakdown-rows"></div>'
+              // 4. Layer breakdown
+              + '<div class="pfm-rail-section pfm-rail-section--breakdown" id="pfm-rail-breakdown">'
+                + '<div class="pfm-breakdown-heading pfm-rail-section-title">Layer breakdown</div>'
+                + '<div class="pfm-breakdown-rows"></div>'
+              + '</div>'
+
             + '</div>'
           + '</div>'
 
@@ -429,6 +436,17 @@
       if (mapWrap) {
         window.VRTMapRenderer.renderSatelliteToggle(mapWrap, _renderer);
       }
+    }
+
+    // Attach ResizeObserver so the map repaints when the flex layout resizes
+    if (mapWrap && typeof ResizeObserver !== 'undefined') {
+      _resizeObserver = new ResizeObserver(function () {
+        clearTimeout(_resizeTimer);
+        _resizeTimer = setTimeout(function () {
+          if (_renderer) { _renderer.invalidateSize(); }
+        }, 120);
+      });
+      _resizeObserver.observe(mapWrap);
     }
 
     _renderer.on('ready', function () {
