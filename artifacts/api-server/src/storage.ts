@@ -3180,6 +3180,17 @@ export async function getInvoices(communityId?: string): Promise<(Invoice & { co
   return rows.map(r => ({ ...r.invoice, communityName: r.communityName || undefined }));
 }
 
+export async function getInvoicesByOrganization(organizationId: string): Promise<(Invoice & { communityName?: string })[]> {
+  const rows = await db.select({
+    invoice: invoices,
+    communityName: communities.name,
+  }).from(invoices)
+    .innerJoin(communities, eq(invoices.communityId, communities.id))
+    .where(eq(communities.organizationId, organizationId))
+    .orderBy(desc(invoices.completionDate));
+  return rows.map(r => ({ ...r.invoice, communityName: r.communityName || undefined }));
+}
+
 export async function getInvoiceById(id: string): Promise<(Invoice & { communityName?: string }) | null> {
   const rows = await db.select({
     invoice: invoices,

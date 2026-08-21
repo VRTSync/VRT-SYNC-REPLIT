@@ -4990,6 +4990,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.json(rows);
       }
 
+      // client_admin: org-level access — no community_members rows needed
+      if (isClientRole(user.role)) {
+        const orgId = user.organizationId || req.session.organizationId;
+        if (!orgId) return void res.status(403).json({ error: "Access denied: no organization" });
+        const communityId = req.query.communityId as string | undefined;
+        if (communityId) {
+          // enforceOrgScoping has already verified this community belongs to the org
+          const rows = await storage.getInvoices(communityId);
+          return void res.json(rows);
+        }
+        const rows = await storage.getInvoicesByOrganization(orgId);
+        return void res.json(rows);
+      }
+
       const communityId = req.query.communityId as string;
       if (!communityId) return void res.status(400).json({ error: "communityId is required" });
       const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
@@ -5010,6 +5024,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const invoice = await storage.getInvoiceById((req.params.id as string));
       if (!invoice) return void res.status(404).json({ error: "Invoice not found" });
+
+      if (isClientRole(user.role)) {
+        const orgId = user.organizationId || req.session.organizationId;
+        if (!orgId) return void res.status(403).json({ error: "Access denied: no organization" });
+        const community = await storage.getCommunityById(invoice.communityId);
+        if (!community || community.organizationId !== orgId) return void res.status(403).json({ error: "Access denied" });
+        return void res.json(invoice);
+      }
 
       if (user.role !== 'admin') {
         if (isHoaRole(user.role) && user.hoaCommunityId) {

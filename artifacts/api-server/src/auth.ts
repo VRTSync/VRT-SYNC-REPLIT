@@ -138,8 +138,19 @@ export async function enforceOrgScoping(req: Request, res: Response, next: NextF
       res.status(403).json({ message: "Access denied: cross-organization access is not allowed" });
       return;
     }
-    // Check if a specific community is targeted — enforce it belongs to the same org
-    const communityId = req.params.id || (req.params as any).communityId || req.query.communityId || req.body?.communityId;
+    // Check if a specific community is targeted — enforce it belongs to the same org.
+    //
+    // This middleware runs as app.use("/api", ...) before any route is matched, so
+    // req.params is not populated with named route parameters (:id, etc.).  We must
+    // derive a community-scoped :id from originalUrl instead of req.params.id, and
+    // only do so for the /api/communities/:id sub-tree to avoid treating invoice,
+    // task, contract, etc. resource IDs as community IDs.
+    const communityFromPath = /^\/api\/communities\/([^/?]+)/.exec(req.originalUrl)?.[1];
+    const communityId =
+      communityFromPath ||
+      (req.params as any).communityId ||
+      req.query.communityId ||
+      req.body?.communityId;
     if (communityId) {
       const community = await storage.getCommunityById(communityId as string);
       if (!community) {
