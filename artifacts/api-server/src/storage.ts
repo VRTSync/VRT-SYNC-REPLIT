@@ -3464,6 +3464,14 @@ export interface AdminDashboardData {
 // therefore exclude both terminal states, or withdrawn work shows up as open/unacknowledged.
 const NOT_TERMINAL = "cancelled_at IS NULL AND declined_at IS NULL";
 
+// Origins whose completions are never eligible for the photo-rate KPI — these are
+// historical imports that never carried a field photo opportunity.
+const IMPORT_ORIGINS = ['master_bill_import'] as const;
+/** Returns a SQL NOT IN predicate fragment excluding import-origin completions for the given tasks-table alias. */
+function importOriginExclude(tableAlias: string = 't'): string {
+  return `${tableAlias}.origin NOT IN (${IMPORT_ORIGINS.map(o => `'${o}'`).join(', ')})`;
+}
+
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
   const t0 = Date.now();
 
@@ -3611,7 +3619,7 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
       ORDER BY wb.week_start ASC
     `),
 
-    // photoProofPct30d
+    // photoProofPct30d — excludes import-origin completions (not eligible for field photos)
     pool.query<{ photo_proof_pct: string | null }>(`
       SELECT
         CASE WHEN COUNT(DISTINCT tc.id) > 0
@@ -3623,8 +3631,10 @@ export async function getAdminDashboard(): Promise<AdminDashboardData> {
           ELSE NULL
         END AS photo_proof_pct
       FROM task_completions tc
+      JOIN tasks t ON t.id = tc.task_id
       LEFT JOIN attachments a ON a.task_completion_id = tc.id
       WHERE tc.completed_at >= now() - interval '30 days'
+        AND ${importOriginExclude()}
     `),
 
     // business
@@ -4105,8 +4115,10 @@ export async function getPortfolioDashboard(orgId: string) {
             AND (t.start_date > now() OR t.window_start > CURRENT_DATE))::text AS scheduled
     `, [orgId]),
 
-    // photoProofPct: completions with ≥1 attachment / total completions (org scope); return 0 when denominator is 0
-    pool.query<{ photo_proof_pct: string }>(`
+    // photoProofPct: field-logged completions with ≥1 attachment / field-logged completions (org scope);
+    // import-origin completions are excluded — they were never eligible to carry a photo.
+    // Returns NULL (not '0') when no field-logged completions exist, so the UI can show '—'.
+    pool.query<{ photo_proof_pct: string | null }>(`
       SELECT
         CASE WHEN COUNT(DISTINCT tc.id) > 0
           THEN ROUND(
@@ -4114,13 +4126,14 @@ export async function getPortfolioDashboard(orgId: string) {
             / COUNT(DISTINCT tc.id)::numeric * 100,
             1
           )::text
-          ELSE '0'
+          ELSE NULL
         END AS photo_proof_pct
       FROM task_completions tc
       JOIN tasks t ON t.id = tc.task_id
       JOIN communities c ON c.id = t.community_id
       LEFT JOIN attachments a ON a.task_completion_id = tc.id
       WHERE c.organization_id = $1
+        AND ${importOriginExclude()}
     `, [orgId]),
 
     // thisWeek: overdue tasks + missed visits = needsAttention; distinct branches with ≥1 completed visit
@@ -4177,7 +4190,7 @@ export async function getPortfolioDashboard(orgId: string) {
       branch_count: string;
       services_count: string;
       open_tasks: string;
-      photo_proof_pct: string;
+      photo_proof_pct: string | null;
     }>(`
       SELECT
         bg.id,
@@ -4209,15 +4222,15 @@ export async function getPortfolioDashboard(orgId: string) {
              AND t.cancelled_at IS NULL
              AND t.declined_at IS NULL
         ), 0)::text AS open_tasks,
-        -- photoProofPct per group; 0 when no completions
-        COALESCE((SELECT
+        -- photoProofPct per group; NULL when no field-logged completions (import-origin excluded)
+        (SELECT
           CASE WHEN COUNT(DISTINCT tc2.id) > 0
             THEN ROUND(
               COUNT(DISTINCT tc2.id) FILTER (WHERE att.id IS NOT NULL)::numeric
               / COUNT(DISTINCT tc2.id)::numeric * 100,
               1
             )::text
-            ELSE '0'
+            ELSE NULL
           END
           FROM task_completions tc2
           JOIN tasks t2 ON t2.id = tc2.task_id
@@ -4225,7 +4238,8 @@ export async function getPortfolioDashboard(orgId: string) {
          WHERE t2.community_id IN (
            SELECT community_id FROM branch_group_members WHERE group_id = bg.id
          )
-        ), '0') AS photo_proof_pct
+           AND ${importOriginExclude('t2')}
+        ) AS photo_proof_pct
       FROM branch_groups bg
       LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
       WHERE bg.organization_id = $1
@@ -4240,7 +4254,8 @@ export async function getPortfolioDashboard(orgId: string) {
   const wr = workOrdersResult.rows[0];
   const twr = thisWeekResult.rows[0];
   const branchCount = Number(tr?.branches ?? 0);
-  const photoProofPct = Number(photoProofResult.rows[0]?.photo_proof_pct ?? 0);
+  const photoProofPctRaw = photoProofResult.rows[0]?.photo_proof_pct;
+  const photoProofPct = photoProofPctRaw != null ? Number(photoProofPctRaw) : null;
 
   return {
     totals: {
@@ -4294,7 +4309,7 @@ export async function getPortfolioDashboard(orgId: string) {
       branches: Number(r.branch_count),
       services: Number(r.services_count),
       openItems: Number(r.open_tasks),
-      photoProofPct: Number(r.photo_proof_pct),
+      photoProofPct: r.photo_proof_pct != null ? Number(r.photo_proof_pct) : null,
     })),
     // snowSeason: null — service_type enum only contains 'mowing_visit';
     // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)
@@ -4618,10 +4633,10 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
       )::text AS total
     `, [communityId]),
 
-    // photoProofPct: completions with ≥1 photo / all completions, rounded 1 dp.
-    // Reuses the same SQL pattern as getPortfolioGroups — computed over ALL completions,
-    // not the capped recent-20 list, so it is a real rate, not a sample.
-    pool.query<{ pct: string }>(`
+    // photoProofPct: field-logged completions with ≥1 photo / field-logged completions, rounded 1 dp.
+    // Import-origin completions excluded — they were never eligible to carry a photo.
+    // Returns NULL (not '0') when no field-logged completions exist, so the UI can show '—'.
+    pool.query<{ pct: string | null }>(`
       SELECT
         CASE WHEN COUNT(DISTINCT tc.id) > 0
           THEN ROUND(
@@ -4629,12 +4644,13 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
             / COUNT(DISTINCT tc.id)::numeric * 100,
             1
           )::text
-          ELSE '0'
+          ELSE NULL
         END AS pct
       FROM task_completions tc
       JOIN tasks t ON t.id = tc.task_id
       LEFT JOIN attachments att ON att.task_completion_id = tc.id
       WHERE t.community_id = $1
+        AND ${importOriginExclude()}
     `, [communityId]),
   ]);
 
@@ -4692,9 +4708,9 @@ export async function getPortfolioBranchDetail(orgId: string, communityId: strin
     // servicesTotal: count of completed task_completions + completed service_visits YTD,
     // matching the Locations page "Services YTD" window (date_trunc('year', now())).
     servicesTotal: Number(servicesTotalResult.rows[0]?.total ?? 0),
-    // photoProofPct: completions with ≥1 photo / all completions (rounded 1 dp).
-    // Computed over ALL completions for this community, not the capped recent-20 list.
-    photoProofPct: Number(photoProofResult.rows[0]?.pct ?? 0),
+    // photoProofPct: field-logged completions with ≥1 photo / field-logged completions (rounded 1 dp).
+    // Import-origin completions excluded. null when no field-logged completions exist (UI shows '—').
+    photoProofPct: photoProofResult.rows[0]?.pct != null ? Number(photoProofResult.rows[0].pct) : null,
     // snowSeason: null — service_type enum only contains 'mowing_visit';
     // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)
     snowSeason: null,
@@ -4778,7 +4794,7 @@ export async function getPortfolioGroups(orgId: string) {
            )
              AND t.status != 'completed'
         ), 0)::text AS open_items,
-        -- photoProofPct: per-branch rate averaged across group
+        -- photoProofPct: field-logged completions rate across group; NULL when none exist (import-origin excluded)
         (SELECT
           CASE WHEN COUNT(DISTINCT tc3.id) > 0
             THEN ROUND(
@@ -4786,7 +4802,7 @@ export async function getPortfolioGroups(orgId: string) {
               / COUNT(DISTINCT tc3.id)::numeric * 100,
               1
             )::text
-            ELSE '0'
+            ELSE NULL
           END
           FROM task_completions tc3
           JOIN tasks t3 ON t3.id = tc3.task_id
@@ -4794,6 +4810,7 @@ export async function getPortfolioGroups(orgId: string) {
          WHERE t3.community_id IN (
            SELECT community_id FROM branch_group_members WHERE group_id = bg.id
          )
+           AND ${importOriginExclude('t3')}
         ) AS photo_proof_pct,
         -- asset inventory across group branches (same shape as the branches page counts)
         COALESCE((
@@ -4853,7 +4870,7 @@ export async function getPortfolioGroups(orgId: string) {
       branches: Number(r.branch_count),
       servicesPerBranch: r.services_per_branch != null ? Number(r.services_per_branch) : null,
       openItems: Number(r.open_items),
-      photoProofPct: Number(r.photo_proof_pct ?? 0),
+      photoProofPct: r.photo_proof_pct != null ? Number(r.photo_proof_pct) : null,
       assets: Number(r.asset_count),
       irrigationZones: Number(r.irrigation_zones),
       trees: Number(r.trees),
@@ -4873,7 +4890,7 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
     branchCount: number;
     servicesPerBranch: number | null;
     openItems: number;
-    photoProofPct: number;
+    photoProofPct: number | null;
     assets: number;
     irrigationZones: number;
     trees: number;

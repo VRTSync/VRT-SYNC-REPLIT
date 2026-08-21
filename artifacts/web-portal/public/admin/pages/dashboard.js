@@ -273,7 +273,7 @@ AdminRouter.register('dashboard', async function(container) {
     const lines = [
       { label: 'On-time service rate (30d)', value: rel.onTimeServicePct30d, format: v => Number(v).toFixed(1) + '%' },
       { label: 'Missed services (30d)', value: rel.missedServices30d, format: v => fmtNum(v) },
-      { label: 'Photo proof rate (30d)', value: rel.photoProofPct30d, format: v => Number(v).toFixed(1) + '%' },
+      { label: 'Photo documentation rate (30d, field-logged)', value: rel.photoProofPct30d, format: v => Number(v).toFixed(1) + '%' },
     ].filter(l => l.value != null);
 
     panel.innerHTML = `

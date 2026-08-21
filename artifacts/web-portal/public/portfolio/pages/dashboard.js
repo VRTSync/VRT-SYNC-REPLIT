@@ -94,14 +94,16 @@
     var branches       = Number(t.branches       || 0);
     var assetsMapped   = Number(t.assetsMapped   || 0);
     var servicesLogged = Number(t.servicesLogged || 0);
-    var photoProofPct  = Number(t.photoProofPct  || 0);
+    var photoProofPct  = t.photoProofPct != null ? Number(t.photoProofPct) : null;
     var openWO         = Number(wo.total         || 0);
 
     return '<div class="kpi-grid">'
       + kpiTile('Locations',         branches,        'locations active',          'navy',  '')
       + kpiTile('Assets Mapped',      assetsMapped,    'across all locations',      'teal',  '')
       + kpiTile('Services Logged',    servicesLogged,  'all time',                 'blue',  '')
-      + kpiTile('Photo Documentation', photoProofPct + '%', 'of completions verified', 'green', '')
+      + (photoProofPct != null
+          ? kpiTile('Photo Documentation', photoProofPct + '%', 'of field-logged services', 'green', '')
+          : kpiTile('Photo Documentation', '—', 'No field-logged services yet', 'navy', ''))
       + kpiTile('Open Work Orders',   openWO,          wo.awaitingApproval + ' awaiting approval', 'amber kpi-clickable', 'data-nav="work-orders" title="View Work Orders" style="cursor:pointer;"')
       + '</div>';
   }
@@ -222,14 +224,14 @@
       var branches = Number(g.branches || 0);
       var services = Number(g.services || 0);
       var openItems = Number(g.openItems || 0);
-      var photoPct  = Number(g.photoProofPct || 0);
+      var photoPct  = g.photoProofPct != null ? Number(g.photoProofPct) : null;
 
       return '<div class="gcard ' + colorCls + '">'
         + '<div class="gc-name">' + esc(g.name) + '</div>'
         + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="gc-stats">'
           + '<div><b>' + esc(services) + '</b>services</div>'
-          + '<div><b>' + esc(photoPct) + '%</b>photo proof</div>'
+          + '<div><b>' + (photoPct != null ? esc(photoPct) + '%' : '—') + '</b>photo proof</div>'
           + '<div><b>' + esc(openItems) + '</b>open ' + (openItems === 1 ? 'item' : 'items') + '</div>'
         + '</div>'
         + '</div>';

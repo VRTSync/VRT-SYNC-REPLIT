@@ -115,14 +115,14 @@
       var c = groupColor(g);
       var branches = Number(g.branchCount || 0);
       var openItems = Number(g.openItems || 0);
-      var photoPct = Number(g.photoProofPct || 0);
+      var photoPct = g.photoProofPct != null ? Number(g.photoProofPct) : null;
 
       return '<div class="gcard" style="border-top-color:' + esc(c) + ';">'
         + '<div class="gc-name">' + esc(g.name) + '</div>'
         + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="gc-stats">'
           + '<div><b>' + esc(g.servicesPerBranch != null ? g.servicesPerBranch : '—') + '</b>svcs / location</div>'
-          + '<div><b>' + esc(photoPct) + '%</b>photo proof</div>'
+          + '<div><b>' + (photoPct != null ? esc(photoPct) + '%' : '—') + '</b>photo proof</div>'
           + '<div><b>' + esc(openItems) + '</b>open ' + (openItems === 1 ? 'item' : 'items') + '</div>'
         + '</div>'
         + '</div>';
@@ -156,7 +156,7 @@
           + '<td class="num">' + esc(Number(g.trees || 0)) + '</td>'
           + '<td class="num">' + esc(svcs) + '</td>'
           + '<td class="num">' + esc(Number(g.openItems || 0)) + '</td>'
-          + '<td class="num">' + esc(Number(g.photoProofPct || 0)) + '%</td>'
+          + '<td class="num">' + (g.photoProofPct != null ? esc(Number(g.photoProofPct)) + '%' : '—') + '</td>'
           + '</tr>';
       }).join('');
     }
