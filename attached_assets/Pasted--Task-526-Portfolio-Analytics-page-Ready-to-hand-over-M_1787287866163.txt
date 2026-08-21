@@ -1,0 +1,175 @@
+# Task #526: Portfolio Analytics page
+
+*Ready to hand over. Mockup: `mockups/portfolio-analytics-mockup.html` — open it first; it is interactive and defines the intended behaviour.*
+
+> **Numbering note:** #526 follows Randy's #525. Tasks #517, #518 and #519 in this folder were numbered locally before #525 was assigned and may collide with numbers tracked elsewhere — confirm before handing those over.
+
+## What & Why
+
+The portfolio portal can show a client what happened at one location, but it cannot answer questions that span locations: how much turf do we maintain in total, where are the irrigation systems concentrated, which sites cost the most to run relative to what is actually on the ground.
+
+Those questions are the reason a portfolio tier exists. A single-site view cannot tell you a location is an outlier — you need the other ten to know what normal looks like.
+
+**This is a read-only page over data that already exists.** No migration, no new capture, no schema change.
+
+## What already exists — do not rebuild it
+
+- **`asset_properties` already carries area.** `computeAreaSqFt()` runs in `assetSync.ts:170` and `routes.ts:3466`, writing a `sqFt` property on every polygon asset at sync time. Bluegrass, native grass, landscape beds and snow areas all have it. **Do not compute area in this page** — read the stored property.
+- **21 asset types** are catalogued in `asset_types` (migration `0011`), keyed by `layer_key` / `sub_layer_key`. `bluegrass_area`, `native_area`, `landscape_bed` and `snow_area` declare `sqFt` in `optionalKeys`; `zone` declares `zoneNumber` and `runTime`; `tree` declares `species`.
+- **`assets` is indexed on `(community_id, asset_type, is_archived)`** — counts are a cheap `GROUP BY`.
+- **Group sets** are `branch_group_sets` + `branch_groups.set_id` + `branch_group_members`, with `set_id` denormalised onto members by a DB trigger.
+
+## ⚠️ Group colours are inconsistent across the portal today — fix the cause here
+
+There are two palettes in use and they disagree:
+
+| Source | Palette |
+|---|---|
+| `portfolio.css:401-405` (`.gchip.g1`–`.g5`), used by Dashboard, Locations, Branch detail | blue, amber, **teal**, green, red |
+| `map.js:118` `_GROUP_PALETTE`, used by Portfolio Map | blue, amber, **green**, violet, red, cyan |
+
+**Index 2 is teal on three pages and green on the map.** A group with no stored colour therefore renders differently depending on which page you are looking at.
+
+Randy's requirement for this task is that Analytics matches the Groups page. Meeting that literally while leaving the contradiction in place would add a third consumer to an already-forked convention.
+
+**Required:**
+
+1. Resolve colour as `branch_groups.color` first, exactly as `groups.js:39` does. That is the source of truth; the palette is only a fallback.
+2. Extract the fallback palette into **one shared module** both the map and the chip-based pages import — `public/common/` is where shared portal code lives.
+3. Use the `.gchip.g1`–`.g5` ordering (blue, amber, teal, green, red) as the canonical fallback, since three pages already follow it against the map's one. Extend with violet and cyan for sets of more than five groups.
+4. Update `map.js` to use the shared module and **delete `_GROUP_PALETTE`.** Do not leave a second copy.
+
+If step 4 looks like it will change how the map renders today, say so before doing it rather than silently shifting the demo's opening screen.
+
+## Acceptance criteria
+
+### 1. Route, nav and access
+
+New client route `analytics`, registered in `portfolio.js` alongside the existing five (`dashboard`, `branches`, `map`, `work-orders`, `groups`). Place **Analytics** after Portfolio Map in the nav.
+
+Page module at `public/portfolio/pages/analytics.js`, following the existing page contract including `_teardown()`.
+
+### 2. One endpoint, one request
+
+`GET /api/portfolio/analytics` — `requireClientOrAdmin`, org resolved exactly as the other portfolio routes do (`user.organizationId` fresh from the DB, session as fallback; admin passes `?organizationId=`). `enforceOrgScoping` already runs globally.
+
+Return everything the page needs in **one response**:
+
+```
+{ locations: [ { communityId, code, name,
+                 groups: { <setId>: <groupId> },
+                 assetCounts: { <assetTypeKey>: n },
+                 areaSqFt:    { <assetTypeKey>: n },
+                 areaCoverage:{ <assetTypeKey>: { withSqFt, total } },
+                 servicesYtd, spendYtd } ],
+  groupSets: [ { id, name, sortOrder,
+                 groups: [ { id, name, color, sortOrder } ] } ],
+  assetTypes:[ { key, label, layerKey, subLayerKey, sortOrder } ] }
+```
+
+**All filtering, aggregation and sorting happen client-side from this payload.** Eleven locations and ~21 asset types is a small payload; re-fetching on every chip click would make the page feel broken.
+
+**Do not issue one query per location.** Aggregate with `GROUP BY community_id, asset_type` across the org in a single pass, and the same for areas.
+
+### 3. Area sums need a cast and a coverage count
+
+`asset_properties.value` is `text`. Summing it requires a cast, and a bad value must not abort the query:
+
+```sql
+SUM(CASE WHEN ap.value ~ '^[0-9]+(\.[0-9]+)?$'
+         THEN ap.value::numeric ELSE 0 END)
+```
+
+**Return `areaCoverage` alongside every area sum** — how many assets of that type have a usable `sqFt` and how many exist in total.
+
+**The UI must show coverage whenever it is not 100%**, e.g. *"based on 34 of 41 areas"* under the value. A turf total that silently omits a third of the polygons is worse than no total at all, because it looks authoritative. This is the single most likely way this page ships subtly wrong.
+
+### 4. Asset types render dynamically — never hardcode the list
+
+Build cards and table columns from asset types that have a **non-zero count in the current selection**, ordered by `asset_types.sort_order`.
+
+The catalogue was written with HOAs in mind and includes types meaningless to a bank portfolio — `pet_station` is the obvious one, and it will not be the last. A hardcoded list would show an empty Pet Stations card to PNC and require a code change for the next client. Driving off actual counts means a bank portfolio never shows one and an HOA still does.
+
+### 5. Selection — group sets filter with AND across sets, OR within a set
+
+One chip row per group set, in `sort_order`, each with an all/none toggle. See the mockup.
+
+**Semantics matter and are not negotiable:** a location is included when, for *every* set, its group in that set is among the selected chips. Selecting `North Metro` and `Large` yields large northern sites, not the union.
+
+A set with all groups selected is unconstrained. A set with none selected matches nothing — render the empty state, do not silently treat it as "all".
+
+Locations belonging to no group in a given set must still be reachable; decide and state how (an implicit "Unassigned" chip is the suggested approach).
+
+A **Layer focus** row filters which asset categories appear, reshaping cards and columns together so a wide table stays readable.
+
+Persist selections in `localStorage` per org so the page reopens as the user left it.
+
+### 6. Tier 1 — inventory totals
+
+Cards for each active asset type: value, unit, and a supporting line. Counts for point types, `sqFt` for area types.
+
+### 7. Tier 2 — by location
+
+One row per location, sortable on every column, with a totals footer. Row label carries the location code, name, and a group chip in that group's colour.
+
+### 8. Tier 3 — cost intelligence
+
+The differentiator. Requires **#525** (invoices) and **#518** (service history) for real numbers.
+
+- **Cost per irrigation zone** — selection total, the median, and the five highest as bars. Flag any location above 2× median.
+- **Spend per 1,000 ft² turf** — with native grass as a percentage of managed turf.
+- **Services logged** — count, per-location average, average spend per service.
+
+`spendYtd` sums `invoices.cost` for the calendar year. **Exclude nothing by origin here** — unlike the work-orders page, imported billing history is exactly what this metric is measuring.
+
+`servicesYtd` = `task_completions` + completed `service_visits`, the same definition the Locations page uses. **Reuse that query shape so the two screens reconcile** — a client noticing Analytics and Locations disagree will not trust either.
+
+### 9. Export CSV
+
+Export the Tier 2 table as currently filtered and sorted. Client-side from the loaded payload; no endpoint.
+
+## Files likely involved
+
+- `artifacts/web-portal/public/portfolio/pages/analytics.js` — new
+- `artifacts/web-portal/public/portfolio/portfolio.js` — route + nav (~43-47)
+- `artifacts/web-portal/public/portfolio/portfolio.css` — `.pa-*` styles
+- `artifacts/web-portal/public/common/` — new shared group-colour module
+- `artifacts/web-portal/public/portfolio/pages/map.js` — remove `_GROUP_PALETTE` (~118)
+- `artifacts/api-server/src/routes/routes.ts` — new route beside the portfolio block (~5858 `getPortfolioGroups`)
+- `artifacts/api-server/src/storage.ts` — new `getPortfolioAnalytics(orgId)`
+
+## What must NOT change
+
+- **No schema change and no migration.** Everything read here already exists.
+- **`computeAreaSqFt` and `assetSync.ts`.** This page reads stored `sqFt`; it does not recompute geometry.
+- **The existing five portfolio routes and their pages.** Only the nav gains an item.
+- **`getPortfolioGroups`** keeps its current shape — the Groups page depends on it.
+- **Billing stays off client screens as line items.** Tier 3 shows *derived ratios*, not invoices. Do not add an invoice list.
+- **No new N+1 query patterns.** One aggregate pass per concern.
+
+## How to verify
+
+- [ ] Analytics loads in **one** network request. Confirm in the Network tab.
+- [ ] Every group chip colour matches the same group on the Groups page, and on Dashboard, Locations and Branch detail.
+- [ ] **After removing `_GROUP_PALETTE`, the Portfolio Map's group colours still match the Groups page.** The regression test for the palette consolidation.
+- [ ] `grep -rn "_GROUP_PALETTE" public/` returns nothing.
+- [ ] Selecting `North Metro` + `Large` returns only large northern locations, not the union.
+- [ ] Deselecting every chip in one set shows the empty state, not all locations.
+- [ ] Layer focus removes both the cards and the table columns for that category.
+- [ ] No `pet_station` card appears for the PNC org.
+- [ ] Turf totals show a coverage line whenever `sqFt` is missing on any polygon; verify by clearing one asset's property and confirming the count drops and the caption appears.
+- [ ] An `asset_properties` row with a non-numeric `value` does not break the query — insert `'n/a'` and confirm.
+- [ ] Tier 3 spend total reconciles with #525: **$53,120.90** across 11 locations.
+- [ ] Tier 3 services total reconciles with the Locations page YTD column, location by location.
+- [ ] Sorting every column ascending and descending gives sane ordering, including the text Location column.
+- [ ] CSV export matches the on-screen filter and sort.
+- [ ] Reload restores the previous selection.
+- [ ] A `client_admin` from another org cannot read PNC's analytics — expect 403.
+
+## Out of scope
+
+- Charts beyond the Tier 3 bars.
+- Time series or period-over-period comparison. Worth doing once there is more than one season of data.
+- Editing assets or group membership.
+- Backfilling missing `sqFt` — this page surfaces the gap; filling it is a sync-side task.
+- Water-budget modelling from `zone.runTime`. Real potential, but a separate task.
