@@ -1463,16 +1463,6 @@
     });
   }
 
-  // ── Register ───────────────────────────────────────────────────────────────
-  if (window.PortfolioRouter) {
-    PortfolioRouter.register('branch-detail', renderBranchDetail);
-  } else {
-    document.addEventListener('DOMContentLoaded', function () {
-      if (window.PortfolioRouter) PortfolioRouter.register('branch-detail', renderBranchDetail);
-    });
-  }
-})();
-
   function _removeWOCard(container, woId) {
     var card = container.querySelector('.summ-wo-card[data-wo-id="' + woId + '"]');
     if (card) card.remove();
@@ -1597,3 +1587,4 @@
       });
     });
   }
+})();
