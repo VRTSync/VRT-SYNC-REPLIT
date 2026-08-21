@@ -1,0 +1,120 @@
+# Task #514: Photo-rate KPI must measure field work, not imported history
+
+**Do this before, or in the same deploy as, the master bill import. Not after.**
+
+## What & Why
+
+The client portfolio dashboard shows a **Photo Documentation** KPI. Today it reads 0% because the org has no completions at all — an empty state that happens to look like a number.
+
+The master bill import adds **139 completed services with no attachments**, because they are historical billing lines from before photo capture existed. The KPI then computes over a real denominator and still reads **0%** — this time sitting directly beside "Services Logged: 139".
+
+That is not a cosmetic problem. To a client looking at their own portal, *139 services logged, 0% photo documented* reads as **"this contractor documents nothing."** It is the opposite of what the metric exists to prove, and it is worse than the empty state it replaces.
+
+The metric is also simply wrong in that state. A photo-documentation rate is a measure of **crew field discipline**. Historical invoice lines were never eligible to carry a photo, so including them in the denominator measures nothing and slanders the crews.
+
+## The current computation
+
+Three places compute this, and they do it differently:
+
+| Function | Scope | Empty behaviour |
+|---|---|---|
+| `getPortfolioDashboard` ~4046 | **all** completions for the org, all time | returns `'0'` |
+| `getPortfolioGroups` ~4593 | all completions per group | — |
+| `getAdminDashboard` ~3615 | completions in the **last 30 days** | returns `NULL` |
+
+All three follow the same shape:
+
+```sql
+COUNT(DISTINCT tc.id) FILTER (WHERE a.id IS NOT NULL)::numeric
+/ COUNT(DISTINCT tc.id)::numeric * 100
+```
+
+The admin one is also affected — imported records dated to July fall inside a 30-day window from mid-August.
+
+If #500 (Summary tab) lands with a `photoProofPct` on branch detail, that is a fourth site.
+
+## Done looks like
+
+**1. Imported records are excluded from the denominator, everywhere.**
+
+Completions created by the master bill import carry `tasks.origin = 'master_bill_import'`. Exclude them from every photo-rate numerator and denominator:
+
+```sql
+FROM task_completions tc
+JOIN tasks t ON t.id = tc.task_id
+LEFT JOIN attachments a ON a.task_completion_id = tc.id
+WHERE t.origin IS DISTINCT FROM 'master_bill_import'
+```
+
+Generalise it: exclude any completion whose task origin marks it as an import, not just this one batch. A future import of a different client's history must inherit the same treatment without another code change. **Define the excluded-origin set once** and use it in all sites — do not paste the predicate three or four times. This project has been bitten by pasted predicates twice already.
+
+**2. "No field-logged completions yet" is not 0%.**
+
+This is the part that matters most and the part most likely to be skipped.
+
+After the import, the pilot org may have **139 completions and zero field-logged ones**. With imports excluded, the denominator is 0. The KPI must then show an **empty state, not a zero**:
+
+- Value renders as `—`
+- Sub-line reads *"No field-logged services yet"*
+- The tile does **not** take the green "good" treatment, and does not take a red or amber "bad" one either. It is neutral, because nothing has been measured.
+
+`getPortfolioDashboard` currently returns the string `'0'` when the denominator is zero. **That is the bug in miniature** — it converts "unmeasured" into "measured, and terrible". Return `null` and let the UI render the empty state. `getAdminDashboard` already returns `NULL` correctly; make the others match it.
+
+**3. The label states its scope.**
+
+Change the KPI sub-line from *"of completions"* to *"of field-logged services"*. One word of scope turns a number that looks wrong into a number that is precise. Apply the same wording anywhere the rate appears.
+
+**4. Nothing else changes.** Services Logged still counts all 139 — the client did receive that work and it belongs in the count. Only the photo rate excludes them.
+
+## ⚠️ One more site than the plan lists
+
+Verified against `566ac51`. The plan names four backend sites and three UI sites. There is a **fifth UI site**:
+
+| # | Site | Coercion |
+|---|---|---|
+| 1 | `dashboard.js:97` → KPI tile | `Number(t.photoProofPct \|\| 0)` |
+| 2 | **`dashboard.js:225` → group cards on the dashboard** | `Number(g.photoProofPct \|\| 0)` |
+| 3 | `groups.js:118` | `Number(g.photoProofPct \|\| 0)` |
+| 4 | `groups.js:159` | `Number(g.photoProofPct \|\| 0)` |
+
+**`dashboard.js:225` is the one at risk of being missed.** It renders the per-group cards *on the dashboard itself*, directly beneath the KPI row, as `'<b>' + photoPct + '%</b>photo proof'`.
+
+Miss it and the dashboard shows the KPI tile reading `—` while the group cards immediately below it read `0%` — the two contradicting each other on the same screen, which is worse than either alone.
+
+Backend sites confirmed at: `getAdminDashboard` 3615, `getPortfolioDashboard` 4109, `getPortfolioGroups` 4228, `getBranchDetail` 4722 (with `?? 0` coercion at 4781).
+
+## Steps
+
+1. Find every photo-rate computation. Grep `photo_proof_pct` and `FILTER (WHERE a.id IS NOT NULL)` — expect three sites today, four if #500 has landed.
+2. Extract the excluded-origin predicate to a single shared constant alongside `NOT_TERMINAL` in `storage.ts`, which is the existing precedent for exactly this.
+3. Apply it to every site.
+4. Make every site return `null` on a zero denominator.
+5. UI: render `—` plus *"No field-logged services yet"*, neutral styling, wherever the value is null. Check the client dashboard, the Groups page, the admin dashboard, and branch detail if it has one.
+6. Update the label wording.
+
+## Verify
+
+- **Before importing:** org with no completions → KPI shows `—` and the empty-state sub-line, not `0%`.
+- **After importing 139 bill lines:** still `—`, not `0%`. This is the test that matters. Services Logged reads 139 at the same time.
+- Log one real field completion **with** a photo → rate reads `100%`, denominator 1.
+- Log a second **without** a photo → rate reads `50%`. The 139 imported records never move the number.
+- Admin dashboard behaves identically and its 30-day window still works.
+- Groups page rates exclude imports and show the empty state per group where applicable.
+- A group with zero field-logged completions does not display `0%`.
+
+## Out of scope
+
+- Backfilling attachments onto imported records. The master bill PDFs are billing documents, not service photos, and attaching them to inflate a documentation metric would be dishonest.
+- Changing how photos are captured or counted for genuine field work.
+- Any other KPI.
+
+## Note for the marketing copy
+
+`marketing/portal-mockups/README.md` and the enterprise page copy both flag the 96% photo figure in the screenshots as illustrative. That stays true. Once real field work accumulates, the rate this task produces will be the correct one to publish — measured over field-logged services only, with the scope stated.
+
+## Relevant files
+
+- `artifacts/api-server/src/storage.ts` — `getPortfolioDashboard` ~4046, `getPortfolioGroups` ~4593, `getAdminDashboard` ~3615, `NOT_TERMINAL` ~3465 as the precedent for a shared predicate
+- `artifacts/web-portal/public/portfolio/pages/dashboard.js` — KPI tile and label
+- `artifacts/web-portal/public/portfolio/pages/groups.js` — per-group rate
+- `artifacts/web-portal/public/admin/` — admin dashboard tile
