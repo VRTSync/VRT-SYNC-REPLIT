@@ -5905,6 +5905,187 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ── Portfolio: Group write routes (requireClientOrAdmin) ─────────────────
+  // These mirror /api/admin/* group routes but scope every action to the
+  // caller's org (via resolvePortfolioOrg) and verify group/set ownership
+  // before acting.  The admin routes at 6936-7119 are untouched.
+
+  app.post("/api/portfolio/groups", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const { name, color, sortOrder, setId } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return void res.status(400).json({ error: "name is required" });
+      }
+      // Verify setId belongs to this org if provided
+      if (setId) {
+        const sets = await storage.getGroupSets(orgId);
+        if (!sets.find(s => s.id === setId)) {
+          return void res.status(403).json({ error: "Group set not found or does not belong to this organization" });
+        }
+      }
+      let group = await storage.createBranchGroup(orgId, {
+        name: name.trim(),
+        color: color ?? undefined,
+        sortOrder: sortOrder ?? 0,
+      });
+      if (setId) {
+        group = (await storage.updateBranchGroup(group.id, { setId })) ?? group;
+      }
+      return void res.status(201).json(group);
+    } catch (error) {
+      console.error("Portfolio create group error:", error);
+      return void res.status(500).json({ error: "Failed to create group" });
+    }
+  });
+
+  app.patch("/api/portfolio/groups/:groupId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const groupId = req.params.groupId as string;
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const groups = await storage.listBranchGroups(orgId);
+      if (!groups.find(g => g.id === groupId)) {
+        return void res.status(403).json({ error: "Group not found or does not belong to this organization" });
+      }
+      const { name, color, sortOrder, setId } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) updates.name = name;
+      if (color !== undefined) updates.color = color;
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      if (setId !== undefined) updates.setId = setId;
+      const group = await storage.updateBranchGroup(groupId, updates as any);
+      if (!group) return void res.status(404).json({ error: "Group not found" });
+      return void res.json(group);
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_members_one_per_set_idx") && req.body?.setId) {
+        return void res.status(409).json({ error: "Some locations in this group already belong to another group in that set. Move them or choose a different set." });
+      }
+      console.error("Portfolio update group error:", error);
+      return void res.status(500).json({ error: "Failed to update group" });
+    }
+  });
+
+  app.delete("/api/portfolio/groups/:groupId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const groupId = req.params.groupId as string;
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const groups = await storage.listBranchGroups(orgId);
+      if (!groups.find(g => g.id === groupId)) {
+        return void res.status(403).json({ error: "Group not found or does not belong to this organization" });
+      }
+      const deleted = await storage.deleteBranchGroup(groupId);
+      if (!deleted) return void res.status(404).json({ error: "Group not found" });
+      return void res.status(204).send();
+    } catch (error) {
+      console.error("Portfolio delete group error:", error);
+      return void res.status(500).json({ error: "Failed to delete group" });
+    }
+  });
+
+  app.put("/api/portfolio/groups/:groupId/members", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const groupId = req.params.groupId as string;
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const groups = await storage.listBranchGroups(orgId);
+      if (!groups.find(g => g.id === groupId)) {
+        return void res.status(403).json({ error: "Group not found or does not belong to this organization" });
+      }
+      const { communityIds } = req.body;
+      if (!Array.isArray(communityIds)) {
+        return void res.status(400).json({ error: "communityIds must be an array" });
+      }
+      // Pass directly to setBranchGroupMembers — it handles move semantics atomically.
+      await storage.setBranchGroupMembers(groupId, communityIds as string[]);
+      return void res.json({ ok: true });
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_members_one_per_set_idx")) {
+        return void res.status(409).json({ error: "A location already belongs to another group in the same set." });
+      }
+      console.error("Portfolio set group members error:", error);
+      return void res.status(500).json({ error: "Failed to set group members" });
+    }
+  });
+
+  app.post("/api/portfolio/group-sets", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const { name, sortOrder } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return void res.status(400).json({ error: "name is required" });
+      }
+      const set = await storage.createGroupSet(orgId, { name: name.trim(), sortOrder: sortOrder ?? 0 });
+      return void res.status(201).json(set);
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_sets_org_name_unique")) {
+        return void res.status(409).json({ error: `A group set named "${String(req.body?.name).trim()}" already exists in this organization.` });
+      }
+      console.error("Portfolio create group set error:", error);
+      return void res.status(500).json({ error: "Failed to create group set" });
+    }
+  });
+
+  app.patch("/api/portfolio/group-sets/:setId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const setId = req.params.setId as string;
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const sets = await storage.getGroupSets(orgId);
+      if (!sets.find(s => s.id === setId)) {
+        return void res.status(403).json({ error: "Group set not found or does not belong to this organization" });
+      }
+      const { name, sortOrder } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (name !== undefined) {
+        if (typeof name !== "string" || name.trim().length === 0) {
+          return void res.status(400).json({ error: "name must be a non-empty string" });
+        }
+        updates.name = name.trim();
+      }
+      if (sortOrder !== undefined) updates.sortOrder = sortOrder;
+      const set = await storage.updateGroupSet(setId, updates as any);
+      if (!set) return void res.status(404).json({ error: "Group set not found" });
+      return void res.json(set);
+    } catch (error) {
+      if (isUniqueViolation(error, "branch_group_sets_org_name_unique")) {
+        return void res.status(409).json({ error: `A group set named "${String(req.body?.name).trim()}" already exists in this organization.` });
+      }
+      console.error("Portfolio update group set error:", error);
+      return void res.status(500).json({ error: "Failed to update group set" });
+    }
+  });
+
+  app.delete("/api/portfolio/group-sets/:setId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const setId = req.params.setId as string;
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const orgId = resolved.orgId;
+      const sets = await storage.getGroupSets(orgId);
+      if (!sets.find(s => s.id === setId)) {
+        return void res.status(403).json({ error: "Group set not found or does not belong to this organization" });
+      }
+      // ON DELETE SET NULL cascades to branch_groups.set_id via FK trigger;
+      // re-render surfaces orphaned groups in the "Ungrouped" bucket.
+      const deleted = await storage.deleteGroupSet(setId);
+      if (!deleted) return void res.status(404).json({ error: "Group set not found" });
+      return void res.status(204).send();
+    } catch (error) {
+      console.error("Portfolio delete group set error:", error);
+      return void res.status(500).json({ error: "Failed to delete group set" });
+    }
+  });
+
   // ── Portfolio Phase 3d: Work Orders endpoints ────────────────────────────
   //
   // origin values in use across the codebase (grep 2024-08):
