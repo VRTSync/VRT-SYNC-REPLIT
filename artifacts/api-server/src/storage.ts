@@ -3524,7 +3524,9 @@ const NOT_TERMINAL = "cancelled_at IS NULL AND declined_at IS NULL";
 const IMPORT_ORIGINS = ['master_bill_import'] as const;
 /** Returns a SQL NOT IN predicate fragment excluding import-origin completions for the given tasks-table alias. */
 function importOriginExclude(tableAlias: string = 't'): string {
-  return `${tableAlias}.origin NOT IN (${IMPORT_ORIGINS.map(o => `'${o}'`).join(', ')})`;
+  return IMPORT_ORIGINS
+    .map(o => `${tableAlias}.origin IS DISTINCT FROM '${o}'`)
+    .join(' AND ');
 }
 
 export async function getAdminDashboard(): Promise<AdminDashboardData> {
