@@ -1,0 +1,121 @@
+# Portfolio Map — colour pins by group, and enrich the layer breakdown
+
+*Two changes to the Portfolio Map rail and pins. Awaiting a number. Verified at `c43e127`.*
+
+## What & Why
+
+**Pins carry no group information.** Every location renders navy — or amber if it has an open work order. The rail shows group filters in colour, but the map itself gives no way to see which location belongs to which region. Colouring the pins makes the portfolio legible at a glance.
+
+**The layer breakdown shows four bare numbers.** `Irrigation · 412` tells you nothing about whether that's most of the portfolio or a rounding error. A proportional bar turns four numbers into a shape.
+
+**No new network requests.** `getBranchMapPoints` already returns `layerCounts`, `assetCount`, `openWorkOrders`, `servicesYtd`, `servicedThisWeek` and `lastServiceAt` per branch. #519 got this page to one request; it stays at one.
+
+## ⚠️ `sendBranchPins` is shared — parameterise, do not edit the rule in place
+
+`map-render.js:826` hardcodes the colour rule:
+
+```js
+var colorMap = {};
+branches.forEach(function (b) {
+  colorMap[b.id] = b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31';
+});
+```
+
+**Three callers** — `map.js:72`, `map.js:387`, `map.js:455`, plus **`dashboard.js:403`**. Changing the rule inside the function silently changes the dashboard's map card too.
+
+**Required:** add an optional `opts.colorFor(branch)` callback. When supplied, it returns the pin colour; when absent, the existing open-work rule applies unchanged.
+
+```js
+colorMap[b.id] = (opts && typeof opts.colorFor === 'function')
+  ? opts.colorFor(b)
+  : (b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31');
+```
+
+**`dashboard.js` passes nothing and keeps its current amber behaviour.** Only the Portfolio Map opts in. If the dashboard card should also colour by group, that is a separate decision — do not fold it in here.
+
+This is the "one implementation, several callers" rule. The renderer keeps one pin-drawing path; the *policy* moves to the caller.
+
+## Acceptance criteria
+
+### 1. "Colour by" selector in the rail
+
+A compact control at the top of the rail, above the group filters, listing every group set in `sortOrder`:
+
+```
+Colour by:  [ Region ▾ ]
+```
+
+- Defaults to the **first group set by `sortOrder`**.
+- Changing it recolours pins and the legend immediately — **no refetch**.
+- Persist the choice in `localStorage` per org, alongside the existing rail state.
+- If the org has **one** group set, render it as a static label rather than a dropdown. If it has **none**, hide the control and fall back to navy pins.
+
+### 2. Pins take the group colour of the selected set
+
+For each branch, find its group within the selected set and colour the pin with `resolveGroupColor(group, indexWithinSet)` from `common/group-colors.js`.
+
+**Use the shared module.** Do not read `.gchip` classes, and do not add a fourth palette — that fork was consolidated in #530.
+
+**Locations with no group in the selected set** render in a neutral grey (`--gray-400`, `#9ca3af`) and are labelled **Unassigned** in the legend. They must remain visible and clickable — silently hiding an ungrouped location is worse than showing it as ungrouped.
+
+**The open-work amber is retired on this page.** *Decision 2026-08-21.* Open work stays discoverable through the existing "Locations with open work" toggle, which filters the map. Do not add a ring, badge or second marker layer as a substitute — the toggle is the affordance.
+
+### 3. Legend under the selector
+
+The group swatch already appears on each filter checkbox, so the filter list **is** the legend for the selected set — provided the checkbox swatches use the same resolved colour as the pins.
+
+**Verify they match.** A rail chip and its pins showing different colours for the same group is worse than no colour at all. If the selected set is not the set the filters are showing, make that relationship obvious in the UI or reconsider the layout.
+
+### 4. Share-of-total bar per layer row
+
+Each layer row gains a thin proportional bar showing that layer's share of total assets in the filtered set:
+
+```
+▇▇▇▇▇▇▇▇▇▇▇▇░░░░░░  Irrigation      412
+▇▇▇▇▇░░░░░░░░░░░░░  Landscape       178
+```
+
+- Bar colour is the layer's own `color`, already in `layerCounts`.
+- Denominator is the **sum across visible layer rows for the current filter**, so shares total 100% and change as the filter changes.
+- Bar sits behind or beneath the label; the count stays right-aligned and readable.
+- **Zero-count layers stay hidden**, as today.
+- If only one layer has assets, its bar is full width — correct, and not a bug.
+
+Keep the existing heading (`Layer breakdown · <scope>`), the location-count line, and the `Total assets` fallback when `layerCounts` is empty.
+
+## Files likely involved
+
+- `artifacts/web-portal/public/common/map-render.js` — `sendBranchPins` ~820, `colorMap` ~826
+- `artifacts/web-portal/public/portfolio/pages/map.js` — pin send ~72/387/455, rail sections ~300–330, `renderLayerBreakdown` ~213
+- `artifacts/web-portal/public/portfolio/portfolio.css` — `.pfm-breakdown-*` ~1314, new selector + bar styles
+- `artifacts/web-portal/public/common/group-colors.js` — consume `resolveGroupColor`, do not modify
+
+## What must NOT change
+
+- **`dashboard.js`'s pins.** It passes no `colorFor` and keeps amber-on-open-work.
+- **The existing `sendBranchPins` default.** Callers that pass nothing behave exactly as before.
+- **One network request.** Everything here comes from the existing `/api/portfolio/map` payload. No new endpoint, no refetch on selector change.
+- **Group filter behaviour** — multi-select, both toggles, the selected-location card. Colour is additive.
+- **`getBranchMapPoints`** — no server change is needed. If it seems to be, stop and say why.
+- **The full-height layout and the `ResizeObserver`** from #519.
+
+## How to verify
+
+- [ ] Pins render in region colours; each matches its rail checkbox swatch exactly.
+- [ ] Switch "Colour by" to Service tier — pins recolour, **Network tab shows no new request**.
+- [ ] A location in no group of the selected set renders grey, is labelled Unassigned, and is still clickable.
+- [ ] A location with open work is **not** amber; the "Locations with open work" toggle still filters it correctly.
+- [ ] **Dashboard map card still shows amber pins for open work** — the regression test for the shared renderer.
+- [ ] `grep -n "colorFor" common/map-render.js` shows the callback is optional and the default branch is intact.
+- [ ] Layer bars are proportional and sum to the filtered total; narrowing the filter rescales them.
+- [ ] A filter yielding one layer shows a full-width bar.
+- [ ] A filter yielding no locations shows the existing empty state, no broken bars.
+- [ ] Reload restores the "Colour by" choice.
+- [ ] With one group set, the selector renders as a label. With none, pins are navy and nothing breaks.
+
+## Out of scope
+
+- Colouring the dashboard card's pins.
+- Per-asset-type colouring on the branch detail map.
+- Clustering or pin size varying by asset count.
+- Adding metrics to the breakdown beyond the share bar — the service/open-work summary line was considered and deferred.

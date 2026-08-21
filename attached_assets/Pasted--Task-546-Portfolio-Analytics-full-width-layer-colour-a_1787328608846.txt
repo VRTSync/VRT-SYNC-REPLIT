@@ -1,0 +1,191 @@
+# Task #546: Portfolio Analytics — full width, layer colour, area-first figures
+
+*Number assigned by Randy. Verified at `c43e127`.*
+
+## ⚠️ Steps 2 and 3 collide — one container holds both card groups
+
+`analytics.js:337` builds **a single `.pa-summary-row`** containing the four summary cards *and* `typeCards` as siblings:
+
+```js
+container.innerHTML = '<div class="pa-summary-row">'
+  + '<div class="pa-card pa-card--teal">…Locations…</div>'
+  + '<div class="pa-card pa-card--navy">…Total Assets…</div>'
+  + …Services YTD… + …Spend YTD…
+  + typeCards                      // ← asset-type cards, same container
+  + '</div>';
+```
+
+Step 2 turns that container into a grid. Step 3 inserts layer band labels into `typeCards`. Together those produce two problems:
+
+**1. Band labels become grid cells.** A `<div class="pa-layer-band-label">` inside a `grid-template-columns: repeat(auto-fill, …)` container occupies **one column**, sitting inline between cards rather than heading a row. The result looks like a broken card, and it is the single most likely way this ships wrong.
+
+Any full-width child of that grid needs `grid-column: 1 / -1`.
+
+**2. The four summary cards land inside the first band.** Locations / Total Assets / Services YTD / Spend YTD are not asset types and belong to no layer, but they precede `typeCards` in the same container. Under a "Landscape" heading they read as if they were Landscape figures.
+
+### Required: split into two containers
+
+```
+<div class="pa-summary-row">        ← the four org-level cards, auto-fill grid
+<div class="pa-type-section">       ← per layer: band label + its cards
+  <div class="pa-layer-band">
+    <div class="pa-layer-band-label">Landscape</div>
+    <div class="pa-layer-cards">    ← auto-fill grid, cards only
+```
+
+Cleaner than fighting `grid-column` spans, and it lets the two rows carry different column minimums — summary cards want ~200px, asset cards with a `760,200 ft²` headline want more like 240px.
+
+If a single container is kept instead, **`grid-column: 1 / -1` on the band label is mandatory**, and the summary cards still need separating from the first band some other way. Say which approach was taken.
+
+### Also: `.pa-card` has `flex: 1`
+
+`portfolio.css:3080` sets `min-width: 140px; flex: 1`. `flex: 1` is inert once the parent is a grid — remove it rather than leave a misleading declaration. Reconcile `min-width: 140px` with the new `minmax()` value so they don't fight; the `minmax` minimum should win.
+
+## ✅ Verified correct in the revised draft
+
+| Reference | Status |
+|---|---|
+| `.pa-page { max-width: 1200px }` at `portfolio.css:3017` | correct |
+| `.pfm-page` already using `max-width: none` as precedent | correct, `:1122` |
+| `MAP_LAYER_DISPLAY` at `storage.ts:5217` as the colour source | correct |
+| `assetTypes` assembled around `storage.ts:5171` | correct |
+| `assetTypes` already carrying `layerKey` | correct |
+| Adding two fields rather than a second query | correct — keeps the page at one request |
+| Keeping `.pa-card-value` dark rather than tinting it | correct, and step 5 is right to check it: `#3498db` on white is ~3:1, which fails for body text |
+| Flagging the Snow/Irrigation blue collision rather than changing it | correct — that constant feeds the map |
+
+---
+
+*Everything below is the original spec. Where it conflicts with the above, the above wins.*
+
+## What & Why
+
+Three changes. None touches what the page calculates.
+
+1. **The page is capped at 1200px** and wastes most of a wide monitor — on a comparison table, that is the wrong constraint.
+2. **The asset-type cards are all white.** Only the four summary cards carry colour, so Tier 1 reads as an undifferentiated grid.
+3. **Area types lead with a count, not the area.** "Bluegrass Area · 47" with the square footage as a footnote buries the number that matters.
+
+## 1 · Use the full width
+
+`portfolio.css:3017`:
+
+```css
+.pa-page { max-width: 1200px; }
+```
+
+Change to `max-width: none`, matching `.pfm-page` at `:1122` which already does this for the Portfolio Map.
+
+The Tier 2 table is the reason. Eleven locations × up to ten columns is exactly the shape that benefits from width, and `.pa-table-scroll` currently gets a horizontal scrollbar on screens that have plenty of room.
+
+**Check the card grids after removing the cap.** `.pa-summary-row` and the Tier 1 grid must not stretch four cards across 2560px — cap the *columns*, not the page. Use `repeat(auto-fill, minmax(220px, 1fr))` or similar so cards keep a sane size and wrap into more per row as width allows.
+
+**Tier 3's three efficiency cards should stay proportional too** — three across at 1400px is right; three across at 2560px leaves each one absurdly wide. Same auto-fill treatment.
+
+## 2 · Colour the asset cards by layer — from the existing source
+
+The four summary cards already use `--teal / --navy / --blue / --amber` gradients (`portfolio.css:3091-3094`). Asset-type cards render as a bare `<div class="pa-card">` at `analytics.js:325` with no modifier.
+
+**Colour each asset-type card by its layer**, using the colours the rest of the app already uses. `storage.ts:5217`:
+
+```ts
+const MAP_LAYER_DISPLAY = {
+  community:  { name: 'Landscape',  color: '#2E8B57', ... },
+  irrigation: { name: 'Irrigation', color: '#3498db', ... },
+  snow:       { name: 'Snow',       color: '#4A90E2', ... },
+  trees:      { name: 'Trees',      color: '#006400', ... },
+};
+```
+
+This is the same constant that feeds the map's `layerCounts[].color`, so Analytics and the Portfolio Map will agree by construction.
+
+**Add `layerName` and `layerColor` to each entry in the `assetTypes` payload**, sourced from `MAP_LAYER_DISPLAY`. `assetTypes` already carries `layerKey` (`analytics.js:21`), so this is one lookup server-side.
+
+**Do not hardcode a layer palette in the client.** #530 consolidated two conflicting group palettes into one shared module; adding a client-side layer palette now would recreate exactly that problem one category over.
+
+Apply the colour as the card's bottom border and a soft top-left gradient wash, matching the established `.pa-card--*` treatment — the same visual language, driven by data rather than four fixed classes. Keep the value text dark enough to read; **do not tint the number itself** to the layer colour without checking contrast. `#3498db` on white is roughly 3:1, which fails for body text.
+
+**Group the Tier 1 cards by layer** in the existing `sortOrder`, so colour reinforces grouping rather than decorating it. A small layer label above each run of cards would make the four bands legible; keep it subtle.
+
+### One thing to decide
+
+**Snow `#4A90E2` and Irrigation `#3498db` are both mid-blues** and sit within a few points of each other. On the map they rarely appear side by side; on a card grid they will, and they will be hard to tell apart.
+
+Changing either affects the map legend and the rail breakdown too. **Flag it rather than changing it unilaterally** — if snow moves to a slate or violet, say so and confirm before touching `MAP_LAYER_DISPLAY`.
+
+## 3 · Area types lead with square footage
+
+Current (`analytics.js:325-329`) puts the count first for every type:
+
+```
+Bluegrass Area
+47                          ← count, large
+760,200 ft²                 ← area, small
+based on 34 of 47 areas     ← third line
+```
+
+**Invert it for any asset type that has area data:**
+
+```
+Bluegrass Area
+760,200 ft²                 ← area, large
+47 areas                    ← count, sub
+```
+
+**Point types keep the count as the headline** — zones, controllers, trees and backflows have no area, and nothing about them changes.
+
+The rule is `hasSqFt`, which the code already computes.
+
+### Fold coverage into the sub-line
+
+Once the count is the sub-line, the separate coverage note duplicates it. Collapse to one line:
+
+| Case | Sub-line |
+|---|---|
+| All areas measured | `47 areas` |
+| Partial | `34 of 47 areas measured` |
+| None measured | headline stays the count, no area shown |
+
+Keep `.pa-card-coverage`'s muted styling for the partial case so an incomplete figure still reads as qualified. **The caption must not disappear when coverage is partial** — a turf total that silently omits a third of the polygons is the failure #530 called out, and this is the only place it surfaces.
+
+### Show the whole number
+
+Confirm `_fmtSqFt` renders **`760,200`**, not `760.2k`. "Obvious in square footage" means the full figure with thousands separators. If it abbreviates, change it for the card headline; the Tier 2 table may keep an abbreviated form if the column is tight, but say which you did.
+
+Acres are a reasonable third line for large totals (`17.5 acres`) — optional, and only where it doesn't crowd the card.
+
+## Files likely involved
+
+- `artifacts/web-portal/public/portfolio/portfolio.css` — `.pa-page` 3017, `.pa-card*` 3080-3123, `.pa-summary-row` 3074, `.pa-tier3` 3154
+- `artifacts/web-portal/public/portfolio/pages/analytics.js` — Tier 1 cards ~285-360, `_fmtSqFt`
+- `artifacts/api-server/src/storage.ts` — `MAP_LAYER_DISPLAY` 5217; add `layerName`/`layerColor` to the analytics `assetTypes` payload
+
+## What must NOT change
+
+- **Every number on the page.** This is presentation only. Totals, shares, ratios and the CSV export all stay identical.
+- **One network request.** Adding two fields to an existing payload is fine; a second call is not.
+- **`MAP_LAYER_DISPLAY`'s colours** — unless the snow/irrigation collision is explicitly approved first. It feeds the map.
+- **The chip filters, layer focus, sort, CSV export, and `sessionStorage` persistence.**
+- **`.pfm-*` and the Portfolio Map.** Different page.
+- **The coverage caption's presence when coverage is partial.**
+
+## How to verify
+
+- [ ] At 2560×1440 the page fills the width; the Tier 2 table shows every column with **no horizontal scrollbar**.
+- [ ] Cards do not stretch to absurd widths — they wrap to more per row instead.
+- [ ] At 1280px the layout is unchanged from today apart from the colour and card content.
+- [ ] Each asset card's colour matches its layer's colour in the Portfolio Map rail breakdown. **Compare the two screens side by side.**
+- [ ] `grep -rn "2E8B57\|3498db" public/` finds no hardcoded layer palette in client code.
+- [ ] Bluegrass Area leads with `ft²` and subs with the area count.
+- [ ] Irrigation Zones still leads with the count and shows no area line.
+- [ ] Clear one asset's `sqFt` property → its card sub-line reads `N of M areas measured`, and the total drops accordingly.
+- [ ] The headline square footage renders in full with separators, not abbreviated.
+- [ ] Card value text passes contrast against its tinted background.
+- [ ] CSV export is byte-identical to before.
+
+## Out of scope
+
+- New metrics or a fourth tier.
+- Charts beyond the existing Tier 3 bars.
+- Changing the Portfolio Map or dashboard.
+- Resolving the `sqFt` coverage gap itself — this surfaces it; filling it is sync-side.

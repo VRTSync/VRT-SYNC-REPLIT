@@ -1,0 +1,104 @@
+# Task #544: Acknowledge unmatched PNC codes, per code
+
+*Number assigned by Randy. Unblocks the May master bill import.*
+
+## ⚠️ One thing the revised draft doesn't say — do not remove FB45 from `KNOWN_PNC_CODES`
+
+Verified at `c43e127`. There are **two distinct rejection paths**, and only the second one changes:
+
+| Stage | Line | Behaviour |
+|---|---|---|
+| **Parse** | `masterBillImporter.ts:309` | code not in `KNOWN_PNC_CODES` → `skippedRows.push({ reason: 'unknown PNC code' })` |
+| **Preview** | `masterBillImporter.ts:420` | code *is* known but has no DB community → `blockingErrors.push(...)` |
+
+`GRAND TOTAL` is caught at the **parse** stage, so it will not start demanding acknowledgement. Step 2 changes line 420 only, and that separation is what keeps it safe. **Confirm the parse-stage skip is untouched** — if `GRAND TOTAL` appears in the new `unmatchedCodes` panel, the change went in at the wrong layer.
+
+**`FB45` is currently in `KNOWN_PNC_CODES` (`:23`), and must stay there.**
+
+Once FB45 is acknowledged and skipped on every import, deleting it from the allowlist looks like a tidy simplification. It is not. Removing it moves FB45 from the *preview* path to the *parse* path — the row would vanish as "unknown PNC code" before the acknowledgement UI ever renders it, and a real $425 invoice line would disappear with no visible decision and no checkbox to tick.
+
+**Leaving it in the allowlist is what preserves the audit trail.** The row is parsed, surfaced, and skipped by an explicit human act every time.
+
+### Verified correct in the revised draft
+
+| Reference | Status |
+|---|---|
+| `ParsedRow.pncCode` — the field step 3(c) filters on | correct, `:68` |
+| Unmatched codes originating at `blockingErrors.push` `:420` | correct |
+| Skipped rows already carrying `{ excelRow, reason }` | correct — `acknowledged_unmatched` slots into the existing shape |
+| Server-side re-validation of acknowledged codes | correct, and the right call — the checkbox is an affordance, not the authority |
+| Seasonal left alone | correct — it resolves communities org-wide, no per-row codes |
+
+---
+
+*Everything below is the original spec.*
+
+## What & Why
+
+The master bill preview correctly blocks Commit when a PNC code has no matching community:
+
+```
+Blocking Errors — Commit is disabled
+• PNC Code "FB45" — no matching community found in database
+```
+
+That guard is working exactly as intended and **must not be removed.** An unmatched code is the signal that catches a typo, a renamed branch, or a genuinely missing property — the failure mode where real service history gets filed against the wrong location and looks completely normal afterward.
+
+But there is a legitimate case it currently has no answer for: **the code is unmatched because the property is genuinely not in the portfolio.**
+
+`FB45 / 88th and Wadsworth` is that case. One line ever — a $425 planter-box install on 2026-05-18 — and no community record. *Decision 2026-08-21: import without it.*
+
+Right now the only ways forward are to create a community that shouldn't exist, or to weaken the check. Neither is acceptable.
+
+## The fix: acknowledge, don't downgrade
+
+When a code is unmatched, the preview lists it as now, **and offers a per-code checkbox**:
+
+> ☐ `FB45` — 1 row, $425.00 — **skip these rows and import the rest**
+
+Commit stays disabled until **every** unmatched code is either resolved or explicitly ticked. Ticking is a deliberate act per code, not a global override.
+
+**Do not add a "skip all unmatched" button**, and do not convert the blocking error into a warning. The value of this check is that it forces a human to look at each unmatched code individually. Twelve unmatched codes should be twelve decisions, or an obvious sign that something is wrong with the file.
+
+## Acceptance criteria
+
+1. **Preview** returns unmatched codes as a distinct, structured list — code, row count, dollar total, and the Excel row numbers — separate from other blocking errors.
+2. **The UI renders a checkbox per unmatched code**, showing its row count and amount so the cost of skipping is visible before it's chosen.
+3. **Commit remains disabled** while any unmatched code is unacknowledged, and while any *other* blocking error exists. Acknowledging an unmatched code must not clear unrelated errors.
+4. **The acknowledged list is sent with the commit request** and re-validated server-side. A commit naming codes the preview didn't flag is rejected — the checkbox is a UI affordance, not the authority.
+5. **Acknowledged rows are recorded as skips**, with the reason `acknowledged_unmatched`, in the same skipped-rows report as `GRAND TOTAL`. They appear in the post-import summary and in the batch record. They are never silently dropped.
+6. **Re-uploading resets acknowledgements.** A new file means new decisions.
+7. **The totals shown must reflect the skips.** With FB45 acknowledged, May previews as **45 rows / $17,950.04**, not 46 / $18,375.04. A preview that shows a total it isn't going to write is worse than no total.
+
+## Expected values after this lands
+
+| | With FB45 | Acknowledged skip |
+|---|---|---|
+| May | 46 · $18,375.04 | **45 · $17,950.04** |
+| June | 48 · $19,493.40 | unchanged |
+| July | 45 · $15,252.46 | unchanged |
+| **All three** | 139 · $53,120.90 | **138 · $52,695.90** |
+
+Completions drop from 110 to **109** — FB45's single line is extra work, not a contract line, so it would have produced a completion.
+
+## What must NOT change
+
+- **The blocking behaviour for unacknowledged codes.** Default stays blocked.
+- **Every other assertion** — `GRAND TOTAL` filtering, the 20 date clamps, the 29 contract-only rows, the First Bank guard, idempotency keys.
+- **The mapping table stays prominent.** This adds to it; it does not replace reading it.
+- **Seasonal mode.** Its community resolution is org-wide and has no per-row codes; leave it alone.
+
+## How to verify
+
+- [ ] Upload May. FB45 appears as an unmatched code with **1 row, $425.00**, and Commit is disabled.
+- [ ] Tick FB45. Commit enables; the preview total updates to **45 rows / $17,950.04**.
+- [ ] Untick it. Commit disables again and the total returns to 46 / $18,375.04.
+- [ ] Commit. Post-import summary lists FB45 under skipped rows with reason `acknowledged_unmatched`.
+- [ ] Database: **45 invoices** for `master_bill_2026_05`, no row referencing FB45.
+- [ ] Introduce a second bogus code in a test file — **both** must be ticked before Commit enables.
+- [ ] Send a commit request naming a code the preview did not flag → **rejected server-side**.
+- [ ] June and July are unaffected — all codes match, no checkboxes, Commit enabled as before.
+
+## Note
+
+If FB45 later needs to exist, create the community and re-run May. The import is idempotent, so the 45 existing rows stay put and only FB45's line is added.
