@@ -1,0 +1,161 @@
+# Task #561: Analytics layer card row
+
+*Number assigned by Randy. Reference mockup: `mockups/analytics-kpi-rethink.html`, **option A**.*
+
+## 🔁 One change to my own spec — use a single denominator for the share
+
+I introduced the two-family percentage rule (`% of assets` for count layers, `% of area` for area layers). It is honest, and labelling the denominator fixes the worst of it — but it still leaves a puzzle on screen.
+
+A reader sees four cards:
+
+> Irrigation **32% of assets** · Landscape **58% of area** · Trees **38% of assets** · Snow **42% of area**
+
+The two *of assets* figures sum to **70%**. Nothing on the page explains the missing 30% — it is the area-type polygons, which are counted as assets but displayed by area. Correct, and still confusing.
+
+**Use one denominator for every layer: share of total assets.** It sums cleanly and needs no explanation:
+
+| Layer | Assets | Share |
+|---|---|---|
+| Irrigation | 158 | **32%** |
+| Landscape | 129 | **26%** |
+| Trees | 186 | **38%** |
+| Snow | 19 | **4%** |
+| **Total** | **492** | **100%** |
+
+Every layer's polygon or point count rolls into the same 492, so all four shares add to 100% with no second family and no unexplained remainder.
+
+**The headline figure is unaffected** — Landscape still headlines `248,197 ft²`, Snow still headlines `178,367 ft²`. Only the share changes. A share reading `26% of assets` beside an area headline is a mild mismatch, but "how much of the portfolio is this layer" is a coherent question however the headline is expressed, and it beats a number that appears not to add up.
+
+Label it `26% of assets` regardless, so the basis is never in doubt.
+
+*Everything else in the handover version is correct and carries over unchanged.*
+
+## ✅ Verified in the handover version
+
+| Claim | Status |
+|---|---|
+| Payload already carries `sqFtTotal` / `sqFtCovered` / `sqFtCount` | correct — `storage.ts:5199-5206` |
+| Payload already carries `layerName` / `layerColor` | correct — `storage.ts:5186-5187`, added last pass |
+| No API or payload change needed | correct, follows from the above |
+| `MAP_LAYER_DISPLAY` already correct | correct — slate and olive landed last pass |
+| Managed Area = 426,564 ft², 9.8 acres, 148 areas | correct on the full PNC selection |
+| Total Assets 492 | correct — 158 + 129 + 186 + 19 |
+
+---
+
+## What & Why
+
+The current Tier 1 renders **one card per asset type** — eleven boxes on the PNC org, arranged in four bands. Three of those bands end in dead space, Trees spends a full row on a single number, and every figure appears again as a column in the Locations table below.
+
+Two earlier passes made the cards smaller and the bands horizontal. Both helped and neither fixed it, because the problem is the **granularity**, not the sizing: an eleven-item inventory breakdown is not a KPI row.
+
+**Replace it with four layer cards** — one per layer, equal width, single row. Roughly **145px** against ~450px today, which puts the Locations table on the first screen.
+
+Nothing is lost. Every per-asset-type figure remains in the Locations table, in full.
+
+## Layout
+
+### Row 1 — four portfolio KPIs (compact)
+
+| Card | Value | Subline |
+|---|---|---|
+| Locations | `10` | `49 assets each` |
+| Total Assets | `492` | `4 layers` |
+| **Managed Area** | `426,564 ft²` | `9.8 acres · 148 areas` |
+| Spend YTD | `$52,696` | `109 services · $483 each` |
+
+**Managed Area is new** — the sum of every area-type `sqFt` across the selection. It is a number a client asks for directly, and it replaces a slot that previously held an asset-type count.
+
+**Services YTD folds into the Spend subline.** If it should stay its own card, drop Managed Area and say so — but not both; four is the limit before this row becomes the problem it is replacing.
+
+Target height **≈ 62px**: value ~19px, label ~9.5px, subline ~10px, padding `9px 16px`.
+
+### Row 2 — four layer cards
+
+`repeat(auto-fit, minmax(200px, 1fr))` — **not a fixed 4 columns.** Layers with zero assets in the current selection are not rendered, so an org with two active layers gets two full-width cards rather than two cards and a gap. This is what guarantees no ragged edge at any filter or viewport.
+
+Each card:
+
+```
+┌─────────────────────────────────────────┐
+│ IRRIGATION                32% of assets │   ← name left, share right
+│ 158                                     │   ← layer total, in layer colour
+│ 132 zones · 10 controllers · 9 backflow · +3 │  ← top types, truncated
+└─────────────────────────────────────────┘
+   ↑ 3px left border in the layer colour
+```
+
+Target height **≈ 68px**.
+
+### What the layer total is
+
+**Area layers show area. Count layers show count.**
+
+| Layer | Headline | Because |
+|---|---|---|
+| Landscape | `248,197 ft²` | its types carry `sqFt` |
+| Snow | `178,367 ft²` | same |
+| Irrigation | `158` | points — no area |
+| Trees | `186` | points — no area |
+
+A layer counts as an area layer when **any** of its active types has `sqFt` data. Mixed layers lead with area and mention the count in the subline.
+
+## ⚠️ The share percentage needs its denominator stated — my mockup got this wrong
+
+The mockup shows bare percentages: Irrigation 32%, Landscape 58%, Trees 38%, Snow 42%. **Those do not sum to 100 and appear to be nonsense.**
+
+They are not nonsense — they use two different denominators — but nothing on the card says so, which is worse than omitting them.
+
+**Two families, each internally consistent:**
+
+| Family | Denominator | Members |
+|---|---|---|
+| Assets | 492 total assets | Irrigation 158 = **32%**, Trees 186 = **38%**, area-type polygons 148 = 30% |
+| Area | 426,564 ft² | Landscape 248,197 = **58%**, Snow 178,367 = **42%** |
+
+Each family sums to 100%. **Label the denominator on every card** — `32% of assets`, `58% of area`. Without it, a reader adding 32 + 58 + 38 + 42 gets 170 and stops trusting the page.
+
+If that reads as clutter, **drop the percentage entirely.** An unexplained number is worse than no number.
+
+### Subline truncation
+
+List types by descending count, `·` separated, truncated to fit one line with `+N` for the remainder — `132 zones · 10 controllers · 9 backflow · +3`.
+
+Abbreviate large figures here only (`194K bluegrass`). **The Managed Area KPI keeps its full separated number** — the whole point of the earlier area-first change was that square footage is legible.
+
+Never wrap to a second line; the fixed card height is what keeps the row even.
+
+## Behaviour that must survive
+
+- **Layer focus chips** still filter which layer cards render — selecting Irrigation shows one card, full width.
+- **Group filters** still drive every number.
+- **Zero-count layers stay hidden.**
+- **Coverage caveat.** Where `sqFt` is missing on some polygons, the Managed Area KPI and any area-layer card must still show it — `based on 34 of 41 areas` or similar. This is the only place it now surfaces, so it cannot be dropped in the simplification.
+
+## What must NOT change
+
+- **Any number.** Layout only. Totals, ratios, Tier 2, Tier 3 and CSV export are untouched.
+- **The CSV export** — still exports the Locations table in full.
+- **One network request.**
+- **Layer colours** — `MAP_LAYER_DISPLAY`, already correct after the last pass.
+- **Tier 2 and Tier 3.**
+
+## How to verify
+
+- [ ] **Locations table header visible without scrolling at 1920×1080.** The acceptance test.
+- [ ] Tier 1 is two rows: four KPI cards, four layer cards. No band labels, no per-asset-type cards.
+- [ ] Every percentage states its denominator; the asset family sums to 100% and the area family sums to 100%.
+- [ ] Managed Area equals the sum of every area type — **426,564 ft²** on the full PNC selection.
+- [ ] Total Assets still **492**; Irrigation 158 + Trees 186 + 148 area polygons = 492.
+- [ ] Filter to one layer → one full-width card, no gap.
+- [ ] Filter to a group with two active layers → two full-width cards, no gap.
+- [ ] Clear one asset's `sqFt` → the coverage caveat appears on both the Managed Area KPI and its layer card.
+- [ ] Sublines never wrap; long type lists truncate with `+N`.
+- [ ] Every per-asset-type figure is still available in the Locations table.
+- [ ] CSV export byte-identical.
+
+## Out of scope
+
+- Making the layer cards clickable or filterable.
+- Tier 3 changes.
+- Any new metric beyond Managed Area.
