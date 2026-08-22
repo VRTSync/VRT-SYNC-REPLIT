@@ -3137,65 +3137,21 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
 .pa-chip--on { font-weight: 700; }
 .pa-chip-count { font-weight: 400; font-size: 10.5px; opacity: .75; }
 
-/* ── Tier 1: summary cards ───────────────────────────────────────────────── */
+/* ── Tier 1, row 1: portfolio KPI cards ──────────────────────────────────────
+   Four cards. auto-fit keeps them edge-to-edge with no trailing gap when the
+   viewport is too narrow to hold all four. */
 .pa-summary-row {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px;
-  margin-bottom: 20px;
-}
-
-/* ── Asset-type card section ─────────────────────────────────────────────── */
-.pa-type-section {
-  display: flex;
-  flex-direction: column;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 12px;
-  margin-bottom: 20px;
-}
-/* Wide screens: fixed label column on the left, cards flowing across the rest. */
-.pa-layer-band {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-}
-.pa-layer-band-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .7px;
-  color: var(--gray-400);
-  grid-column: 1;
-  padding: 6px 10px 6px 0;
-  border-right: 1px solid var(--gray-100);
-}
-.pa-layer-cards {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 10px;
-}
-
-/* Narrow screens: fall back to the stacked arrangement (label above cards). */
-@media (max-width: 900px) {
-  .pa-layer-band {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-  .pa-layer-band-label {
-    padding: 0 0 4px 0;
-    border-right: none;
-    border-bottom: 1px solid var(--gray-100);
-  }
+  margin-bottom: 12px;
 }
 
 .pa-card {
   background: var(--white);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 14px 18px;
+  padding: 8px 16px;
   border-bottom: 3px solid var(--gray-200);
   min-width: 0;
   transition: box-shadow .15s;
@@ -3206,50 +3162,101 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
 .pa-card--blue  { border-bottom-color: var(--blue);  background: linear-gradient(160deg,rgba(59,130,246,0.08),#fff 62%); }
 .pa-card--amber { border-bottom-color: var(--amber); background: linear-gradient(160deg,rgba(245,158,11,0.10),#fff 62%); }
 .pa-card-label {
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .6px;
   color: var(--gray-500);
+  line-height: 1.2;
 }
 .pa-card-value {
-  font-size: 24px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--navy);
-  margin-top: 3px;
+  line-height: 1.25;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pa-card--teal  .pa-card-value { color: var(--teal-dark); }
 .pa-card--blue  .pa-card-value { color: #1d4ed8; }
 .pa-card--amber .pa-card-value { color: #b45309; }
-.pa-card-sqft {
-  font-size: 11.5px;
+.pa-card-sub {
+  font-size: 10px;
   color: var(--gray-500);
-  margin-top: 2px;
-}
-.pa-card-coverage {
-  font-size: 10.5px;
-  color: var(--gray-400);
-  font-style: italic;
+  line-height: 1.3;
   margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.pa-card-sub--caveat { color: var(--gray-400); font-style: italic; }
 
-/* ── Compact sizing, scoped to the asset cards only ──────────────────────────
-   The org-level summary cards in .pa-summary-row share .pa-card and keep the
-   larger sizing above, so the two tiers stay visually distinct. */
-.pa-layer-cards .pa-card {
-  padding: 6px 12px;
-  border-bottom-width: 2px;
+/* ── Tier 1, row 2: one card per layer ───────────────────────────────────────
+   auto-fit so a single active layer fills the row and two layers split it in
+   half — never a ragged edge. */
+.pa-layer-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
 }
-.pa-layer-cards .pa-card-label { line-height: 1.2; }
-.pa-layer-cards .pa-card-value {
-  font-size: 19px;
-  line-height: 1.15;
-  margin-top: 2px;
+.pa-layer-card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border-left: 3px solid var(--gray-200);
+  padding: 8px 14px;
+  min-width: 0;
+  transition: box-shadow .15s;
 }
-.pa-layer-cards .pa-card-sqft {
+.pa-layer-card:hover { box-shadow: var(--shadow-md); }
+.pa-layer-card-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pa-layer-card-name {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--gray-600);
   line-height: 1.2;
-  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.pa-layer-card-share {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pa-layer-card-value {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--navy);
+  line-height: 1.25;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pa-layer-card-sub {
+  font-size: 10px;
+  color: var(--gray-500);
+  line-height: 1.3;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pa-layer-card-sub--caveat { color: var(--gray-400); font-style: italic; }
 
 /* ── Tier 2: location table ──────────────────────────────────────────────── */
 .pa-tier2 { margin-bottom: 20px; }

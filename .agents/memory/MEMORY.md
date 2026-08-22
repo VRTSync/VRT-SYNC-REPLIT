@@ -10,3 +10,4 @@
 - [pg placeholder type deduction](pg-placeholder-type-deduction.md) — reusing one $n for a date and a timestamp column fails at parse time; cast at each use site.
 - [Layer colour duplication](layer-colour-duplication.md) — layer palette is one constant, but pin defaults are copied 4x (incl. a shared lib + a dead unserved copy); stored map_layers.color still wins.
 - [Import batch skip audit](import-batch-skip-audit.md) — batch records need the per-row skip report + acknowledged codes, not just aggregate counts, or omissions are unexplainable later.
+- [Analytics Tier 1 scope rules](analytics-tier1-scope.md) — KPI row ignores layer focus, layer cards respect it; shares use one denominator + largest remainder to hit exactly 100%.

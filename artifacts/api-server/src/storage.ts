@@ -5178,6 +5178,13 @@ export async function getPortfolioAnalytics(orgId: string) {
       const cat      = catalogueMap.get(key);
       const layerKey = cat?.layerKey ?? null;
       const layerInfo = layerKey ? (MAP_LAYER_DISPLAY[layerKey] ?? null) : null;
+      // Area-capable comes from the catalogue, not from whether any asset happens
+      // to carry a value: a type whose assets are ALL missing sqFt must still count
+      // towards the coverage denominator so the shortfall stays visible.
+      const propKeys = [
+        ...(Array.isArray(cat?.requiredKeys) ? cat!.requiredKeys : []),
+        ...(Array.isArray(cat?.optionalKeys) ? cat!.optionalKeys : []),
+      ];
       return {
         key,
         label:      cat?.label ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -5185,6 +5192,7 @@ export async function getPortfolioAnalytics(orgId: string) {
         layerKey,
         layerName:  layerInfo ? layerInfo.name  : null,
         layerColor: layerInfo ? layerInfo.color : null,
+        hasSqFt:    propKeys.includes('sqFt'),
       };
     })
     .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
