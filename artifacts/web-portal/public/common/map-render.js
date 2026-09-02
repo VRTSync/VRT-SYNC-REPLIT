@@ -25,8 +25,13 @@
  *   setSatellite(on)
  *   fit()
  *   invalidateSize()
- *   on(event, handler)                  — 'ready' | 'assetTap'
+ *   on(event, handler)                  — 'ready' | 'assetTap' | 'mapTap'
+ *     assetTap payload: { featureRef, featureId, layerKey, label, assetType, layerName }
+ *       featureRef/featureId are the same string identifier used as a
+ *       setFeatureColors colorMap key.
  *   applyColorLive(cat, subKey, color)
+ *   setFeatureColors(layerId, colorMap, fallback)
+ *                                        — recolour custom-layer features in place
  *   getLayerEffectiveColor(cat, subKey)
  *   getControllerData()
  *   getMapLayers()
@@ -374,16 +379,24 @@
     }
 
     // ── Suppression logic ─────────────────────────────────────────────────────
+    function _featureRef(feature) {
+      if (!feature) return null;
+      var p = feature.properties || {};
+      var candidates = [feature.id, p.featureId, p.id, p.featureRef, p.name];
+      for (var i = 0; i < candidates.length; i++) {
+        if (candidates[i] != null && candidates[i] !== '') return String(candidates[i]);
+      }
+      return null;
+    }
+
     function _geoJsonFeatureRefs(geojson) {
       if (!geojson || !geojson.features || geojson.features.length === 0) return null;
       var refs = [];
       for (var i = 0; i < geojson.features.length; i++) {
         var f = geojson.features[i];
-        var p = f.properties || {};
-        var ref = (f.id != null && f.id !== '' ? String(f.id) : null)
-          || p.featureId || p.id || p.featureRef || p.name || null;
+        var ref = _featureRef(f);
         if (!ref) return null;
-        refs.push(String(ref));
+        refs.push(ref);
       }
       return refs;
     }
@@ -726,6 +739,16 @@
       if (_events[event]) _events[event].push(handler);
     }
 
+    /**
+     * Recolour individual features within a custom layer.
+     * @param {string} layerId    id used when the layer was added via addCustomLayer
+     * @param {Object} colorMap   { featureId: '#rrggbb' }
+     * @param {string} fallback   colour for features absent from colorMap
+     */
+    function setFeatureColors(layerId, colorMap, fallback) {
+      _cmd('updateLayerColorMap', layerId, colorMap || {}, fallback);
+    }
+
     // Color picker support
     function applyColorLive(cat, subKey, newColor) {
       if (cat === 'irrigation' && (subKey === 'controller' || subKey === 'zone')) {
@@ -793,6 +816,7 @@
       fit:                   fit,
       invalidateSize:        invalidateSize,
       on:                    on,
+      setFeatureColors:      setFeatureColors,
       applyColorLive:        applyColorLive,
       getLayerEffectiveColor: _getLayerEffectiveColor,
       getControllerData:     function () { return _controllerData; },

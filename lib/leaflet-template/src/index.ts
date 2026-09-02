@@ -214,6 +214,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
 
   var geoLayers = {};
   var layerCache = {};
+  var layerDefCache = {};
   var communityBounds = null;
   var taskLayer = L.layerGroup().addTo(map);
   var ctrlLayer = L.layerGroup();
@@ -278,6 +279,19 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     controllerClusterGroups = {};
   }
 
+  // Feature color maps and assetTap payloads share this identifier precedence:
+  // GeoJSON feature.id, then the conventional feature properties. Always
+  // stringify it so callers can use the emitted value directly as an object key.
+  function featureRefFor(feature) {
+    if (!feature) return null;
+    var props = feature.properties || {};
+    var candidates = [feature.id, props.featureId, props.id, props.featureRef, props.name];
+    for (var i = 0; i < candidates.length; i++) {
+      if (candidates[i] != null && candidates[i] !== '') return String(candidates[i]);
+    }
+    return null;
+  }
+
   window.mapBridge = {
     setUserLocation: function(lat, lng) {
       if (userLocMarker) map.removeLayer(userLocMarker);
@@ -337,7 +351,8 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     },
 
     _viewDetail: function(ref, layerKey, label, assetType, layerName) {
-      post('viewAssetDetail', { featureRef: ref, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
+      var stringRef = ref != null && ref !== '' ? String(ref) : '';
+      post('viewAssetDetail', { featureRef: stringRef, featureId: stringRef, layerKey: layerKey, label: label || '', assetType: assetType || '', layerName: layerName || '' });
     },
 
     addLayers: function(layers) {
@@ -351,7 +366,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
               c = colorMap[feature.properties.controllerFeatureRef] || c;
             }
             if (layer.subLayerKey === 'controller' && feature.properties) {
-              var fid = feature.properties.featureId || feature.id;
+              var fid = featureRefFor(feature);
               c = colorMap[fid] || c;
             }
             return { color: c, weight: 2, fillColor: c, fillOpacity: 0.35, opacity: 0.9 };
@@ -359,7 +374,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           pointToLayer: function(feature, latlng) {
             var c = layer.color;
             if (layer.subLayerKey === 'controller' && feature.properties) {
-              var fid = feature.properties.featureId || feature.id;
+              var fid = featureRefFor(feature);
               c = colorMap[fid] || c;
             }
             if (layer.subLayerKey === 'zone' && feature.properties && feature.properties.controllerFeatureRef) {
@@ -390,7 +405,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           },
           onEachFeature: function(feature, l) {
             var props = feature.properties || {};
-            var ref = (feature.id != null && feature.id !== '' ? String(feature.id) : null) || props.featureId || props.id || props.featureRef || props.name;
+            var ref = featureRefFor(feature);
             var label = props.label || props.name || props.displayName || props.title || (layer.displayName + (ref ? ' - ' + ref : ''));
             var assetType = props.assetType || layer.subLayerKey || layer.layerKey;
             if (layer.directTap && ref) {
@@ -405,7 +420,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
             }
             var featureColor = layer.color || '#25C1AC';
             if (layer.subLayerKey === 'controller' && props) {
-              var fid = props.featureId || feature.id;
+              var fid = featureRefFor(feature);
               featureColor = (layer.controllerColorMap || {})[fid] || featureColor;
             }
             if (layer.subLayerKey === 'zone' && props && props.controllerFeatureRef) {
@@ -426,6 +441,7 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           }
         });
         layerCache[layer.id] = geoLayer;
+        layerDefCache[layer.id] = layer;
       });
     },
 
@@ -802,16 +818,18 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     updateLayerColorMap: function(layerId, colorMap, fallbackColor) {
       var geoLayer = layerCache[layerId];
       if (!geoLayer) return;
+      var layerDef = layerDefCache[layerId] || {};
+      colorMap = colorMap || {};
       geoLayer.eachLayer(function(l) {
         var feature = l.feature;
         if (!feature) return;
         var props = feature.properties || {};
         var c = fallbackColor;
-        if (props.controllerFeatureRef) {
-          c = colorMap[props.controllerFeatureRef] || fallbackColor;
-        } else if (props.featureId || feature.id) {
-          var fid = props.featureId || feature.id;
-          c = colorMap[fid] || fallbackColor;
+        if (layerDef.subLayerKey === 'zone' && props.controllerFeatureRef) {
+          c = colorMap[String(props.controllerFeatureRef)] || fallbackColor;
+        } else {
+          var fid = featureRefFor(feature);
+          if (fid) c = colorMap[fid] || fallbackColor;
         }
         if (l.setStyle) {
           l.setStyle({ color: c, fillColor: c });
