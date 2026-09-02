@@ -22,6 +22,10 @@ import {
   type BranchGroup, type NewBranchGroup, type BranchGroupSet, type NewBranchGroupSet,
   userRoleEnum,
 } from "@workspace/db";
+import {
+  resolveXeriscapePolygons,
+  type XeriscapePolygonResolution,
+} from "./xeriscapePolygonResolver";
 
 export async function createUser(data: InsertUser): Promise<User> {
   const [user] = await db.insert(users).values(data).returning();
@@ -795,6 +799,82 @@ export async function getAssetPropertiesBulk(assetIds: string[]): Promise<{ asse
   }).from(assetProperties)
     .where(inArray(assetProperties.assetId, assetIds));
   return rows;
+}
+
+/**
+ * Resolve all active bluegrass assets for one community with the same resolver
+ * used by the organization-wide portfolio feed.
+ */
+export async function getXeriscapeCommunityPolygons(communityId: string): Promise<XeriscapePolygonResolution | null> {
+  const [community] = await db
+    .select({ id: communities.id, name: communities.name })
+    .from(communities)
+    .where(eq(communities.id, communityId));
+  if (!community) return null;
+
+  const bluegrassAssets = await db
+    .select()
+    .from(assets)
+    .where(and(
+      eq(assets.communityId, communityId),
+      eq(assets.assetType, "bluegrass_area"),
+      eq(assets.isArchived, false),
+    ));
+  const assetIds = bluegrassAssets.map((asset) => asset.id);
+  const layerIds = [...new Set(bluegrassAssets.map((asset) => asset.mapLayerId).filter(Boolean))] as string[];
+  const [properties, layers] = await Promise.all([
+    assetIds.length > 0 ? getAssetPropertiesBulk(assetIds) : Promise.resolve([]),
+    layerIds.length > 0
+      ? db.select().from(mapLayers).where(inArray(mapLayers.id, layerIds))
+      : Promise.resolve([]),
+  ]);
+
+  return resolveXeriscapePolygons({
+    communities: [community],
+    assets: bluegrassAssets,
+    properties,
+    layers,
+  });
+}
+
+/**
+ * Load and resolve all active bluegrass assets for an organization in four
+ * batched reads: communities, assets, properties, and referenced map layers.
+ */
+export async function getPortfolioXeriscapePolygons(orgId: string): Promise<XeriscapePolygonResolution> {
+  const orgCommunities = await db
+    .select({ id: communities.id, name: communities.name })
+    .from(communities)
+    .where(eq(communities.organizationId, orgId))
+    .orderBy(communities.name);
+  if (orgCommunities.length === 0) {
+    return resolveXeriscapePolygons({ communities: [], assets: [], properties: [], layers: [] });
+  }
+
+  const communityIds = orgCommunities.map((community) => community.id);
+  const bluegrassAssets = await db
+    .select()
+    .from(assets)
+    .where(and(
+      inArray(assets.communityId, communityIds),
+      eq(assets.assetType, "bluegrass_area"),
+      eq(assets.isArchived, false),
+    ));
+  const assetIds = bluegrassAssets.map((asset) => asset.id);
+  const layerIds = [...new Set(bluegrassAssets.map((asset) => asset.mapLayerId).filter(Boolean))] as string[];
+  const [properties, layers] = await Promise.all([
+    assetIds.length > 0 ? getAssetPropertiesBulk(assetIds) : Promise.resolve([]),
+    layerIds.length > 0
+      ? db.select().from(mapLayers).where(inArray(mapLayers.id, layerIds))
+      : Promise.resolve([]),
+  ]);
+
+  return resolveXeriscapePolygons({
+    communities: orgCommunities,
+    assets: bluegrassAssets,
+    properties,
+    layers,
+  });
 }
 
 export async function upsertAssetProperty(assetId: string, key: string, value: string): Promise<void> {

@@ -42,6 +42,7 @@ import {
   parseSeasonal, previewSeasonal, commitSeasonal,
 } from "../seasonalImporter";
 import { normalizeAcknowledgedCodes } from "../importAcknowledgements";
+import { resolvePortfolioOrg } from "../portfolioOrgResolver";
 import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
 import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable, mapLayers as mapLayersTable, tasks, assetTypes as assetTypesTable, taskComments, communities } from "@workspace/db";
@@ -1399,127 +1400,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/xeriscape/community/:communityId/polygons", requireAdmin, async (req: Request, res: Response) => {
     try {
       const { communityId } = req.params as { communityId: string };
-
-      const bluegrassAssets = await db
-        .select()
-        .from(assetsTable)
-        .where(
-          and(
-            eq(assetsTable.communityId, communityId),
-            eq(assetsTable.assetType, "bluegrass_area"),
-            eq(assetsTable.isArchived, false),
-          )
-        );
-
-      req.log.info({ communityId, assetsFound: bluegrassAssets.length }, "xeriscape polygons: bluegrass assets found");
-
-      if (bluegrassAssets.length === 0) {
+      const resolved = await storage.getXeriscapeCommunityPolygons(communityId);
+      if (!resolved) {
         return void res.json({ type: "FeatureCollection", features: [], assetsFound: 0, featuresResolved: 0 });
       }
 
-      const assetIds = bluegrassAssets.map((a: any) => a.id);
-      const allProps = await db
-        .select()
-        .from(assetPropertiesTable)
-        .where(inArray(assetPropertiesTable.assetId, assetIds));
-
-      const propsByAssetId: Record<string, Record<string, string>> = {};
-      for (const prop of allProps) {
-        if (!propsByAssetId[prop.assetId]) propsByAssetId[prop.assetId] = {};
-        propsByAssetId[prop.assetId][prop.key] = prop.value;
+      req.log.info({ communityId, assetsFound: resolved.assetsFound }, "xeriscape polygons: bluegrass assets found");
+      for (const asset of resolved.unresolved) {
+        req.log.warn(asset, "xeriscape polygons: asset could not be resolved");
       }
-
-      const layerGeojsonMap: Record<string, any> = {};
-      const layerIds = [...new Set(bluegrassAssets.map((a: any) => a.mapLayerId).filter(Boolean))];
-      if (layerIds.length > 0) {
-        const layers = await db
-          .select()
-          .from(mapLayersTable)
-          .where(inArray(mapLayersTable.id, layerIds as string[]));
-        for (const layer of layers) {
-          if (layer.geojsonData) {
-            try {
-              const parsed = JSON.parse(layer.geojsonData);
-              const featureMap: Record<string, any> = {};
-              const feats = parsed.features || (parsed.type === "Feature" ? [parsed] : []);
-              for (const f of feats) {
-                // Index by every plausible ID variant so lookups succeed regardless of format
-                const candidates: string[] = [];
-                if (f.id != null && f.id !== "") candidates.push(String(f.id));
-                if (f.properties?.featureId != null) candidates.push(String(f.properties.featureId));
-                if (f.properties?.id != null) candidates.push(String(f.properties.id));
-                if (f.properties?.featureRef != null) candidates.push(String(f.properties.featureRef));
-                for (const key of candidates) {
-                  if (key && !featureMap[key]) featureMap[key] = f;
-                }
-                // Also index by label/name as last-resort fallback
-                const nameKey = f.properties?.label || f.properties?.name;
-                if (nameKey && !featureMap[String(nameKey)]) featureMap[`__name__${String(nameKey)}`] = f;
-              }
-              layerGeojsonMap[layer.id] = featureMap;
-              req.log.info({ layerId: layer.id, featureCount: feats.length, indexedKeys: Object.keys(featureMap).length }, "xeriscape polygons: layer GeoJSON indexed");
-            } catch (parseErr) {
-              req.log.warn({ layerId: layer.id, err: parseErr }, "xeriscape polygons: failed to parse layer geojsonData");
-            }
-          } else {
-            req.log.warn({ layerId: layer.id }, "xeriscape polygons: layer has no geojsonData — assets referencing this layer will be skipped");
-          }
-        }
-      }
-
-      const features: any[] = [];
-      let skippedCount = 0;
-      for (const asset of bluegrassAssets) {
-        const props = propsByAssetId[asset.id] || {};
-        const sqFt = props.sqFt ? parseFloat(props.sqFt) : 0;
-
-        let geometry: any = null;
-        if (asset.mapLayerId && asset.featureRef && layerGeojsonMap[asset.mapLayerId]) {
-          const featureMap = layerGeojsonMap[asset.mapLayerId];
-          // Try the raw featureRef, then its stringified form, then label-based fallback
-          const feat =
-            featureMap[asset.featureRef] ||
-            featureMap[String(asset.featureRef)] ||
-            featureMap[`__name__${asset.label}`] ||
-            null;
-          if (feat?.geometry) {
-            geometry = feat.geometry;
-          } else {
-            req.log.warn(
-              { assetId: asset.id, featureRef: asset.featureRef, mapLayerId: asset.mapLayerId, label: asset.label, availableKeys: Object.keys(featureMap).slice(0, 20) },
-              "xeriscape polygons: featureRef did not match any feature in layer"
-            );
-          }
-        }
-
-        if (!geometry && asset.latitude != null && asset.longitude != null) {
-          geometry = { type: "Point", coordinates: [asset.longitude, asset.latitude] };
-        }
-
-        if (!geometry) {
-          skippedCount++;
-          continue;
-        }
-
-        features.push({
-          type: "Feature",
-          id: asset.id,
-          geometry,
-          properties: {
-            id: asset.id,
-            name: asset.label,
-            area_sqft: sqFt,
-            featureRef: asset.featureRef,
-          },
-        });
-      }
-
       req.log.info(
-        { communityId, assetsFound: bluegrassAssets.length, featuresResolved: features.length, skipped: skippedCount },
+        { communityId, assetsFound: resolved.assetsFound, featuresResolved: resolved.featuresResolved, skipped: resolved.unresolved.length },
         "xeriscape polygons: resolution complete"
       );
 
-      res.json({ type: "FeatureCollection", features, assetsFound: bluegrassAssets.length, featuresResolved: features.length });
+      // Keep the established admin envelope and feature payload unchanged.
+      const features = resolved.features.map((feature) => ({
+        type: "Feature" as const,
+        id: feature.id,
+        geometry: feature.geometry,
+        properties: {
+          id: feature.properties.id,
+          name: feature.properties.name,
+          area_sqft: feature.properties.area_sqft,
+          featureRef: feature.properties.featureRef,
+        },
+      }));
+      return void res.json({
+        type: "FeatureCollection",
+        features,
+        assetsFound: resolved.assetsFound,
+        featuresResolved: resolved.featuresResolved,
+      });
     } catch (error) {
       req.log.error({ err: error }, "xeriscape community polygons error");
       res.status(500).json({ error: "Failed to load community xeriscape polygons" });
@@ -5912,24 +5824,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ── Portfolio Phase 2b: read endpoints (requireClientOrAdmin) ────────────
   //
-  // Org resolution helper (inline):
+  // Org resolution:
   //   admin → uses ?organizationId= query param (400 if absent)
   //   client_admin → uses session.organizationId (ignores any param)
   // enforceOrgScoping already blocks client_admin cross-org param abuse.
-  function resolvePortfolioOrg(req: Request): { orgId: string | null; status: number; error: string } | { orgId: string } {
-    const user = (req as any).currentUser;
-    if (user?.role === "admin") {
-      const orgId = req.query.organizationId as string | undefined;
-      if (!orgId) return { orgId: null, status: 400, error: "organizationId query param is required for admin" };
-      return { orgId };
-    }
-    // client_admin: use currentUser.organizationId (fresh from DB) first, session is fallback only.
-    // This ensures a reassigned client admin can't continue reading their old org after session expiry.
-    const orgId = user?.organizationId ?? req.session.organizationId;
-    if (!orgId) return { orgId: null, status: 403, error: "No organization assigned to this account" };
-    return { orgId };
-  }
-
   app.get("/api/portfolio/dashboard", requireClientOrAdmin, async (req: Request, res: Response) => {
     const t0 = Date.now();
     try {
@@ -5988,6 +5886,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Portfolio map error:", error);
       return void res.status(500).json({ error: "Failed to fetch portfolio map data" });
+    }
+  });
+
+  app.get("/api/portfolio/water-savings/polygons", requireClientOrAdmin, async (req: Request, res: Response) => {
+    const t0 = Date.now();
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+
+      const data = await storage.getPortfolioXeriscapePolygons(resolved.orgId);
+      req.log.info(
+        {
+          organizationId: resolved.orgId,
+          communityCount: data.byCommunity.length,
+          assetsFound: data.assetsFound,
+          featuresResolved: data.featuresResolved,
+          elapsedMs: Date.now() - t0,
+        },
+        "portfolio xeriscape polygons: resolution complete",
+      );
+      return void res.json(data);
+    } catch (error) {
+      req.log.error({ err: error }, "portfolio xeriscape polygons error");
+      return void res.status(500).json({ error: "Failed to load portfolio xeriscape polygons" });
     }
   });
 

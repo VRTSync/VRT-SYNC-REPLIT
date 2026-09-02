@@ -57,6 +57,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             Loading polygons&hellip;
           </div>
         </div>
+        <div id="xp-coverage-warning" style="display:none;position:absolute;top:12px;left:12px;right:12px;z-index:1100;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:8px;padding:9px 12px;font-size:12px;line-height:1.45;box-shadow:0 2px 8px rgba(0,0,0,.08)"></div>
         <!-- No polygons empty state overlay -->
         <div id="xp-no-polygons-state" style="display:none;position:absolute;inset:0;z-index:900;background:rgba(240,244,248,0.97);align-items:center;justify-content:center">
           <div style="text-align:center;max-width:360px;padding:24px">
@@ -1064,6 +1065,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       allFeatures = geojson.features || [];
       const assetsFound = geojson.assetsFound ?? allFeatures.length;
       const featuresResolved = geojson.featuresResolved ?? allFeatures.length;
+      const coverageWarning = document.getElementById('xp-coverage-warning');
+      const unresolvedCount = Math.max(0, Number(assetsFound) - Number(featuresResolved));
+      const invalidAreaCount = allFeatures.filter(feature => {
+        const area = Number(feature.properties && feature.properties.area_sqft);
+        return !Number.isFinite(area) || area <= 0;
+      }).length;
+      const warnings = [];
+      if (unresolvedCount > 0) {
+        warnings.push(unresolvedCount + ' turf area' + (unresolvedCount === 1 ? '' : 's') + ' could not be located on a map layer and are excluded.');
+      }
+      if (invalidAreaCount > 0) {
+        warnings.push(invalidAreaCount + ' mapped turf area' + (invalidAreaCount === 1 ? ' has' : 's have') + ' missing or invalid square footage and are excluded from cost estimates.');
+      }
+      if (coverageWarning) {
+        coverageWarning.textContent = warnings.join(' ');
+        coverageWarning.style.display = warnings.length > 0 ? 'block' : 'none';
+      }
 
       if (allFeatures.length === 0) {
         if (loadingEl) loadingEl.style.display = 'none';
@@ -1135,7 +1153,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   function computeGroupOutputs(polygonIds, assumptions) {
     const { costPerSf, savingsPerSf } = assumptions;
     const features = allFeatures.filter(f => polygonIds.includes(f.properties.id));
-    const totalSquareFootage = features.reduce((sum, f) => sum + (f.properties.area_sqft || 0), 0);
+    const totalSquareFootage = features.reduce((sum, f) => {
+      const area = Number(f.properties.area_sqft);
+      return Number.isFinite(area) && area > 0 ? sum + area : sum;
+    }, 0);
     const polygonCount = features.length;
     const estimatedConversionCost = totalSquareFootage * costPerSf;
     const estimatedAnnualWaterSavings = totalSquareFootage * savingsPerSf;
@@ -1292,7 +1313,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const count = selectedIds.size;
     const totalArea = allFeatures
       .filter(f => selectedIds.has(f.properties.id))
-      .reduce((sum, f) => sum + (f.properties.area_sqft || 0), 0);
+      .reduce((sum, f) => {
+        const area = Number(f.properties.area_sqft);
+        return Number.isFinite(area) && area > 0 ? sum + area : sum;
+      }, 0);
 
     const { costPerSf, savingsPerSf } = getAssumptions();
 
