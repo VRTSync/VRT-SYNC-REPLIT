@@ -1,0 +1,204 @@
+# ready-planner-01: Dead-weight cleanup slice — remove 375 orphaned files
+
+*Awaiting a number. Spec 01 of 10 — see [`ready-planner-00-index.md`](ready-planner-00-index.md).*
+*Full evidence: [`docs/dead-weight-audit-2026-09-02.md`](../docs/dead-weight-audit-2026-09-02.md). Audited against `efdf810`.*
+
+> **Run this before any other spec.** Four commits, each pure deletion, each independently revertible. Nothing else may be bundled in.
+>
+> While duplicate trees exist, any instruction to edit `xeriscape-planner.js` is a coin flip between the served copy and two dead ones.
+
+---
+
+## ✅ What this does NOT touch — read first
+
+**The admin portal you use every day is `artifacts/web-portal/public/`. Not one file in it is deleted.** The same is true of the portfolio portal, the resident portal, the mobile app, the API, and the database.
+
+This slice removes **orphaned copies and abandoned code** — trees left behind by moves that were never finished.
+
+| | Live — untouched | Deleted |
+|---|---|---|
+| Web portal static | `artifacts/web-portal/public/` — 66 files | `artifacts/api-server/src/public/` — 46 files |
+| Shell templates | `artifacts/web-portal/templates/` — 6 files | `artifacts/api-server/src/templates/` — 5 files |
+| Application source | `artifacts/*`, `lib/*` | `.migration-backup/` — 324 files |
+
+**Everything deleted here stays in git history.** Each commit is reversible with `git revert`.
+
+---
+
+## Commit 1 · `.migration-backup/` — 324 files, 31% of the repository
+
+A complete snapshot of the pre-monorepo application, committed to the repo: its own `server/` (67 files), `attached_assets/` (154), `app/` (25), `components/` (21), `assets/` (11), `client/` (6), `scripts/` (5), `constants/` (5), `shared/` (4), plus its own `package.json`, `package-lock.json`, `replit.md`, `.replit` and `tsconfig.json`.
+
+**Why it is unreachable**
+
+- **Not a workspace member.** `pnpm-workspace.yaml` declares `artifacts/*`, `lib/*`, `lib/integrations/*`, `scripts`. `.migration-backup` is not among them, so it is never installed, built or type-checked.
+- **Referenced nowhere** in any `.ts`, `.js`, `.json` or `.md` outside itself.
+
+**Verify before deleting**
+
+- [ ] ```bash
+  grep -rn "migration-backup" --include=*.ts --include=*.js --include=*.json --include=*.md . \
+    | grep -v node_modules | grep -v "^./.migration-backup"
+  ```
+  Expected: **no output.** If anything appears, **stop and report — do not delete.**
+
+- [ ] Confirm it is absent from `pnpm-workspace.yaml`'s `packages:` list.
+
+**Then**
+
+- [ ] `git rm -r .migration-backup/`
+- [ ] Commit message: `Remove .migration-backup — pre-monorepo snapshot, unreferenced`
+- [ ] **Nothing else in this commit.**
+
+---
+
+## Commit 2 · The duplicated portal and template trees — 51 files
+
+### `artifacts/api-server/src/public/` — 46 files
+
+A stale copy of the web portal.
+
+**Three independent proofs it is unreachable**
+
+1. **Nothing serves it.** `grep -rn "express.static\|sendFile" artifacts/api-server/src/` → no results. The api-server serves the API; `web-portal/src/server.ts:130-133` serves static files from `resolveDir("public")`, which resolves inside `artifacts/web-portal/`.
+2. **No build copies it.** `artifacts/api-server/build.mjs` performs exactly one `cp`, at `:132` — `lib/db/migrations` → `dist/migrations`.
+3. **Strict subset.** Exactly one filename appears here and not in the live tree: `expo-qr.png` — and **that file exists in two other locations** (`artifacts/api-server/public/expo-qr.png`, `.migration-backup/server/public/expo-qr.png`). Nothing is lost.
+
+It does not contain the portfolio portal at all — all 12 of those files are absent, along with `seed-import.js`, `organizations.js`, `organization-detail.js` and `asset-types.js`. That is the staleness signature.
+
+### `artifacts/api-server/src/templates/` — 5 files
+
+`admin-shell.html`, `contractor-shell.html`, `hoa-shell.html`, `landing-page.html`, `pm-shell.html`.
+
+**Every one is a byte-identical duplicate** of the file in `artifacts/web-portal/templates/`, confirmed with `git hash-object`. The directory is **missing `portfolio-shell.html`**, the sixth template in the live tree — same staleness signature.
+
+**Verify before deleting**
+
+- [ ] ```bash
+  grep -rn "express.static\|sendFile\|__dirname.*public" artifacts/api-server/src/
+  ```
+  Expected: no static-serving. **If anything serves that tree, stop and report.**
+
+- [ ] ```bash
+  grep -n "cp(\|public" artifacts/api-server/build.mjs
+  ```
+  Expected: the only `cp` is `lib/db/migrations`. **If `src/public` is copied, stop and report.**
+
+- [ ] ```bash
+  comm -23 <(cd artifacts/api-server/src/public && find . -type f | sort) \
+           <(cd artifacts/web-portal/public     && find . -type f | sort)
+  ```
+  Expected: **`./expo-qr.png` and nothing else.** Any other path → **stop and report.**
+
+- [ ] ```bash
+  comm -23 <(git ls-files artifacts/api-server/src/templates | sed 's|.*/templates/||' | sort) \
+           <(git ls-files artifacts/web-portal/templates     | sed 's|.*/templates/||' | sort)
+  ```
+  Expected: **no output at all.** Any filename → **stop and report.**
+
+**Then**
+
+- [ ] `git rm -r artifacts/api-server/src/public/ artifacts/api-server/src/templates/`
+- [ ] Commit message: `Remove stale duplicate portal and template trees from api-server`
+- [ ] **Nothing else in this commit.**
+
+---
+
+## Commit 3 · Dead code inside the live planner
+
+### A second, unreachable map implementation
+
+`xeriscape-planner.js` contains **two** map-init paths:
+
+| | Lines | Route it calls | Called? |
+|---|---|---|---|
+| `ensureMapInit()` + `loadCommunityPolygons()` | `:1035`, `:1056` | `/api/admin/xeriscape/community/:communityId/polygons` | ✅ **live** |
+| `initMap()` | `:2634` | `/api/admin/xeriscape/polygons` | ❌ **never called** |
+
+`initMap` is the original KML demo path — its own duplicated ~90-line Leaflet-and-tile setup against the same `#xp-map` element, ending in `showToast('No polygons found in KML')`. The only occurrence of the name `initMap` in the file is its own definition.
+
+### The hard-coded `huntington-trails` fallback
+
+`:2502` — `'/api/admin/xeriscape/records?propertyId=' + (activeCommunityId || 'huntington-trails')`. Same vintage. A hard-coded property id becomes a data-leak shape once this page is client-facing ([spec 07](ready-planner-07-water-savings-page.md)).
+
+**Verify before deleting**
+
+- [ ] `grep -n "initMap" artifacts/web-portal/public/admin/pages/xeriscape-planner.js` → **only the definition line.** Any call site → **stop and report.**
+- [ ] `grep -rn "xeriscape/polygons'" artifacts/` → only the dead `initMap` body. The `community/:id/polygons` route is a **different string** and must survive.
+
+**Then**
+
+- [ ] Delete `initMap()` (`:2634` to the end of that function) and anything only it reaches.
+- [ ] Delete `GET /api/admin/xeriscape/polygons` (`routes.ts:1176-1208`) and its `huntington-trails-xeriscape.kml` file read.
+- [ ] Delete `artifacts/web-portal/public/admin/data/huntington-trails-xeriscape.kml`.
+- [ ] Delete the `huntington-trails` fallback at `:2502`. With no active community, do not fetch — show the existing empty state.
+- [ ] Commit message: `Remove dead KML map path from xeriscape planner`
+- [ ] **No refactoring. Deletions only.**
+
+---
+
+## Commit 4 · Stop committing build logs — optional, drop if you disagree
+
+`attached_assets/` holds **276 files**: 211 `.txt` build logs, 48 `.png` screenshots, 3 `.kml`, 3 `.html`, 1 `.xcactivitylog`, 3 other. **Exactly one is referenced by code** — a KML used by `artifacts/api-server/src/kmlIrrigationParser.test.ts:21`.
+
+It is Replit's upload dump directory, and it is still growing — the newest commit in the repo is *"Add screenshot to attached assets"*. **Deleting it today only means it refills**, so this commit changes the policy rather than the contents.
+
+- [ ] Move the referenced KML to `artifacts/api-server/src/__fixtures__/` and update the two paths in `kmlIrrigationParser.test.ts` (`:21` and `:26`).
+- [ ] **Run the test** — `pnpm --filter @workspace/api-server test` — and confirm it passes before going further.
+- [ ] Add to `.gitignore`:
+  ```
+  attached_assets/
+  ```
+- [ ] `git rm -r --cached attached_assets/` — untracks without deleting from disk, so nothing you have locally disappears.
+- [ ] Commit message: `Stop tracking attached_assets; move test fixture into the test tree`
+
+**If you would rather keep the screenshots**, gitignore only `attached_assets/*.txt`, `*.log` and `*.xcactivitylog` — that is 212 of the 276 files and none of them has a reader.
+
+---
+
+## Files likely involved
+
+- `.migration-backup/` — deleted entirely
+- `artifacts/api-server/src/public/`, `artifacts/api-server/src/templates/` — deleted entirely
+- `artifacts/web-portal/public/admin/pages/xeriscape-planner.js` — deletions only
+- `artifacts/api-server/src/routes/routes.ts:1176-1208` — dead route removed
+- `artifacts/web-portal/public/admin/data/huntington-trails-xeriscape.kml` — deleted
+- `artifacts/api-server/src/kmlIrrigationParser.test.ts`, `.gitignore` — commit 4 only
+
+## What must NOT change
+
+- **Every live page, route and asset.** This slice removes unreachable code only.
+- The planner's live map path — `ensureMapInit`, `loadCommunityPolygons`, and `routes.ts:1399` stay exactly as they are.
+- Any file under `artifacts/web-portal/public/` or `artifacts/web-portal/templates/`.
+- `artifacts/api-server/public/expo-qr.png` — **different directory**, not the one being deleted.
+- `artifacts/mockup-sandbox/` — **out of scope, awaiting Randy's decision.** It is unreferenced but is a registered Replit design artifact.
+- `ios/` — **out of scope.** Probably `expo prebuild` output, but not worth the risk now.
+- `lib/api-spec/` — **out of scope**, handled separately.
+- Database, schema, migrations. **No migration in this slice.**
+
+## How to verify
+
+**After each commit**
+
+- [ ] The diff contains **deletions only** (commit 4 excepted — it moves one file and edits two paths). Added lines in commits 1–3 mean something got bundled in.
+- [ ] App builds: `pnpm run build` from the repo root.
+
+**After the slice**
+
+- [ ] `ls .migration-backup artifacts/api-server/src/public artifacts/api-server/src/templates` → none exist.
+- [ ] Both services start.
+- [ ] **Open every admin page and confirm each renders**: dashboard, communities, community detail, contacts, contracts, contract import, assets, asset types, invoices, map layers, organizations, organization detail, reports, schedules, service schedules, tasks, templates, users, exports, seed import, account, xeriscape planner. **Nothing may be missing or blank.**
+- [ ] Portfolio portal: all six nav pages render.
+- [ ] Resident portal renders. Landing page renders.
+- [ ] Xeriscape planner: pick a community → polygons load, selection works, estimates compute, groups save, comparison opens, records save and load, packets generate. **Unchanged in every respect.**
+- [ ] `grep -rn "initMap\|huntington-trails\|migration-backup" artifacts/ lib/` → no matches. **Confirm the directories are present before trusting the result** — a negative grep against a partial checkout proves nothing, and that has produced false findings on this project twice.
+- [ ] `pnpm run typecheck` passes.
+- [ ] `pnpm --filter @workspace/api-server test` passes (commit 4).
+- [ ] Repo file count drops from **1,062** to roughly **687**.
+
+## Out of scope
+
+- Any map rewrite — [spec 04](ready-planner-04-renderer-per-feature-colors.md), [spec 05](ready-planner-05-migrate-planner-map.md), [spec 06](ready-planner-06-static-mini-maps.md).
+- `artifacts/mockup-sandbox/`, `ios/`, `lib/api-spec/` — decisions pending.
+- The seven candidate dead API routes and seven unused `storage.ts` exports. **Do not touch them in this slice** — they need production access logs to confirm, and two of them may be an unfinished feature rather than dead code. See the audit.
+- Any change to what the app does.
