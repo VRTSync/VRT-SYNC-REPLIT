@@ -15,15 +15,15 @@ import { fileURLToPath } from "node:url";
 import { parseIrrigationKml, parseZoneNames } from "./kmlIrrigationParser.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-// src/ → api-server/ → artifacts/ → workspace root (3 levels up)
+// Keep the fixture with the API test suite instead of the Replit upload dump.
 const FIXTURE_PATH = resolve(
   __dirname,
-  "../../../attached_assets/136th_and_Colorado_-_Irrigation_(1)_1785796826170.kml"
+  "__fixtures__/136th_and_Colorado_-_Irrigation_(1).kml"
 );
-// Fallback: pnpm run test is invoked from artifacts/api-server
+// Fallback: pnpm run test is invoked from artifacts/api-server.
 const FIXTURE_PATH_ALT = resolve(
   process.cwd(),
-  "../../attached_assets/136th_and_Colorado_-_Irrigation_(1)_1785796826170.kml"
+  "src/__fixtures__/136th_and_Colorado_-_Irrigation_(1).kml"
 );
 const RESOLVED_FIXTURE = existsSync(FIXTURE_PATH) ? FIXTURE_PATH : FIXTURE_PATH_ALT;
 

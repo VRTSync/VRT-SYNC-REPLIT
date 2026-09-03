@@ -2522,8 +2522,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   async function loadHistory() {
     const content = document.getElementById('xp-history-content');
     if (!content) return;
+    if (!activeCommunityId) {
+      renderHistory([], {});
+      return;
+    }
     try {
-      const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + (activeCommunityId || 'huntington-trails'));
+      const records = await apiFetch('/api/admin/xeriscape/records?propertyId=' + activeCommunityId);
       // For each reviewable record, try to load packet status (in parallel, ignore failures)
       const packetStatusMap = {};
       await Promise.all(records
@@ -2652,79 +2656,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         openPlanningPacket(record);
       }
     };
-  }
-
-  // ── Map init ───────────────────────────────────────────────────────────────
-  async function initMap() {
-    if (typeof L === 'undefined') {
-      showToast('Map library not available', 'error');
-      return;
-    }
-
-    const mapEl = document.getElementById('xp-map');
-    if (!mapEl) return;
-
-    map = L.map(mapEl, { zoomControl: true });
-    L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=' + (window.MAPBOX_TOKEN || ''), {
-      tileSize: 512,
-      zoomOffset: -1,
-      maxNativeZoom: 22,
-      maxZoom: 23,
-      attribution: '\u00a9 <a href="https://www.mapbox.com/about/maps/">Mapbox</a> \u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors <a href="https://www.mapbox.com/map-feedback/">Improve this map</a>',
-    }).addTo(map);
-
-    try {
-      const geojson = await apiFetch('/api/admin/xeriscape/polygons');
-      allFeatures = geojson.features || [];
-
-      if (allFeatures.length === 0) {
-        showToast('No polygons found in KML', 'error');
-        return;
-      }
-
-      const bounds = L.latLngBounds([]);
-
-      allFeatures.forEach(feature => {
-        const id = feature.properties.id;
-
-        const layer = L.geoJSON(feature, {
-          style: () => getLayerStyle(id),
-          onEachFeature: function(feat, lyr) {
-            lyr.on('mouseover', function() {
-              if (!selectedIds.has(id)) {
-                lyr.setStyle(getHoverStyle(id));
-              }
-            });
-
-            lyr.on('mouseout', function() {
-              applyLayerStyle(id);
-            });
-
-            lyr.on('click', function() {
-              toggleSelection(id);
-            });
-          },
-        }).addTo(map);
-
-        leafletLayers[id] = layer;
-
-        try {
-          bounds.extend(layer.getBounds());
-        } catch {}
-      });
-
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, { padding: [24, 24] });
-      }
-
-      const loadingEl = document.getElementById('xp-map-loading');
-      if (loadingEl) loadingEl.style.display = 'none';
-
-    } catch (err) {
-      showToast('Failed to load polygons: ' + err.message, 'error');
-      const loadingEl = document.getElementById('xp-map-loading');
-      if (loadingEl) loadingEl.textContent = 'Failed to load polygons';
-    }
   }
 
   // ── Event listeners ────────────────────────────────────────────────────────
