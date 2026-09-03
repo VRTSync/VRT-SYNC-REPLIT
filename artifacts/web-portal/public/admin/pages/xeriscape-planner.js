@@ -2,7 +2,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
 
   const DEFAULT_COST_PER_SF = 6.00;
-  const DEFAULT_SAVINGS_PER_SF = 0.50;
+  const DEFAULT_REBATE_PER_SF = 1.00;
+  const DEFAULT_GALLONS_PER_SF_YEAR = 33;
+  const DEFAULT_WATER_RATE_PER_KGAL = 9.60;
+  const DEFAULT_MAINTENANCE_PER_SF_YEAR = 0.10;
+  const ASSET_LIFE_YEARS = 20;
 
   const breadcrumb = document.getElementById('breadcrumb-area');
   if (breadcrumb) breadcrumb.innerHTML = '';
@@ -101,14 +105,38 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <!-- Assumptions card -->
         <div class="xp-card">
           <div class="xp-card-title">Assumptions</div>
-          <div class="xp-field" style="margin-top:12px">
-            <label class="xp-label">Conversion cost per SF ($)</label>
-            <input type="number" id="xp-cost-per-sf" class="form-input" value="${DEFAULT_COST_PER_SF.toFixed(2)}" min="0" step="0.25" style="margin-top:4px">
+          <div class="xp-assumptions-group" style="margin-top:12px">
+            <div class="xp-assumptions-group-title">Cost</div>
+            <div class="xp-field">
+              <label class="xp-label">Conversion cost / ft² ($)</label>
+              <input type="number" id="xp-cost-per-sf" class="form-input" value="${DEFAULT_COST_PER_SF.toFixed(2)}" min="0" step="0.25" style="margin-top:4px">
+              <div class="xp-helper-text">Source: planning estimate; unchanged.</div>
+            </div>
+            <div class="xp-field" style="margin-top:10px">
+              <label class="xp-label">Rebate / ft² ($)</label>
+              <input type="number" id="xp-rebate-per-sf" class="form-input" value="${DEFAULT_REBATE_PER_SF.toFixed(2)}" min="0" step="0.25" style="margin-top:4px">
+              <div class="xp-helper-text">Denver Water commercial — $1.00 hardscape, $3.25 ColoradoScape.</div>
+            </div>
           </div>
-          <div class="xp-field" style="margin-top:12px">
-            <label class="xp-label">Annual water savings per SF ($)</label>
-            <input type="number" id="xp-savings-per-sf" class="form-input" value="${DEFAULT_SAVINGS_PER_SF.toFixed(2)}" min="0" step="0.05" style="margin-top:4px">
+          <div class="xp-assumptions-group" style="margin-top:14px">
+            <div class="xp-assumptions-group-title">Savings</div>
+            <div class="xp-field">
+              <label class="xp-label">Gallons saved / ft² / yr</label>
+              <input type="number" id="xp-gallons-per-sf-year" class="form-input" value="${DEFAULT_GALLONS_PER_SF_YEAR}" min="0" step="1" style="margin-top:4px">
+              <div class="xp-helper-text">Bluegrass 40–60 vs xeric 10–15 (Denver Water).</div>
+            </div>
+            <div class="xp-field" style="margin-top:10px">
+              <label class="xp-label">Water rate / 1,000 gal ($)</label>
+              <input type="number" id="xp-water-rate-per-kgal" class="form-input" value="${DEFAULT_WATER_RATE_PER_KGAL.toFixed(2)}" min="0" step="0.05" style="margin-top:4px">
+              <div class="xp-helper-text">Denver Water 2026 irrigation-only, inside city, incl. $2.20 drought.</div>
+            </div>
+            <div class="xp-field" style="margin-top:10px">
+              <label class="xp-label">Maintenance saved / ft² / yr ($)</label>
+              <input type="number" id="xp-maintenance-per-sf-year" class="form-input" value="${DEFAULT_MAINTENANCE_PER_SF_YEAR.toFixed(2)}" min="0" step="0.01" style="margin-top:4px">
+              <div class="xp-helper-text">~55% of the $0.182/ft²/season portfolio average.</div>
+            </div>
           </div>
+          <div id="xp-derived-savings-per-sf" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gray-100);font-size:12px;color:var(--gray-600)"></div>
         </div>
 
         <!-- Estimated Summary card -->
@@ -116,12 +144,27 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           <div class="xp-card-title">Estimated Summary</div>
           <div style="margin-top:12px;display:flex;flex-direction:column;gap:14px">
             <div>
-              <div class="xp-stat-label">Conversion Cost</div>
+              <div class="xp-stat-label">Gross Conversion Cost</div>
               <div id="xp-est-cost" style="font-size:22px;font-weight:700;color:var(--navy)">&mdash;</div>
             </div>
             <div style="height:1px;background:var(--gray-100)"></div>
             <div>
-              <div class="xp-stat-label">Annual Water Savings</div>
+              <div class="xp-stat-label">Rebate</div>
+              <div id="xp-est-rebate" style="font-size:20px;font-weight:700;color:var(--gray-700)">&mdash;</div>
+            </div>
+            <div style="height:1px;background:var(--gray-100)"></div>
+            <div>
+              <div class="xp-stat-label">Net Conversion Cost</div>
+              <div id="xp-est-net-cost" style="font-size:22px;font-weight:700;color:var(--navy)">&mdash;</div>
+            </div>
+            <div style="height:1px;background:var(--gray-100)"></div>
+            <div>
+              <div class="xp-stat-label">Gallons Avoided / Yr</div>
+              <div id="xp-est-gallons" style="font-size:22px;font-weight:700;color:var(--navy)">&mdash;</div>
+            </div>
+            <div style="height:1px;background:var(--gray-100)"></div>
+            <div>
+              <div class="xp-stat-label">Annual Savings</div>
               <div id="xp-est-savings" style="font-size:22px;font-weight:700;color:var(--teal)">&mdash;</div>
             </div>
             <div style="height:1px;background:var(--gray-100)"></div>
@@ -234,6 +277,26 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         font-weight: 600;
         color: var(--gray-600);
         display: block;
+      }
+      .xp-assumptions-group {
+        padding: 10px;
+        border: 1px solid var(--gray-100);
+        border-radius: 8px;
+        background: var(--gray-50);
+      }
+      .xp-assumptions-group-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--navy);
+        margin-bottom: 8px;
+      }
+      .xp-helper-text {
+        font-size: 10px;
+        line-height: 1.35;
+        color: var(--gray-400);
+        margin-top: 4px;
       }
       .xp-stat-label {
         font-size: 11px;
@@ -887,6 +950,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   }
 
+  function formatCurrencyRate(n, digits) {
+    const places = digits === undefined ? 2 : digits;
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places });
+  }
+
   function formatDate(isoOrDate) {
     const d = isoOrDate ? new Date(isoOrDate) : new Date();
     return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -898,10 +966,71 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
+  function numberOrFallback(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : fallback;
+  }
+
+  // The only compatibility boundary for planner assumption records. New
+  // records contain exactly the five editable assumptions; older records
+  // contain costPerSf plus the former combined savings value.
+  function normaliseAssumptions(raw) {
+    raw = raw && typeof raw === 'object' ? raw : {};
+    const hasNewSavingsShape = [
+      'gallonsPerSfYear',
+      'waterRatePerKGal',
+      'maintenancePerSfYear',
+      'rebatePerSf',
+    ].some(key => raw[key] !== undefined);
+
+    if (!hasNewSavingsShape && raw.savingsPerSf !== undefined) {
+      const legacySavings = numberOrFallback(raw.savingsPerSf, 0);
+      return {
+        costPerSf: numberOrFallback(raw.costPerSf, DEFAULT_COST_PER_SF),
+        gallonsPerSfYear: DEFAULT_GALLONS_PER_SF_YEAR,
+        waterRatePerKGal: legacySavings / (DEFAULT_GALLONS_PER_SF_YEAR / 1000),
+        maintenancePerSfYear: 0,
+        rebatePerSf: 0,
+      };
+    }
+
+    return {
+      costPerSf: numberOrFallback(raw.costPerSf, DEFAULT_COST_PER_SF),
+      gallonsPerSfYear: numberOrFallback(raw.gallonsPerSfYear, DEFAULT_GALLONS_PER_SF_YEAR),
+      waterRatePerKGal: numberOrFallback(raw.waterRatePerKGal, DEFAULT_WATER_RATE_PER_KGAL),
+      maintenancePerSfYear: numberOrFallback(raw.maintenancePerSfYear, DEFAULT_MAINTENANCE_PER_SF_YEAR),
+      rebatePerSf: numberOrFallback(raw.rebatePerSf, DEFAULT_REBATE_PER_SF),
+    };
+  }
+
+  function derivedSavingsPerSf(assumptions) {
+    const a = normaliseAssumptions(assumptions);
+    return (a.gallonsPerSfYear / 1000) * a.waterRatePerKGal + a.maintenancePerSfYear;
+  }
+
   function getAssumptions() {
-    const costPerSf = parseFloat(document.getElementById('xp-cost-per-sf').value) || 0;
-    const savingsPerSf = parseFloat(document.getElementById('xp-savings-per-sf').value) || 0;
-    return { costPerSf, savingsPerSf };
+    const readInput = id => {
+      const el = document.getElementById(id);
+      return el ? el.value : undefined;
+    };
+    return normaliseAssumptions({
+      costPerSf: readInput('xp-cost-per-sf'),
+      rebatePerSf: readInput('xp-rebate-per-sf'),
+      gallonsPerSfYear: readInput('xp-gallons-per-sf-year'),
+      waterRatePerKGal: readInput('xp-water-rate-per-kgal'),
+      maintenancePerSfYear: readInput('xp-maintenance-per-sf-year'),
+    });
+  }
+
+  function renderDerivedSavings() {
+    const el = document.getElementById('xp-derived-savings-per-sf');
+    if (!el) return;
+    const assumptions = getAssumptions();
+    const waterSavingsPerSf = (assumptions.gallonsPerSfYear / 1000) * assumptions.waterRatePerKGal;
+    el.innerHTML = '<strong>Derived annual savings:</strong> ' +
+      'Water ' + formatCurrencyRate(waterSavingsPerSf, 3) + ' + maintenance ' +
+      formatCurrencyRate(assumptions.maintenancePerSfYear, 3) + ' = ' +
+      '<strong>' + formatCurrencyRate(derivedSavingsPerSf(assumptions), 3) + ' / ft² / yr</strong>';
   }
 
   const escapeHtml = VRTUtils.esc;
@@ -982,6 +1111,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     if (areaEl) areaEl.textContent = '0';
     const estCostEl = document.getElementById('xp-est-cost');
     if (estCostEl) estCostEl.textContent = '\u2014';
+    const estRebateEl = document.getElementById('xp-est-rebate');
+    if (estRebateEl) estRebateEl.textContent = '\u2014';
+    const estNetCostEl = document.getElementById('xp-est-net-cost');
+    if (estNetCostEl) estNetCostEl.textContent = '\u2014';
+    const estGallonsEl = document.getElementById('xp-est-gallons');
+    if (estGallonsEl) estGallonsEl.textContent = '\u2014';
     const estSavingsEl = document.getElementById('xp-est-savings');
     if (estSavingsEl) estSavingsEl.textContent = '\u2014';
     const estPaybackEl = document.getElementById('xp-est-payback');
@@ -1150,21 +1285,52 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   }
 
   // ── Group computation (pure functions) ─────────────────────────────────────
+  function computeOutputsForSquareFootage(totalSquareFootage, assumptions, polygonCount) {
+    const {
+      costPerSf,
+      gallonsPerSfYear,
+      waterRatePerKGal,
+      maintenancePerSfYear,
+      rebatePerSf,
+    } = normaliseAssumptions(assumptions);
+    const annualGallonsAvoided = totalSquareFootage * gallonsPerSfYear;
+    const annualWaterSavings = (annualGallonsAvoided / 1000) * waterRatePerKGal;
+    const annualMaintenanceSavings = totalSquareFootage * maintenancePerSfYear;
+    const estimatedAnnualSavings = annualWaterSavings + annualMaintenanceSavings;
+    const grossConversionCost = totalSquareFootage * costPerSf;
+    const rebateAmount = totalSquareFootage * rebatePerSf;
+    const netConversionCost = Math.max(grossConversionCost - rebateAmount, 0);
+    const estimatedPaybackYears = estimatedAnnualSavings > 0
+      ? netConversionCost / estimatedAnnualSavings
+      : null;
+    const costPer1000GalAvoided = annualGallonsAvoided > 0
+      ? netConversionCost / (annualGallonsAvoided * ASSET_LIFE_YEARS / 1000)
+      : null;
+
+    return {
+      polygonCount: polygonCount || 0,
+      totalSquareFootage,
+      annualGallonsAvoided,
+      annualWaterSavings,
+      annualMaintenanceSavings,
+      estimatedAnnualSavings,
+      grossConversionCost,
+      estimatedConversionCost: grossConversionCost,
+      rebateAmount,
+      netConversionCost,
+      estimatedPaybackYears,
+      costPer1000GalAvoided,
+    };
+  }
+
   function computeGroupOutputs(polygonIds, assumptions) {
-    const { costPerSf, savingsPerSf } = assumptions;
     const features = allFeatures.filter(f => polygonIds.includes(f.properties.id));
     const totalSquareFootage = features.reduce((sum, f) => {
       const area = Number(f.properties.area_sqft);
       return Number.isFinite(area) && area > 0 ? sum + area : sum;
     }, 0);
     const polygonCount = features.length;
-    const estimatedConversionCost = totalSquareFootage * costPerSf;
-    const estimatedAnnualWaterSavings = totalSquareFootage * savingsPerSf;
-    let estimatedPaybackYears = null;
-    if (estimatedAnnualWaterSavings > 0) {
-      estimatedPaybackYears = estimatedConversionCost / estimatedAnnualWaterSavings;
-    }
-    return { polygonCount, totalSquareFootage, estimatedConversionCost, estimatedAnnualWaterSavings, estimatedPaybackYears };
+    return computeOutputsForSquareFootage(totalSquareFootage, assumptions, polygonCount);
   }
 
   function recomputeAllGroups() {
@@ -1178,6 +1344,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   // ── buildGroupSummary — pure, reusable ─────────────────────────────────────
   function buildGroupSummary(group, polygonFeatures, assumptions, opts) {
     opts = opts || {};
+    assumptions = normaliseAssumptions(assumptions);
     const propertyName = opts.propertyName !== undefined ? opts.propertyName : (activeCommunityName || 'Community');
     const generatedDate = opts.generatedDate !== undefined ? opts.generatedDate : formatDate(new Date());
 
@@ -1198,10 +1365,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       generatedDate,
       polygonCount: group.polygonCount,
       totalSquareFootage: group.totalSquareFootage,
+      assumptions,
+      derivedAnnualSavingsPerSf: derivedSavingsPerSf(assumptions),
       costPerSf: assumptions.costPerSf,
-      savingsPerSf: assumptions.savingsPerSf,
+      rebatePerSf: assumptions.rebatePerSf,
+      gallonsPerSfYear: assumptions.gallonsPerSfYear,
+      waterRatePerKGal: assumptions.waterRatePerKGal,
+      maintenancePerSfYear: assumptions.maintenancePerSfYear,
+      annualGallonsAvoided: group.annualGallonsAvoided,
+      annualWaterSavings: group.annualWaterSavings,
+      annualMaintenanceSavings: group.annualMaintenanceSavings,
+      estimatedAnnualSavings: group.estimatedAnnualSavings,
+      grossConversionCost: group.grossConversionCost,
       estimatedConversionCost: group.estimatedConversionCost,
-      estimatedAnnualWaterSavings: group.estimatedAnnualWaterSavings,
+      rebateAmount: group.rebateAmount,
+      netConversionCost: group.netConversionCost,
+      costPer1000GalAvoided: group.costPer1000GalAvoided,
+      assetLifeYears: ASSET_LIFE_YEARS,
       estimatedPaybackYears: group.estimatedPaybackYears,
       paybackStr: pbStr,
       polygonDetails,
@@ -1211,13 +1391,20 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   // ── renderAssumptionsBlock — reusable HTML component ──────────────────────
   function renderAssumptionsBlock(assumptions) {
+    assumptions = normaliseAssumptions(assumptions);
+    const waterSavingsPerSf = (assumptions.gallonsPerSfYear / 1000) * assumptions.waterRatePerKGal;
     return `
       <div class="xps-block">
         <div class="xps-section-title">Assumptions &amp; Disclaimer</div>
         <div class="xps-assumptions-grid">
-          <div><strong>Conversion cost:</strong> ${formatCurrency(assumptions.costPerSf)} / SF</div>
-          <div><strong>Annual water savings:</strong> ${formatCurrency(assumptions.savingsPerSf)} / SF</div>
-          <div style="grid-column:1/-1"><strong>Payback basis:</strong> Water-only savings (does not include maintenance savings or utility rate escalation)</div>
+          <div><strong>Conversion cost:</strong> ${formatCurrencyRate(assumptions.costPerSf)} / ft²</div>
+          <div><strong>Rebate:</strong> ${formatCurrencyRate(assumptions.rebatePerSf)} / ft²</div>
+          <div><strong>Gallons saved:</strong> ${formatNumber(assumptions.gallonsPerSfYear)} / ft² / yr</div>
+          <div><strong>Water rate:</strong> ${formatCurrencyRate(assumptions.waterRatePerKGal)} / 1,000 gal</div>
+          <div><strong>Maintenance saved:</strong> ${formatCurrencyRate(assumptions.maintenancePerSfYear)} / ft² / yr</div>
+          <div><strong>Asset life:</strong> ${ASSET_LIFE_YEARS} years</div>
+          <div style="grid-column:1/-1"><strong>Derived annual savings:</strong> Water ${formatCurrencyRate(waterSavingsPerSf, 3)} + maintenance ${formatCurrencyRate(assumptions.maintenancePerSfYear, 3)} = ${formatCurrencyRate(derivedSavingsPerSf(assumptions), 3)} / ft² / yr</div>
+          <div style="grid-column:1/-1"><strong>Payback basis:</strong> Annual water plus maintenance savings against rebate-adjusted net conversion cost. Utility-rate escalation is not included.</div>
         </div>
         <div class="xps-disclaimer">
           Estimates shown are planning-level figures based on selected assumptions and mapped polygon area. Actual project cost, water savings, and payback may vary based on final design, utility rates, site conditions, and operational factors.
@@ -1229,10 +1416,29 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   // ── Planner aggregate totals ───────────────────────────────────────────────
   function computePlannerTotals() {
     const totalSqft = groups.reduce((s, g) => s + (g.totalSquareFootage || 0), 0);
-    const totalEstimatedCost = groups.reduce((s, g) => s + (g.estimatedConversionCost || 0), 0);
-    const totalAnnualSavings = groups.reduce((s, g) => s + (g.estimatedAnnualWaterSavings || 0), 0);
-    const paybackYears = totalAnnualSavings > 0 ? totalEstimatedCost / totalAnnualSavings : null;
-    return { totalSqft, totalEstimatedCost, totalAnnualSavings, paybackYears };
+    const totalEstimatedCost = groups.reduce((s, g) => s + (g.grossConversionCost || 0), 0);
+    const totalRebateAmount = groups.reduce((s, g) => s + (g.rebateAmount || 0), 0);
+    const totalNetConversionCost = groups.reduce((s, g) => s + (g.netConversionCost || 0), 0);
+    const totalAnnualGallonsAvoided = groups.reduce((s, g) => s + (g.annualGallonsAvoided || 0), 0);
+    const totalAnnualWaterSavings = groups.reduce((s, g) => s + (g.annualWaterSavings || 0), 0);
+    const totalAnnualMaintenanceSavings = groups.reduce((s, g) => s + (g.annualMaintenanceSavings || 0), 0);
+    const totalAnnualSavings = groups.reduce((s, g) => s + (g.estimatedAnnualSavings || 0), 0);
+    const paybackYears = totalAnnualSavings > 0 ? totalNetConversionCost / totalAnnualSavings : null;
+    const costPer1000GalAvoided = totalAnnualGallonsAvoided > 0
+      ? totalNetConversionCost / (totalAnnualGallonsAvoided * ASSET_LIFE_YEARS / 1000)
+      : null;
+    return {
+      totalSqft,
+      totalEstimatedCost,
+      totalRebateAmount,
+      totalNetConversionCost,
+      totalAnnualGallonsAvoided,
+      totalAnnualWaterSavings,
+      totalAnnualMaintenanceSavings,
+      totalAnnualSavings,
+      paybackYears,
+      costPer1000GalAvoided,
+    };
   }
 
   // ── Map styles ─────────────────────────────────────────────────────────────
@@ -1318,7 +1524,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         return Number.isFinite(area) && area > 0 ? sum + area : sum;
       }, 0);
 
-    const { costPerSf, savingsPerSf } = getAssumptions();
+    const assumptions = getAssumptions();
 
     document.getElementById('xp-count').textContent = count;
     document.getElementById('xp-area').textContent = count > 0 ? formatNumber(totalArea) : '0';
@@ -1331,30 +1537,35 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
     if (count === 0 || totalArea === 0) {
       document.getElementById('xp-est-cost').textContent = '\u2014';
+      document.getElementById('xp-est-rebate').textContent = '\u2014';
+      document.getElementById('xp-est-net-cost').textContent = '\u2014';
+      document.getElementById('xp-est-gallons').textContent = '\u2014';
       document.getElementById('xp-est-savings').textContent = '\u2014';
       document.getElementById('xp-est-payback').textContent = '\u2014';
       return;
     }
 
-    const estCost = totalArea * costPerSf;
-    const estSavings = totalArea * savingsPerSf;
+    const outputs = computeOutputsForSquareFootage(totalArea, assumptions, count);
 
-    document.getElementById('xp-est-cost').textContent = formatCurrency(estCost);
-    document.getElementById('xp-est-savings').textContent = estSavings > 0 ? formatCurrency(estSavings) + '/yr' : '\u2014';
+    document.getElementById('xp-est-cost').textContent = formatCurrency(outputs.grossConversionCost);
+    document.getElementById('xp-est-rebate').textContent = formatCurrency(outputs.rebateAmount);
+    document.getElementById('xp-est-net-cost').textContent = formatCurrency(outputs.netConversionCost);
+    document.getElementById('xp-est-gallons').textContent = formatNumber(outputs.annualGallonsAvoided) + ' gal';
+    document.getElementById('xp-est-savings').textContent = outputs.estimatedAnnualSavings > 0
+      ? formatCurrency(outputs.estimatedAnnualSavings) + '/yr'
+      : '\u2014';
 
-    if (estSavings <= 0) {
+    if (outputs.estimatedPaybackYears === null) {
       document.getElementById('xp-est-payback').textContent = '\u2014';
+    } else if (outputs.estimatedPaybackYears < 1) {
+      document.getElementById('xp-est-payback').textContent = '< 1 yr';
     } else {
-      const years = estCost / estSavings;
-      if (years < 1) {
-        document.getElementById('xp-est-payback').textContent = '< 1 yr';
-      } else {
-        document.getElementById('xp-est-payback').textContent = years.toFixed(1) + ' yrs';
-      }
+      document.getElementById('xp-est-payback').textContent = outputs.estimatedPaybackYears.toFixed(1) + ' yrs';
     }
   }
 
   function onAssumptionsChange() {
+    renderDerivedSavings();
     recalculate();
     recomputeAllGroups();
     renderGroupsPanel();
@@ -1488,9 +1699,13 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <div class="xp-group-meta">
           <span><strong>${group.polygonCount}</strong> polygons</span>
           <span><strong>${formatNumber(group.totalSquareFootage)}</strong> SF</span>
-          <span>Cost: <strong>${formatCurrency(group.estimatedConversionCost)}</strong></span>
-          <span>Savings: <strong>${group.estimatedAnnualWaterSavings > 0 ? formatCurrency(group.estimatedAnnualWaterSavings) + '/yr' : '—'}</strong></span>
-          <span style="grid-column:1/-1">Payback: <strong>${pb}</strong></span>
+          <span>Gallons: <strong>${formatNumber(group.annualGallonsAvoided)} /yr</strong></span>
+          <span>Gross cost: <strong>${formatCurrency(group.grossConversionCost)}</strong></span>
+          <span>Rebate: <strong>${formatCurrency(group.rebateAmount)}</strong></span>
+          <span>Net cost: <strong>${formatCurrency(group.netConversionCost)}</strong></span>
+          <span>Savings: <strong>${group.estimatedAnnualSavings > 0 ? formatCurrency(group.estimatedAnnualSavings) + '/yr' : '—'}</strong></span>
+          <span>Payback: <strong>${pb}</strong></span>
+          <span style="grid-column:1/-1">20-yr cost / 1,000 gal: <strong>${group.costPer1000GalAvoided === null ? '—' : formatCurrencyRate(group.costPer1000GalAvoided)}</strong></span>
         </div>
         <div class="xp-group-actions">
           <button class="xp-group-btn xp-btn-view" data-action="view" data-id="${group.id}">View on Map</button>
@@ -1633,8 +1848,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <td style="font-weight:700;max-width:90px;word-break:break-word">${escapeHtml(g.name)}</td>
         <td style="text-align:right">${g.polygonCount}</td>
         <td style="text-align:right">${formatNumber(g.totalSquareFootage)}</td>
-        <td style="text-align:right">${formatCurrency(g.estimatedConversionCost)}</td>
-        <td style="text-align:right">${g.estimatedAnnualWaterSavings > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) : '—'}</td>
+        <td style="text-align:right">${formatNumber(g.annualGallonsAvoided)}</td>
+        <td style="text-align:right">${formatCurrency(g.grossConversionCost)}</td>
+        <td style="text-align:right">${formatCurrency(g.rebateAmount)}</td>
+        <td style="text-align:right">${formatCurrency(g.netConversionCost)}</td>
+        <td style="text-align:right">${g.estimatedAnnualSavings > 0 ? formatCurrency(g.estimatedAnnualSavings) : '—'}</td>
         <td style="text-align:right">${pb}</td>
       </tr>`;
     }).join('');
@@ -1646,7 +1864,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             <th>Group</th>
             <th style="text-align:right">#</th>
             <th style="text-align:right">SF</th>
-            <th style="text-align:right">Cost</th>
+            <th style="text-align:right">Gal/yr</th>
+            <th style="text-align:right">Gross</th>
+            <th style="text-align:right">Rebate</th>
+            <th style="text-align:right">Net</th>
             <th style="text-align:right">Savings/yr</th>
             <th style="text-align:right">Payback</th>
           </tr>
@@ -1771,12 +1992,24 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
         <div class="xps-kpi-row">
           <div class="xps-kpi-card">
-            <div class="xps-kpi-label">Conversion Cost</div>
-            <div class="xps-kpi-value">${formatCurrency(summary.estimatedConversionCost)}</div>
+            <div class="xps-kpi-label">Gross Conversion Cost</div>
+            <div class="xps-kpi-value">${formatCurrency(summary.grossConversionCost)}</div>
           </div>
           <div class="xps-kpi-card">
-            <div class="xps-kpi-label">Annual Water Savings</div>
-            <div class="xps-kpi-value accent">${summary.estimatedAnnualWaterSavings > 0 ? formatCurrency(summary.estimatedAnnualWaterSavings) + '/yr' : '\u2014'}</div>
+            <div class="xps-kpi-label">Rebate</div>
+            <div class="xps-kpi-value">${formatCurrency(summary.rebateAmount)}</div>
+          </div>
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Net Conversion Cost</div>
+            <div class="xps-kpi-value">${formatCurrency(summary.netConversionCost)}</div>
+          </div>
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Gallons Avoided / Yr</div>
+            <div class="xps-kpi-value">${formatNumber(summary.annualGallonsAvoided)}</div>
+          </div>
+          <div class="xps-kpi-card">
+            <div class="xps-kpi-label">Annual Savings</div>
+            <div class="xps-kpi-value accent">${summary.estimatedAnnualSavings > 0 ? formatCurrency(summary.estimatedAnnualSavings) + '/yr' : '\u2014'}</div>
           </div>
           <div class="xps-kpi-card">
             <div class="xps-kpi-label">Payback Period</div>
@@ -1852,8 +2085,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <td>${escapeHtml(s.groupName)}</td>
         <td>${s.polygonCount}</td>
         <td>${formatNumber(s.totalSquareFootage)}</td>
-        <td>${formatCurrency(s.estimatedConversionCost)}</td>
-        <td>${s.estimatedAnnualWaterSavings > 0 ? formatCurrency(s.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+        <td>${formatNumber(s.annualGallonsAvoided)}</td>
+        <td>${formatCurrency(s.grossConversionCost)}</td>
+        <td>${formatCurrency(s.rebateAmount)}</td>
+        <td>${formatCurrency(s.netConversionCost)}</td>
+        <td>${s.estimatedAnnualSavings > 0 ? formatCurrency(s.estimatedAnnualSavings) + '/yr' : '—'}</td>
         <td>${pb}</td>
       </tr>`;
     }).join('');
@@ -1916,7 +2152,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
                   <th style="text-align:left">Group Name</th>
                   <th>Polygons</th>
                   <th>Total SF</th>
-                  <th>Est. Cost</th>
+                  <th>Gallons / Yr</th>
+                  <th>Gross Cost</th>
+                  <th>Rebate</th>
+                  <th>Net Cost</th>
                   <th>Annual Savings</th>
                   <th>Payback</th>
                 </tr>
@@ -2010,9 +2249,16 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         polygonIds: g.polygonIds,
         polygonCount: g.polygonCount,
         totalSquareFootage: g.totalSquareFootage,
+        annualGallonsAvoided: g.annualGallonsAvoided,
+        annualWaterSavings: g.annualWaterSavings,
+        annualMaintenanceSavings: g.annualMaintenanceSavings,
+        estimatedAnnualSavings: g.estimatedAnnualSavings,
+        grossConversionCost: g.grossConversionCost,
         estimatedConversionCost: g.estimatedConversionCost,
-        estimatedAnnualWaterSavings: g.estimatedAnnualWaterSavings,
+        rebateAmount: g.rebateAmount,
+        netConversionCost: g.netConversionCost,
         estimatedPaybackYears: g.estimatedPaybackYears,
+        costPer1000GalAvoided: g.costPer1000GalAvoided,
       })),
       totalSqft,
       totalEstimatedCost,
@@ -2059,22 +2305,26 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   }
 
   function loadRecordIntoPlanner(record) {
-    const assumptions = record.assumptionsJson || {};
-    const costEl = document.getElementById('xp-cost-per-sf');
-    const savingsEl = document.getElementById('xp-savings-per-sf');
-    if (costEl && assumptions.costPerSf !== undefined) costEl.value = assumptions.costPerSf;
-    if (savingsEl && assumptions.savingsPerSf !== undefined) savingsEl.value = assumptions.savingsPerSf;
+    const assumptions = normaliseAssumptions(record.assumptionsJson);
+    const assumptionInputs = {
+      'xp-cost-per-sf': assumptions.costPerSf,
+      'xp-rebate-per-sf': assumptions.rebatePerSf,
+      'xp-gallons-per-sf-year': assumptions.gallonsPerSfYear,
+      'xp-water-rate-per-kgal': assumptions.waterRatePerKGal,
+      'xp-maintenance-per-sf-year': assumptions.maintenancePerSfYear,
+    };
+    Object.entries(assumptionInputs).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value;
+    });
+    renderDerivedSavings();
 
     const savedGroups = Array.isArray(record.groupsJson) ? record.groupsJson : [];
     groups = savedGroups.map(g => ({
       id: g.id || genId(),
       name: g.name,
       polygonIds: g.polygonIds || [],
-      polygonCount: g.polygonCount || 0,
-      totalSquareFootage: g.totalSquareFootage || 0,
-      estimatedConversionCost: g.estimatedConversionCost || 0,
-      estimatedAnnualWaterSavings: g.estimatedAnnualWaterSavings || 0,
-      estimatedPaybackYears: g.estimatedPaybackYears,
+      ...computeOutputsForSquareFootage(g.totalSquareFootage || 0, assumptions, g.polygonCount || 0),
       createdAt: g.createdAt || new Date().toISOString(),
     }));
 
@@ -2112,9 +2362,46 @@ AdminRouter.register('xeriscape-planner', async function(container) {
 
   const GROUP_COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#0ea5e9', '#f97316'];
 
+  function computeRecordOutputs(record) {
+    const assumptions = normaliseAssumptions(record.assumptionsJson);
+    const rawGroups = Array.isArray(record.groupsJson) ? record.groupsJson : [];
+    const computedGroups = rawGroups.map(g => ({
+      ...g,
+      ...computeOutputsForSquareFootage(g.totalSquareFootage || 0, assumptions, g.polygonCount || 0),
+      polygonIds: g.polygonIds || [],
+    }));
+    const totals = computedGroups.reduce((total, group) => ({
+      polygonCount: total.polygonCount + group.polygonCount,
+      totalSqft: total.totalSqft + group.totalSquareFootage,
+      grossConversionCost: total.grossConversionCost + group.grossConversionCost,
+      rebateAmount: total.rebateAmount + group.rebateAmount,
+      netConversionCost: total.netConversionCost + group.netConversionCost,
+      annualGallonsAvoided: total.annualGallonsAvoided + group.annualGallonsAvoided,
+      annualWaterSavings: total.annualWaterSavings + group.annualWaterSavings,
+      annualMaintenanceSavings: total.annualMaintenanceSavings + group.annualMaintenanceSavings,
+      annualSavings: total.annualSavings + group.estimatedAnnualSavings,
+    }), {
+      polygonCount: 0,
+      totalSqft: 0,
+      grossConversionCost: 0,
+      rebateAmount: 0,
+      netConversionCost: 0,
+      annualGallonsAvoided: 0,
+      annualWaterSavings: 0,
+      annualMaintenanceSavings: 0,
+      annualSavings: 0,
+    });
+    totals.paybackYears = totals.annualSavings > 0
+      ? totals.netConversionCost / totals.annualSavings
+      : null;
+    totals.costPer1000GalAvoided = totals.annualGallonsAvoided > 0
+      ? totals.netConversionCost / (totals.annualGallonsAvoided * ASSET_LIFE_YEARS / 1000)
+      : null;
+    return { assumptions, groups: computedGroups, totals };
+  }
+
   function buildProposalPayload(record) {
-    const groups_data = Array.isArray(record.groupsJson) ? record.groupsJson : [];
-    const assumptions = record.assumptionsJson || {};
+    const { assumptions, groups: groupsData, totals } = computeRecordOutputs(record);
     return {
       communityId: record.propertyId,
       communityName: PROPERTY_NAME,
@@ -2122,23 +2409,39 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       planningRecordName: record.recordName,
       status: record.status,
       totals: {
-        polygonCount: groups_data.reduce((s, g) => s + (g.polygonCount || 0), 0),
-        totalSqft: record.totalSqft,
-        estimatedCost: record.totalEstimatedCost,
-        annualSavings: record.totalAnnualSavings,
-        paybackYears: record.paybackYears,
+        polygonCount: totals.polygonCount,
+        totalSqft: totals.totalSqft,
+        estimatedCost: totals.grossConversionCost,
+        grossConversionCost: totals.grossConversionCost,
+        rebateAmount: totals.rebateAmount,
+        netConversionCost: totals.netConversionCost,
+        annualGallonsAvoided: totals.annualGallonsAvoided,
+        annualWaterSavings: totals.annualWaterSavings,
+        annualMaintenanceSavings: totals.annualMaintenanceSavings,
+        annualSavings: totals.annualSavings,
+        paybackYears: totals.paybackYears,
+        costPer1000GalAvoided: totals.costPer1000GalAvoided,
+        assetLifeYears: ASSET_LIFE_YEARS,
       },
       assumptions,
-      groups: groups_data.map(g => ({
+      groups: groupsData.map(g => ({
         name: g.name,
         polygonCount: g.polygonCount,
         sqft: g.totalSquareFootage,
-        estimatedCost: g.estimatedConversionCost,
-        annualSavings: g.estimatedAnnualWaterSavings,
+        estimatedCost: g.grossConversionCost,
+        grossConversionCost: g.grossConversionCost,
+        rebateAmount: g.rebateAmount,
+        netConversionCost: g.netConversionCost,
+        annualGallonsAvoided: g.annualGallonsAvoided,
+        annualWaterSavings: g.annualWaterSavings,
+        annualMaintenanceSavings: g.annualMaintenanceSavings,
+        annualSavings: g.estimatedAnnualSavings,
         paybackYears: g.estimatedPaybackYears,
+        costPer1000GalAvoided: g.costPer1000GalAvoided,
+        assetLifeYears: ASSET_LIFE_YEARS,
         polygonIds: g.polygonIds || [],
       })),
-      polygonDetails: groups_data.flatMap(g =>
+      polygonDetails: groupsData.flatMap(g =>
         (g.polygonIds || []).map(pid => {
           const feat = allFeatures.find(f => f.properties.id === pid);
           return {
@@ -2175,19 +2478,23 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     const content = document.getElementById('xp-packet-content');
     if (!overlay || !content) return;
 
-    const groups_data = Array.isArray(record.groupsJson) ? record.groupsJson : [];
-    const assumptions = record.assumptionsJson || {};
+    const recordOutputs = computeRecordOutputs(record);
+    const groups_data = recordOutputs.groups;
+    const assumptions = recordOutputs.assumptions;
     const genDate = savedPacket ? formatDate(savedPacket.generatedAt) : formatDate(new Date());
     const packetStatus = savedPacket ? savedPacket.packetStatus : null;
     const isActive = packetStatus === 'active_proposal_support';
     const packetTitle = savedPacket ? savedPacket.packetTitle : record.recordName + ' — Planning Packet';
 
     // Compute totals
-    const totalPolygonCount = groups_data.reduce((s, g) => s + (g.polygonCount || 0), 0);
-    const totalSqft = record.totalSqft || 0;
-    const totalCost = record.totalEstimatedCost || 0;
-    const totalSavings = record.totalAnnualSavings || 0;
-    const payback = record.paybackYears;
+    const totalPolygonCount = recordOutputs.totals.polygonCount;
+    const totalSqft = recordOutputs.totals.totalSqft;
+    const totalGrossCost = recordOutputs.totals.grossConversionCost;
+    const totalRebate = recordOutputs.totals.rebateAmount;
+    const totalNetCost = recordOutputs.totals.netConversionCost;
+    const totalGallons = recordOutputs.totals.annualGallonsAvoided;
+    const totalSavings = recordOutputs.totals.annualSavings;
+    const payback = recordOutputs.totals.paybackYears;
 
     // Build exec summary KPI cards
     const kpiCards = `
@@ -2201,8 +2508,20 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           <div class="xpk-kpi-value">${totalSqft > 0 ? formatNumber(totalSqft) : '—'} SF</div>
         </div>
         <div class="xpk-kpi-card">
-          <div class="xpk-kpi-label">Conversion Cost</div>
-          <div class="xpk-kpi-value">${totalCost > 0 ? formatCurrency(totalCost) : '—'}</div>
+          <div class="xpk-kpi-label">Gross Conversion Cost</div>
+          <div class="xpk-kpi-value">${formatCurrency(totalGrossCost)}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Rebate</div>
+          <div class="xpk-kpi-value">${formatCurrency(totalRebate)}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Net Conversion Cost</div>
+          <div class="xpk-kpi-value">${formatCurrency(totalNetCost)}</div>
+        </div>
+        <div class="xpk-kpi-card">
+          <div class="xpk-kpi-label">Gallons Avoided / Yr</div>
+          <div class="xpk-kpi-value">${totalGallons > 0 ? formatNumber(totalGallons) : '0'}</div>
         </div>
         <div class="xpk-kpi-card">
           <div class="xpk-kpi-label">Annual Savings</div>
@@ -2224,8 +2543,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
           <td style="font-weight:700"><span class="xpk-group-color-dot" style="background:${color}"></span>${escapeHtml(g.name)}</td>
           <td class="right">${g.polygonCount || 0}</td>
           <td class="right">${formatNumber(g.totalSquareFootage || 0)}</td>
-          <td class="right">${formatCurrency(g.estimatedConversionCost || 0)}</td>
-          <td class="right">${(g.estimatedAnnualWaterSavings || 0) > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+          <td class="right">${formatNumber(g.annualGallonsAvoided)}</td>
+          <td class="right">${formatCurrency(g.grossConversionCost)}</td>
+          <td class="right">${formatCurrency(g.rebateAmount)}</td>
+          <td class="right">${formatCurrency(g.netConversionCost)}</td>
+          <td class="right">${g.estimatedAnnualSavings > 0 ? formatCurrency(g.estimatedAnnualSavings) + '/yr' : '—'}</td>
           <td class="right">${paybackStr(g.estimatedPaybackYears)}</td>
         </tr>`;
       }).join('');
@@ -2240,7 +2562,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
                   <th>Option Name</th>
                   <th class="right">Polygons</th>
                   <th class="right">Total SF</th>
-                  <th class="right">Est. Cost</th>
+                  <th class="right">Gallons / Yr</th>
+                  <th class="right">Gross Cost</th>
+                  <th class="right">Rebate</th>
+                  <th class="right">Net Cost</th>
                   <th class="right">Annual Savings</th>
                   <th class="right">Payback</th>
                 </tr>
@@ -2259,8 +2584,11 @@ AdminRouter.register('xeriscape-planner', async function(container) {
         <td style="font-weight:700"><span class="xpk-group-color-dot" style="background:${color}"></span>${escapeHtml(g.name)}</td>
         <td class="right">${g.polygonCount || 0}</td>
         <td class="right">${formatNumber(g.totalSquareFootage || 0)}</td>
-        <td class="right">${formatCurrency(g.estimatedConversionCost || 0)}</td>
-        <td class="right">${(g.estimatedAnnualWaterSavings || 0) > 0 ? formatCurrency(g.estimatedAnnualWaterSavings) + '/yr' : '—'}</td>
+        <td class="right">${formatNumber(g.annualGallonsAvoided)}</td>
+        <td class="right">${formatCurrency(g.grossConversionCost)}</td>
+        <td class="right">${formatCurrency(g.rebateAmount)}</td>
+        <td class="right">${formatCurrency(g.netConversionCost)}</td>
+        <td class="right">${g.estimatedAnnualSavings > 0 ? formatCurrency(g.estimatedAnnualSavings) + '/yr' : '—'}</td>
         <td class="right">${paybackStr(g.estimatedPaybackYears)}</td>
       </tr>`;
     }).join('');
@@ -2275,7 +2603,10 @@ AdminRouter.register('xeriscape-planner', async function(container) {
                 <th>Group Name</th>
                 <th class="right">Polygons</th>
                 <th class="right">SF</th>
-                <th class="right">Est. Cost</th>
+                <th class="right">Gallons / Yr</th>
+                <th class="right">Gross Cost</th>
+                <th class="right">Rebate</th>
+                <th class="right">Net Cost</th>
                 <th class="right">Annual Savings</th>
                 <th class="right">Payback</th>
               </tr>
@@ -2320,13 +2651,19 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     `;
 
     // Assumptions block
+    const waterSavingsPerSf = (assumptions.gallonsPerSfYear / 1000) * assumptions.waterRatePerKGal;
     const assumptionsSection = `
       <div class="xpk-section">
         <div class="xpk-section-title">Assumptions (Frozen at Record Save)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;font-size:13px;color:var(--gray-700)">
-          <div><strong>Conversion cost:</strong> ${formatCurrency(assumptions.costPerSf || 0)} / SF</div>
-          <div><strong>Annual water savings:</strong> ${formatCurrency(assumptions.savingsPerSf || 0)} / SF</div>
-          <div style="grid-column:1/-1;color:var(--gray-500);font-size:12px">Payback basis: Water-only savings. Does not include maintenance savings or utility rate escalation.</div>
+          <div><strong>Conversion cost:</strong> ${formatCurrencyRate(assumptions.costPerSf)} / ft²</div>
+          <div><strong>Rebate:</strong> ${formatCurrencyRate(assumptions.rebatePerSf)} / ft²</div>
+          <div><strong>Gallons saved:</strong> ${formatNumber(assumptions.gallonsPerSfYear)} / ft² / yr</div>
+          <div><strong>Water rate:</strong> ${formatCurrencyRate(assumptions.waterRatePerKGal)} / 1,000 gal</div>
+          <div><strong>Maintenance saved:</strong> ${formatCurrencyRate(assumptions.maintenancePerSfYear)} / ft² / yr</div>
+          <div><strong>Asset life:</strong> ${ASSET_LIFE_YEARS} years</div>
+          <div style="grid-column:1/-1"><strong>Derived annual savings:</strong> Water ${formatCurrencyRate(waterSavingsPerSf, 3)} + maintenance ${formatCurrencyRate(assumptions.maintenancePerSfYear, 3)} = ${formatCurrencyRate(derivedSavingsPerSf(assumptions), 3)} / ft² / yr</div>
+          <div style="grid-column:1/-1;color:var(--gray-500);font-size:12px">Payback basis: Annual water plus maintenance savings against rebate-adjusted net conversion cost. Utility-rate escalation is not included.</div>
         </div>
       </div>
     `;
@@ -2557,6 +2894,7 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     }
 
     const rows = records.map(r => {
+      const recordOutputs = computeRecordOutputs(r);
       const isSelected = r.status === 'selected_for_estimate';
       const isArchived = r.status === 'archived';
       const isDraft = r.status === 'draft';
@@ -2564,10 +2902,12 @@ AdminRouter.register('xeriscape-planner', async function(container) {
       const isReviewable = isSelected || isReviewed;
       const hasActivePacket = !!packetStatusMap[r.id];
 
-      const costStr = r.totalEstimatedCost > 0 ? formatCurrency(r.totalEstimatedCost) : '—';
-      const savingsStr = r.totalAnnualSavings > 0 ? formatCurrency(r.totalAnnualSavings) + '/yr' : '—';
-      const pb = paybackStr(r.paybackYears);
-      const sfStr = r.totalSqft > 0 ? formatNumber(r.totalSqft) + ' SF' : '—';
+      const costStr = recordOutputs.totals.grossConversionCost > 0 ? formatCurrency(recordOutputs.totals.grossConversionCost) : '—';
+      const netCostStr = formatCurrency(recordOutputs.totals.netConversionCost);
+      const gallonsStr = formatNumber(recordOutputs.totals.annualGallonsAvoided) + ' gal/yr';
+      const savingsStr = recordOutputs.totals.annualSavings > 0 ? formatCurrency(recordOutputs.totals.annualSavings) + '/yr' : '—';
+      const pb = paybackStr(recordOutputs.totals.paybackYears);
+      const sfStr = recordOutputs.totals.totalSqft > 0 ? formatNumber(recordOutputs.totals.totalSqft) + ' SF' : '—';
 
       const openedClass = loadedRecordId === r.id ? ' style="outline:2px solid var(--teal);outline-offset:1px"' : '';
 
@@ -2581,7 +2921,9 @@ AdminRouter.register('xeriscape-planner', async function(container) {
             </div>
             <div class="xp-record-meta">
               <span>${sfStr}</span>
-              <span>Cost: ${costStr}</span>
+              <span>Gallons: ${gallonsStr}</span>
+              <span>Gross cost: ${costStr}</span>
+              <span>Net cost: ${netCostStr}</span>
               <span>Savings: ${savingsStr}</span>
               <span>Payback: ${pb}</span>
               <span>Updated: ${formatDate(r.updatedAt)}</span>
@@ -2659,8 +3001,13 @@ AdminRouter.register('xeriscape-planner', async function(container) {
   }
 
   // ── Event listeners ────────────────────────────────────────────────────────
-  document.getElementById('xp-cost-per-sf').addEventListener('input', onAssumptionsChange);
-  document.getElementById('xp-savings-per-sf').addEventListener('input', onAssumptionsChange);
+  [
+    'xp-cost-per-sf',
+    'xp-rebate-per-sf',
+    'xp-gallons-per-sf-year',
+    'xp-water-rate-per-kgal',
+    'xp-maintenance-per-sf-year',
+  ].forEach(id => document.getElementById(id).addEventListener('input', onAssumptionsChange));
   document.getElementById('xp-clear-btn').addEventListener('click', clearSelection);
 
   document.getElementById('xp-save-group-btn').addEventListener('click', function() {
@@ -2760,5 +3107,6 @@ AdminRouter.register('xeriscape-planner', async function(container) {
     document.head.appendChild(style);
   }
 
+  renderDerivedSavings();
   await loadCommunities();
 });
