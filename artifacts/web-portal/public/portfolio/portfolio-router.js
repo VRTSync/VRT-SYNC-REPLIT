@@ -22,8 +22,13 @@ window.PortfolioRouter = (function () {
       path = base + routeName + '/' + params.id;
     }
 
-    // Preserve ?org= query param for admin preview
-    const search = window.location.search;
+    // Preserve only the admin-preview organization context. Other route filters
+    // are opt-in so a group drill-down cannot leak into unrelated pages.
+    const searchParams = new URLSearchParams();
+    const currentSearch = new URLSearchParams(window.location.search);
+    if (currentSearch.get('org')) searchParams.set('org', currentSearch.get('org'));
+    if (params.group) searchParams.set('group', params.group);
+    const search = searchParams.toString() ? '?' + searchParams.toString() : '';
     if (pushState) {
       history.pushState({ route: routeName, params: params }, '', path + search);
     }
@@ -76,10 +81,14 @@ window.PortfolioRouter = (function () {
     var match = pathname.match(/\/web\/portfolio\/?(.*)$/);
     var rest = (match && match[1]) || 'dashboard';
     var parts = rest.split('/').filter(Boolean);
+    var params = {};
+    var group = new URLSearchParams(window.location.search).get('group');
+    if (group) params.group = group;
     if (parts[0] && parts[1]) {
-      return { route: parts[0], params: { id: parts[1] } };
+      params.id = parts[1];
+      return { route: parts[0], params: params };
     }
-    return { route: parts[0] || 'dashboard', params: {} };
+    return { route: parts[0] || 'dashboard', params: params };
   }
 
   function getRouteFromPath() {
@@ -88,8 +97,26 @@ window.PortfolioRouter = (function () {
     return parsed.route;
   }
 
+  // Update the current route's query without rerendering or disturbing
+  // page-local controls such as status and search filters.
+  function replaceQuery(changes) {
+    const searchParams = new URLSearchParams(window.location.search);
+    Object.keys(changes || {}).forEach(function (key) {
+      const value = changes[key];
+      if (value == null || value === '') searchParams.delete(key);
+      else searchParams.set(key, value);
+    });
+    const search = searchParams.toString() ? '?' + searchParams.toString() : '';
+    currentParams = Object.assign({}, currentParams);
+    if (Object.prototype.hasOwnProperty.call(changes || {}, 'group')) {
+      if (changes.group == null || changes.group === '') delete currentParams.group;
+      else currentParams.group = changes.group;
+    }
+    history.replaceState({ route: currentRoute, params: currentParams }, '', window.location.pathname + search);
+  }
+
   function getCurrentRoute() { return currentRoute; }
   function getParams() { return currentParams; }
 
-  return { register, navigate, render, init, parseRoute, getRouteFromPath, getCurrentRoute, getParams };
+  return { register, navigate, render, init, parseRoute, getRouteFromPath, getCurrentRoute, getParams, replaceQuery };
 })();

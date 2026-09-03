@@ -38,6 +38,11 @@
     return params.get('org') || null;
   }
 
+  function adminPreviewSearch() {
+    var orgId = getOrgIdFromUrl();
+    return orgId ? '?org=' + encodeURIComponent(orgId) : '';
+  }
+
   // ── Sidebar render ────────────────────────────────────────────────────────
   var NAV_ITEMS = [
     { route: 'dashboard',    label: 'Dashboard'     },
@@ -96,7 +101,7 @@
     // Nav links
     var navEl = document.getElementById('nav-links');
     if (navEl) {
-      var search = window.location.search; // preserves ?org=... for admin
+      var search = adminPreviewSearch();
       navEl.innerHTML = NAV_ITEMS.map(function (item) {
         var badge = '';
         if (item.route === 'work-orders' && _awaitingApprovalCount > 0) {
@@ -158,7 +163,7 @@
           document.getElementById('upm-account').addEventListener('click', function (e) {
             e.stopPropagation();
             closeUserMenu();
-            var search = window.location.search;
+            var search = adminPreviewSearch();
             history.pushState({ route: 'account', params: {} }, '', '/web/portfolio/account' + search);
             PortfolioRouter.render('account', {});
           });

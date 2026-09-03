@@ -6492,7 +6492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const orgId = resolved.orgId;
 
       // Fetch org for display name (used in source label)
-      const [org, workOrdersResult] = await Promise.all([
+      const [org, workOrdersResult, groupMemberResult] = await Promise.all([
         storage.getOrganizationById(orgId),
         pool.query<{
           id: string;
@@ -6560,9 +6560,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           WHERE ${storage.importOriginExclude('t')}
           ORDER BY t.created_at DESC
         `, [orgId]),
+        pool.query<{ community_id: string; group_id: string }>(`
+          SELECT bgm.community_id, bgm.group_id
+            FROM branch_group_members bgm
+            JOIN branch_groups bg ON bg.id = bgm.group_id
+           WHERE bg.organization_id = $1
+        `, [orgId]),
       ]);
 
       const orgName = org?.name ?? null;
+      const groupIdsByCommunity = new Map<string, string[]>();
+      for (const membership of groupMemberResult.rows) {
+        const ids = groupIdsByCommunity.get(membership.community_id) ?? [];
+        ids.push(membership.group_id);
+        groupIdsByCommunity.set(membership.community_id, ids);
+      }
       const now30 = new Date();
       now30.setDate(now30.getDate() - 30);
 
@@ -6589,6 +6601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: r.id,
           ref,
           communityId: r.community_id,
+          groupIds: groupIdsByCommunity.get(r.community_id) ?? [],
           branchName: r.community_name,
           branchCode: r.community_code,
           title: r.title,

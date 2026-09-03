@@ -4478,6 +4478,7 @@ export async function getPortfolioDashboard(orgId: string) {
       services_count: string;
       open_tasks: string;
       photo_proof_pct: string | null;
+      spend_ytd_cents: string;
     }>(`
       SELECT
         bg.id,
@@ -4527,6 +4528,21 @@ export async function getPortfolioDashboard(orgId: string) {
          )
            AND ${importOriginExclude('t2')}
         ) AS photo_proof_pct
+         ,
+         -- Spend YTD from the same invoice source and year boundary as Portfolio Analytics.
+         -- Restrict invoices to this organization so inconsistent memberships cannot leak spend.
+         COALESCE((
+           SELECT SUM(i.cost * 100)
+             FROM invoices i
+             JOIN communities ic ON ic.id = i.community_id
+            WHERE ic.organization_id = $1
+              AND i.community_id IN (
+                SELECT bgm2.community_id
+                  FROM branch_group_members bgm2
+                 WHERE bgm2.group_id = bg.id
+              )
+              AND i.completion_date >= date_trunc('year', now())
+         ), 0)::text AS spend_ytd_cents
       FROM branch_groups bg
       LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
       WHERE bg.organization_id = $1
@@ -4597,6 +4613,7 @@ export async function getPortfolioDashboard(orgId: string) {
       services: Number(r.services_count),
       openItems: Number(r.open_tasks),
       photoProofPct: r.photo_proof_pct != null ? Number(r.photo_proof_pct) : null,
+      spendYtdCents: Number(r.spend_ytd_cents ?? 0),
     })),
     // snowSeason: null — service_type enum only contains 'mowing_visit';
     // snow visits cannot be identified until the enum is extended (tracked in the service-type schema task)

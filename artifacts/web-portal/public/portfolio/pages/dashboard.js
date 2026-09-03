@@ -61,6 +61,19 @@
     } catch (_) { return isoStr; }
   }
 
+  function fmtWholeDollars(cents) {
+    return '$' + Math.round(Number(cents || 0) / 100).toLocaleString('en-US');
+  }
+
+  function portfolioHref(route, groupId) {
+    var params = new URLSearchParams();
+    var current = new URLSearchParams(window.location.search);
+    if (current.get('org')) params.set('org', current.get('org'));
+    if (groupId) params.set('group', groupId);
+    var search = params.toString();
+    return '/web/portfolio/' + route + (search ? '?' + search : '');
+  }
+
   function fmtWeekRange(start, end) {
     if (!start || !end) return '';
     try {
@@ -226,15 +239,26 @@
       var branches = Number(g.branches || 0);
       var services = Number(g.services || 0);
       var openItems = Number(g.openItems || 0);
-      var photoPct  = g.photoProofPct != null ? Number(g.photoProofPct) : null;
+      var spendYtdCents = Number(g.spendYtdCents || 0);
+      var locationsHref = portfolioHref('branches', g.id);
+      var workOrdersHref = portfolioHref('work-orders', g.id);
+      var openItemsStat = openItems > 0
+        ? '<a class="gc-stat-link" href="' + esc(workOrdersHref) + '" data-group-work-orders="' + esc(g.id) + '">'
+            + '<b>' + esc(openItems) + '</b>open ' + (openItems === 1 ? 'item' : 'items')
+          + '</a>'
+        : '<div><b>0</b>open items</div>';
 
-      return '<div class="gcard" style="border-top-color:' + esc(color) + ';">'
+      return '<div class="gcard actionable" role="link" tabindex="0"'
+        + ' aria-label="View locations in ' + esc(g.name) + '"'
+        + ' data-group-card="' + esc(g.id) + '"'
+        + ' data-href="' + esc(locationsHref) + '"'
+        + ' style="border-top-color:' + esc(color) + ';">'
         + '<div class="gc-name">' + esc(g.name) + '</div>'
         + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="gc-stats">'
           + '<div><b>' + esc(services) + '</b>services</div>'
-          + '<div><b>' + (photoPct != null ? esc(photoPct) + '%' : '—') + '</b>photo proof</div>'
-          + '<div><b>' + esc(openItems) + '</b>open ' + (openItems === 1 ? 'item' : 'items') + '</div>'
+          + '<div><b>' + esc(fmtWholeDollars(spendYtdCents)) + '</b>Spend YTD</div>'
+          + openItemsStat
         + '</div>'
         + '</div>';
     }).join('');
@@ -493,7 +517,7 @@
               branches:     g.branches,
               services:     g.services,
               openItems:    g.openItems,
-              photoProofPct: g.photoProofPct,
+              spendYtdCents: g.spendYtdCents,
               color:        groupInfo.color,
               fallbackIndex: groupInfo.fallbackIndex != null ? groupInfo.fallbackIndex : idx,
             };
@@ -506,6 +530,37 @@
       teardownMapPreview();
       container.innerHTML = html;
       initMapPreview(container, branches, orderedGroups);
+
+      container.querySelectorAll('[data-group-work-orders]').forEach(function (link) {
+        link.addEventListener('click', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          var groupId = link.getAttribute('data-group-work-orders');
+          if (groupId && window.PortfolioRouter) {
+            PortfolioRouter.navigate('work-orders', true, { group: groupId });
+          }
+        });
+      });
+
+      container.querySelectorAll('[data-group-card]').forEach(function (card) {
+        function openLocations() {
+          var groupId = card.getAttribute('data-group-card');
+          if (groupId && window.PortfolioRouter) {
+            PortfolioRouter.navigate('branches', true, { group: groupId });
+          }
+        }
+        card.addEventListener('click', function (event) {
+          if (event.target.closest && event.target.closest('[data-group-work-orders]')) return;
+          openLocations();
+        });
+        card.addEventListener('keydown', function (event) {
+          if (event.target.closest && event.target.closest('[data-group-work-orders]')) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openLocations();
+          }
+        });
+      });
 
       // Wire branch snapshot rows to navigate to branch-detail
       container.querySelectorAll('tr.clickable[data-branch-id]').forEach(function (row) {

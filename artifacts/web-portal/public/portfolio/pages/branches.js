@@ -55,6 +55,27 @@
     return map;
   }
 
+  function groupQuery(params) {
+    var fromParams = params && params.group;
+    if (fromParams) return String(fromParams);
+    return new URLSearchParams(window.location.search).get('group') || '';
+  }
+
+  function renderGroupFilterNotice(groupId, groupLookup) {
+    if (!groupId) return '';
+    var group = groupLookup[groupId];
+    if (group) {
+      return '<div class="group-filter-notice" role="status">'
+        + 'Showing locations in group <strong>' + esc(group.name) + '</strong>.'
+        + ' <button type="button" class="group-filter-clear" data-clear-group>Clear group filter</button>'
+        + '</div>';
+    }
+    return '<div class="group-filter-notice" role="status">'
+      + 'This group filter is unavailable for this organization, so all locations are shown.'
+      + ' <button type="button" class="group-filter-clear" data-clear-group>Clear group filter</button>'
+      + '</div>';
+  }
+
   // ── Anchor band ────────────────────────────────────────────────────────────
   function renderAnchorBand(branches) {
     var totalAssets    = 0;
@@ -265,8 +286,9 @@
   }
 
   // ── Wire up interactions ───────────────────────────────────────────────────
-  function wireInteractions(container, allBranches, groupLookup, groupSetMap) {
-    var activeFilter = 'all';
+  function wireInteractions(container, allBranches, groupLookup, groupSetMap, initialGroup) {
+    var activeFilter = initialGroup && groupLookup[initialGroup] ? initialGroup : 'all';
+    var requestedGroup = initialGroup || '';
 
     function getFiltered() {
       if (activeFilter === 'all') return allBranches;
@@ -291,6 +313,28 @@
       var hint = container.querySelector('.panel-head .hint');
       var filtered = getFiltered();
       if (hint) hint.textContent = filtered.length + ' ' + (filtered.length === 1 ? 'location' : 'locations');
+      var notice = container.querySelector('.group-filter-wrap');
+      if (notice) notice.innerHTML = renderGroupFilterNotice(requestedGroup, groupLookup);
+      wireGroupClear(notice);
+    }
+
+    function updateGroupQuery(groupId) {
+      requestedGroup = groupId || '';
+      if (window.PortfolioRouter && PortfolioRouter.replaceQuery) {
+        PortfolioRouter.replaceQuery({ group: requestedGroup || null });
+      }
+    }
+
+    function wireGroupClear(root) {
+      if (!root) return;
+      var clear = root.querySelector('[data-clear-group]');
+      if (clear) {
+        clear.addEventListener('click', function () {
+          activeFilter = 'all';
+          updateGroupQuery('');
+          rerenderTable();
+        });
+      }
     }
 
     function wireTableClicks(el) {
@@ -308,12 +352,18 @@
     container.querySelectorAll('#branches-filter-bar .fchip').forEach(function (chip) {
       chip.addEventListener('click', function () {
         activeFilter = chip.dataset.filter || 'all';
+        if (activeFilter !== 'open' && activeFilter !== 'all') {
+          updateGroupQuery(activeFilter);
+        } else {
+          updateGroupQuery('');
+        }
         rerenderTable();
       });
     });
 
     // Initial table row clicks
     wireTableClicks(container);
+    wireGroupClear(container);
   }
 
   // ── Main render ────────────────────────────────────────────────────────────
@@ -323,6 +373,8 @@
     var groups    = Array.isArray(state.groups) ? state.groups : [];
     var groupLookup  = buildGroupLookup(groups);
     var groupSetMap  = buildGroupSetMap(groups);   // groupId → setId | null
+    var requestedGroup = groupQuery(_params);
+    var validGroup = requestedGroup && groupLookup[requestedGroup] ? requestedGroup : '';
 
     var url = '/api/portfolio/branches' + orgSuffix;
 
@@ -334,13 +386,16 @@
         + '<span class="sub">Locations</span>'
         + '</div>'
         + renderAnchorBand(branches)
-        + renderFilterChips(branches, groupLookup, 'all')
+        + renderFilterChips(branches, groupLookup, validGroup || 'all')
+        + '<div class="group-filter-wrap">' + renderGroupFilterNotice(requestedGroup, groupLookup) + '</div>'
         + '<div class="branches-table-wrap">'
-        + renderBranchTable(branches, groupLookup, groupSetMap)
+        + renderBranchTable(validGroup ? branches.filter(function (b) {
+            return Array.isArray(b.groupIds) && b.groupIds.indexOf(validGroup) !== -1;
+          }) : branches, groupLookup, groupSetMap)
         + '</div>';
 
       container.innerHTML = html;
-      wireInteractions(container, branches, groupLookup, groupSetMap);
+      wireInteractions(container, branches, groupLookup, groupSetMap, requestedGroup);
 
     }).catch(function (err) {
       console.error('[portfolio/branches] fetch failed:', err);

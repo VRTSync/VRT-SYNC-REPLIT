@@ -31,6 +31,34 @@
     return '';
   }
 
+  function groupQuery(params) {
+    var fromParams = params && params.group;
+    if (fromParams) return String(fromParams);
+    return new URLSearchParams(window.location.search).get('group') || '';
+  }
+
+  function groupLookup() {
+    var groups = (window.PortfolioState && window.PortfolioState.groups) || [];
+    var map = {};
+    groups.forEach(function (g) { map[g.id] = g; });
+    return map;
+  }
+
+  function renderGroupFilterNotice(groupId, groups) {
+    if (!groupId) return '';
+    var group = groups[groupId];
+    if (group) {
+      return '<div class="group-filter-notice" role="status">'
+        + 'Showing work orders in group <strong>' + esc(group.name) + '</strong>.'
+        + ' <button type="button" class="group-filter-clear" data-clear-group>Clear group filter</button>'
+        + '</div>';
+    }
+    return '<div class="group-filter-notice" role="status">'
+      + 'This group filter is unavailable for this organization, so all work orders are shown.'
+      + ' <button type="button" class="group-filter-clear" data-clear-group>Clear group filter</button>'
+      + '</div>';
+  }
+
   function apiFetch(path, opts) {
     return fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {})).then(function (r) {
       if (!r.ok) return r.json().then(function (body) { throw Object.assign(new Error(body.error || ('HTTP ' + r.status)), { status: r.status, body: body }); });
@@ -70,6 +98,43 @@
   var _data = null;     // full API response
   var _filter = 'open'; // active chip
   var _search = '';     // search text
+  var _groupId = '';    // URL-backed group scope; empty means all groups
+  var _requestedGroup = ''; // retains invalid values for the explanatory notice
+
+  function matchesGroup(task) {
+    return !_groupId || (Array.isArray(task.groupIds) && task.groupIds.indexOf(_groupId) !== -1);
+  }
+
+  function scopedData(data) {
+    if (!_groupId) return data;
+    var open = (data.open || []).filter(matchesGroup);
+    var closed = (data.closed || []).filter(matchesGroup);
+    var cancelled = (data.cancelled || []).filter(matchesGroup);
+    return {
+      open: open,
+      closed: closed,
+      cancelled: cancelled,
+      pipeline: {
+        flaggedByHp: open.filter(function (t) { return t.origin !== 'client'; }).length,
+        awaitingApproval: open.filter(function (t) { return t.estimateCents != null && !t.approvedAt && !t.declinedAt; }).length,
+        scheduled: open.filter(function (t) { return t.status === 'pending' || t.status === 'in_progress'; }).length,
+        completed30d: closed.length,
+      },
+    };
+  }
+
+  function wireGroupFilter(container) {
+    var clear = container.querySelector('[data-clear-group]');
+    if (!clear) return;
+    clear.addEventListener('click', function () {
+      _groupId = '';
+      _requestedGroup = '';
+      if (window.PortfolioRouter && PortfolioRouter.replaceQuery) {
+        PortfolioRouter.replaceQuery({ group: null });
+      }
+      if (_data) renderPage(container, _data);
+    });
+  }
 
   function applyFilter(open, closed, cancelled) {
     var cancelledArr = (cancelled || []).map(function (t) { return Object.assign({ _cancelled: true }, t); });
@@ -522,6 +587,9 @@
           showToast('Request submitted');
           // Prepend to open table without full reload
           if (_data) {
+            var branches = (window.PortfolioState && window.PortfolioState.branches) || [];
+            var branch = branches.find(function (b) { return b.id === newTask.communityId; });
+            newTask.groupIds = branch && Array.isArray(branch.groupIds) ? branch.groupIds.slice() : [];
             _data.open.unshift(newTask);
             if (_data.pipeline) {
               _data.pipeline.flaggedByHp = (_data.pipeline.flaggedByHp || 0); // contractor-flagged count unchanged
@@ -1071,10 +1139,12 @@
 
   // ── Full page render ───────────────────────────────────────────────────────
   function renderPage(container, data) {
-    var open      = Array.isArray(data.open)      ? data.open      : [];
-    var closed    = Array.isArray(data.closed)    ? data.closed    : [];
-    var cancelled = Array.isArray(data.cancelled) ? data.cancelled : [];
-    var pipeline  = data.pipeline || {};
+    var viewData  = scopedData(data);
+    var open      = Array.isArray(viewData.open)      ? viewData.open      : [];
+    var closed    = Array.isArray(viewData.closed)    ? viewData.closed    : [];
+    var cancelled = Array.isArray(viewData.cancelled) ? viewData.cancelled : [];
+    var pipeline  = viewData.pipeline || {};
+    var groups    = groupLookup();
 
     var filtered = applyFilter(open, closed, cancelled);
 
@@ -1094,6 +1164,7 @@
       + renderPipeline(pipeline, open, closed, cancelled)
       + renderKpiRow(pipeline, open)
       + renderFilterChips(pipeline, open, closed, cancelled)
+      + '<div class="group-filter-wrap">' + renderGroupFilterNotice(_requestedGroup, groups) + '</div>'
       + (showCancelled
           ? renderOpenTable(filteredCancelled)
           : renderOpenTable(filteredOpen) + renderClosedTable(filteredClosed))
@@ -1103,6 +1174,7 @@
     container.innerHTML = html;
 
     wireFilters(container);
+    wireGroupFilter(container);
     wireTableRows(container);
     wireModal(container);
 
@@ -1122,6 +1194,9 @@
 
   // ── Main render entry ──────────────────────────────────────────────────────
   function renderWorkOrders(container, _params) {
+    var groups = groupLookup();
+    _requestedGroup = groupQuery(_params);
+    _groupId = _requestedGroup && groups[_requestedGroup] ? _requestedGroup : '';
     var suffix = orgParam();
     var url = '/api/portfolio/work-orders' + (suffix || '');
 
@@ -1138,12 +1213,14 @@
             + '<span class="sub">Open items across all locations</span>'
             + '<button class="cmp-btn" id="wo-open-modal" style="margin-left:auto;">+ Submit Request</button>'
             + '</div>'
+            + '<div class="group-filter-wrap">' + renderGroupFilterNotice(_requestedGroup, groups) + '</div>'
             + '<div class="pf-empty" style="text-align:center;padding:48px 0;">'
             + '<p style="font-size:15px;font-weight:600;color:var(--navy);">No work orders yet.</p>'
             + '<p style="color:var(--gray-500);font-size:13px;margin-top:6px;">Work orders appear when contractor crews flag issues or you submit a service request.</p>'
             + '</div>'
             + renderSubmitModal();
           wireModal(container);
+          wireGroupFilter(container);
           return;
         }
 
