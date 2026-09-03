@@ -5011,6 +5011,7 @@ export async function getPortfolioGroups(orgId: string) {
       id: string;
       name: string;
       color: string | null;
+      sort_order: number;
       set_id: string | null;
       set_name: string | null;
       branch_count: string;
@@ -5026,6 +5027,7 @@ export async function getPortfolioGroups(orgId: string) {
         bg.id,
         bg.name,
         bg.color,
+        bg.sort_order,
         bg.set_id,
         bgs.name AS set_name,
         COUNT(DISTINCT bgm.community_id)::text AS branch_count,
@@ -5102,7 +5104,7 @@ export async function getPortfolioGroups(orgId: string) {
       LEFT JOIN branch_group_sets bgs ON bgs.id = bg.set_id
       LEFT JOIN branch_group_members bgm ON bgm.group_id = bg.id
       WHERE bg.organization_id = $1
-      GROUP BY bg.id, bg.name, bg.color, bg.set_id, bgs.name
+      GROUP BY bg.id, bg.name, bg.color, bg.sort_order, bg.set_id, bgs.name
       ORDER BY bg.sort_order, bg.name
     `, [orgId]),
 
@@ -5127,6 +5129,7 @@ export async function getPortfolioGroups(orgId: string) {
     id: r.id,
     name: r.name,
     color: r.color ?? null,
+    sortOrder: r.sort_order,
     setId: r.set_id ?? null,
     setName: r.set_name ?? null,
     branchIds: branchIdsByGroup.get(r.id) ?? [],
@@ -5150,6 +5153,7 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
     id: string;
     name: string;
     color: string | null;
+    sortOrder: number;
     branchIds: string[];
     branchCount: number;
     servicesPerBranch: number | null;
@@ -5173,6 +5177,7 @@ export async function getPortfolioGroupSets(orgId: string): Promise<Array<{
     id: g.id,
     name: g.name,
     color: g.color,
+    sortOrder: g.sortOrder,
     branchIds: g.branchIds,
     branchCount: g.metrics.branches,
     servicesPerBranch: g.metrics.servicesPerBranch,

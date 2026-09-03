@@ -18,6 +18,7 @@
   // ── State ─────────────────────────────────────────────────────────────────
   var _container = null;
   var _currentSets = [];
+  var _groupFallbackIndexes = {};
 
   // ── Admin org-id suffix ───────────────────────────────────────────────────
   function orgParam() {
@@ -63,23 +64,19 @@
   var PANEL_ACCENTS = ['p-blue', 'p-green', 'p-amber', 'p-navy'];
 
   function groupColor(g, idx) {
-    if (g && g.color) return g.color;
-    if (window.VRTGroupColors && idx != null) {
-      return window.VRTGroupColors.resolveGroupColor(null, idx);
+    if (window.VRTGroupColors) {
+      var fallbackIndex = g && g.id != null && _groupFallbackIndexes[g.id] != null
+        ? _groupFallbackIndexes[g.id]
+        : idx;
+      return window.VRTGroupColors.resolveGroupColor(g, fallbackIndex);
     }
+    if (g && g.color) return g.color;
     return NEUTRAL;
-  }
-
-  function hexToRgba(hex, alpha) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-    if (!m) return 'rgba(148,163,184,' + alpha + ')';
-    var n = parseInt(m[1], 16);
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
   }
 
   function groupChip(g, idx) {
     var c = groupColor(g, idx);
-    return '<span class="gchip" style="background:' + esc(hexToRgba(c, 0.12))
+    return '<span class="gchip" style="background:' + esc(window.VRTGroupColors.hexToRgba(c, 0.12))
       + ';color:' + esc(c) + ';">' + esc(g.name) + '</span>';
   }
 
@@ -249,6 +246,11 @@
 
   function _drawPage() {
     var sets = _currentSets;
+    var allGroups = [];
+    sets.forEach(function (set) { (set.groups || []).forEach(function (g) { allGroups.push(g); }); });
+    _groupFallbackIndexes = window.VRTGroupColors
+      ? window.VRTGroupColors.getStableFallbackIndexes(allGroups)
+      : {};
     var codeLookup = buildBranchCodeLookup();
     var namedSets = sets.filter(function (s) { return s.id !== null; });
     var unassignedSet = sets.find(function (s) { return s.id === null; });

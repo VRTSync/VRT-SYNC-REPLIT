@@ -11,19 +11,21 @@
   var esc = (window.VRTUtils && window.VRTUtils.esc) || function (v) { return v == null ? '' : String(v); };
   var formatShortDate = (window.VRTUtils && window.VRTUtils.formatShortDate) || function (d) { return d || '—'; };
 
-  // ── Group chip color cycling (matches mockup g1/g2/g3) ────────────────────
-  var GROUP_COLORS = ['g1', 'g2', 'g3', 'g4', 'g5'];
-  // Group card top-border classes (css: .gcard.g1 → blue, .g2 → amber, .g3 → teal …)
-  function groupColorClass(idx) {
-    return GROUP_COLORS[idx % GROUP_COLORS.length];
-  }
-
-  // ── Group chip color cycling (for branch snapshot) ───────────────────────
-  // Build a groupId → { name, colorIdx } lookup from an ordered array of groups
+  // ── Group colours ──────────────────────────────────────────────────────────
+  // Build a groupId → { name, color, fallbackIndex } lookup. Fallback indexes
+  // are stable even when an API response arrives in a different order.
   function buildGroupLookup(groups) {
     var map = {};
+    var fallbackIndexes = window.VRTGroupColors
+      ? window.VRTGroupColors.getStableFallbackIndexes(groups)
+      : {};
     (groups || []).forEach(function (g, idx) {
-      map[g.id] = { name: g.name, colorIdx: idx };
+      map[g.id] = {
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        fallbackIndex: fallbackIndexes[g.id] != null ? fallbackIndexes[g.id] : idx,
+      };
     });
     return map;
   }
@@ -220,13 +222,13 @@
     }
 
     var cards = groups.map(function (g, idx) {
-      var colorCls = groupColorClass(idx);
+      var color = window.VRTGroupColors.resolveGroupColor(g, g.fallbackIndex != null ? g.fallbackIndex : idx);
       var branches = Number(g.branches || 0);
       var services = Number(g.services || 0);
       var openItems = Number(g.openItems || 0);
       var photoPct  = g.photoProofPct != null ? Number(g.photoProofPct) : null;
 
-      return '<div class="gcard ' + colorCls + '">'
+      return '<div class="gcard" style="border-top-color:' + esc(color) + ';">'
         + '<div class="gc-name">' + esc(g.name) + '</div>'
         + '<div class="gc-sub">' + esc(branches) + ' ' + (branches === 1 ? 'location' : 'locations') + '</div>'
         + '<div class="gc-stats">'
@@ -245,7 +247,7 @@
     var bArr = Array.isArray(branches) ? branches : [];
     var gArr = Array.isArray(groups)   ? groups   : [];
 
-    // Build groupId → { name, colorIdx } lookup
+    // Build groupId → { name, color, fallbackIndex } lookup
     var groupLookup = buildGroupLookup(gArr);
 
     var rows;
@@ -268,8 +270,9 @@
 
         var groupChip = '';
         if (groupInfo) {
-          var cc = groupColorClass(groupInfo.colorIdx);
-          groupChip = '<span class="gchip ' + cc + '">' + esc(groupInfo.name) + '</span>';
+          var color = window.VRTGroupColors.resolveGroupColor(groupInfo, groupInfo.fallbackIndex);
+          groupChip = '<span class="gchip" style="background:' + esc(window.VRTGroupColors.hexToRgba(color, 0.12))
+            + ';color:' + esc(color) + ';">' + esc(groupInfo.name) + '</span>';
         } else {
           groupChip = '<span style="color:var(--gray-400);font-size:12px;">—</span>';
         }
@@ -451,22 +454,23 @@
       var dash     = results[0];
       var branches = results[1];
 
-      // Merge group info: PortfolioState.groups has id+name; dashboard.byGroup has same IDs
-      // Build group map for branch chips using dashboard group order + state groups
+      // Merge group info: PortfolioState.groups has saved colours; dashboard.byGroup
+      // has the metrics. The shared lookup supplies stable fallback indexes.
       var dashGroups = Array.isArray(dash.byGroup) ? dash.byGroup : [];
       var stateGroups = Array.isArray(state.groups) ? state.groups : [];
-
-      // Reconcile: prefer state.groups for id/name, use dashGroups for order
-      var orderedGroups;
-      if (stateGroups.length > 0) {
-        orderedGroups = stateGroups.map(function (g) {
-          return { id: g.id, name: g.name };
-        });
-      } else {
-        orderedGroups = dashGroups.map(function (g) {
-          return { id: g.groupId, name: g.name };
-        });
-      }
+      var groupRecords = stateGroups.length > 0
+        ? stateGroups
+        : dashGroups.map(function (g) { return { id: g.groupId, name: g.name }; });
+      var groupLookup = buildGroupLookup(groupRecords);
+      var orderedGroups = groupRecords.map(function (g) {
+        var info = groupLookup[g.id] || {};
+        return {
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          fallbackIndex: info.fallbackIndex,
+        };
+      });
 
       var org      = state.organization || {};
       var locCount = Array.isArray(branches) ? branches.length : 0;
@@ -482,13 +486,16 @@
         + renderKpiRow(dash.totals, dash.openWorkOrders)
         + renderWeekHero(dash.thisWeek)
         + renderGroupCards(dashGroups.map(function (g, idx) {
+            var groupInfo = groupLookup[g.groupId] || {};
             return {
+              id:           g.groupId,
               name:         g.name,
               branches:     g.branches,
               services:     g.services,
               openItems:    g.openItems,
               photoProofPct: g.photoProofPct,
-              colorIdx:     idx,
+              color:        groupInfo.color,
+              fallbackIndex: groupInfo.fallbackIndex != null ? groupInfo.fallbackIndex : idx,
             };
           }))
         + '<div class="dash-bottom">'

@@ -133,12 +133,19 @@
   }
 
   // ── Group helpers ──────────────────────────────────────────────────────────
-  var GROUP_COLORS = ['g1', 'g2', 'g3', 'g4', 'g5'];
-  function groupColorClass(idx) { return GROUP_COLORS[idx % GROUP_COLORS.length]; }
-
   function buildGroupLookup(groups) {
     var map = {};
-    (groups || []).forEach(function (g, idx) { map[g.id] = { name: g.name, colorIdx: idx }; });
+    var fallbackIndexes = window.VRTGroupColors
+      ? window.VRTGroupColors.getStableFallbackIndexes(groups)
+      : {};
+    (groups || []).forEach(function (g, idx) {
+      map[g.id] = {
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        fallbackIndex: fallbackIndexes[g.id] != null ? fallbackIndexes[g.id] : idx,
+      };
+    });
     return map;
   }
 
@@ -554,9 +561,12 @@
     var groupIds  = Array.isArray(branch.groupIds) ? branch.groupIds : [];
     var primaryGid = groupIds.length > 0 ? groupIds[0] : null;
     var groupInfo  = primaryGid ? groupLookup[primaryGid] : null;
-    var groupChip  = groupInfo
-      ? '<span class="gchip ' + groupColorClass(groupInfo.colorIdx) + '">' + esc(groupInfo.name) + '</span>'
-      : '';
+    var groupChip  = '';
+    if (groupInfo) {
+      var color = window.VRTGroupColors.resolveGroupColor(groupInfo, groupInfo.fallbackIndex);
+      groupChip = '<span class="gchip" style="background:' + esc(window.VRTGroupColors.hexToRgba(color, 0.12))
+        + ';color:' + esc(color) + ';">' + esc(groupInfo.name) + '</span>';
+    }
     var location = [branch.address, branch.city].filter(Boolean).join(', ');
     return '<div class="det-head">'
       + '<h2>' + esc(branch.name || '—') + '</h2>'

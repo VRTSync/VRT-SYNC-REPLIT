@@ -68,17 +68,18 @@
     // An empty set (no groups yet) still means every branch is Unassigned → grey.
     if (!colorBySetId) return null;
     var setGroups = (groups || []).filter(function (g) { return g.setId === colorBySetId; });
-    // branchId → { group, perSetIdx } — first-group-wins when a branch is in multiple
+    var fallbackIndexes = window.VRTGroupColors.getStableFallbackIndexes(groups);
+    // branchId → { group, fallbackIndex } — first-group-wins when a branch is in multiple
     var lookup = {};
-    setGroups.forEach(function (g, perSetIdx) {
+    setGroups.forEach(function (g) {
       (g.branchIds || []).forEach(function (bId) {
-        if (!lookup[bId]) lookup[bId] = { group: g, perSetIdx: perSetIdx };
+        if (!lookup[bId]) lookup[bId] = { group: g, fallbackIndex: fallbackIndexes[g.id] };
       });
     });
     return function (branch) {
       var entry = lookup[branch.id];
       if (!entry) return '#9ca3af'; // Unassigned
-      return window.VRTGroupColors.resolveGroupColor(entry.group, entry.perSetIdx);
+      return window.VRTGroupColors.resolveGroupColor(entry.group, entry.fallbackIndex);
     };
   }
 
@@ -161,6 +162,7 @@
       }).length;
     });
     var totalCount = allBranches.length;
+    var fallbackIndexes = window.VRTGroupColors.getStableFallbackIndexes(groups);
 
     // "All locations" total row
     var allChecked = activeGroupIds.size === 0;
@@ -172,8 +174,7 @@
       + '</label>';
 
     groups.forEach(function (g) {
-      var perSetIdx = groups.filter(function (x) { return x.setId === g.setId; }).indexOf(g);
-      var color = window.VRTGroupColors.resolveGroupColor(g, perSetIdx);
+      var color = window.VRTGroupColors.resolveGroupColor(g, fallbackIndexes[g.id]);
       var checked = activeGroupIds.has(g.id);
       html += '<label class="pfm-group-row' + (checked ? ' pfm-group-row--checked' : '') + '">'
         + '<input type="checkbox" class="pfm-group-cb" data-group="' + esc(g.id) + '" ' + (checked ? 'checked' : '') + '>'

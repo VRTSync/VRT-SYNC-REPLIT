@@ -38,15 +38,19 @@
     } catch (_) { return isoStr; }
   }
 
-  // ── Group chip colors ──────────────────────────────────────────────────────
-  var GROUP_COLORS = ['g1', 'g2', 'g3', 'g4', 'g5'];
-  function groupColorClass(idx) {
-    return GROUP_COLORS[idx % GROUP_COLORS.length];
-  }
+  // ── Group chip colours ────────────────────────────────────────────────────
   function buildGroupLookup(groups) {
     var map = {};
+    var fallbackIndexes = window.VRTGroupColors
+      ? window.VRTGroupColors.getStableFallbackIndexes(groups)
+      : {};
     (groups || []).forEach(function (g, idx) {
-      map[g.id] = { name: g.name, colorIdx: idx };
+      map[g.id] = {
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        fallbackIndex: fallbackIndexes[g.id] != null ? fallbackIndexes[g.id] : idx,
+      };
     });
     return map;
   }
@@ -219,7 +223,11 @@
         var primaryGid  = groupIds.length > 0 ? groupIds[0] : null;
         var groupInfo   = primaryGid ? groupLookup[primaryGid] : null;
         var groupChip   = groupInfo
-          ? '<span class="gchip ' + groupColorClass(groupInfo.colorIdx) + '">' + esc(groupInfo.name) + '</span>'
+          ? (function () {
+              var color = window.VRTGroupColors.resolveGroupColor(groupInfo, groupInfo.fallbackIndex);
+              return '<span class="gchip" style="background:' + esc(window.VRTGroupColors.hexToRgba(color, 0.12))
+                + ';color:' + esc(color) + ';">' + esc(groupInfo.name) + '</span>';
+            })()
           : '<span style="color:var(--gray-400);font-size:12px;">—</span>';
 
         var openBadge = openWO > 0

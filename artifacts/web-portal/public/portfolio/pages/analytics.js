@@ -102,25 +102,28 @@
     return state;
   }
 
-  // ── Colour helpers ─────────────────────────────────────────────────────────
-  function resolveGroupColor(group, idx) {
-    if (window.VRTGroupColors) return window.VRTGroupColors.resolveGroupColor(group, idx);
-    var p = ['#3b82f6','#f59e0b','#25C1AC','#10b981','#ef4444','#8b5cf6','#06b6d4'];
-    return (group && group.color) ? group.color : p[idx % p.length];
-  }
-  function hexToRgba(hex, alpha) {
-    var m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
-    if (!m) return 'rgba(148,163,184,' + alpha + ')';
-    var n = parseInt(m[1], 16);
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+  function getGroupFallbackIndexes(groupSets) {
+    var allGroups = [];
+    groupSets.forEach(function (gs) {
+      (gs.groups || []).forEach(function (g) { allGroups.push(g); });
+    });
+    return window.VRTGroupColors
+      ? window.VRTGroupColors.getStableFallbackIndexes(allGroups)
+      : {};
   }
 
   // ── Group lookup: groupId → { name, color, idx } ──────────────────────────
   function buildGroupLookup(groupSets) {
     var map = {};
+    var fallbackIndexes = getGroupFallbackIndexes(groupSets);
     groupSets.forEach(function (gs) {
       (gs.groups || []).forEach(function (g, idx) {
-        map[g.id] = { name: g.name, color: g.color, idx: idx };
+        map[g.id] = {
+          id: g.id,
+          name: g.name,
+          color: g.color,
+          idx: fallbackIndexes[g.id] != null ? fallbackIndexes[g.id] : idx,
+        };
       });
     });
     return map;
@@ -215,6 +218,7 @@
       return;
     }
 
+    var fallbackIndexes = getGroupFallbackIndexes(groupSets);
     var html = groupSets.map(function (gs) {
       var sid    = gs.id || '__ungrouped__';
       var sel    = _chipState[sid] || new Set();
@@ -223,9 +227,10 @@
       var allOn  = allIds.every(function (id) { return sel.has(id); });
 
       var chips = groups.map(function (g, idx) {
-        var color  = resolveGroupColor(g, idx);
+        var fallbackIndex = fallbackIndexes[g.id] != null ? fallbackIndexes[g.id] : idx;
+        var color  = window.VRTGroupColors.resolveGroupColor(g, fallbackIndex);
         var active = sel.has(g.id);
-        var bg     = active ? hexToRgba(color, 0.16) : 'transparent';
+        var bg     = active ? window.VRTGroupColors.hexToRgba(color, 0.16) : 'transparent';
         var bdr    = active ? color : 'var(--gray-200)';
         var clr    = active ? color : 'var(--gray-500)';
         return '<button class="pa-chip' + (active ? ' pa-chip--on' : '') + '"'
@@ -577,8 +582,8 @@
                   var chips = loc.groupIds.map(function (gid) {
                     var g = groupLookup[gid];
                     if (!g) return '';
-                    var color = resolveGroupColor(g, g.idx);
-                    return '<span class="pa-tbl-chip" style="background:' + hexToRgba(color, 0.14)
+                    var color = window.VRTGroupColors.resolveGroupColor(g, g.idx);
+                    return '<span class="pa-tbl-chip" style="background:' + window.VRTGroupColors.hexToRgba(color, 0.14)
                       + ';color:' + color + ';">' + esc(g.name) + '</span>';
                   }).join('');
                   return '<td>' + (chips || '<span style="color:var(--gray-300);font-style:italic;">—</span>') + '</td>';
