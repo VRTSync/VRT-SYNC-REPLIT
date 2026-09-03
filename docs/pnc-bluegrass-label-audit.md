@@ -1,6 +1,6 @@
 # PNC bluegrass label audit
 
-Audit captured on 2026-09-03 before the label correction migration.
+Audit captured on 2026-09-03 before the label correction migrations.
 
 ## Scope and baseline
 
@@ -25,11 +25,25 @@ The only candidate label found in the linked features was `name = "Untitled poly
 
 The audit also confirmed that the source features retain geometry and stable feature references. The correction must therefore update canonical asset labels only and must not rewrite GeoJSON, geometry, feature references, areas, or planner inputs.
 
-## Correction decision
+## Naming decision
 
-Because the source contains no usable labels, migration `0020_distinguish_pnc_bluegrass_names.sql` assigns:
+Because the source contains no usable labels, the positional/descriptive names
+introduced by migration `0020_distinguish_pnc_bluegrass_names.sql` are
+intentionally superseded by migration
+`0021_standardize_pnc_bluegrass_labels.sql`.  The final convention is uniform
+across every PNC location:
 
-- verified positional names to the seven 104th-and-Chambers feature references;
-- deterministic `Area N` names, ordered by immutable `feature_ref` within each location, everywhere else.
+- `Bluegrass Polygon N`, restarting at `1` for each location;
+- descending stored `sqFt`, with immutable `feature_ref` as the deterministic
+  tie-breaker.
 
-The migration is scoped to PNC's organization ID, active bluegrass assets with both a map-layer link and feature reference, and is safe to run more than once.
+Descriptive or compass-based names were discarded rather than preserved because
+they were not present in the imported source and would be invented labels for
+only one location.  A single largest-first convention makes labels consistent
+in portfolio, location, and admin planner views while preserving the source
+feature identity and area ranking.
+
+The migration is scoped to PNC's organization ID, active `bluegrass_area`
+assets with both a map-layer link and feature reference, and is safe to run
+more than once.  It fails closed instead of partially labeling an unexpected
+scope or an asset with missing, malformed, or ambiguous ranking inputs.
