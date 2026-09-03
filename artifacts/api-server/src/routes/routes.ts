@@ -1177,7 +1177,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ── Xeriscape Planning Records ─────────────────────────────────────────────
   app.get("/api/admin/xeriscape/records", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const propertyId = (req.query.propertyId as string) || "huntington-trails";
+      const propertyId = typeof req.query.propertyId === "string" ? req.query.propertyId.trim() : "";
+      if (!propertyId) {
+        return void res.status(400).json({ error: "propertyId query param is required" });
+      }
+
+      const community = await storage.getCommunityById(propertyId);
+      if (!community) {
+        return void res.status(404).json({ error: "Community not found" });
+      }
+
       const records = await db
         .select()
         .from(plannerRecords)
@@ -1193,7 +1202,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/xeriscape/records", requireAdmin, async (req: Request, res: Response) => {
     try {
       const {
-        propertyId = "huntington-trails",
+        propertyId: rawPropertyId,
         recordName,
         internalNotes,
         assumptionsJson,
@@ -1202,12 +1211,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalEstimatedCost,
         totalAnnualSavings,
         paybackYears,
-      } = req.body;
+      } = req.body ?? {};
+
+      const propertyId = typeof rawPropertyId === "string" ? rawPropertyId.trim() : "";
+      if (!propertyId) {
+        return void res.status(400).json({ error: "propertyId is required" });
+      }
+
+      const community = await storage.getCommunityById(propertyId);
+      if (!community) {
+        return void res.status(404).json({ error: "Community not found" });
+      }
 
       if (!recordName || typeof recordName !== "string" || !recordName.trim()) {
         return void res.status(400).json({ error: "recordName is required" });
       }
 
+      req.log.info({ communityId: community.id, propertyId: community.id }, "Create planner record");
       const [record] = await db
         .insert(plannerRecords)
         .values({
@@ -1257,6 +1277,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(404).json({ error: "Record not found" });
       }
 
+      const rec = existing[0];
+      const community = await storage.getCommunityById(rec.propertyId);
+      if (!community) {
+        return void res.status(404).json({ error: "Community not found" });
+      }
+
+      req.log.info({ communityId: community.id, propertyId: community.id }, "Update planner record");
+
       const updateData: Record<string, any> = { updatedAt: new Date() };
       if (recordName !== undefined) updateData.recordName = recordName.trim();
       if (internalNotes !== undefined) updateData.internalNotes = internalNotes || null;
@@ -1270,7 +1298,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // If marking as selected_for_estimate, clear any previous selection for same property
       if (status === "selected_for_estimate") {
-        const rec = existing[0];
         await db
           .update(plannerRecords)
           .set({ status: "reviewed", updatedAt: new Date() })
@@ -1311,6 +1338,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const src = existing[0];
+      const community = await storage.getCommunityById(src.propertyId);
+      if (!community) {
+        return void res.status(404).json({ error: "Community not found" });
+      }
+
+      req.log.info({ communityId: community.id, propertyId: community.id }, "Duplicate planner record");
       const [copy] = await db
         .insert(plannerRecords)
         .values({
@@ -1349,10 +1382,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(404).json({ error: "Record not found" });
       }
 
+      const community = await storage.getCommunityById(existing[0].propertyId);
+      if (!community) {
+        return void res.status(404).json({ error: "Community not found" });
+      }
+
       if (existing[0].status !== "draft") {
         return void res.status(400).json({ error: "Only draft records can be permanently deleted" });
       }
 
+      req.log.info({ communityId: community.id, propertyId: community.id }, "Delete planner record");
       await db.delete(plannerRecords).where(eq(plannerRecords.id, id));
       res.json({ message: "Record deleted" });
     } catch (error) {
