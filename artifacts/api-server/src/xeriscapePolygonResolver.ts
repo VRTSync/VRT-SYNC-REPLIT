@@ -6,6 +6,7 @@ export type XeriscapePolygonFeatureProperties = {
   id: string;
   name: string;
   area_sqft: number;
+  effectiveWidthFt: number | null;
   featureRef: string | null;
   communityId: string;
   communityName: string;
@@ -51,6 +52,106 @@ export type XeriscapePolygonResolution = {
 type IndexedLayer = Map<string, any>;
 
 const PLACEHOLDER_LABEL = "untitled polygon";
+
+const METERS_TO_FEET = 3.280839895013123;
+
+function feetPerDegree(latitude: number): { latitude: number; longitude: number } {
+  const radians = latitude * Math.PI / 180;
+  const latitudeMeters =
+    111132.92
+    - 559.82 * Math.cos(2 * radians)
+    + 1.175 * Math.cos(4 * radians)
+    - 0.0023 * Math.cos(6 * radians);
+  const longitudeMeters =
+    111412.84 * Math.cos(radians)
+    - 93.5 * Math.cos(3 * radians)
+    + 0.118 * Math.cos(5 * radians);
+  return {
+    latitude: latitudeMeters * METERS_TO_FEET,
+    longitude: longitudeMeters * METERS_TO_FEET,
+  };
+}
+
+function coordinate(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  if (typeof value[0] !== "number" || typeof value[1] !== "number") return null;
+  const longitude = value[0];
+  const latitude = value[1];
+  return Number.isFinite(longitude)
+    && Number.isFinite(latitude)
+    && longitude >= -180
+    && longitude <= 180
+    && latitude >= -90
+    && latitude <= 90
+    ? [longitude, latitude]
+    : null;
+}
+
+function ringPerimeterFt(ring: unknown, scale: { latitude: number; longitude: number }): number | null {
+  if (!Array.isArray(ring) || ring.length < 4) return null;
+  const points = ring.map(coordinate);
+  if (points.some((point) => point === null)) return null;
+  const first = points[0]!;
+  const last = points[points.length - 1]!;
+  if (first[0] !== last[0] || first[1] !== last[1]) return null;
+
+  let perimeter = 0;
+  for (let index = 0; index < points.length - 1; index++) {
+    const current = points[index]!;
+    const next = points[index + 1]!;
+    // GeoJSON longitudes can cross the antimeridian; use the shortest delta.
+    let longitudeDelta = next[0] - current[0];
+    if (longitudeDelta > 180) longitudeDelta -= 360;
+    if (longitudeDelta < -180) longitudeDelta += 360;
+    const dx = longitudeDelta * scale.longitude;
+    const dy = (next[1] - current[1]) * scale.latitude;
+    const segment = Math.hypot(dx, dy);
+    if (!Number.isFinite(segment)) return null;
+    perimeter += segment;
+  }
+  return Number.isFinite(perimeter) && perimeter > 0 ? perimeter : null;
+}
+
+/**
+ * Derive a rectangle-equivalent width from the supplied square footage and
+ * every ring in a polygon geometry. A bad geometry fails closed so it cannot
+ * manufacture a narrow-strip opportunity.
+ */
+export function computeEffectiveWidthFt(geometry: unknown, areaSqft: number): number | null {
+  if (!Number.isFinite(areaSqft) || areaSqft <= 0 || !geometry || typeof geometry !== "object") {
+    return null;
+  }
+  const value = geometry as { type?: unknown; coordinates?: unknown };
+  const type = value.type;
+  const rings: unknown[] = [];
+  if (type === "Polygon") {
+    if (!Array.isArray(value.coordinates)) return null;
+    rings.push(...value.coordinates);
+  } else if (type === "MultiPolygon") {
+    if (!Array.isArray(value.coordinates)) return null;
+    for (const polygon of value.coordinates) {
+      if (!Array.isArray(polygon)) return null;
+      rings.push(...polygon);
+    }
+  } else {
+    return null;
+  }
+  if (rings.length === 0) return null;
+
+  const allPoints = rings.flatMap((ring) => Array.isArray(ring) ? ring.map(coordinate) : []);
+  if (allPoints.length === 0 || allPoints.some((point) => point === null)) return null;
+  const latitude = allPoints.reduce((sum, point) => sum + point![1], 0) / allPoints.length;
+  if (!Number.isFinite(latitude)) return null;
+  const perimeter = rings.reduce<number | null>((total, ring) => {
+    if (total === null) return null;
+    const ringLength = ringPerimeterFt(ring, feetPerDegree(latitude));
+    return ringLength === null ? null : total + ringLength;
+  }, 0);
+  if (perimeter === null || !Number.isFinite(perimeter) || perimeter <= 0) return null;
+
+  const width = (2 * areaSqft) / perimeter;
+  return Number.isFinite(width) && width > 0 ? width : null;
+}
 
 function cleanLabel(value: unknown): string | null {
   if (value === undefined || value === null) return null;
@@ -264,6 +365,7 @@ export function resolveXeriscapePolygons(input: {
         id: asset.id,
         name: displayName,
         area_sqft: area.areaSqft,
+        effectiveWidthFt: computeEffectiveWidthFt(geometry, area.areaSqft),
         featureRef: asset.featureRef,
         communityId: community.id,
         communityName: community.name,

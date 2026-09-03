@@ -49,6 +49,18 @@
     return Number.isFinite(Number(value)) ? '$' + Number(value).toFixed(2) : '—';
   }
 
+  function preciseNumber(value, digits) {
+    var numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) return '—';
+    return numberValue.toFixed(digits === undefined ? 1 : digits).replace(/\.0+$/, '');
+  }
+
+  function effectiveWidthText(value) {
+    return value === null || value === undefined || value === ''
+      ? '—'
+      : (Number.isFinite(Number(value)) ? preciseNumber(value) + ' ft' : '—');
+  }
+
   function number(value) {
     return Math.round(Number(value || 0)).toLocaleString();
   }
@@ -168,14 +180,18 @@
         var properties = feature.properties;
         var id = curveFeatureId(feature);
         var area = finiteNonNegative(properties.area_sqft);
-        var outputs = core.computeOutputsForSquareFootage(area, state.assumptions, 1);
+        var outputs = core.computeOutputsForFeatures([feature], state.assumptions, 1);
         var cost = Number(outputs.costPer1000GalAvoided);
+        var widthBand = core.getFeatureWidthBand(feature);
         return {
           featureId: id,
           communityId: properties.communityId,
           locationName: curveLocationName(feature),
           polygonName: properties.name || id,
           areaSqFt: area,
+          effectiveWidthFt: properties.effectiveWidthFt,
+          widthBand: widthBand,
+          gallonsPerSfYear: core.getFeatureGallonsPerSfYear(feature, state.assumptions),
           annualGallons: finiteNonNegative(outputs.annualGallonsAvoided),
           costPer1000GalAvoided: Number.isFinite(cost) && cost >= 0 ? cost : null,
           netCost: finiteNonNegative(outputs.netConversionCost),
@@ -207,6 +223,9 @@
     return '<strong>' + esc(bar.polygonName) + '</strong>'
       + '<span><b>Location:</b> ' + esc(bar.locationName) + '</span>'
       + '<span><b>Square footage:</b> ' + number(bar.areaSqFt) + ' ft²</span>'
+      + '<span><b>Effective width:</b> ' + effectiveWidthText(bar.effectiveWidthFt) + '</span>'
+      + '<span><b>Width band:</b> ' + esc(bar.widthBand.label) + ' (' + esc(bar.widthBand.range) + ')</span>'
+      + '<span><b>Modeled intensity:</b> ' + preciseNumber(bar.gallonsPerSfYear) + ' gal/ft²/yr</span>'
       + '<span><b>Modeled gallons per year:</b> ' + number(bar.annualGallons) + ' gal/yr</span>'
       + '<span><b>Cost per 1,000 gallons:</b> ' + preciseMoney(bar.costPer1000GalAvoided) + '</span>'
       + '<span><b>Net cost:</b> ' + money(bar.netCost) + '</span>';
@@ -346,6 +365,9 @@
         'data-status': bar.status,
         'data-display-status': bar.displayStatus,
         'data-width-gallons': bar.annualGallons,
+        'data-effective-width-ft': bar.effectiveWidthFt == null ? '' : bar.effectiveWidthFt,
+        'data-width-band': bar.widthBand.key,
+        'data-gallons-per-sf-year': bar.gallonsPerSfYear,
         'data-cumulative-start-gallons': cumulativeGallons,
         'data-cumulative-end-gallons': nextGallons,
         'data-cost-per-1000': bar.costPer1000GalAvoided == null ? '' : bar.costPer1000GalAvoided,
@@ -470,6 +492,12 @@
         + '<span class="ws-tier-description">' + preset.description + '</span>'
         + '</button>';
     }).join('');
+    var widthBandLegend = core.WIDTH_BANDS.map(function (band) {
+      var intensity = a.gallonsPerSfYear * band.ratio;
+      return '<div class="ws-width-band" data-width-band="' + esc(band.key) + '">'
+        + '<strong>' + esc(band.label) + '</strong><span>' + esc(band.range) + '</span>'
+        + '<b>' + preciseNumber(intensity) + ' gal/ft²/yr</b></div>';
+    }).join('');
     container.innerHTML = '<div class="ws-page">'
       + '<div class="ctx ws-title-row"><div><h1>Water Savings Planner</h1><span class="sub">Portfolio summary</span></div>'
       + '<div class="ws-save-state ' + esc(state.persistence) + '">' + esc(state.persistence === 'saving' ? 'Saving…' : state.persistence === 'saved' ? 'Saved' : state.persistence === 'dirty' ? 'Unsaved changes' : '') + '</div></div>'
@@ -500,8 +528,9 @@
           + '<label>Gallons saved / ft² / yr<input data-assumption="gallonsPerSfYear" type="number" min="0" step=".1" value="' + esc(a.gallonsPerSfYear) + '"></label>'
           + '<label>Water rate / 1,000 gal<input data-assumption="waterRatePerKGal" type="number" min="0" step=".01" value="' + esc(a.waterRatePerKGal) + '"></label>'
           + '<label>Maintenance saved / ft² / yr<input data-assumption="maintenancePerSfYear" type="number" min="0" step=".01" value="' + esc(a.maintenancePerSfYear) + '"></label>'
-          + '<p>These assumptions apply to every location in this scenario.</p>'
-          + '<p class="ws-honesty"><strong>Modelled, not metered.</strong> Gallons avoided are estimated from mapped area × gallons saved per ft² per year; load water invoices to calibrate against actual consumption per branch.</p>'
+           + '<p>These assumptions apply to every location in this scenario.</p>'
+           + '<div class="ws-width-model"><strong>Width-adjusted water model</strong><p>Narrow strips lose more water to overspray and heat, so they receive a higher modeled avoidable-irrigation intensity than open lawns. Widths come from mapped geometry; a missing or invalid width safely uses the open-lawn band.</p><div class="ws-width-band-grid">' + widthBandLegend + '</div></div>'
+           + '<p class="ws-honesty"><strong>Modelled, not metered.</strong> Annual gallons are estimated from each mapped area × its width-adjusted gallons saved per ft² per year; load water invoices to calibrate against actual consumption per branch.</p>'
         + '</div></section>'
       + '</div>'
       + '<section class="panel"><div class="panel-head"><h2>Portfolio overview</h2><span class="hint">Block size = mapped turf · fill = share in plan</span></div><div class="ws-overview">' + overview + '</div></section>'

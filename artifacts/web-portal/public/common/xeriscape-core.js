@@ -13,6 +13,21 @@
   const DEFAULT_MAINTENANCE_PER_SF_YEAR = 0.10;
   const ASSET_LIFE_YEARS = 20;
 
+  // FB02 Polygon 2 measures 25.5 ft, just 0.5 ft above the 25-ft boundary.
+  // Keep this boundary deliberate if the confirmed source measurement changes.
+  const WIDTH_BAND_RATIOS = Object.freeze({
+    TREE_LAWN_ISLAND: 50 / 33,
+    VERGE: 44 / 33,
+    SMALL_PANEL: 38 / 33,
+    OPEN_LAWN: 1.0,
+  });
+  const WIDTH_BANDS = Object.freeze([
+    Object.freeze({ key: 'tree-lawn-island', label: 'Tree lawn / island', range: 'Under 10 ft', maxWidthFt: 10, ratio: WIDTH_BAND_RATIOS.TREE_LAWN_ISLAND }),
+    Object.freeze({ key: 'verge', label: 'Verge', range: '10–15 ft', maxWidthFt: 15, ratio: WIDTH_BAND_RATIOS.VERGE }),
+    Object.freeze({ key: 'small-panel', label: 'Small panel', range: '15–25 ft', maxWidthFt: 25, ratio: WIDTH_BAND_RATIOS.SMALL_PANEL }),
+    Object.freeze({ key: 'open-lawn', label: 'Open lawn', range: 'Over 25 ft', maxWidthFt: Infinity, ratio: WIDTH_BAND_RATIOS.OPEN_LAWN }),
+  ]);
+
   function numberOrFallback(value, fallback) {
     const number = Number(value);
     return Number.isFinite(number) && number >= 0 ? number : fallback;
@@ -52,15 +67,39 @@
     return (a.gallonsPerSfYear / 1000) * a.waterRatePerKGal + a.maintenancePerSfYear;
   }
 
-  function computeOutputsForSquareFootage(totalSquareFootage, assumptions, polygonCount) {
+  function widthBandForEffectiveWidth(effectiveWidthFt) {
+    if (effectiveWidthFt === null || effectiveWidthFt === undefined || effectiveWidthFt === '') {
+      return WIDTH_BANDS[3];
+    }
+    const width = Number(effectiveWidthFt);
+    if (!Number.isFinite(width) || width <= 0) return WIDTH_BANDS[3];
+    if (width < 10) return WIDTH_BANDS[0];
+    if (width <= 15) return WIDTH_BANDS[1];
+    if (width <= 25) return WIDTH_BANDS[2];
+    return WIDTH_BANDS[3];
+  }
+
+  function getFeatureGallonsPerSfYear(feature, assumptions) {
+    const a = normaliseAssumptions(assumptions);
+    const width = feature && feature.properties
+      ? feature.properties.effectiveWidthFt
+      : null;
+    return a.gallonsPerSfYear * widthBandForEffectiveWidth(width).ratio;
+  }
+
+  function getFeatureWidthBand(feature) {
+    return widthBandForEffectiveWidth(feature && feature.properties
+      ? feature.properties.effectiveWidthFt
+      : null);
+  }
+
+  function computeOutputsFromTotals(totalSquareFootage, annualGallonsAvoided, assumptions, polygonCount) {
     const a = normaliseAssumptions(assumptions);
     const costPerSf = a.costPerSf;
-    const gallonsPerSfYear = a.gallonsPerSfYear;
     const waterRatePerKGal = a.waterRatePerKGal;
     const maintenancePerSfYear = a.maintenancePerSfYear;
     const rebatePerSf = a.rebatePerSf;
 
-    const annualGallonsAvoided = totalSquareFootage * gallonsPerSfYear;
     const annualWaterSavings = (annualGallonsAvoided / 1000) * waterRatePerKGal;
     const annualMaintenanceSavings = totalSquareFootage * maintenancePerSfYear;
     const estimatedAnnualSavings = annualWaterSavings + annualMaintenanceSavings;
@@ -91,14 +130,38 @@
     };
   }
 
+  function computeOutputsForSquareFootage(totalSquareFootage, assumptions, polygonCount) {
+    const a = normaliseAssumptions(assumptions);
+    return computeOutputsFromTotals(
+      totalSquareFootage,
+      totalSquareFootage * a.gallonsPerSfYear,
+      a,
+      polygonCount,
+    );
+  }
+
+  function computeOutputsForFeatures(features, assumptions, polygonCount) {
+    const usable = (features || []).filter(function (feature) {
+      const area = Number(feature && feature.properties && feature.properties.area_sqft);
+      return Number.isFinite(area) && area > 0;
+    });
+    const totalSquareFootage = usable.reduce(function (sum, feature) {
+      return sum + Number(feature.properties.area_sqft);
+    }, 0);
+    const annualGallonsAvoided = usable.reduce(function (sum, feature) {
+      return sum + Number(feature.properties.area_sqft) * getFeatureGallonsPerSfYear(feature, assumptions);
+    }, 0);
+    return computeOutputsFromTotals(
+      totalSquareFootage,
+      annualGallonsAvoided,
+      assumptions,
+      polygonCount === undefined ? usable.length : polygonCount,
+    );
+  }
+
   function computeGroupOutputs(polygonIds, assumptions, allFeatures) {
     const features = (allFeatures || []).filter(f => polygonIds.includes(f.properties?.id));
-    const totalSquareFootage = features.reduce((sum, f) => {
-      const area = Number(f.properties?.area_sqft);
-      return Number.isFinite(area) && area > 0 ? sum + area : sum;
-    }, 0);
-    const polygonCount = features.length;
-    return computeOutputsForSquareFootage(totalSquareFootage, assumptions, polygonCount);
+    return computeOutputsForFeatures(features, assumptions);
   }
 
   function buildGroupSummary(group, polygonFeatures, assumptions, opts) {
@@ -120,7 +183,13 @@
 
     const polygonDetails = (polygonFeatures || [])
       .filter(f => (group.polygonIds || []).includes(f.properties?.id))
-      .map(f => ({ name: f.properties?.name || f.properties?.id, sqft: f.properties?.area_sqft || 0 }))
+      .map(f => ({
+        name: f.properties?.name || f.properties?.id,
+        sqft: f.properties?.area_sqft || 0,
+        effectiveWidthFt: f.properties?.effectiveWidthFt ?? null,
+        widthBand: getFeatureWidthBand(f),
+        gallonsPerSfYear: getFeatureGallonsPerSfYear(f, assumptions),
+      }))
       .sort((a, b) => b.sqft - a.sqft);
 
     return {
@@ -179,12 +248,20 @@
     var selected = {};
     var excluded = {};
     var selectedSqFt = 0;
+    var selectedAnnualGallons = 0;
+    var selectedNetCost = 0;
+    var totalAnnualGallons = usable.reduce(function (sum, feature) {
+      return sum + Number(feature.properties.area_sqft) * getFeatureGallonsPerSfYear(feature, assumptions);
+    }, 0);
 
     usable.forEach(function (feature) {
       var id = String(feature.properties.id || feature.id);
       if (pins[id] === 'in') {
         selected[id] = true;
-        selectedSqFt += Number(feature.properties.area_sqft);
+        var pinnedArea = Number(feature.properties.area_sqft);
+        selectedSqFt += pinnedArea;
+        selectedAnnualGallons += pinnedArea * getFeatureGallonsPerSfYear(feature, assumptions);
+        selectedNetCost += pinnedArea * netCostPerSqFt;
       } else if (pins[id] === 'out') {
         excluded[id] = true;
       }
@@ -196,15 +273,22 @@
         return !selected[id] && !excluded[id];
       })
       .sort(function (a, b) {
-        return Number(b.properties.area_sqft) - Number(a.properties.area_sqft);
+        var aCost = computeOutputsForFeatures([a], assumptions, 1).costPer1000GalAvoided;
+        var bCost = computeOutputsForFeatures([b], assumptions, 1).costPer1000GalAvoided;
+        return Number(aCost) - Number(bCost)
+          || Number(b.properties.area_sqft) - Number(a.properties.area_sqft);
       })
       .forEach(function (feature) {
         if (selectedSqFt >= targetSqFt) return;
         var area = Number(feature.properties.area_sqft);
-        if (annualBudget !== null && (selectedSqFt + area) * netCostPerSqFt > annualBudget) return;
+        var annualGallons = area * getFeatureGallonsPerSfYear(feature, assumptions);
+        var featureNetCost = area * netCostPerSqFt;
+        if (annualBudget !== null && selectedNetCost + featureNetCost > annualBudget) return;
         var id = String(feature.properties.id || feature.id);
         selected[id] = true;
         selectedSqFt += area;
+        selectedAnnualGallons += annualGallons;
+        selectedNetCost += featureNetCost;
       });
 
     var statuses = {};
@@ -225,6 +309,9 @@
       totalSqFt: totalSqFt,
       targetSqFt: targetSqFt,
       selectedSqFt: selectedSqFt,
+      totalAnnualGallons: totalAnnualGallons,
+      selectedAnnualGallons: selectedAnnualGallons,
+      selectedNetCost: selectedNetCost,
       budgetLimited: annualBudget !== null && selectedSqFt < targetSqFt,
       attainmentPct: targetSqFt > 0 ? selectedSqFt / targetSqFt * 100 : 100
     };
@@ -237,9 +324,15 @@
     DEFAULT_WATER_RATE_PER_KGAL,
     DEFAULT_MAINTENANCE_PER_SF_YEAR,
     ASSET_LIFE_YEARS,
+    WIDTH_BAND_RATIOS,
+    WIDTH_BANDS,
     normaliseAssumptions,
     derivedSavingsPerSf,
+    widthBandForEffectiveWidth,
+    getFeatureWidthBand,
+    getFeatureGallonsPerSfYear,
     computeOutputsForSquareFootage,
+    computeOutputsForFeatures,
     computeGroupOutputs,
     buildGroupSummary,
     getPolygonColor,

@@ -19,8 +19,8 @@ const summary = {
 const polygons = {
   type: 'FeatureCollection',
   features: [
-    { type: 'Feature', id: 'p1', geometry: { type: 'Polygon', coordinates: [[[-105,40],[-105,40.01],[-104.99,40],[-105,40]]] }, properties: { id: 'p1', name: 'North Lawn', area_sqft: 1000, communityId: 'c1', communityName: 'North', isRankable: true } },
-    { type: 'Feature', id: 'p2', geometry: { type: 'Polygon', coordinates: [[[-105,39.9],[-105,39.91],[-104.99,39.9],[-105,39.9]]] }, properties: { id: 'p2', name: 'South Lawn', area_sqft: 500, communityId: 'c2', communityName: 'South', isRankable: true } },
+    { type: 'Feature', id: 'p1', geometry: { type: 'Polygon', coordinates: [[[-105,40],[-105,40.01],[-104.99,40],[-105,40]]] }, properties: { id: 'p1', name: 'North Lawn', area_sqft: 1000, effectiveWidthFt: 5.3, communityId: 'c1', communityName: 'North', isRankable: true } },
+    { type: 'Feature', id: 'p2', geometry: { type: 'Polygon', coordinates: [[[-105,39.9],[-105,39.91],[-104.99,39.9],[-105,39.9]]] }, properties: { id: 'p2', name: 'South Lawn', area_sqft: 500, effectiveWidthFt: 60.7, communityId: 'c2', communityName: 'South', isRankable: true } },
   ],
   byCommunity: [],
   unresolved: [],
@@ -98,6 +98,9 @@ test('list and map share the three-state cycle and expose override counts', asyn
   });
   await page.locator('.ws-location-tile[data-community-id="c1"]').click();
   await expect(page.locator('.wsl-area-row')).toHaveCount(1);
+  await expect(page.locator('.wsl-area-row')).toContainText('5.3 ft effective width');
+  await expect(page.locator('.wsl-area-row')).toContainText('Tree lawn / island');
+  await expect(page.locator('.wsl-area-row')).toContainText('50 gal/ft²/yr');
   await expect(page.locator('.wsl-legend')).toContainText('Pinned in');
   await expect(page.locator('.wsl-legend')).toContainText('Solver-selected');
   await expect(page.locator('.wsl-legend')).toContainText('Available');
@@ -210,6 +213,10 @@ test('summary leads with cost effectiveness, live assumptions, tiers, attainment
   await expect(page.locator('#ws-attainment')).toContainText('1 area across 1 location');
   await expect(page.locator('.ws-honesty')).toContainText('Modelled, not metered');
   await expect(page.locator('.ws-honesty')).toContainText('load water invoices to calibrate against actual consumption per branch');
+  await expect(page.locator('.ws-width-model')).toContainText('Narrow strips lose more water to overspray and heat');
+  await expect(page.locator('.ws-width-band')).toHaveCount(4);
+  await expect(page.locator('.ws-width-model')).toContainText('Tree lawn / island');
+  await expect(page.locator('.ws-width-model')).toContainText('Open lawn');
 
   const initialComparison = await page.locator('[data-kpi="cost-per-1000"] small').textContent();
   await page.locator('[data-assumption="waterRatePerKGal"]').fill('12.08');
@@ -271,7 +278,7 @@ test('supply curve sorts by cost, partitions cumulative gallons, and mirrors sol
   expect(curve[0].start).toBe(0);
   expect(curve[0].end).toBe(curve[1].start);
   expect(curve[1].x + curve[1].width).toBeCloseTo(930, 6);
-  expect(curve[1].end).toBe(49_500);
+  expect(curve[1].end).toBe(66_500);
 
   const initialRate = await page.locator('.ws-curve-rate-line').getAttribute('data-water-rate');
   const initialRateY = await page.locator('.ws-curve-rate-line').getAttribute('y1');
@@ -297,14 +304,36 @@ test('supply curve shows one shared tooltip and navigates to the existing locati
   await expect(page.locator('.ws-curve-tooltip')).toContainText('North Lawn');
   await expect(page.locator('.ws-curve-tooltip')).toContainText('Location: North');
   await expect(page.locator('.ws-curve-tooltip')).toContainText('Square footage: 1,000 ft²');
-  await expect(page.locator('.ws-curve-tooltip')).toContainText('Modeled gallons per year: 33,000 gal/yr');
-  await expect(page.locator('.ws-curve-tooltip')).toContainText('Cost per 1,000 gallons: $7.58');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Effective width: 5.3 ft');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Width band: Tree lawn / island (Under 10 ft)');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Modeled intensity: 50 gal/ft²/yr');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Modeled gallons per year: 50,000 gal/yr');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Cost per 1,000 gallons: $5.00');
   await expect(page.locator('.ws-curve-tooltip')).toContainText('Net cost: $5,000');
   await firstBar.click();
   await expect(page).toHaveURL(/water-savings-location\/c1/);
   await page.goBack();
   await expect(page).toHaveURL(/\/water-savings$/);
   await expect(page.getByRole('heading', { name: 'Water Savings Planner' })).toBeVisible();
+});
+
+test('missing effective width is shown as unavailable and safely uses open-lawn economics', async ({ page }) => {
+  const polygonData = {
+    ...polygons,
+    features: polygons.features.map((feature) => feature.id === 'p1'
+      ? { ...feature, properties: { ...feature.properties, effectiveWidthFt: null } }
+      : feature),
+  };
+  await setup(page, polygonData);
+  await page.goto('/web/portfolio/water-savings');
+  const firstBar = page.locator('.ws-curve-bar[data-feature-id="p1"]');
+  await firstBar.hover();
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Effective width: —');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Width band: Open lawn');
+  await expect(page.locator('.ws-curve-tooltip')).toContainText('Modeled intensity: 33 gal/ft²/yr');
+  await firstBar.click();
+  await expect(page.locator('[data-area-id="p1"]')).toContainText('— effective width');
+  await expect(page.locator('[data-area-id="p1"]')).toContainText('Open lawn');
 });
 
 test('supply curve explains non-rankable polygons and unresolved source caveats', async ({ page }) => {

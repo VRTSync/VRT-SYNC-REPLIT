@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Asset, MapLayer } from "@workspace/db";
-import { resolveXeriscapePolygons } from "./xeriscapePolygonResolver.js";
+import { computeEffectiveWidthFt, resolveXeriscapePolygons } from "./xeriscapePolygonResolver.js";
 
 function asset(overrides: Partial<Asset> & Pick<Asset, "id" | "communityId" | "label">): Asset {
   return {
@@ -53,6 +53,23 @@ const polygon = {
   type: "Polygon",
   coordinates: [[[-105, 40], [-105, 40.001], [-104.999, 40], [-105, 40]]],
 };
+
+function rectangleAtLatitude(latitude: number, widthFt: number, lengthFt: number) {
+  const latitudeFeetPerDegree = 364_000;
+  const longitudeFeetPerDegree = 364_000 * Math.cos(latitude * Math.PI / 180);
+  const dLat = lengthFt / latitudeFeetPerDegree;
+  const dLon = widthFt / longitudeFeetPerDegree;
+  return {
+    type: "Polygon",
+    coordinates: [[
+      [-105, latitude],
+      [-105 + dLon, latitude],
+      [-105 + dLon, latitude + dLat],
+      [-105, latitude + dLat],
+      [-105, latitude],
+    ]],
+  };
+}
 
 describe("resolveXeriscapePolygons", () => {
   it("resolves identifier, name, and point fallbacks and reconciles communities", () => {
@@ -198,5 +215,69 @@ describe("resolveXeriscapePolygons", () => {
     const names = new Map(result.features.map((feature) => [feature.id, feature.properties.name]));
     assert.equal(names.get("a1"), "Area 1");
     assert.equal(names.get("a2"), "Area 2");
+  });
+
+  it("derives latitude-aware effective width from polygon area and perimeter", () => {
+    const geometry = rectangleAtLatitude(40, 20, 100);
+    const width = computeEffectiveWidthFt(geometry, 2_000);
+    assert.ok(width !== null);
+    assert.ok(Math.abs(width - (2 * 2_000 / 240)) < 0.2);
+
+    const equatorGeometry = rectangleAtLatitude(0, 20, 100);
+    const sameShapeAtSixty = {
+      ...equatorGeometry,
+      coordinates: equatorGeometry.coordinates.map((ring) =>
+        ring.map(([longitude, latitude]) => [longitude, latitude + 60])),
+    };
+    const equatorWidth = computeEffectiveWidthFt(equatorGeometry, 2_000);
+    const highLatitudeWidth = computeEffectiveWidthFt(sameShapeAtSixty, 2_000);
+    assert.ok(equatorWidth !== null && highLatitudeWidth !== null);
+    assert.ok(highLatitudeWidth > equatorWidth, "longitude distances shrink at higher latitudes");
+  });
+
+  it("includes multipolygon exteriors and interior rings in perimeter", () => {
+    const first = rectangleAtLatitude(40, 20, 100).coordinates[0];
+    const second = rectangleAtLatitude(40.001, 10, 50).coordinates[0];
+    const withoutHole = computeEffectiveWidthFt({
+      type: "MultiPolygon",
+      coordinates: [[first], [second]],
+    }, 2_500);
+    const withHole = computeEffectiveWidthFt({
+      type: "MultiPolygon",
+      coordinates: [[first, second], [second]],
+    }, 2_500);
+    assert.ok(withoutHole !== null && withHole !== null);
+    assert.ok(withHole < withoutHole, "an interior ring contributes to total perimeter");
+  });
+
+  it("returns null for points, malformed coordinates, and zero perimeter", () => {
+    assert.equal(computeEffectiveWidthFt({ type: "Point", coordinates: [-105, 40] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[null, 40], [-105, 40], [-105, 41]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[-105, 40], [-104, 40], [-105, 41]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[-105, 40], [-104, 40], [-105, 41], [-105.1, 40]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[181, 40], [-104, 40], [-105, 41], [181, 40]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[-105, 91], [-104, 40], [-105, 41], [-105, 91]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt({ type: "Polygon", coordinates: [[[-105, 40], [-105, 40], [-105, 40]]] }, 100), null);
+    assert.equal(computeEffectiveWidthFt(polygon, 0), null);
+  });
+
+  it("adds a nullable effective width without changing resolution totals", () => {
+    const result = resolveXeriscapePolygons({
+      communities: [{ id: "c1", name: "North" }],
+      assets: [
+        asset({ id: "polygon", communityId: "c1", label: "Polygon", mapLayerId: "l1", featureRef: "polygon" }),
+        asset({ id: "point", communityId: "c1", label: "Point", latitude: 40, longitude: -105 }),
+      ],
+      properties: [
+        { assetId: "polygon", key: "sqFt", value: "2000" },
+        { assetId: "point", key: "sqFt", value: "50" },
+      ],
+      layers: [layer("l1", "c1", [{ type: "Feature", id: "polygon", geometry: rectangleAtLatitude(40, 20, 100), properties: {} }])],
+    });
+    const byId = new Map(result.features.map((feature) => [feature.id, feature]));
+    assert.ok(Number.isFinite(byId.get("polygon")?.properties.effectiveWidthFt));
+    assert.equal(byId.get("point")?.properties.effectiveWidthFt, null);
+    assert.equal(result.featuresResolved, 2);
+    assert.equal(result.sqFtResolved, 2050);
   });
 });

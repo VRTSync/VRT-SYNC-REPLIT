@@ -35,6 +35,19 @@
 
   function number(value) { return Math.round(Number(value || 0)).toLocaleString(); }
   function money(value) { return '$' + Math.round(Number(value || 0)).toLocaleString(); }
+  function preciseNumber(value) {
+    var numberValue = Number(value);
+    return Number.isFinite(numberValue)
+      ? numberValue.toFixed(1).replace(/\.0+$/, '')
+      : '—';
+  }
+
+  function widthText(feature) {
+    var width = feature.properties && feature.properties.effectiveWidthFt;
+    return width === null || width === undefined || width === ''
+      ? '—'
+      : (Number.isFinite(Number(width)) ? preciseNumber(width) + ' ft' : '—');
+  }
 
   function teardown() {
     if (unsubscribe) unsubscribe();
@@ -123,7 +136,9 @@
         return '<button class="wsl-area-row ' + displayStatus + '" data-area-id="' + esc(id) + '" aria-label="' + esc((feature.properties.name || 'Mapped area') + ': ' + statusLabel) + '">'
           + '<i style="background:' + core.getPolygonColor(displayStatus) + '"></i>'
           + '<span><strong>' + esc(feature.properties.name || 'Mapped area') + '</strong><small>'
-          + number(feature.properties.area_sqft) + ' ft² · ' + statusLabel
+           + number(feature.properties.area_sqft) + ' ft² · ' + widthText(feature)
+           + ' effective width · ' + esc(core.getFeatureWidthBand(feature).label)
+           + ' · ' + preciseNumber(core.getFeatureGallonsPerSfYear(feature, state.assumptions)) + ' gal/ft²/yr · ' + statusLabel
           + '</small></span></button>';
       }).join('') || '<div class="pf-empty">No mapped turf areas at this location.</div>';
       areaList.querySelectorAll('[data-area-id]').forEach(function (button) {
@@ -168,7 +183,7 @@
           + '<section><h2>Selection</h2><p id="wsl-contribution"></p><div id="wsl-override-counts" class="wsl-override-counts"></div><button id="wsl-clear">Clear location overrides</button></section>'
           + '<section><h2>Estimated Summary</h2><div class="wsl-metrics" id="wsl-metrics"></div></section>'
           + '<section class="wsl-areas"><h2>Areas</h2><div id="wsl-area-list"></div></section>'
-          + '<section class="wsl-note"><strong>Portfolio-wide assumptions</strong><p>Costs and savings use the shared scenario. Excluding an area here immediately changes the portfolio summary.</p></section>'
+           + '<section class="wsl-note"><strong>Portfolio-wide assumptions</strong><p>Costs and savings use the shared scenario. Narrow strips lose more water to overspray and heat, so their width band uses a higher modeled intensity. Excluding an area here immediately changes the portfolio summary.</p></section>'
         + '</aside>'
       + '</div></div>';
 

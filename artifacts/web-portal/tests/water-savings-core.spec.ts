@@ -23,7 +23,7 @@ function extractConstant(source: string, name: string): string {
   return match[0];
 }
 
-test('portfolio economics stay in parity with the unchanged admin planner', () => {
+test('portfolio explicit-input economics stay in parity with the unchanged admin planner', () => {
   const adminSource = readFileSync('public/admin/pages/xeriscape-planner.js', 'utf8');
   const constants = [
     'DEFAULT_COST_PER_SF',
@@ -63,6 +63,87 @@ return computeOutputsForSquareFootage;`,
   expect(portfolio.netConversionCost).toBe(143_500);
   expect(portfolio.estimatedPaybackYears).toBeCloseTo(12.0, 1);
   expect(portfolio.costPer1000GalAvoided).toBeCloseTo(7.58, 2);
+});
+
+test('width bands scale proportionally from the live open-lawn baseline', () => {
+  const sandbox = { window: {} as Record<string, unknown>, console };
+  vm.runInNewContext(readFileSync('public/common/xeriscape-core.js', 'utf8'), sandbox);
+  const core = sandbox.window.VRTXeriscapeCore as any;
+  const feature = (width: number | null, area = 1000) => ({
+    id: String(width),
+    properties: { id: String(width), area_sqft: area, effectiveWidthFt: width },
+  });
+
+  expect(core.WIDTH_BAND_RATIOS.OPEN_LAWN).toBe(1);
+  expect(core.getFeatureGallonsPerSfYear(feature(5), { gallonsPerSfYear: 40 })).toBeCloseTo(60.606, 3);
+  expect(core.getFeatureGallonsPerSfYear(feature(12), { gallonsPerSfYear: 40 })).toBeCloseTo(53.333, 3);
+  expect(core.getFeatureGallonsPerSfYear(feature(20), { gallonsPerSfYear: 40 })).toBeCloseTo(46.061, 3);
+  expect(core.getFeatureGallonsPerSfYear(feature(30), { gallonsPerSfYear: 40 })).toBe(40);
+  expect(core.getFeatureGallonsPerSfYear(feature(null), { gallonsPerSfYear: 40 })).toBe(40);
+  expect(core.widthBandForEffectiveWidth(25).key).toBe('small-panel');
+  expect(core.widthBandForEffectiveWidth(25.01).key).toBe('open-lawn');
+});
+
+test('confirmed bands produce exactly four cost steps and invert area-first ordering', () => {
+  const sandbox = { window: {} as Record<string, unknown>, console };
+  vm.runInNewContext(readFileSync('public/common/xeriscape-core.js', 'utf8'), sandbox);
+  const core = sandbox.window.VRTXeriscapeCore as any;
+  const features = [
+    { id: 'strip', properties: { id: 'strip', area_sqft: 454, effectiveWidthFt: 5.3 } },
+    { id: 'verge', properties: { id: 'verge', area_sqft: 900, effectiveWidthFt: 12 } },
+    { id: 'panel', properties: { id: 'panel', area_sqft: 1200, effectiveWidthFt: 20 } },
+    { id: 'colfax', properties: { id: 'colfax', area_sqft: 42_102, effectiveWidthFt: 60.7 } },
+  ];
+  const costs = features.map((item) =>
+    core.computeOutputsForFeatures([item], {}, 1).costPer1000GalAvoided,
+  );
+  expect(costs.map((cost: number) => Number(cost.toFixed(2)))).toEqual([5, 5.68, 6.58, 7.58]);
+
+  const solution = core.solveScenario(features, { targetPct: 1, pins: {}, assumptions: {} });
+  expect(solution.selectedIds).toEqual(['strip']);
+  expect(solution.selectedAnnualGallons).toBe(22_700);
+  expect(solution.totalAnnualGallons).toBeGreaterThan(42_102 * 33);
+});
+
+test('confirmed portfolio distribution and totals retain four deliberate classes', () => {
+  const sandbox = { window: {} as Record<string, unknown>, console };
+  vm.runInNewContext(readFileSync('public/common/xeriscape-core.js', 'utf8'), sandbox);
+  const core = sandbox.window.VRTXeriscapeCore as any;
+  const groups = [
+    { count: 26, width: 2.7, totalArea: 20_000 },
+    { count: 10, width: 12, totalArea: 15_000 },
+    { count: 10, width: 20, totalArea: 8_842 },
+    { count: 9, width: 69.2, totalArea: 149_906 },
+  ];
+  const features = groups.flatMap((group, groupIndex) =>
+    Array.from({ length: group.count }, (_, index) => ({
+      id: `${groupIndex}-${index}`,
+      properties: {
+        id: `${groupIndex}-${index}`,
+        area_sqft: group.totalArea / group.count,
+        effectiveWidthFt: group.width,
+      },
+    })),
+  );
+  const distribution = features.reduce((counts: Record<string, number>, item) => {
+    const key = core.getFeatureWidthBand(item).key;
+    counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  expect(distribution).toEqual({
+    'tree-lawn-island': 26,
+    verge: 10,
+    'small-panel': 10,
+    'open-lawn': 9,
+  });
+  expect(Math.min(...features.map((item) => item.properties.effectiveWidthFt))).toBe(2.7);
+  expect(Math.max(...features.map((item) => item.properties.effectiveWidthFt))).toBe(69.2);
+
+  const outputs = core.computeOutputsForFeatures(features, {});
+  expect(outputs.totalSquareFootage).toBeCloseTo(193_748, 6);
+  expect(outputs.annualGallonsAvoided).toBeCloseTo(6_942_894, 6);
+  expect(193_748 * 33).toBe(6_393_684);
+  expect((outputs.annualGallonsAvoided / 6_393_684 - 1) * 100).toBeCloseTo(8.6, 1);
 });
 
 test('only one portfolio solver exists and protected map/admin files remain independent', () => {
