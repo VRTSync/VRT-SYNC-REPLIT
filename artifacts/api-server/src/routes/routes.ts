@@ -10,7 +10,7 @@ import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, req
 import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy, getObjectAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
-import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged } from "../pushNotifications";
+import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged, notifyPortfolioWorkOrderSubmitted } from "../pushNotifications";
 import { syncAssetsFromLayer, syncIrrigationAssets, getMissingRequiredKeys, previewSyncFromLayer, getUnlinkedFeatures, getGeoJsonCollisions, resolveAssetType, extractFeatureId, extractLabel, resolveGeometry, computeAreaSqFt } from "../assetSync";
 import { getAssetTypeCache, invalidateAssetTypeCache, validateLayerKeysFromCatalogue } from "../assetTypeCache";
 import { parseIrrigationKml } from "../kmlIrrigationParser";
@@ -6693,6 +6693,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } catch (_) { /* skip duplicate keys */ }
         }
       }
+
+      // Notification delivery is intentionally fire-and-forget. The task and
+      // its attachments are already persisted, so delivery failures must not
+      // alter the successful work-order response.
+      notifyPortfolioWorkOrderSubmitted(task, orgId).catch(err =>
+        console.error("notifyPortfolioWorkOrderSubmitted error:", err)
+      );
 
       // Return the created task as an open work-order row
       const ref = 'WO-' + task.id.replace(/-/g, '').slice(0, 8).toUpperCase();

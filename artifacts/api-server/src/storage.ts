@@ -403,6 +403,29 @@ export async function getClientUsersByOrg(organizationId: string): Promise<{
     .orderBy(users.username);
 }
 
+/**
+ * Return active contractor users named by currently active contracts for a
+ * community. A contract is current only when today is within its inclusive
+ * start/end date range.
+ * DISTINCT is important because a contractor may have more than one active
+ * contract for the same community.
+ */
+export async function getActiveContractorUserIdsForCommunity(communityId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ contractorUserId: contracts.contractorUserId })
+    .from(contracts)
+    .innerJoin(users, eq(contracts.contractorUserId, users.id))
+    .where(and(
+      eq(contracts.communityId, communityId),
+      eq(contracts.isActive, true),
+      lte(contracts.startDate, sql`CURRENT_DATE`),
+      gte(contracts.endDate, sql`CURRENT_DATE`),
+      eq(users.role, "contractor"),
+      eq(users.isActive, true),
+    ));
+  return rows.map((row) => row.contractorUserId);
+}
+
 export async function updateUserProfile(
   userId: string,
   updates: { displayName?: string; password?: string },

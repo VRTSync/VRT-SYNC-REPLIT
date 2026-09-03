@@ -300,3 +300,106 @@ export async function notifyHoaRequestSubmitted(task: Task): Promise<void> {
     console.error("notifyHoaRequestSubmitted error:", error);
   }
 }
+
+export type PortfolioNotificationDependencies = {
+  getCommunityById: typeof storage.getCommunityById;
+  getActiveContractorUserIdsForCommunity: typeof storage.getActiveContractorUserIdsForCommunity;
+  getClientUsersByOrg: typeof storage.getClientUsersByOrg;
+  getUserNotificationPreferences: typeof storage.getUserNotificationPreferences;
+  createNotification: typeof storage.createNotification;
+  sendPushToUser: typeof sendPushToUser;
+};
+
+const defaultPortfolioNotificationDependencies: PortfolioNotificationDependencies = {
+  getCommunityById: storage.getCommunityById,
+  getActiveContractorUserIdsForCommunity: storage.getActiveContractorUserIdsForCommunity,
+  getClientUsersByOrg: storage.getClientUsersByOrg,
+  getUserNotificationPreferences: storage.getUserNotificationPreferences,
+  createNotification: storage.createNotification,
+  sendPushToUser,
+};
+
+/**
+ * Notify the contractor(s) responsible for a commercial location after a
+ * client submits a portfolio work order. If no active contract routes the
+ * location, notify active client admins so the request is not silently lost.
+ *
+ * This helper deliberately owns its failures: the work-order route starts it
+ * after persistence without awaiting it, and one recipient's failure must not
+ * prevent the other recipients from being attempted.
+ */
+export async function notifyPortfolioWorkOrderSubmitted(
+  task: Task,
+  organizationId: string,
+  dependencies: PortfolioNotificationDependencies = defaultPortfolioNotificationDependencies,
+): Promise<void> {
+  try {
+    const community = await dependencies.getCommunityById(task.communityId);
+    if (!community) {
+      console.warn(
+        `[Portfolio work order] Could not resolve location for task=${task.id} community=${task.communityId}`,
+      );
+      return;
+    }
+
+    const ref = `WO-${task.id.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    const contractorUserIds = await dependencies.getActiveContractorUserIdsForCommunity(task.communityId);
+    let recipientUserIds = contractorUserIds;
+    let title = "New work order";
+    let body = `${community.name} — ${ref}: ${task.title}`;
+
+    if (contractorUserIds.length === 0) {
+      const clientAdmins = await dependencies.getClientUsersByOrg(organizationId);
+      const activeClientAdmins = clientAdmins.filter((user) => user.isActive === true);
+      recipientUserIds = activeClientAdmins.map((user) => user.id);
+      title = "Work order needs routing";
+      body = `${community.name} — ${ref}: ${task.title} was recorded but needs contractor routing.`;
+
+      const adminLogins = activeClientAdmins.map((user) => user.username).join(", ") || "(none)";
+      console.warn(
+        `[Portfolio work order] No active contract for location="${community.name}" ` +
+        `community=${task.communityId}; notifying active client admins: ${adminLogins}`,
+      );
+    }
+
+    const uniqueRecipientIds = [...new Set(recipientUserIds)];
+    const deliveryResults = await Promise.allSettled(uniqueRecipientIds.map(async (recipientUserId) => {
+      const prefs = await dependencies.getUserNotificationPreferences(recipientUserId);
+      if (!prefs.requestSubmitted) return;
+
+      // Keep persistence and push independent so a notification insert failure
+      // does not prevent the matching push attempt for this recipient.
+      try {
+        await dependencies.createNotification({
+          communityId: task.communityId,
+          recipientUserId,
+          type: "WORK_ORDER_SUBMITTED",
+          title,
+          body,
+          relatedTaskId: task.id,
+        });
+      } catch (error) {
+        console.error(
+          `[Portfolio work order] Failed to persist notification for user=${recipientUserId} task=${task.id}:`,
+          error,
+        );
+      }
+
+      await dependencies.sendPushToUser(recipientUserId, {
+        title,
+        body,
+        data: { type: "WORK_ORDER_SUBMITTED", taskId: task.id },
+      });
+    }));
+    deliveryResults.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.error(
+          `[Portfolio work order] Notification delivery failed for user=${uniqueRecipientIds[index]} task=${task.id}:`,
+          result.reason,
+        );
+      }
+    });
+  } catch (error) {
+    console.error("notifyPortfolioWorkOrderSubmitted error:", error);
+  }
+}
