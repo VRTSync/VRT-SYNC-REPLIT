@@ -176,15 +176,60 @@ test('open Submit Request modal and open dropdowns block the visibility refresh'
   await expect(page.locator('#wo-open-modal')).toBeVisible();
   const woCallsAfterLoad = woCalls.length;
 
-  // Open the real Submit Request modal and type into it. (The overlay's
-  // inline style has a duplicate `display` declaration that leaves it open
-  // on first render — pre-existing quirk; handle both states.)
-  if (!(await page.locator('#wo-modal-overlay').isVisible())) {
-    await page.locator('#wo-open-modal').click();
-  }
+  // The modal starts hidden, leaving the list and submit control available.
+  await expect(page.locator('#wo-modal-overlay')).toBeHidden();
+  await expect(page.locator('#wo-open-modal')).toBeVisible();
+
+  // Open the real Submit Request modal and type into it.
+  await page.locator('#wo-open-modal').click();
   await expect(page.locator('#wo-modal-overlay')).toBeVisible();
+  const modalLayout = await page.locator('#wo-modal-overlay').evaluate((overlay) => {
+    const style = getComputedStyle(overlay);
+    const panel = overlay.firstElementChild!.getBoundingClientRect();
+    return {
+      display: style.display,
+      centeredX: panel.left + panel.width / 2,
+      centeredY: panel.top + panel.height / 2,
+      viewportCenterX: window.innerWidth / 2,
+      viewportCenterY: window.innerHeight / 2,
+    };
+  });
+  expect(modalLayout.display).toBe('flex');
+  expect(Math.abs(modalLayout.centeredX - modalLayout.viewportCenterX)).toBeLessThan(1);
+  expect(Math.abs(modalLayout.centeredY - modalLayout.viewportCenterY)).toBeLessThan(1);
+
   const anyInput = page.locator('#wo-modal-overlay input[type="text"], #wo-modal-overlay textarea').first();
   await anyInput.fill('Sprinkler head broken near entrance');
+
+  // A reopened modal starts clean, including the uploaded-photo UI.
+  await page.route('**/api/objects/upload', (r) =>
+    r.fulfill({ json: { uploadURL: 'https://upload.test/photo' } }),
+  );
+  await page.route('https://upload.test/photo', (r) => r.fulfill({ status: 200 }));
+  await page.route('**/api/objects/confirm', (r) =>
+    r.fulfill({ json: { objectPath: 'photos/test.jpg' } }),
+  );
+  await page.locator('#wo-file-input').setInputFiles({
+    name: 'broken-sprinkler.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from('fake-image'),
+  });
+  await expect(page.locator('#wo-photos-list')).toContainText('broken-sprinkler.jpg');
+  await page.locator('#wo-modal-close').click();
+  await expect(page.locator('#wo-modal-overlay')).toBeHidden();
+  await page.locator('#wo-open-modal').click();
+  await expect(page.locator('#wo-modal-overlay')).toBeVisible();
+  await expect(page.locator('#wo-title')).toHaveValue('');
+  await expect(page.locator('#wo-desc')).toHaveValue('');
+  await expect(page.locator('#wo-photos-list')).toBeEmpty();
+
+  // The backdrop is another close path.
+  await page.locator('#wo-title').fill('Close from backdrop');
+  await page.locator('#wo-modal-overlay').click({ position: { x: 4, y: 4 } });
+  await expect(page.locator('#wo-modal-overlay')).toBeHidden();
+  await page.locator('#wo-open-modal').click();
+  await expect(page.locator('#wo-modal-overlay')).toBeVisible();
+  await page.locator('#wo-title').fill('Sprinkler head broken near entrance');
 
   // Leave the tab 6+ minutes with the modal open → no refresh, input intact
   await setVisibility(page, 'hidden');
@@ -240,4 +285,51 @@ test('open Submit Request modal and open dropdowns block the visibility refresh'
     await expect(page.locator('#pf-refresh-label')).toHaveText('updated just now');
     expect(woCalls.length).toBeGreaterThan(before);
   }
+});
+
+test('Submit Request modal still submits the unchanged form payload', async ({ page }) => {
+  const counters = { dashboard: 0 };
+  let submittedPayload: Record<string, unknown> | undefined;
+  await openDashboard(page, counters);
+
+  await page.route('**/api/portfolio/work-orders*', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fallback();
+      return;
+    }
+
+    submittedPayload = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        id: 'wo-new',
+        ref: 'WO-NEW',
+        communityId: 'b1',
+        branchCode: 'N01',
+        branchName: 'North Branch',
+        title: 'Sprinkler head broken near entrance',
+        description: 'The head is leaking after the morning cycle.',
+        source: 'Client',
+        status: 'pending',
+      },
+    });
+  });
+  await page.evaluate(() => (window as any).PortfolioRouter.navigate('work-orders', true, {}));
+  await expect(page.locator('#wo-modal-overlay')).toBeHidden();
+
+  await page.locator('#wo-branch').evaluate((select) => {
+    select.append(new Option('N01 — North Branch', 'b1'));
+  });
+  await page.locator('#wo-open-modal').click();
+  await page.locator('#wo-branch').selectOption('b1');
+  await page.locator('#wo-title').fill('Sprinkler head broken near entrance');
+  await page.locator('#wo-desc').fill('The head is leaking after the morning cycle.');
+  await page.locator('#wo-modal-submit').click();
+
+  await expect(page.locator('#wo-modal-overlay')).toBeHidden();
+  await expect(page.locator('#page-content')).toContainText('Sprinkler head broken near entrance');
+  expect(submittedPayload).toEqual({
+    communityId: 'b1',
+    title: 'Sprinkler head broken near entrance',
+    description: 'The head is leaking after the morning cycle.',
+  });
 });

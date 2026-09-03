@@ -284,7 +284,7 @@
       return '<option value="' + esc(b.id) + '">' + esc(b.code ? b.code + ' — ' : '') + esc(b.name) + '</option>';
     }).join('');
 
-    return '<div id="wo-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:center;justify-content:center;">'
+    return '<div id="wo-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;">'
       + '<div style="background:#fff;border-radius:12px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(12,29,49,0.28);">'
       + '  <div style="background:linear-gradient(135deg,var(--navy) 0%,var(--navy-light) 100%);color:#fff;padding:18px 22px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;">'
       + '    <div style="font-family:Outfit,sans-serif;font-size:17px;font-weight:700;">Submit Service Request</div>'
