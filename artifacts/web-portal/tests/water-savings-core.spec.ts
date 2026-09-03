@@ -90,4 +90,26 @@ test('budget limits automatic selection while pinned areas remain authoritative'
   expect(limited.budgetLimited).toBe(true);
   const pinned = core.solveScenario(features, { targetPct: 100, annualBudget: 0, assumptions, pins: { a: 'in' } });
   expect(pinned.selectedIds).toContain('a');
+  expect(pinned.displayStatuses.a).toBe('pinned-in');
+  expect(pinned.displayStatuses.b).toBe('available');
+});
+
+test('status-aware pin cycle moves automatic, pinned-in, and pinned-out areas through three states', () => {
+  const sandbox = { window: {} as Record<string, unknown>, console };
+  vm.runInNewContext(readFileSync('public/common/xeriscape-core.js', 'utf8'), sandbox);
+  vm.runInNewContext(readFileSync('public/common/water-scenario-store.js', 'utf8'), sandbox);
+  const store = (sandbox.window as any).VRTWaterScenario;
+
+  store.reset();
+  store.cyclePin('available', 'available');
+  expect(store.get().pins.available).toBe('in');
+  store.cyclePin('available', 'pinned-in');
+  expect(store.get().pins.available).toBe('out');
+  store.cyclePin('available', 'pinned-out');
+  expect(store.get().pins.available).toBeUndefined();
+
+  store.cyclePin('selected', 'in-plan');
+  expect(store.get().pins.selected).toBe('out');
+  store.cyclePin('selected', 'pinned-out');
+  expect(store.get().pins.selected).toBeUndefined();
 });

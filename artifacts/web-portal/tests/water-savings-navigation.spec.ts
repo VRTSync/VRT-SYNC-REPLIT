@@ -30,6 +30,7 @@ const polygons = {
 };
 
 async function setup(page: Page) {
+  let savedScenarios: any[] = [];
   await page.route('**/web/portfolio/**', route => route.fulfill({ contentType: 'text/html', body: shell }));
   await page.route('**/leaflet-map.html', route => route.fulfill({ contentType: 'text/html', body: mapFrame }));
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'u1', role: 'client_admin', displayName: 'Client Admin' } } }));
@@ -41,9 +42,11 @@ async function setup(page: Page) {
     if (path.endsWith('/scenarios')) {
       if (request.method() === 'POST') {
         const body = request.postDataJSON();
-        return route.fulfill({ status: 201, json: { id: 's1', ...body, assumptionsJson: body.assumptions, pinsJson: body.pins } });
+        const record = { id: 's1', ...body, assumptionsJson: body.assumptions, pinsJson: body.pins };
+        savedScenarios = [record];
+        return route.fulfill({ status: 201, json: record });
       }
-      return route.fulfill({ json: [] });
+      return route.fulfill({ json: savedScenarios });
     }
     if (path.includes('/scenarios/')) return route.fulfill({ json: [] });
     if (path.endsWith('/polygons')) return route.fulfill({ json: polygons });
@@ -58,7 +61,7 @@ test('summary and location share state, preserve history, and keep parent nav ac
   await expect(page.locator('.ws-location-tile')).toHaveCount(2);
 
   await page.locator('#ws-target').evaluate((input: HTMLInputElement) => {
-    input.value = '60';
+    input.value = '0';
     input.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await page.locator('.ws-location-tile[data-community-id="c1"]').click();
@@ -72,16 +75,116 @@ test('summary and location share state, preserve history, and keep parent nav ac
 
   const before = await page.locator('#wsl-metrics').textContent();
   await page.frameLocator('#wsl-map').locator('body').evaluate(() => (window as any).tap('p1'));
-  await expect.poll(() => page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBe('out');
+  await expect.poll(() => page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBe('in');
   const after = await page.locator('#wsl-metrics').textContent();
   expect(after).not.toBe(before);
 
   await page.locator('.wsl-back').click();
   await expect(page).toHaveURL(/\/water-savings$/);
-  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().targetPct)).toBe(60);
-  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBe('out');
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().targetPct)).toBe(0);
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBe('in');
 
   await page.goBack();
   await expect(page).toHaveURL(/water-savings-location\/c1/);
   await expect(page.locator('.side-nav [data-route="water-savings"]')).toHaveClass(/active/);
+});
+
+test('list and map share the three-state cycle and expose override counts', async ({ page }) => {
+  await setup(page);
+  await page.goto('/web/portfolio/water-savings');
+  await page.locator('#ws-target').evaluate((input: HTMLInputElement) => {
+    input.value = '0';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.locator('.ws-location-tile[data-community-id="c1"]').click();
+  await expect(page.locator('.wsl-area-row')).toHaveCount(1);
+  await expect(page.locator('.wsl-legend')).toContainText('Pinned in');
+  await expect(page.locator('.wsl-legend')).toContainText('Solver-selected');
+  await expect(page.locator('.wsl-legend')).toContainText('Available');
+  await expect(page.locator('.wsl-legend')).toContainText('Pinned out');
+
+  const initialMetrics = await page.locator('#wsl-metrics').textContent();
+  await page.locator('[data-area-id="p1"]').click();
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/pinned-in/);
+  await expect(page.locator('[data-area-id="p1"]')).toContainText('Pinned in');
+  await expect(page.locator('#wsl-override-counts')).toContainText('1 pinned in');
+  expect(await page.locator('#wsl-metrics').textContent()).not.toBe(initialMetrics);
+  await expect.poll(() => page.frameLocator('#wsl-map').locator('body').evaluate(() => {
+    const updates = (window as any).commands.filter((command: any) => command.fn === 'updateLayerColorMap');
+    return updates.at(-1)?.args[1]?.p1;
+  })).toBe('#10b981');
+
+  await page.frameLocator('#wsl-map').locator('body').evaluate(() => (window as any).tap('p1'));
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/pinned-out/);
+  await expect(page.locator('[data-area-id="p1"]')).toContainText('Pinned out');
+  await expect(page.locator('#wsl-override-counts')).toContainText('1 excluded');
+  await expect.poll(() => page.frameLocator('#wsl-map').locator('body').evaluate(() => {
+    const updates = (window as any).commands.filter((command: any) => command.fn === 'updateLayerColorMap');
+    return updates.at(-1)?.args[1]?.p1;
+  })).toBe('#64748b');
+
+  await page.frameLocator('#wsl-map').locator('body').evaluate(() => (window as any).tap('p1'));
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/available/);
+  await expect(page.locator('[data-area-id="p1"]')).toContainText('Available');
+  await expect(page.locator('#wsl-override-counts')).toContainText('0 pinned in');
+  await expect(page.locator('#wsl-override-counts')).toContainText('0 excluded');
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBeUndefined();
+  await expect.poll(() => page.frameLocator('#wsl-map').locator('body').evaluate(() => {
+    const updates = (window as any).commands.filter((command: any) => command.fn === 'updateLayerColorMap');
+    return updates.at(-1)?.args[1]?.p1;
+  })).toBe('#7eb8e0');
+});
+
+test('target changes preserve both override directions and saved scenarios reload them', async ({ page }) => {
+  await setup(page);
+  await page.goto('/web/portfolio/water-savings');
+  await page.locator('#ws-target').evaluate((input: HTMLInputElement) => {
+    input.value = '0';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.locator('.ws-location-tile[data-community-id="c1"]').click();
+
+  await page.locator('[data-area-id="p1"]').click();
+  await page.locator('.wsl-back').click();
+  await expect(page).toHaveURL(/\/water-savings$/);
+  await page.locator('#ws-target').evaluate((input: HTMLInputElement) => {
+    input.value = '100';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.locator('.ws-location-tile[data-community-id="c1"]').click();
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/pinned-in/);
+
+  await page.locator('[data-area-id="p1"]').click();
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/pinned-out/);
+  await page.locator('.wsl-back').click();
+  await page.locator('#ws-target').evaluate((input: HTMLInputElement) => {
+    input.value = '0';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.locator('.ws-location-tile[data-community-id="c2"]').click();
+  await page.locator('[data-area-id="p2"]').click();
+  await expect(page.locator('[data-area-id="p2"]')).toHaveClass(/pinned-in/);
+  await page.locator('.wsl-back').click();
+  await page.locator('#ws-save').click();
+  await expect(page.locator('.ws-save-state')).toHaveClass(/saved/);
+  await expect(page.locator('#ws-scenario-select')).toHaveValue('s1');
+
+  await page.locator('#ws-new').click();
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins)).toEqual({});
+  await page.locator('#ws-scenario-select').selectOption('s1');
+  await expect.poll(() => page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p1)).toBe('out');
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins.p2)).toBe('in');
+  await page.locator('.ws-location-tile[data-community-id="c1"]').click();
+  await expect(page.locator('[data-area-id="p1"]')).toHaveClass(/pinned-out/);
+
+  await page.locator('#wsl-clear').click();
+  await expect(page.locator('#wsl-override-counts')).toContainText('0 pinned in');
+  await expect(page.locator('#wsl-override-counts')).toContainText('0 excluded');
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins)).toEqual({ p2: 'in' });
+  await page.locator('#wsl-location-select').selectOption('c2');
+  await expect(page.locator('[data-area-id="p2"]')).toHaveClass(/pinned-in/);
+  await page.locator('#wsl-clear').click();
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().pins)).toEqual({});
+  const targetAfterReload = await page.evaluate(() => (window as any).VRTWaterScenario.get().targetPct);
+  expect(targetAfterReload).toBe(0);
 });

@@ -154,8 +154,9 @@
   }
 
   function getPolygonColor(status) {
+    if (status === 'pinned-in') return '#10b981'; // green
     if (status === 'in-plan') return '#f59e0b'; // amber
-    if (status === 'excluded') return '#64748b'; // gray/slate
+    if (status === 'pinned-out' || status === 'excluded') return '#64748b'; // gray/slate
     return '#7eb8e0'; // blue (available)
   }
 
@@ -207,12 +208,19 @@
       });
 
     var statuses = {};
+    var displayStatuses = {};
     usable.forEach(function (feature) {
       var id = String(feature.properties.id || feature.id);
       statuses[id] = excluded[id] ? 'excluded' : (selected[id] ? 'in-plan' : 'available');
+      displayStatuses[id] = pins[id] === 'in'
+        ? 'pinned-in'
+        : pins[id] === 'out'
+          ? 'pinned-out'
+          : statuses[id];
     });
     return {
       statuses: statuses,
+      displayStatuses: displayStatuses,
       selectedIds: Object.keys(selected),
       totalSqFt: totalSqFt,
       targetSqFt: targetSqFt,

@@ -136,6 +136,22 @@
       else delete pins[String(polygonId)];
       setState({ pins: pins, persistence: 'dirty' });
     },
+     cyclePin: function (polygonId, solverStatus) {
+       var id = String(polygonId);
+       var current = state.pins[id];
+       var next;
+       if (current === 'out') {
+         next = null;
+       } else if (current === 'in') {
+         next = 'out';
+       } else {
+         next = solverStatus === 'in-plan' || solverStatus === 'pinned-in' ? 'out' : 'in';
+       }
+       var pins = Object.assign({}, state.pins);
+       if (next) pins[id] = next;
+       else delete pins[id];
+       setState({ pins: pins, persistence: 'dirty' });
+     },
     clearPins: function () { setState({ pins: {}, persistence: 'dirty' }); },
     subscribe: function (fn) {
       subscribers.push(fn);

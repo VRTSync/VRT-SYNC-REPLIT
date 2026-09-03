@@ -17,6 +17,7 @@
   var communities = [];
   var communityId = null;
   var layerId = null;
+  var currentSolution = null;
 
   function orgSuffix() {
     var state = window.PortfolioState;
@@ -48,6 +49,7 @@
     locationFeatures = [];
     communities = [];
     layerId = null;
+    currentSolution = null;
     window._portfolioMapCleanup = null;
   }
 
@@ -57,6 +59,7 @@
 
   function updatePlanner(container, state) {
     var solution = core.solveScenario(allFeatures, state);
+    currentSolution = solution;
     var included = locationFeatures.filter(function (feature) {
       return solution.statuses[String(feature.properties.id || feature.id)] === 'in-plan';
     });
@@ -92,16 +95,35 @@
       contribution.textContent = number(share) + '% of the portfolio plan · '
         + number(totalLocationSqFt) + ' ft² mapped at this location';
     }
+    var overrideCounts = container.querySelector('#wsl-override-counts');
+    if (overrideCounts) {
+      var pinnedIn = locationFeatures.filter(function (feature) {
+        return state.pins[String(feature.properties.id || feature.id)] === 'in';
+      }).length;
+      var pinnedOut = locationFeatures.filter(function (feature) {
+        return state.pins[String(feature.properties.id || feature.id)] === 'out';
+      }).length;
+      overrideCounts.innerHTML = '<span class="wsl-count pinned-in"><b>' + pinnedIn + '</b> pinned in</span>'
+        + '<span class="wsl-count pinned-out"><b>' + pinnedOut + '</b> excluded</span>';
+    }
     var areaList = container.querySelector('#wsl-area-list');
     if (areaList) {
       areaList.innerHTML = locationFeatures.map(function (feature) {
         var id = String(feature.properties.id || feature.id);
         var status = solution.statuses[id] || 'available';
+        var displayStatus = solution.displayStatuses[id] || status;
         var override = state.pins[id];
-        return '<button class="wsl-area-row ' + status + '" data-area-id="' + esc(id) + '">'
-          + '<i style="background:' + core.getPolygonColor(status) + '"></i>'
+        var statusLabel = displayStatus === 'pinned-in'
+          ? 'Pinned in'
+          : displayStatus === 'pinned-out'
+            ? 'Pinned out'
+            : displayStatus === 'in-plan'
+              ? 'Selected by solver'
+              : 'Available';
+        return '<button class="wsl-area-row ' + displayStatus + '" data-area-id="' + esc(id) + '" aria-label="' + esc((feature.properties.name || 'Mapped area') + ': ' + statusLabel) + '">'
+          + '<i style="background:' + core.getPolygonColor(displayStatus) + '"></i>'
           + '<span><strong>' + esc(feature.properties.name || 'Mapped area') + '</strong><small>'
-          + number(feature.properties.area_sqft) + ' ft² · ' + (override ? 'Pinned ' + (override === 'in' ? 'in' : 'out') : status)
+          + number(feature.properties.area_sqft) + ' ft² · ' + statusLabel
           + '</small></span></button>';
       }).join('') || '<div class="pf-empty">No mapped turf areas at this location.</div>';
       areaList.querySelectorAll('[data-area-id]').forEach(function (button) {
@@ -112,15 +134,18 @@
       var colorMap = {};
       locationFeatures.forEach(function (feature) {
         var id = String(feature.properties.id || feature.id);
-        colorMap[id] = core.getPolygonColor(solution.statuses[id] || 'available');
+        colorMap[id] = core.getPolygonColor(solution.displayStatuses[id] || solution.statuses[id] || 'available');
       });
       renderer.setFeatureColors(layerId, colorMap, core.getPolygonColor('available'));
     }
   }
 
   function toggleArea(id) {
-    var pin = store.get().pins[id];
-    store.setPin(id, pin === 'out' ? 'in' : pin === 'in' ? null : 'out');
+    var solution = currentSolution || core.solveScenario(allFeatures, store.get());
+    var status = (solution.displayStatuses && solution.displayStatuses[id])
+      || (solution.statuses && solution.statuses[id])
+      || 'available';
+    store.cyclePin(id, status);
   }
 
   function renderShell(container) {
@@ -138,9 +163,9 @@
         + '<div class="wsl-location-nav"><button id="wsl-prev" aria-label="Previous location">‹</button><select id="wsl-location-select">' + options + '</select><button id="wsl-next" aria-label="Next location">›</button></div>'
       + '</div>'
       + '<div class="wsl-layout">'
-        + '<div class="wsl-map-wrap" id="wsl-map-wrap"><iframe id="wsl-map" src="/leaflet-map.html" title="Mapped turf areas"></iframe><div class="wsl-legend"><span><i class="in-plan"></i>In plan</span><span><i class="available"></i>Available</span><span><i class="excluded"></i>Excluded</span></div></div>'
+        + '<div class="wsl-map-wrap" id="wsl-map-wrap"><iframe id="wsl-map" src="/leaflet-map.html" title="Mapped turf areas"></iframe><div class="wsl-legend"><span><i class="pinned-in"></i>Pinned in</span><span><i class="in-plan"></i>Solver-selected</span><span><i class="available"></i>Available</span><span><i class="pinned-out"></i>Pinned out</span></div></div>'
         + '<aside class="wsl-rail">'
-          + '<section><h2>Selection</h2><p id="wsl-contribution"></p><button id="wsl-clear">Clear location overrides</button></section>'
+          + '<section><h2>Selection</h2><p id="wsl-contribution"></p><div id="wsl-override-counts" class="wsl-override-counts"></div><button id="wsl-clear">Clear location overrides</button></section>'
           + '<section><h2>Estimated Summary</h2><div class="wsl-metrics" id="wsl-metrics"></div></section>'
           + '<section class="wsl-areas"><h2>Areas</h2><div id="wsl-area-list"></div></section>'
           + '<section class="wsl-note"><strong>Portfolio-wide assumptions</strong><p>Costs and savings use the shared scenario. Excluding an area here immediately changes the portfolio summary.</p></section>'
