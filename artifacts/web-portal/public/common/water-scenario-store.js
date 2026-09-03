@@ -9,6 +9,10 @@
   var subscribers = [];
   var polygonCache = null;
   var DEFAULT_NAME = 'Portfolio Water Savings';
+  var TIER_PRESETS = {
+    rock: { costPerSf: 6, rebatePerSf: 1 },
+    colorado: { costPerSf: 10, rebatePerSf: 3.25 }
+  };
 
   function defaultAssumptions() {
     return window.VRTXeriscapeCore.normaliseAssumptions({});
@@ -112,10 +116,12 @@
     },
     setTier: function (tier) {
       var nextTier = tier === 'colorado' ? 'colorado' : 'rock';
+      var preset = TIER_PRESETS[nextTier];
       setState({
         tier: nextTier,
         assumptions: Object.assign({}, state.assumptions, {
-          rebatePerSf: nextTier === 'colorado' ? 3.25 : 1
+          costPerSf: preset.costPerSf,
+          rebatePerSf: preset.rebatePerSf
         }),
         persistence: 'dirty'
       });

@@ -188,3 +188,59 @@ test('target changes preserve both override directions and saved scenarios reloa
   const targetAfterReload = await page.evaluate(() => (window as any).VRTWaterScenario.get().targetPct);
   expect(targetAfterReload).toBe(0);
 });
+
+test('summary leads with cost effectiveness, live assumptions, tiers, attainment, and proportional overview', async ({ page }) => {
+  await setup(page);
+  await page.goto('/web/portfolio/water-savings');
+
+  const labels = await page.locator('.ws-kpi').evaluateAll((cards) =>
+    cards.map((card) => card.querySelector('span')?.textContent?.trim()),
+  );
+  expect(labels).toEqual([
+    'Gallons avoided',
+    'Cost per 1,000 gal avoided',
+    'Annual savings',
+    'Net capital cost',
+    'Payback',
+  ]);
+  await expect(page.locator('[data-kpi="cost-per-1000"]')).toHaveClass(/hero/);
+  await expect(page.locator('[data-kpi="payback"]')).toHaveClass(/quiet/);
+  await expect(page.locator('#ws-attainment')).toContainText('Target met');
+  await expect(page.locator('#ws-attainment')).toContainText('1 area across 1 location');
+  await expect(page.locator('.ws-honesty')).toContainText('Modelled, not metered');
+  await expect(page.locator('.ws-honesty')).toContainText('load water invoices to calibrate against actual consumption per branch');
+
+  const initialComparison = await page.locator('[data-kpi="cost-per-1000"] small').textContent();
+  await page.locator('[data-assumption="waterRatePerKGal"]').fill('12.08');
+  await page.locator('[data-assumption="waterRatePerKGal"]').press('Tab');
+  await expect(page.locator('[data-kpi="cost-per-1000"] small')).not.toHaveText(initialComparison || '');
+  await expect(page.locator('[data-kpi="cost-per-1000"] small')).toContainText('cheaper than buying it');
+
+  await page.locator('.ws-tier-card[data-tier="colorado"]').click();
+  await expect(page.locator('.ws-tier-card[data-tier="colorado"]')).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => (window as any).VRTWaterScenario.get().assumptions)).toMatchObject({
+    costPerSf: 10,
+    rebatePerSf: 3.25,
+  });
+  await page.locator('[data-assumption="costPerSf"]').fill('11');
+  await page.locator('[data-assumption="costPerSf"]').press('Tab');
+  await expect(page.locator('.ws-tier-card[data-tier="colorado"]')).toHaveClass(/modified/);
+
+  const initialShares = await page.locator('.ws-overview-block').evaluateAll((blocks) =>
+    blocks.map((block) => ({
+      grow: (block as HTMLElement).style.flexGrow,
+      share: block.getAttribute('data-plan-share'),
+    })),
+  );
+  expect(initialShares).toEqual([
+    { grow: '1000', share: '100' },
+    { grow: '500', share: '0' },
+  ]);
+
+  await page.locator('#ws-target').fill('100');
+  await page.locator('#ws-target').press('Tab');
+  await expect(page.locator('#ws-attainment')).toContainText('2 areas across 2 locations');
+  await expect(page.locator('#ws-attainment')).toContainText('100.0% reduction');
+  await expect(page.locator('.ws-overview-block[data-community-id="c1"]')).toHaveAttribute('data-plan-share', '100');
+  await expect(page.locator('.ws-overview-block[data-community-id="c2"]')).toHaveAttribute('data-plan-share', '100');
+});

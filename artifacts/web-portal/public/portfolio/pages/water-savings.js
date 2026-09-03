@@ -12,6 +12,20 @@
   var summary = null;
   var polygons = null;
   var scenarios = [];
+  var TIER_PRESETS = {
+    rock: {
+      name: 'Rock & mulch',
+      costPerSf: 6,
+      rebatePerSf: 1,
+      description: 'lowest cost per gallon · limited curb appeal, no ESG story'
+    },
+    colorado: {
+      name: 'ColoradoScape',
+      costPerSf: 10,
+      rebatePerSf: 3.25,
+      description: 'pollinator habitat · appropriate at a branch frontage'
+    }
+  };
 
   function orgSuffix() {
     var state = window.PortfolioState;
@@ -31,8 +45,58 @@
     return '$' + Math.round(Number(value || 0)).toLocaleString();
   }
 
+  function preciseMoney(value) {
+    return Number.isFinite(Number(value)) ? '$' + Number(value).toFixed(2) : '—';
+  }
+
   function number(value) {
     return Math.round(Number(value || 0)).toLocaleString();
+  }
+
+  function percent(value) {
+    return Number(value || 0).toFixed(1) + '%';
+  }
+
+  function compactGallons(value) {
+    var gallons = Number(value || 0);
+    if (gallons >= 1000000) return (gallons / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+    if (gallons >= 1000) return (gallons / 1000).toFixed(1).replace(/\.?0+$/, '') + 'K';
+    return number(gallons);
+  }
+
+  function years(value) {
+    return value == null ? '—' : Number(value).toFixed(1) + ' yrs';
+  }
+
+  function tierIsModified(tier, assumptions) {
+    var preset = TIER_PRESETS[tier] || TIER_PRESETS.rock;
+    return Number(assumptions.costPerSf) !== preset.costPerSf
+      || Number(assumptions.rebatePerSf) !== preset.rebatePerSf;
+  }
+
+  function comparisonText(outputs, waterRate) {
+    var waterPrice = 'Water price ' + preciseMoney(waterRate) + ' / 1,000 gal · ';
+    if (outputs.costPer1000GalAvoided == null) return waterPrice + 'No avoided gallons to compare';
+    var difference = Number(waterRate) - Number(outputs.costPer1000GalAvoided);
+    if (difference > 0) return waterPrice + preciseMoney(difference) + ' cheaper than buying it';
+    if (difference < 0) return waterPrice + preciseMoney(Math.abs(difference)) + ' above the water price';
+    return waterPrice + 'At the water price';
+  }
+
+  function plural(count, singular, pluralWord) {
+    return count + ' ' + (count === 1 ? singular : (pluralWord || singular + 's'));
+  }
+
+  function attainmentMessage(solution, rows, targetPct) {
+    var reduction = solution.totalSqFt > 0 ? solution.selectedSqFt / solution.totalSqFt * 100 : 0;
+    var selectedAreas = solution.selectedIds.length;
+    var affectedLocations = rows.filter(function (row) { return row.outputs.totalSquareFootage > 0; }).length;
+    var areasLabel = plural(selectedAreas, 'area');
+    var locationsLabel = plural(affectedLocations, 'location');
+    if (solution.selectedSqFt >= solution.targetSqFt) {
+      return 'Target met — ' + percent(reduction) + ' reduction from ' + areasLabel + ' across ' + locationsLabel;
+    }
+    return 'Falls short — ' + percent(reduction) + ' reduction of the ' + number(targetPct) + '% target from ' + areasLabel + ' across ' + locationsLabel;
   }
 
   function features() {
@@ -98,6 +162,8 @@
     var overview = rows.filter(function (row) { return row.turfSqFt > 0; }).map(function (row) {
       var share = row.turfSqFt > 0 ? Math.round(row.outputs.totalSquareFootage / row.turfSqFt * 100) : 0;
       return '<button class="ws-overview-block" data-community-id="' + esc(row.community.id) + '"'
+        + ' aria-label="' + esc(row.community.name + ': ' + share + '% in current plan') + '"'
+        + ' data-turf-sqft="' + esc(row.turfSqFt) + '" data-plan-share="' + esc(share) + '"'
         + ' style="flex-grow:' + Math.max(row.turfSqFt, 1) + '">'
         + '<span>' + esc(row.community.code || row.community.name) + '</span>'
         + '<i style="height:' + share + '%"></i>'
@@ -118,21 +184,40 @@
     }).join('');
 
     var a = state.assumptions;
+    var payback = years(portfolioOutputs.estimatedPaybackYears);
+    var tierCards = Object.keys(TIER_PRESETS).map(function (tier) {
+      var preset = TIER_PRESETS[tier];
+      var selected = state.tier === tier;
+      var modified = selected && tierIsModified(tier, a);
+      return '<button type="button" class="ws-tier-card' + (selected ? ' selected' : '') + (modified ? ' modified' : '') + '"'
+        + ' data-tier="' + tier + '" aria-pressed="' + (selected ? 'true' : 'false') + '">'
+        + '<span class="ws-tier-card-top"><strong>' + preset.name + '</strong>'
+        + '<span class="ws-tier-status">' + (modified ? 'Modified' : selected ? 'Selected' : 'Select') + '</span></span>'
+        + '<span class="ws-tier-price">' + preciseMoney(preset.costPerSf) + ' / ft²</span>'
+        + '<span class="ws-tier-rebate">' + preciseMoney(preset.rebatePerSf) + ' / ft² rebate</span>'
+        + '<span class="ws-tier-description">' + preset.description + '</span>'
+        + '</button>';
+    }).join('');
     container.innerHTML = '<div class="ws-page">'
       + '<div class="ctx ws-title-row"><div><h1>Water Savings Planner</h1><span class="sub">Portfolio summary</span></div>'
       + '<div class="ws-save-state ' + esc(state.persistence) + '">' + esc(state.persistence === 'saving' ? 'Saving…' : state.persistence === 'saved' ? 'Saved' : state.persistence === 'dirty' ? 'Unsaved changes' : '') + '</div></div>'
       + '<div class="ws-kpis">'
-        + '<div class="ws-kpi teal"><span>Annual water savings</span><strong>' + number(portfolioOutputs.annualGallonsAvoided) + '</strong><small>gallons per year</small></div>'
-        + '<div class="ws-kpi blue"><span>Area in plan</span><strong>' + number(portfolioOutputs.totalSquareFootage) + '</strong><small>of ' + number(solution.totalSqFt) + ' ft² mapped</small></div>'
-        + '<div class="ws-kpi amber"><span>Net conversion cost</span><strong>' + money(portfolioOutputs.netConversionCost) + '</strong><small>after rebate</small></div>'
-        + '<div class="ws-kpi navy"><span>Estimated payback</span><strong>' + (portfolioOutputs.estimatedPaybackYears == null ? '—' : portfolioOutputs.estimatedPaybackYears.toFixed(1)) + '</strong><small>years</small></div>'
+        + '<div class="ws-kpi teal" data-kpi="gallons-avoided"><span>Gallons avoided</span><strong>' + compactGallons(portfolioOutputs.annualGallonsAvoided) + '</strong><small>' + number(portfolioOutputs.annualGallonsAvoided) + ' gallons per year</small></div>'
+        + '<div class="ws-kpi hero" data-kpi="cost-per-1000"><span>Cost per 1,000 gal avoided</span><strong>' + preciseMoney(portfolioOutputs.costPer1000GalAvoided) + '</strong><small>' + comparisonText(portfolioOutputs, a.waterRatePerKGal) + '</small></div>'
+        + '<div class="ws-kpi green" data-kpi="annual-savings"><span>Annual savings</span><strong>' + money(portfolioOutputs.estimatedAnnualSavings) + '/yr</strong><small>water + maintenance</small></div>'
+        + '<div class="ws-kpi amber" data-kpi="net-capital-cost"><span>Net capital cost</span><strong>' + money(portfolioOutputs.netConversionCost) + '</strong><small>after ' + money(portfolioOutputs.rebateAmount) + ' rebate</small></div>'
+        + '<div class="ws-kpi quiet" data-kpi="payback"><span>Payback</span><strong>' + payback + '</strong><small>simple, undiscounted</small></div>'
       + '</div>'
+      + '<section class="panel ws-target-panel p-teal"><div class="panel-head"><h2>Portfolio target</h2><span class="hint">Tune the reduction goal for this plan</span></div><div class="ws-target-body">'
+        + '<div class="ws-target-value"><strong id="ws-target-label">' + number(state.targetPct) + '%</strong><span>annual turf conversion target</span></div>'
+        + '<div class="ws-target-slider"><label for="ws-target">Target percentage</label><input id="ws-target" type="range" min="0" max="100" step="1" value="' + esc(state.targetPct) + '" aria-describedby="ws-attainment"></div>'
+        + '<p id="ws-attainment" class="ws-attainment ' + (solution.selectedSqFt >= solution.targetSqFt ? 'met' : 'short') + '">' + attainmentMessage(solution, rows, state.targetPct) + '</p>'
+      + '</div></section>'
+      + '<section class="panel ws-tier-panel p-amber"><div class="panel-head"><h2>Conversion tier</h2><span class="hint">Choose the finish and rebate together</span></div><div class="ws-tier-cards">' + tierCards + '</div></section>'
       + '<div class="ws-summary-grid">'
         + '<section class="panel ws-scenario-panel"><div class="panel-head"><h2>Scenario controls</h2></div><div class="ws-panel-body">'
           + '<label>Saved scenario<select id="ws-scenario-select">' + scenarioOptions + '</select></label>'
           + '<label>Scenario name<input id="ws-name" value="' + esc(state.name) + '" maxlength="120"></label>'
-          + '<label>Portfolio target <b id="ws-target-label">' + number(state.targetPct) + '%</b><input id="ws-target" type="range" min="0" max="100" step="1" value="' + esc(state.targetPct) + '"></label>'
-          + '<label>Material tier<select id="ws-tier"><option value="rock"' + (state.tier === 'rock' ? ' selected' : '') + '>Decorative rock</option><option value="colorado"' + (state.tier === 'colorado' ? ' selected' : '') + '>Colorado native</option></select></label>'
           + '<label>Annual budget<input id="ws-budget" type="number" min="0" step="1000" placeholder="No budget limit" value="' + esc(state.annualBudget == null ? '' : state.annualBudget) + '"></label>'
           + '<div class="ws-button-row"><button class="ws-primary" id="ws-save">Save scenario</button><button id="ws-new">New scenario</button><button id="ws-clear">Clear overrides</button></div>'
         + '</div></section>'
@@ -143,6 +228,7 @@
           + '<label>Water rate / 1,000 gal<input data-assumption="waterRatePerKGal" type="number" min="0" step=".01" value="' + esc(a.waterRatePerKGal) + '"></label>'
           + '<label>Maintenance saved / ft² / yr<input data-assumption="maintenancePerSfYear" type="number" min="0" step=".01" value="' + esc(a.maintenancePerSfYear) + '"></label>'
           + '<p>These assumptions apply to every location in this scenario.</p>'
+          + '<p class="ws-honesty"><strong>Modelled, not metered.</strong> Gallons avoided are estimated from mapped area × gallons saved per ft² per year; load water invoices to calibrate against actual consumption per branch.</p>'
         + '</div></section>'
       + '</div>'
       + '<section class="panel"><div class="panel-head"><h2>Portfolio overview</h2><span class="hint">Block size = mapped turf · fill = share in plan</span></div><div class="ws-overview">' + overview + '</div></section>'
@@ -158,8 +244,11 @@
         PortfolioRouter.navigate('water-savings-location', true, { id: element.getAttribute('data-community-id') });
       });
     });
+    container.querySelector('#ws-target').addEventListener('input', function (event) { store.setTarget(event.target.value); });
     container.querySelector('#ws-target').addEventListener('change', function (event) { store.setTarget(event.target.value); });
-    container.querySelector('#ws-tier').addEventListener('change', function (event) { store.setTier(event.target.value); });
+    container.querySelectorAll('[data-tier]').forEach(function (card) {
+      card.addEventListener('click', function () { store.setTier(card.getAttribute('data-tier')); });
+    });
     container.querySelector('#ws-budget').addEventListener('change', function (event) { store.setBudget(event.target.value); });
     container.querySelector('#ws-name').addEventListener('change', function (event) { store.setName(event.target.value); });
     container.querySelectorAll('[data-assumption]').forEach(function (input) {

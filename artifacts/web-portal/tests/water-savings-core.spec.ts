@@ -113,3 +113,25 @@ test('status-aware pin cycle moves automatic, pinned-in, and pinned-out areas th
   store.cyclePin('selected', 'pinned-out');
   expect(store.get().pins.selected).toBeUndefined();
 });
+
+test('tier presets set cost and rebate together and expose modified scenarios without changing shape', () => {
+  const sandbox = { window: {} as Record<string, unknown>, console };
+  vm.runInNewContext(readFileSync('public/common/xeriscape-core.js', 'utf8'), sandbox);
+  vm.runInNewContext(readFileSync('public/common/water-scenario-store.js', 'utf8'), sandbox);
+  const store = (sandbox.window as any).VRTWaterScenario;
+
+  store.reset();
+  expect(store.get().tier).toBe('rock');
+  expect(store.get().assumptions.costPerSf).toBe(6);
+  expect(store.get().assumptions.rebatePerSf).toBe(1);
+
+  store.setTier('colorado');
+  expect(store.get().tier).toBe('colorado');
+  expect(store.get().assumptions.costPerSf).toBe(10);
+  expect(store.get().assumptions.rebatePerSf).toBe(3.25);
+
+  store.setAssumptions({ ...store.get().assumptions, costPerSf: 11 });
+  expect(store.get().tier).toBe('colorado');
+  expect(store.get().assumptions.costPerSf).toBe(11);
+  expect(store.get()).not.toHaveProperty('tierModified');
+});
