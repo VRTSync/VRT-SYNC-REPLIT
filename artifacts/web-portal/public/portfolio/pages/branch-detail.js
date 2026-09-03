@@ -399,6 +399,11 @@
       adapter:   portfolioAdapter,
       hierarchy: hierarchyMap,
       fitPreference: 'outline',
+      // A single commercial property is far smaller than an HOA community, so
+      // the iframe's community-scale zoom cap (16) leaves the site as a speck
+      // in the middle of the panel. Allow the fit to close in on the property
+      // outline; larger sites still fit below this and are unaffected.
+      fitMaxZoom: 19,
     });
 
     // Wire satellite toggle and expand button now that renderer instance exists

@@ -594,11 +594,14 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       post('targetReached', {});
     },
 
-    fitBounds: function(coords) {
+    // maxZoom is optional: callers showing a single small site (a commercial
+    // property rather than a whole community) pass a closer cap so the fit is
+    // not clipped at the community-scale default.
+    fitBounds: function(coords, maxZoom) {
       if (!coords || coords.length === 0) return;
       var bounds = L.latLngBounds(coords.map(function(c) { return [c[0], c[1]]; }));
       communityBounds = bounds;
-      map.fitBounds(bounds, { padding: [60, 40], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [60, 40], maxZoom: typeof maxZoom === 'number' ? maxZoom : 16 });
     },
 
     fitToContent: function(taskCoords, userLoc) {
@@ -708,19 +711,20 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
       this._outlineLayer.bringToBack();
     },
 
-    fitToOutline: function() {
+    fitToOutline: function(maxZoom) {
+      var mz = typeof maxZoom === 'number' ? maxZoom : 16;
       if (this._outlineLayer) {
         try {
           var b = this._outlineLayer.getBounds();
           if (b && b.isValid()) {
             communityBounds = b;
-            map.fitBounds(b, { padding: [32, 32], maxZoom: 16 });
+            map.fitBounds(b, { padding: [32, 32], maxZoom: mz });
             return;
           }
         } catch(e) {}
       }
       if (communityBounds && communityBounds.isValid()) {
-        map.fitBounds(communityBounds, { padding: [32, 32], maxZoom: 16 });
+        map.fitBounds(communityBounds, { padding: [32, 32], maxZoom: mz });
       }
     },
 

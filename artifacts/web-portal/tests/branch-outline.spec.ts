@@ -340,6 +340,11 @@ test.describe('Community boundary outline — branch detail tab switching', () =
     }).toBeGreaterThan(0);
     expect(await parentCommands(page, 'fitBounds')).toHaveLength(0);
 
+    // A single property is far smaller than a community: the fit must be
+    // allowed past the iframe's community-scale zoom cap, or the site renders
+    // as a speck in the middle of the panel.
+    expect((await parentCommands(page, 'fitToOutline')).at(-1)?.args[0]).toBe(19);
+
     await page.unroute('**/api/portfolio/branches/test-branch');
     await page.unroute('**/api/portfolio/branches/test-branch/layers/layer-outline/geojson');
     await page.unroute('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson');
@@ -355,6 +360,8 @@ test.describe('Community boundary outline — branch detail tab switching', () =
       timeout: 10_000,
     }).toBeGreaterThan(0);
     expect(await parentCommands(page, 'fitToOutline')).toHaveLength(0);
+    // The content fallback carries the same closer cap.
+    expect((await parentCommands(page, 'fitBounds')).at(-1)?.args[1]).toBe(19);
   });
 
   test('Summary bounds ignore hidden controller and zone markers', async ({ page }) => {

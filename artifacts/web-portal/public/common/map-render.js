@@ -82,6 +82,11 @@
     var adapter   = opts.adapter;
     var hierarchy = opts.hierarchy || {};
     var fitPreference = opts.fitPreference === 'outline' ? 'outline' : 'content';
+    // fitMaxZoom: how close a fit may zoom. null keeps the iframe's
+    // community-scale default (16), which leaves a small single property
+    // stranded in the middle of the frame. Surfaces showing one site pass a
+    // closer cap. Ignored when the content is large enough to fit below it.
+    var fitMaxZoom = typeof opts.fitMaxZoom === 'number' ? opts.fitMaxZoom : null;
     // interactive: false → preview mode. Disables all Leaflet interaction
     // handlers (scroll-wheel zoom, dragging, double-click zoom, keyboard,
     // box zoom, touch zoom) and hides the zoom control.
@@ -614,15 +619,15 @@
       }
 
       if (minLat <= maxLat && minLng <= maxLng) {
-        _cmd('fitBounds', [[minLat, minLng], [maxLat, maxLng]]);
+        _cmd('fitBounds', [[minLat, minLng], [maxLat, maxLng]], fitMaxZoom);
       } else if (_outlineFitUsable) {
-        _cmd('fitToOutline');
+        _cmd('fitToOutline', fitMaxZoom);
       }
     }
 
     function _fitPreferred(visibility) {
       if (fitPreference === 'outline' && _outlineFitUsable) {
-        _cmd('fitToOutline');
+        _cmd('fitToOutline', fitMaxZoom);
         return;
       }
       _fitVisibleContent(visibility);
