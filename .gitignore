@@ -47,6 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+attached_assets/
 
 # Client billing data — must never enter git history
 PNC SEED DATA/
