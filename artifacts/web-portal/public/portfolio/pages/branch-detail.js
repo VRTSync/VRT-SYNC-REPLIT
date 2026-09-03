@@ -398,6 +398,7 @@
       iframe:    iframe,
       adapter:   portfolioAdapter,
       hierarchy: hierarchyMap,
+      fitPreference: 'outline',
     });
 
     // Wire satellite toggle and expand button now that renderer instance exists
@@ -410,7 +411,13 @@
       window.VRTMapRenderer.renderSatelliteToggle(_bHeadCtrl, _renderer);
     }
     if (window.VRTMapRenderer && _bExpBtn && _bPanel) {
-      window.VRTMapRenderer.renderExpandButton(_bExpBtn, _bPanel, _renderer, 'bmap-panel--expanded');
+      window.VRTMapRenderer.renderExpandButton(
+        _bExpBtn,
+        _bPanel,
+        _renderer,
+        'bmap-panel--expanded',
+        { refit: true }
+      );
     }
 
     // Inject expanded floating overlay + wire panel listeners ONCE per page

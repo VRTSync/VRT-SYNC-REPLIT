@@ -201,6 +201,15 @@ async function parentOutlineCallCount(page: Page): Promise<number> {
   );
 }
 
+async function parentCommands(page: Page, fn: string): Promise<{ fn: string; args: unknown[] }[]> {
+  return page.evaluate(
+    (commandName) =>
+      ((window as unknown as { _pageCmds: { fn: string; args: unknown[] }[] })._pageCmds ?? [])
+        .filter((command) => command.fn === commandName),
+    fn,
+  );
+}
+
 /**
  * Count setCommunityOutline calls recorded inside the iframe itself.
  * Only reliable before the iframe is moved between DOM slots (initial load).
@@ -311,6 +320,135 @@ test.describe('Community boundary outline — branch detail tab switching', () =
         .filter((c) => c.fn === 'setCommunityOutline' && c.args[0] === null).length,
     );
     expect(nullOutlineCalls, 'Outline must never be cleared during tab switches').toBe(0);
+  });
+
+  test('location maps prefer the outline while locations without one fit visible content', async ({ page }) => {
+    await setupCommonRoutes(page);
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_WITH_OUTLINE) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-outline/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(OUTLINE_GEOJSON) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(SERVICE_GEOJSON) }),
+    );
+
+    await page.goto('/test/branch-detail-harness');
+    await expect.poll(async () => (await parentCommands(page, 'fitToOutline')).length, {
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+    expect(await parentCommands(page, 'fitBounds')).toHaveLength(0);
+
+    await page.unroute('**/api/portfolio/branches/test-branch');
+    await page.unroute('**/api/portfolio/branches/test-branch/layers/layer-outline/geojson');
+    await page.unroute('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson');
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_NO_OUTLINE) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(SERVICE_GEOJSON) }),
+    );
+
+    await page.reload();
+    await expect.poll(async () => (await parentCommands(page, 'fitBounds')).length, {
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+    expect(await parentCommands(page, 'fitToOutline')).toHaveLength(0);
+  });
+
+  test('Summary bounds ignore hidden controller and zone markers', async ({ page }) => {
+    await setupCommonRoutes(page);
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_NO_OUTLINE) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(SERVICE_GEOJSON) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/controllers', (route) =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify([{
+          id: 'ctrl-far-away',
+          latitude: 10,
+          longitude: 10,
+          zones: [{ id: 'zone-far-away', latitude: 20, longitude: 20 }],
+        }]),
+      }),
+    );
+
+    await page.goto('/test/branch-detail-harness');
+    await expect.poll(async () => (await parentCommands(page, 'fitBounds')).length, {
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+
+    const fits = await parentCommands(page, 'fitBounds');
+    expect(fits.at(-1)?.args[0]).toEqual([[41.85, -87.61], [41.85, -87.61]]);
+    expect((await parentCommands(page, 'showControllers')).at(-1)?.args[0]).toBe(false);
+    expect((await parentCommands(page, 'showZones')).at(-1)?.args[0]).toBe(false);
+  });
+
+  test('unusable coordinates are ignored and warned once per source', async ({ page }) => {
+    await setupCommonRoutes(page);
+    const mixedCoordinates = {
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [200, 95] }, properties: {} },
+        { type: 'Feature', geometry: { type: 'Point', coordinates: [12, null] }, properties: {} },
+        ...SERVICE_GEOJSON.features,
+      ],
+    };
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_NO_OUTLINE) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(mixedCoordinates) }),
+    );
+    const warnings: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'warning' && message.text().includes('Ignoring unusable coordinate')) {
+        warnings.push(message.text());
+      }
+    });
+
+    await page.goto('/test/branch-detail-harness');
+    await expect.poll(async () => (await parentCommands(page, 'fitBounds')).length, {
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+
+    const fits = await parentCommands(page, 'fitBounds');
+    expect(fits.at(-1)?.args[0]).toEqual([[41.85, -87.61], [41.85, -87.61]]);
+    expect(warnings.filter((warning) => warning.includes('layer layer-irrig'))).toHaveLength(1);
+  });
+
+  test('expand and collapse refit only until the user changes the viewport', async ({ page }) => {
+    await setupCommonRoutes(page);
+    await page.route('**/api/portfolio/branches/test-branch', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(BRANCH_WITH_OUTLINE) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-outline/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(OUTLINE_GEOJSON) }),
+    );
+    await page.route('**/api/portfolio/branches/test-branch/layers/layer-irrig/geojson', (route) =>
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify(SERVICE_GEOJSON) }),
+    );
+
+    await page.goto('/test/branch-detail-harness');
+    await expect.poll(async () => (await parentCommands(page, 'fitToOutline')).length, {
+      timeout: 10_000,
+    }).toBeGreaterThan(0);
+    const beforeExpand = (await parentCommands(page, 'fitToOutline')).length;
+
+    await page.click('#bmap-expand-btn');
+    await expect.poll(async () => (await parentCommands(page, 'fitToOutline')).length)
+      .toBeGreaterThan(beforeExpand);
+    const afterExpand = (await parentCommands(page, 'fitToOutline')).length;
+
+    await page.evaluate(() => window.postMessage({ type: 'viewportChanged' }, '*'));
+    await page.click('#bmap-expand-btn');
+    await page.waitForTimeout(450);
+    expect(await parentCommands(page, 'fitToOutline')).toHaveLength(afterExpand);
   });
 
   test('no outline layer: tab switches complete without JS errors and never send setCommunityOutline', async ({ page }) => {

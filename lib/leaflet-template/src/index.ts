@@ -242,6 +242,22 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
     } catch(e) {}
   }
 
+  // Let the parent preserve a viewport the user has deliberately changed.
+  // Programmatic fitBounds calls do not emit these DOM interactions.
+  var viewportChangePosted = false;
+  function postUserViewportChange() {
+    if (viewportChangePosted) return;
+    viewportChangePosted = true;
+    post('viewportChanged', { userInitiated: true });
+  }
+  map.on('dragstart', postUserViewportChange);
+  map.on('dblclick', postUserViewportChange);
+  map.getContainer().addEventListener('wheel', postUserViewportChange, { passive: true });
+  map.getContainer().addEventListener('touchstart', postUserViewportChange, { passive: true });
+  map.getContainer().addEventListener('keydown', postUserViewportChange);
+  var zoomControl = document.querySelector('.leaflet-control-zoom');
+  if (zoomControl) zoomControl.addEventListener('click', postUserViewportChange);
+
   function clearGroup(group) {
     group.clearLayers();
   }
@@ -698,13 +714,13 @@ export const LEAFLET_MAP_HTML = `<!DOCTYPE html>
           var b = this._outlineLayer.getBounds();
           if (b && b.isValid()) {
             communityBounds = b;
-            map.fitBounds(b, { padding: [32, 32] });
+            map.fitBounds(b, { padding: [32, 32], maxZoom: 16 });
             return;
           }
         } catch(e) {}
       }
       if (communityBounds && communityBounds.isValid()) {
-        map.fitBounds(communityBounds, { padding: [32, 32] });
+        map.fitBounds(communityBounds, { padding: [32, 32], maxZoom: 16 });
       }
     },
 

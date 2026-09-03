@@ -5,7 +5,8 @@
  *   var renderer = window.VRTMapRenderer.create({
  *     iframe:    <HTMLIFrameElement>,
  *     adapter:   { fetchLayers, fetchLayerGeojson, fetchControllers, fetchBounds? },
- *     hierarchy: { [categoryKey]: [{ key, label, color }] }
+ *     hierarchy: { [categoryKey]: [{ key, label, color }] },
+ *     fitPreference: 'content' | 'outline'
  *   });
  *
  *   renderer.on('ready',    function(state) { ... });
@@ -23,7 +24,7 @@
  *   setActiveCategory(key)              — key=null → show ALL layers (summary mode)
  *   setVisibleSubLayers(stateForCat)    — { [subKey]: bool } for the current active category
  *   setSatellite(on)
- *   fit()
+ *   fit(opts?)                           — opts.ifUntouched preserves a user-moved viewport
  *   invalidateSize()
  *   on(event, handler)                  — 'ready' | 'assetTap' | 'mapTap'
  *     assetTap payload: { featureRef, featureId, layerKey, label, assetType, layerName }
@@ -80,6 +81,7 @@
     var iframe    = opts.iframe;
     var adapter   = opts.adapter;
     var hierarchy = opts.hierarchy || {};
+    var fitPreference = opts.fitPreference === 'outline' ? 'outline' : 'content';
     // interactive: false → preview mode. Disables all Leaflet interaction
     // handlers (scroll-wheel zoom, dragging, double-click zoom, keyboard,
     // box zoom, touch zoom) and hides the zoom control.
@@ -105,6 +107,9 @@
     var _customLayers     = {};   // layerId → custom layer definition
     var _visibleCustomLayerIds = {}; // layerId → true
     var _hasApplied       = false; // true after the first _applyState fit
+    var _hasUserMovedViewport = false;
+    var _warnedCoordinateSources = {};
+    var _outlineFitUsable = false;
     var _layerColors      = {};   // layerId → hex
     var _events           = { ready: [], assetTap: [], mapTap: [] };
 
@@ -140,6 +145,8 @@
           _emit('assetTap', msg.data);
         } else if (msg.type === 'mapTap') {
           _emit('mapTap', msg.data || {});
+        } else if (msg.type === 'viewportChanged') {
+          _hasUserMovedViewport = true;
         }
       };
       window.addEventListener('message', _msgHandler);
@@ -236,7 +243,7 @@
       var ctrlMarkers = [];
       for (var i = 0; i < _controllerData.length; i++) {
         var c = _controllerData[i];
-        if (c.latitude == null || c.longitude == null) continue;
+        if (!_isUsableCoordinate(c.latitude, c.longitude, 'controller ' + (c.id || c.featureRef || i))) continue;
         var perCtrlColor = ctrlColorOverride !== null
           ? ctrlColorOverride
           : (c.controllerColor || fallbackCtrl);
@@ -266,7 +273,7 @@
         var zones = ctrl.zones || [];
         for (var jj = 0; jj < zones.length; jj++) {
           var z = zones[jj];
-          if (z.latitude == null || z.longitude == null) continue;
+          if (!_isUsableCoordinate(z.latitude, z.longitude, 'zone ' + (z.id || z.featureRef || (ii + ':' + jj)))) continue;
           // Key: valveBoxRef when present, otherwise the zone's own featureRef
           var boxKey = z.valveBoxRef || z.featureRef;
           if (!boxGroups[boxKey]) {
@@ -409,13 +416,13 @@
 
       for (var i = 0; i < _controllerData.length; i++) {
         var c = _controllerData[i];
-        if (c.latitude != null && c.longitude != null && c.featureRef) {
+        if (_isUsableCoordinate(c.latitude, c.longitude, 'controller ' + (c.id || c.featureRef || i)) && c.featureRef) {
           posCtrlRefs[String(c.featureRef)] = true;
         }
         var zones = c.zones || [];
         for (var j = 0; j < zones.length; j++) {
           var z = zones[j];
-          if (z.latitude != null && z.longitude != null && z.featureRef) {
+          if (_isUsableCoordinate(z.latitude, z.longitude, 'zone ' + (z.id || z.featureRef || (i + ':' + j))) && z.featureRef) {
             posZoneRefs[String(z.featureRef)] = true;
           }
         }
@@ -457,36 +464,112 @@
     }
 
     // ── Bounds fitting ────────────────────────────────────────────────────────
-    function _fitVisibleContent(stateForCat) {
+    function _warnInvalidCoordinate(source, lat, lng) {
+      if (_warnedCoordinateSources[source]) return;
+      _warnedCoordinateSources[source] = true;
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[VRTMapRenderer] Ignoring unusable coordinate from ' + source
+          + ' (latitude=' + String(lat) + ', longitude=' + String(lng) + ')');
+      }
+    }
+
+    function _isUsableCoordinate(lat, lng, source) {
+      var latType = typeof lat;
+      var lngType = typeof lng;
+      var inputsPresent = lat != null && lng != null
+        && lat !== '' && lng !== ''
+        && (latType === 'number' || latType === 'string')
+        && (lngType === 'number' || lngType === 'string');
+      var nLat = Number(lat);
+      var nLng = Number(lng);
+      var usable = inputsPresent
+        && Number.isFinite(nLat) && Number.isFinite(nLng)
+        && nLat >= -90 && nLat <= 90
+        && nLng >= -180 && nLng <= 180
+        && !(nLat === 0 && nLng === 0);
+      if (!usable && source) _warnInvalidCoordinate(source, lat, lng);
+      return usable;
+    }
+
+    function _geojsonCoordinatesAreUsable(geojson, source) {
+      var found = false;
+      var invalid = false;
+      function walk(value) {
+        if (!Array.isArray(value)) return;
+        if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+          found = true;
+          if (!_isUsableCoordinate(value[1], value[0], source)) invalid = true;
+          return;
+        }
+        for (var i = 0; i < value.length; i++) walk(value[i]);
+      }
+      if (geojson && geojson.type === 'FeatureCollection' && Array.isArray(geojson.features)) {
+        for (var fi = 0; fi < geojson.features.length; fi++) {
+          var feature = geojson.features[fi];
+          if (feature && feature.geometry) walk(feature.geometry.coordinates);
+        }
+      } else if (geojson && geojson.type === 'Feature' && geojson.geometry) {
+        walk(geojson.geometry.coordinates);
+      } else if (geojson) {
+        walk(geojson.coordinates);
+      }
+      return found && !invalid;
+    }
+
+    function _computeVisibility(stateForCat) {
+      var layerIds = [];
+      for (var i = 0; i < _mapLayers.length; i++) {
+        var layer = _mapLayers[i];
+        if (!layer._geojson || layer.isEnabled === false) continue;
+        if (layer.layerKey === 'outline' || layer.type === 'outline') continue;
+        // Suppressed controller/zone GeoJSON is never pushed to the iframe;
+        // excluding the same IDs here keeps display and fit visibility aligned.
+        if (layer.subLayerKey === 'controller' && _suppressCtrlGeo) continue;
+        if (layer.subLayerKey === 'zone' && _suppressZoneGeo) continue;
+        if (_activeCategory !== null) {
+          if (layer.layerKey !== _activeCategory) continue;
+          if (!stateForCat || !stateForCat[layer.subLayerKey]) continue;
+        }
+        layerIds.push(layer.id);
+      }
+      return {
+        layerIds: layerIds,
+        showControllers: _activeCategory === 'irrigation'
+          && !!(stateForCat && stateForCat.controller),
+        showZones: _activeCategory === 'irrigation'
+          && !!(stateForCat && stateForCat.zone),
+      };
+    }
+
+    function _fitVisibleContent(visibility) {
       var minLat = Infinity, maxLat = -Infinity;
       var minLng = Infinity, maxLng = -Infinity;
 
-      function extend(lat, lng) {
-        if (lat == null || lng == null || isNaN(+lat) || isNaN(+lng)) return;
+      function extend(lat, lng, source) {
+        if (!_isUsableCoordinate(lat, lng, source)) return;
         if (+lat < minLat) minLat = +lat;
         if (+lat > maxLat) maxLat = +lat;
         if (+lng < minLng) minLng = +lng;
         if (+lng > maxLng) maxLng = +lng;
       }
 
-      function walkCoords(coords) {
+      function walkCoords(coords, source) {
         if (!Array.isArray(coords)) return;
-        if (typeof coords[0] === 'number') { extend(coords[1], coords[0]); }
-        else { for (var i = 0; i < coords.length; i++) walkCoords(coords[i]); }
+        if (typeof coords[0] === 'number') { extend(coords[1], coords[0], source); }
+        else { for (var i = 0; i < coords.length; i++) walkCoords(coords[i], source); }
       }
 
-      // Walk all visible layers for the active category (or all if null)
+      var visibleLayerIds = {};
+      for (var visibleIdx = 0; visibleIdx < visibility.layerIds.length; visibleIdx++) {
+        visibleLayerIds[visibility.layerIds[visibleIdx]] = true;
+      }
       for (var i = 0; i < _mapLayers.length; i++) {
         var l = _mapLayers[i];
-        if (_activeCategory !== null && l.layerKey !== _activeCategory) continue;
-        var sub = l.subLayerKey;
-        if (sub === 'controller' && _suppressCtrlGeo) continue;
-        if (sub === 'zone'       && _suppressZoneGeo) continue;
-        if (_activeCategory !== null && stateForCat && !stateForCat[sub]) continue;
+        if (!visibleLayerIds[l.id]) continue;
         if (!l._geojson || !l._geojson.features) continue;
         for (var j = 0; j < l._geojson.features.length; j++) {
           var f = l._geojson.features[j];
-          if (f.geometry && f.geometry.coordinates) walkCoords(f.geometry.coordinates);
+          if (f.geometry && f.geometry.coordinates) walkCoords(f.geometry.coordinates, 'layer ' + l.id);
         }
       }
 
@@ -503,31 +586,28 @@
           for (var featureIdx = 0; featureIdx < customGeojson.features.length; featureIdx++) {
             var customFeature = customGeojson.features[featureIdx];
             if (customFeature && customFeature.geometry && customFeature.geometry.coordinates) {
-              walkCoords(customFeature.geometry.coordinates);
+              walkCoords(customFeature.geometry.coordinates, 'custom layer ' + customIds[customIdx]);
             }
           }
         } else if (customGeojson.type === 'Feature' && customGeojson.geometry) {
-          walkCoords(customGeojson.geometry.coordinates);
+          walkCoords(customGeojson.geometry.coordinates, 'custom layer ' + customIds[customIdx]);
         } else if (customGeojson.coordinates) {
-          walkCoords(customGeojson.coordinates);
+          walkCoords(customGeojson.coordinates, 'custom layer ' + customIds[customIdx]);
         }
       }
 
       // Controller / zone marker coordinates
-      var isIrrCat = _activeCategory === 'irrigation' || _activeCategory === null;
-      if (isIrrCat && _controllerData.length > 0) {
-        var showCtrl = !stateForCat || stateForCat.controller !== false;
-        var showZone = !stateForCat || stateForCat.zone !== false;
+      if ((visibility.showControllers || visibility.showZones) && _controllerData.length > 0) {
         for (var ci = 0; ci < _controllerData.length; ci++) {
           var ctrl = _controllerData[ci];
-          if (showCtrl && ctrl.latitude != null && ctrl.longitude != null) {
-            extend(ctrl.latitude, ctrl.longitude);
+          if (visibility.showControllers) {
+            extend(ctrl.latitude, ctrl.longitude, 'controller ' + (ctrl.id || ctrl.featureRef || ci));
           }
           var czones = ctrl.zones || [];
           for (var zi = 0; zi < czones.length; zi++) {
             var cz = czones[zi];
-            if (showZone && cz.latitude != null && cz.longitude != null) {
-              extend(cz.latitude, cz.longitude);
+            if (visibility.showZones) {
+              extend(cz.latitude, cz.longitude, 'zone ' + (cz.id || cz.featureRef || (ci + ':' + zi)));
             }
           }
         }
@@ -535,48 +615,26 @@
 
       if (minLat <= maxLat && minLng <= maxLng) {
         _cmd('fitBounds', [[minLat, minLng], [maxLat, maxLng]]);
-      } else if (_outlineGeojson) {
+      } else if (_outlineFitUsable) {
         _cmd('fitToOutline');
       }
     }
 
-    // ── Visibility sync ────────────────────────────────────────────────────────
-    function _computeVisibleIds(stateForCat) {
-      var ids = [];
-      for (var i = 0; i < _mapLayers.length; i++) {
-        var l = _mapLayers[i];
-        if (l.layerKey !== _activeCategory) continue;
-        if (l.subLayerKey === 'controller' && _suppressCtrlGeo) continue;
-        if (l.subLayerKey === 'zone'       && _suppressZoneGeo) continue;
-        if (stateForCat && stateForCat[l.subLayerKey]) ids.push(l.id);
+    function _fitPreferred(visibility) {
+      if (fitPreference === 'outline' && _outlineFitUsable) {
+        _cmd('fitToOutline');
+        return;
       }
-      return ids;
+      _fitVisibleContent(visibility);
     }
 
+    // ── Visibility sync ────────────────────────────────────────────────────────
     function _syncToIframe(stateForCat, fit) {
-      if (_activeCategory === null) {
-        // Summary: show all non-outline layers with geometry
-        var allIds = [];
-        for (var i = 0; i < _mapLayers.length; i++) {
-          var l = _mapLayers[i];
-          if (l.layerKey === 'outline' || l.type === 'outline') continue;
-          if (l._geojson) allIds.push(l.id);
-        }
-        _cmd('showLayerIds', allIds);
-        _cmd('showControllers', false);
-        _cmd('showZones', false);
-      } else {
-        var visIds = _computeVisibleIds(stateForCat);
-        _cmd('showLayerIds', visIds);
-        if (_activeCategory === 'irrigation') {
-          _cmd('showControllers', !!(stateForCat && stateForCat.controller));
-          _cmd('showZones',       !!(stateForCat && stateForCat.zone));
-        } else {
-          _cmd('showControllers', false);
-          _cmd('showZones', false);
-        }
-      }
-      if (fit) _fitVisibleContent(stateForCat);
+      var visibility = _computeVisibility(stateForCat);
+      _cmd('showLayerIds', visibility.layerIds);
+      _cmd('showControllers', visibility.showControllers);
+      _cmd('showZones', visibility.showZones);
+      if (fit) _fitPreferred(visibility);
     }
 
     // ── Apply loaded state to iframe ─────────────────────────────────────────
@@ -615,8 +673,12 @@
       _layerColors   = {};
       _outlineGeojson = null;
       _outlineStyle   = null;
+      _outlineFitUsable = false;
       _suppressCtrlGeo = false;
       _suppressZoneGeo = false;
+      _hasApplied = false;
+      _hasUserMovedViewport = false;
+      _warnedCoordinateSources = {};
 
       var fetchCtrl = (adapter.fetchControllers)
         ? adapter.fetchControllers(communityId).catch(function () { return []; })
@@ -711,6 +773,10 @@
         if (outlineLayer) {
           _outlineGeojson = outlineLayer._geojson;
           _outlineStyle   = _buildOutlineStyle(outlineLayer);
+          _outlineFitUsable = _geojsonCoordinatesAreUsable(
+            outlineLayer._geojson,
+            'outline layer ' + outlineLayer.id
+          );
         }
 
         _dataReady = true;
@@ -753,9 +819,10 @@
 
     function setSatellite(on) { _cmd('setSatellite', on); }
 
-    function fit() {
+    function fit(opts) {
+      if (opts && opts.ifUntouched && _hasUserMovedViewport) return;
       var stateForCat = _activeCategory !== null ? (_sublayerState[_activeCategory] || {}) : null;
-      _fitVisibleContent(stateForCat);
+      _fitPreferred(_computeVisibility(stateForCat));
     }
 
     function invalidateSize() { _cmd('invalidateSize'); }
@@ -852,6 +919,7 @@
       getControllerData:     function () { return _controllerData; },
       getMapLayers:          function () { return _mapLayers; },
       getState:              _buildStateSnapshot,
+      hasUserMovedViewport:  function () { return _hasUserMovedViewport; },
       getSessionColorOverride: _getOverride,
       setSessionColorOverride: _setOverride,
       addCustomLayer:        addCustomLayer,
@@ -949,7 +1017,7 @@
   // on mapWrapEl. If btnEl is null, creates and appends a floating button.
   // Fires 'vrt-map-collapse' custom event on mapWrapEl when collapsing.
   // Returns { collapse } so callers can trigger collapse programmatically.
-  function renderExpandButton(btnEl, mapWrapEl, renderer, expandedClass) {
+  function renderExpandButton(btnEl, mapWrapEl, renderer, expandedClass, opts) {
     var btn = btnEl;
     if (!btn) {
       btn = document.createElement('button');
@@ -963,7 +1031,11 @@
       mapWrapEl.classList.remove(expandedClass);
       btn.setAttribute('aria-pressed', 'false');
       btn.title = 'Expand map';
-      setTimeout(function () { if (renderer) renderer.invalidateSize(); }, 270);
+      setTimeout(function () {
+        if (!renderer) return;
+        renderer.invalidateSize();
+        if (opts && opts.refit) renderer.fit({ ifUntouched: true });
+      }, 270);
       mapWrapEl.dispatchEvent(new CustomEvent('vrt-map-collapse', { bubbles: false }));
     }
 
@@ -971,7 +1043,11 @@
       mapWrapEl.classList.add(expandedClass);
       btn.setAttribute('aria-pressed', 'true');
       btn.title = 'Collapse map';
-      setTimeout(function () { if (renderer) renderer.invalidateSize(); }, 270);
+      setTimeout(function () {
+        if (!renderer) return;
+        renderer.invalidateSize();
+        if (opts && opts.refit) renderer.fit({ ifUntouched: true });
+      }, 270);
     }
 
     btn.addEventListener('click', function (e) {
