@@ -134,6 +134,278 @@
     });
   }
 
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var CURVE_ACCENT = '#25C1AC';
+  var CURVE_MUTED = '#94a3b8';
+
+  function finiteNonNegative(value) {
+    var numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+  }
+
+  function curveBarColor(status) {
+    return status === 'in-plan' ? CURVE_ACCENT : CURVE_MUTED;
+  }
+
+  function curveFeatureId(feature) {
+    return String(feature.properties.id || feature.id);
+  }
+
+  function curveLocationName(feature) {
+    var properties = feature.properties || {};
+    var community = (summary.communities || []).find(function (item) {
+      return item.id === properties.communityId;
+    });
+    return properties.communityName || (community && community.name) || properties.communityId || 'Unknown location';
+  }
+
+  function buildSupplyCurveBars(solution, state) {
+    return features()
+      .filter(function (feature) {
+        return feature.properties && feature.properties.isRankable === true;
+      })
+      .map(function (feature, index) {
+        var properties = feature.properties;
+        var id = curveFeatureId(feature);
+        var area = finiteNonNegative(properties.area_sqft);
+        var outputs = core.computeOutputsForSquareFootage(area, state.assumptions, 1);
+        var cost = Number(outputs.costPer1000GalAvoided);
+        return {
+          featureId: id,
+          communityId: properties.communityId,
+          locationName: curveLocationName(feature),
+          polygonName: properties.name || id,
+          areaSqFt: area,
+          annualGallons: finiteNonNegative(outputs.annualGallonsAvoided),
+          costPer1000GalAvoided: Number.isFinite(cost) && cost >= 0 ? cost : null,
+          netCost: finiteNonNegative(outputs.netConversionCost),
+          status: solution.statuses[id] || 'available',
+          displayStatus: solution.displayStatuses[id] || solution.statuses[id] || 'available',
+          tieBreak: String(properties.featureRef || '') + '|' + id,
+          sourceIndex: index
+        };
+      })
+      .sort(function (left, right) {
+        var leftCost = left.costPer1000GalAvoided == null ? Infinity : left.costPer1000GalAvoided;
+        var rightCost = right.costPer1000GalAvoided == null ? Infinity : right.costPer1000GalAvoided;
+        return leftCost - rightCost
+          || left.tieBreak.localeCompare(right.tieBreak)
+          || left.sourceIndex - right.sourceIndex;
+      });
+  }
+
+  function svgNode(name, attributes, text) {
+    var node = document.createElementNS(SVG_NS, name);
+    Object.keys(attributes || {}).forEach(function (key) {
+      node.setAttribute(key, String(attributes[key]));
+    });
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function curveTooltipMarkup(bar) {
+    return '<strong>' + esc(bar.polygonName) + '</strong>'
+      + '<span><b>Location:</b> ' + esc(bar.locationName) + '</span>'
+      + '<span><b>Square footage:</b> ' + number(bar.areaSqFt) + ' ft²</span>'
+      + '<span><b>Modeled gallons per year:</b> ' + number(bar.annualGallons) + ' gal/yr</span>'
+      + '<span><b>Cost per 1,000 gallons:</b> ' + preciseMoney(bar.costPer1000GalAvoided) + '</span>'
+      + '<span><b>Net cost:</b> ' + money(bar.netCost) + '</span>';
+  }
+
+  function setCurveTooltip(tooltip, bar, event) {
+    tooltip.innerHTML = curveTooltipMarkup(bar);
+    tooltip.hidden = false;
+    tooltip.setAttribute('aria-label', bar.polygonName + ' economics');
+    var chart = tooltip.parentElement;
+    var chartRect = chart.getBoundingClientRect();
+    var x = event && Number.isFinite(event.clientX)
+      ? event.clientX - chartRect.left + 12
+      : chartRect.width / 2;
+    var y = event && Number.isFinite(event.clientY)
+      ? event.clientY - chartRect.top + 12
+      : 20;
+    tooltip.style.left = Math.max(8, Math.min(x, Math.max(8, chartRect.width - 268))) + 'px';
+    tooltip.style.top = Math.max(8, y) + 'px';
+  }
+
+  function navigateToCurveBar(bar) {
+    if (bar.communityId) {
+      PortfolioRouter.navigate('water-savings-location', true, { id: bar.communityId });
+    }
+  }
+
+  function unresolvedReasonLabel(reason) {
+    return {
+      missing_map_layer: 'missing map layer',
+      invalid_map_layer: 'invalid map layer',
+      feature_not_found: 'polygon feature not found'
+    }[reason] || reason || 'unresolved source';
+  }
+
+  function curveCaption() {
+    var nonRankable = features().filter(function (feature) {
+      return feature.properties && feature.properties.isRankable === false;
+    }).map(function (feature) {
+      var properties = feature.properties;
+      return properties.name || properties.id || 'Unnamed polygon';
+    });
+    var unresolved = (polygons.unresolved || []).map(function (item) {
+      return (item.name || item.assetId || 'Unnamed source') + ' (' + unresolvedReasonLabel(item.reason) + ')';
+    });
+    var text = '<strong>Modelled, not metered.</strong> Annual gallons are modeled from mapped area × gallons saved per ft² per year. '
+      + 'Load water invoices to calibrate against actual consumption per branch.';
+    if (nonRankable.length) {
+      text += ' Excluded because <code>isRankable</code> is false: ' + nonRankable.map(esc).join(', ') + '.';
+    }
+    if (unresolved.length) {
+      text += ' Unresolved source caveats: ' + unresolved.map(esc).join(', ') + '.';
+    }
+    return text;
+  }
+
+  function renderSupplyCurve(mount, solution, state) {
+    if (!mount) return;
+    mount.innerHTML = '';
+    var bars = buildSupplyCurveBars(solution, state);
+    var width = 960;
+    var height = 430;
+    var margin = { top: 30, right: 30, bottom: 78, left: 78 };
+    var plotRight = width - margin.right;
+    var plotBottom = height - margin.bottom;
+    var plotWidth = plotRight - margin.left;
+    var plotHeight = plotBottom - margin.top;
+    var totalGallons = bars.reduce(function (sum, bar) { return sum + bar.annualGallons; }, 0);
+    var waterRate = Number(state.assumptions.waterRatePerKGal);
+    waterRate = Number.isFinite(waterRate) && waterRate >= 0 ? waterRate : 0;
+    var greatestCost = bars.reduce(function (greatest, bar) {
+      return Math.max(greatest, bar.costPer1000GalAvoided == null ? 0 : bar.costPer1000GalAvoided);
+    }, 0);
+    var yMax = Math.max(2, Math.ceil(Math.max(greatestCost, waterRate) / 2) * 2);
+    var yScale = function (value) {
+      var safeValue = Math.max(0, Math.min(yMax, finiteNonNegative(value)));
+      return plotBottom - safeValue / yMax * plotHeight;
+    };
+
+    var chart = document.createElement('div');
+    chart.className = 'ws-curve-chart';
+    var svg = svgNode('svg', {
+      class: 'ws-supply-curve',
+      viewBox: '0 0 ' + width + ' ' + height,
+      preserveAspectRatio: 'xMidYMid meet',
+      role: 'img',
+      'aria-label': 'Conservation supply curve, cheapest polygons first'
+    });
+    var grid = svgNode('g', { class: 'ws-curve-grid', 'aria-hidden': 'true' });
+    for (var tick = 0; tick <= yMax; tick += 2) {
+      var tickY = yScale(tick);
+      grid.appendChild(svgNode('line', {
+        x1: margin.left, x2: plotRight, y1: tickY, y2: tickY, class: 'ws-curve-grid-line'
+      }));
+      grid.appendChild(svgNode('text', {
+        x: margin.left - 12, y: tickY + 4, class: 'ws-curve-axis-label', 'text-anchor': 'end'
+      }, '$' + tick));
+    }
+    svg.appendChild(grid);
+
+    var rateY = yScale(waterRate);
+    svg.appendChild(svgNode('line', {
+      class: 'ws-curve-rate-line',
+      x1: margin.left, x2: plotRight, y1: rateY, y2: rateY,
+      'data-water-rate': waterRate
+    }));
+    svg.appendChild(svgNode('text', {
+      class: 'ws-curve-rate-label',
+      x: plotRight - 4, y: Math.max(margin.top + 12, rateY - 8), 'text-anchor': 'end'
+    }, 'Water rate ' + preciseMoney(waterRate) + ' / 1,000 gal'));
+
+    var barsGroup = svgNode('g', { class: 'ws-curve-bars' });
+    var cumulativeGallons = 0;
+    bars.forEach(function (bar, index) {
+      var barX = totalGallons > 0 ? margin.left + plotWidth * cumulativeGallons / totalGallons : margin.left;
+      var nextGallons = cumulativeGallons + bar.annualGallons;
+      var nextX = totalGallons > 0 ? (index === bars.length - 1
+        ? plotRight
+        : margin.left + plotWidth * nextGallons / totalGallons) : barX;
+      var barWidth = Math.max(0, nextX - barX);
+      var barY = yScale(bar.costPer1000GalAvoided == null ? 0 : bar.costPer1000GalAvoided);
+      var group = svgNode('g', {
+        class: 'ws-curve-bar-group',
+        'data-feature-id': bar.featureId,
+        'data-curve-community-id': bar.communityId || '',
+        'data-status': bar.status
+      });
+      var rect = svgNode('rect', {
+        class: 'ws-curve-bar',
+        x: barX,
+        y: barY,
+        width: barWidth,
+        height: Math.max(0, plotBottom - barY),
+        fill: curveBarColor(bar.status),
+        'data-feature-id': bar.featureId,
+        'data-curve-community-id': bar.communityId || '',
+        'data-status': bar.status,
+        'data-display-status': bar.displayStatus,
+        'data-width-gallons': bar.annualGallons,
+        'data-cumulative-start-gallons': cumulativeGallons,
+        'data-cumulative-end-gallons': nextGallons,
+        'data-cost-per-1000': bar.costPer1000GalAvoided == null ? '' : bar.costPer1000GalAvoided,
+        tabindex: 0,
+        role: 'button',
+        'aria-label': bar.polygonName + ', ' + preciseMoney(bar.costPer1000GalAvoided) + ' per 1,000 gallons'
+      });
+      rect.addEventListener('pointerenter', function (event) { setCurveTooltip(tooltip, bar, event); });
+      rect.addEventListener('pointermove', function (event) { setCurveTooltip(tooltip, bar, event); });
+      rect.addEventListener('pointerleave', function () {
+        if (document.activeElement !== rect) tooltip.hidden = true;
+      });
+      rect.addEventListener('focus', function () { setCurveTooltip(tooltip, bar); });
+      rect.addEventListener('blur', function () { tooltip.hidden = true; });
+      rect.addEventListener('click', function () { navigateToCurveBar(bar); });
+      rect.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          navigateToCurveBar(bar);
+        }
+      });
+      group.appendChild(rect);
+      barsGroup.appendChild(group);
+      cumulativeGallons = nextGallons;
+    });
+    svg.appendChild(barsGroup);
+
+    svg.appendChild(svgNode('line', {
+      class: 'ws-curve-axis',
+      x1: margin.left, x2: plotRight, y1: plotBottom, y2: plotBottom
+    }));
+    svg.appendChild(svgNode('text', {
+      class: 'ws-curve-axis-title',
+      x: margin.left + plotWidth / 2, y: height - 34, 'text-anchor': 'middle'
+    }, 'Cumulative annual gallons avoided · Portfolio total: ' + compactGallons(totalGallons) + ' gal/yr'));
+    svg.appendChild(svgNode('text', {
+      class: 'ws-curve-axis-title ws-curve-y-title',
+      x: 17, y: margin.top + plotHeight / 2, 'text-anchor': 'middle',
+      transform: 'rotate(-90 17 ' + (margin.top + plotHeight / 2) + ')'
+    }, 'Cost per 1,000 gallons avoided'));
+
+    var tooltip = document.createElement('div');
+    tooltip.className = 'ws-curve-tooltip';
+    tooltip.hidden = true;
+    tooltip.setAttribute('role', 'tooltip');
+    chart.appendChild(svg);
+    chart.appendChild(tooltip);
+    mount.appendChild(chart);
+    var caption = document.createElement('p');
+    caption.className = 'ws-curve-caption';
+    caption.innerHTML = curveCaption();
+    mount.appendChild(caption);
+    if (!bars.length) {
+      var empty = document.createElement('p');
+      empty.className = 'ws-curve-empty';
+      empty.textContent = 'No rankable polygons are available for the supply curve.';
+      mount.insertBefore(empty, caption);
+    }
+  }
+
   function render(container, state) {
     if (!summary || !polygons) return;
     var solution = core.solveScenario(features(), state);
@@ -214,6 +486,7 @@
         + '<p id="ws-attainment" class="ws-attainment ' + (solution.selectedSqFt >= solution.targetSqFt ? 'met' : 'short') + '">' + attainmentMessage(solution, rows, state.targetPct) + '</p>'
       + '</div></section>'
       + '<section class="panel ws-tier-panel p-amber"><div class="panel-head"><h2>Conversion tier</h2><span class="hint">Choose the finish and rebate together</span></div><div class="ws-tier-cards">' + tierCards + '</div></section>'
+       + '<section class="panel ws-curve-panel p-teal"><div class="panel-head"><h2>Conservation supply curve</h2><span class="hint">Cheapest first · width = annual gallons</span></div><div id="ws-supply-curve" class="ws-curve-body"></div></section>'
       + '<div class="ws-summary-grid">'
         + '<section class="panel ws-scenario-panel"><div class="panel-head"><h2>Scenario controls</h2></div><div class="ws-panel-body">'
           + '<label>Saved scenario<select id="ws-scenario-select">' + scenarioOptions + '</select></label>'
@@ -235,6 +508,7 @@
       + '<section><div class="ws-section-head"><h2>Locations</h2><span>Select a tile to inspect mapped areas</span></div><div class="ws-location-tiles">' + tiles + '</div></section>'
       + '<section class="panel ws-table-panel"><div class="panel-head"><h2>Location rollup</h2></div><div class="pa-table-scroll"><table><thead><tr><th>Code</th><th>Location</th><th class="num">Mapped turf ft²</th><th class="num">In plan ft²</th><th class="num">Gallons / yr</th><th class="num">Net cost</th><th class="num">Payback</th></tr></thead><tbody>' + tableRows + '</tbody></table></div></section>'
       + '</div>';
+     renderSupplyCurve(container.querySelector('#ws-supply-curve'), solution, state);
     wire(container, state);
   }
 
