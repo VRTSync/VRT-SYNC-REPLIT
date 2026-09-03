@@ -31,10 +31,20 @@ const PORTFOLIO_ME = {
     { id: 'b3', code: 'S01', name: 'South Branch', lat: null, lng: null },
   ],
   groups: [
-    { id: 'g1', name: 'North', setId: 'set1', branchIds: ['b1'] },
-    { id: 'g2', name: 'South', setId: 'set1', branchIds: ['b2', 'b3'] },
+    { id: 'g1', name: 'North', setId: 'set1', branchIds: ['b1'], color: '#25C1AC' },
+    { id: 'g2', name: 'South', setId: 'set1', branchIds: ['b2', 'b3'], color: '#8b5cf6' },
   ],
   groupSets: [{ id: 'set1', name: 'Region' }],
+};
+
+// Same org with no group sets defined → nothing to colour by.
+const PORTFOLIO_ME_NO_SETS = {
+  ...PORTFOLIO_ME,
+  groups: [
+    { id: 'g1', name: 'North', branchIds: ['b1'] },
+    { id: 'g2', name: 'South', branchIds: ['b2', 'b3'] },
+  ],
+  groupSets: [],
 };
 
 const DASHBOARD = {
@@ -132,10 +142,12 @@ test('map panel renders via shared renderer: pins, colours, fit-once, non-intera
   expect(si.length).toBe(1);
   expect(si[0].args[0]).toBe(false);
 
-  // Shared pin layer: 2 mapped pins, navy/amber colour map, directTap on
+  // Shared pin layer: 2 mapped pins, group colours (matching the group cards
+  // and the Portfolio Map, not the old navy/amber work-order colouring),
+  // directTap on
   const layer = (all.find((c) => c.fn === 'addLayers')!.args[0] as any[])[0];
   expect(layer.geojson.features.map((f: any) => f.id).sort()).toEqual(['b1', 'b2']);
-  expect(layer.controllerColorMap).toEqual({ b1: '#0C1D31', b2: '#f59e0b' });
+  expect(layer.controllerColorMap).toEqual({ b1: '#25C1AC', b2: '#8b5cf6' });
   expect(layer.directTap).toBe(true);
 
   // Fit exactly once, to the two mapped points
@@ -143,11 +155,59 @@ test('map panel renders via shared renderer: pins, colours, fit-once, non-intera
   expect(fits.length).toBe(1);
   expect(fits[0].args[0]).toEqual([[39.7, -105.2], [40.0, -104.9]]);
 
-  // Legend: group names with mapped counts + open-work-order key
+  // Legend: group names with mapped counts, dots in the group colours.
+  // The amber open-work-order key is gone — pins now carry group colour.
   const legend = page.locator('#dash-map-legend');
   await expect(legend).toContainText('North');
-  await expect(legend).toContainText('Open work order');
-  await expect(legend).not.toContainText('South'); // its only branch is unmapped
+  await expect(legend).toContainText('South');
+  await expect(legend).not.toContainText('Open work order');
+  await expect(legend.locator('.dml-row', { hasText: 'North' }).locator('.dml-dot'))
+    .toHaveCSS('background-color', 'rgb(37, 193, 172)');
+
+  expect(errors).toEqual([]);
+});
+
+test('group colouring follows the Map page: stored "Colour by" set and its group colours', async ({ page }) => {
+  await mockApis(page, BRANCHES);
+  const fs = await import('fs');
+  const shell = fs.readFileSync('templates/portfolio-shell.html', 'utf-8');
+  await page.route('**/web/portfolio/**', (r) =>
+    r.fulfill({ contentType: 'text/html', body: shell }),
+  );
+
+  // Same key + semantics the Portfolio Map writes when "Colour by" changes.
+  await page.addInitScript(() => {
+    try { localStorage.setItem('pfm-color-by-org1', 'set1'); } catch { /* ignore */ }
+  });
+
+  await page.goto('/web/portfolio/dashboard');
+  await expect(page.locator('.dash-bottom')).toBeVisible();
+  await expect.poll(async () => (await cmds(page)).filter((c) => c.fn === 'addLayers').length).toBe(1);
+
+  const layer = ((await cmds(page)).find((c) => c.fn === 'addLayers')!.args[0] as any)[0];
+  expect(layer.controllerColorMap).toEqual({ b1: '#25C1AC', b2: '#8b5cf6' });
+});
+
+test('with no group sets the dashboard keeps the default navy/amber pins', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+  await mockApis(page, BRANCHES);
+  // Registered after mockApis so it wins: same org, but no group sets.
+  await page.route('**/api/portfolio/me', (r) => r.fulfill({ json: PORTFOLIO_ME_NO_SETS }));
+  const fs = await import('fs');
+  const shell = fs.readFileSync('templates/portfolio-shell.html', 'utf-8');
+  await page.route('**/web/portfolio/**', (r) =>
+    r.fulfill({ contentType: 'text/html', body: shell }),
+  );
+
+  await page.goto('/web/portfolio/dashboard');
+  await expect(page.locator('.dash-bottom')).toBeVisible();
+  await expect.poll(async () => (await cmds(page)).filter((c) => c.fn === 'addLayers').length).toBe(1);
+
+  const layer = ((await cmds(page)).find((c) => c.fn === 'addLayers')!.args[0] as any)[0];
+  expect(layer.controllerColorMap).toEqual({ b1: '#0C1D31', b2: '#f59e0b' });
+  await expect(page.locator('#dash-map-legend')).toContainText('Open work order');
 
   expect(errors).toEqual([]);
 });

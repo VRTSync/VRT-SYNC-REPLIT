@@ -373,28 +373,47 @@
       + '</div>';
   }
 
-  // Compact legend: each group and its mapped-location count, plus the
-  // open-work-order amber pin key.
-  function buildLegendHtml(mapped, orderedGroups) {
+  // Compact legend: each group and its mapped-location count.
+  // When pins are group-coloured (branchGroups supplied) the dots carry the
+  // group colours and rows follow the same first-group-wins assignment the
+  // pins use. Without a colour-by set the pins keep their navy/amber default,
+  // so the legend keeps its original dots and the open-work-order key.
+  function buildLegendHtml(mapped, orderedGroups, branchGroups) {
     var counts = {};   // groupId → count
+    var colors = {};   // groupId → hex (group-coloured mode only)
     var ungrouped = 0;
     mapped.forEach(function (b) {
+      if (branchGroups) {
+        var entry = branchGroups[b.id];
+        if (!entry) { ungrouped++; return; }
+        counts[entry.group.id] = (counts[entry.group.id] || 0) + 1;
+        colors[entry.group.id] = window.VRTGroupColors
+          .resolveGroupColor(entry.group, entry.fallbackIndex);
+        return;
+      }
       var gids = Array.isArray(b.groupIds) ? b.groupIds : [];
       if (gids.length === 0) { ungrouped++; return; }
       counts[gids[0]] = (counts[gids[0]] || 0) + 1;
     });
+    var unassignedColor = branchGroups
+      ? window.VRTGroupColors.UNASSIGNED_COLOR
+      : '#0C1D31';
     var rows = '';
     (orderedGroups || []).forEach(function (g) {
       if (!counts[g.id]) return;
-      rows += '<div class="dml-row"><span class="dml-dot" style="background:#0C1D31"></span>'
+      rows += '<div class="dml-row"><span class="dml-dot" style="background:'
+        + esc(colors[g.id] || '#0C1D31') + '"></span>'
         + esc(g.name) + '<b>' + esc(counts[g.id]) + '</b></div>';
     });
     if (ungrouped > 0) {
-      rows += '<div class="dml-row"><span class="dml-dot" style="background:#0C1D31"></span>Ungrouped<b>' + esc(ungrouped) + '</b></div>';
+      rows += '<div class="dml-row"><span class="dml-dot" style="background:' + unassignedColor + '"></span>'
+        + (branchGroups ? 'Unassigned' : 'Ungrouped') + '<b>' + esc(ungrouped) + '</b></div>';
     }
-    var hasWo = mapped.some(function (b) { return Number(b.openWorkOrders) > 0; });
-    if (hasWo) {
-      rows += '<div class="dml-row"><span class="dml-dot" style="background:#f59e0b"></span>Open work order</div>';
+    if (!branchGroups) {
+      var hasWo = mapped.some(function (b) { return Number(b.openWorkOrders) > 0; });
+      if (hasWo) {
+        rows += '<div class="dml-row"><span class="dml-dot" style="background:#f59e0b"></span>Open work order</div>';
+      }
     }
     return rows;
   }
@@ -403,6 +422,15 @@
     var mapped = mappedBranches(branches);
     var panel  = container.querySelector('#dash-map-panel');
     if (!panel) return;
+
+    // Colour pins by group, exactly like the Portfolio Map. The set is resolved
+    // on every render (not once at load) so switching "Colour by" on the Map
+    // page and navigating back here shows the new colours. With no set
+    // selected both helpers yield null and the pins keep today's default.
+    var state        = window.PortfolioState || {};
+    var colorBySetId = window.VRTGroupColors.resolveColorBySetId(state);
+    var branchGroups = window.VRTGroupColors.makeBranchGroupLookup(state.groups || [], colorBySetId);
+    var colorFor     = window.VRTGroupColors.makeBranchColorFor(state.groups || [], colorBySetId);
 
     // Header (and empty-state panel) click → full Portfolio Map route.
     panel.querySelector('.panel-head').addEventListener('click', function () {
@@ -413,7 +441,7 @@
 
     var iframe = container.querySelector('#dash-map-iframe');
     var legend = container.querySelector('#dash-map-legend');
-    if (legend) legend.innerHTML = buildLegendHtml(mapped, orderedGroups);
+    if (legend) legend.innerHTML = buildLegendHtml(mapped, orderedGroups, branchGroups);
 
     // Null adapter — the preview renders only branch pins via the shared
     // custom-layer path; no community layers.
@@ -436,7 +464,10 @@
       // 'ready' can fire late/replayed — send pins + fit only once.
       if (didInit) return;
       didInit = true;
-      window.VRTMapRenderer.sendBranchPins(renderer, mapped, 'dash-branches', { directTap: true });
+      // directTap stays on — the preview navigates straight to the location.
+      var pinOpts = { directTap: true };
+      if (colorFor) pinOpts.colorFor = colorFor;
+      window.VRTMapRenderer.sendBranchPins(renderer, mapped, 'dash-branches', pinOpts);
       // Fit the viewport to all mapped locations once, on first render.
       renderer.fit();
     });

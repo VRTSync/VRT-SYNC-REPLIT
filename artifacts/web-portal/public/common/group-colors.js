@@ -19,6 +19,8 @@
     '#06b6d4', // cyan   (index 6 / g7)
   ];
   var NEUTRAL = '#94a3b8';
+  // Colour used for a location that is in no group of the selected "Colour by" set.
+  var UNASSIGNED_COLOR = '#9ca3af';
 
   /**
    * Resolve the display colour for a group.
@@ -73,10 +75,85 @@
     return indexes;
   }
 
+  /**
+   * localStorage key holding the "Colour by" group-set choice for an org.
+   * client_admin bootstrap sets organizationId to null (the server uses the
+   * session), so fall back to the organization record's id to keep it per-org.
+   * @param {object} state - window.PortfolioState
+   * @returns {string}
+   */
+  function colorBySetStorageKey(state) {
+    var s = state || {};
+    var orgId = s.organizationId || (s.organization && s.organization.id) || '';
+    return 'pfm-color-by-' + orgId;
+  }
+
+  /**
+   * Resolve which group set pins are coloured by. Every portfolio surface must
+   * use this so the Map page and the dashboard preview never disagree.
+   * Stored id wins when it is still a real set, else the first set, else null.
+   * @param {object} state - window.PortfolioState
+   * @returns {string|null}
+   */
+  function resolveColorBySetId(state) {
+    var s = state || {};
+    var groupSets = Array.isArray(s.groupSets) ? s.groupSets : [];
+    var stored = null;
+    try { stored = localStorage.getItem(colorBySetStorageKey(s)); } catch (_) {}
+    if (stored && groupSets.some(function (set) { return set.id === stored; })) return stored;
+    return groupSets.length > 0 ? groupSets[0].id : null;
+  }
+
+  /**
+   * branchId → { group, fallbackIndex } for the given "Colour by" set.
+   * First group wins when a branch belongs to several groups of the set.
+   * Returns null when no set is selected (callers then keep their default).
+   * An empty set still returns {} — every branch is Unassigned.
+   * @param {Array<object>} groups
+   * @param {string|null} colorBySetId
+   * @returns {object|null}
+   */
+  function makeBranchGroupLookup(groups, colorBySetId) {
+    if (!colorBySetId) return null;
+    var all = groups || [];
+    var fallbackIndexes = getStableFallbackIndexes(all);
+    var lookup = {};
+    all.filter(function (g) { return g && g.setId === colorBySetId; })
+      .forEach(function (g) {
+        (g.branchIds || []).forEach(function (bId) {
+          if (!lookup[bId]) lookup[bId] = { group: g, fallbackIndex: fallbackIndexes[g.id] };
+        });
+      });
+    return lookup;
+  }
+
+  /**
+   * Build a (branch) → hex colour function for the given "Colour by" set.
+   * Branches in no group of the set render grey (Unassigned).
+   * Returns null when no set is selected, so the caller keeps its own default.
+   * @param {Array<object>} groups
+   * @param {string|null} colorBySetId
+   * @returns {function|null}
+   */
+  function makeBranchColorFor(groups, colorBySetId) {
+    var lookup = makeBranchGroupLookup(groups, colorBySetId);
+    if (!lookup) return null;
+    return function (branch) {
+      var entry = branch && lookup[branch.id];
+      if (!entry) return UNASSIGNED_COLOR;
+      return resolveGroupColor(entry.group, entry.fallbackIndex);
+    };
+  }
+
   window.VRTGroupColors = {
     GROUP_PALETTE:     GROUP_PALETTE,
+    UNASSIGNED_COLOR:  UNASSIGNED_COLOR,
     resolveGroupColor: resolveGroupColor,
     hexToRgba:         hexToRgba,
     getStableFallbackIndexes: getStableFallbackIndexes,
+    colorBySetStorageKey:  colorBySetStorageKey,
+    resolveColorBySetId:   resolveColorBySetId,
+    makeBranchGroupLookup: makeBranchGroupLookup,
+    makeBranchColorFor:    makeBranchColorFor,
   };
 })();

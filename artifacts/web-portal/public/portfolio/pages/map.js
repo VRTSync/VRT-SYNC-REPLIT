@@ -57,32 +57,6 @@
     if (_renderer) { _renderer.destroy(); _renderer = null; }
   }
 
-  // ── Pin colouring helpers ────────────────────────────────────────────────────
-  /**
-   * Build a (branch) → hex colour function for the given "Colour by" set.
-   * Branches not in any group of the set render grey (#9ca3af = Unassigned).
-   * Returns null when no set is selected or the set has no groups.
-   */
-  function makeColorFor(colorBySetId, groups) {
-    // Only skip the callback entirely when no set is selected.
-    // An empty set (no groups yet) still means every branch is Unassigned → grey.
-    if (!colorBySetId) return null;
-    var setGroups = (groups || []).filter(function (g) { return g.setId === colorBySetId; });
-    var fallbackIndexes = window.VRTGroupColors.getStableFallbackIndexes(groups);
-    // branchId → { group, fallbackIndex } — first-group-wins when a branch is in multiple
-    var lookup = {};
-    setGroups.forEach(function (g) {
-      (g.branchIds || []).forEach(function (bId) {
-        if (!lookup[bId]) lookup[bId] = { group: g, fallbackIndex: fallbackIndexes[g.id] };
-      });
-    });
-    return function (branch) {
-      var entry = lookup[branch.id];
-      if (!entry) return '#9ca3af'; // Unassigned
-      return window.VRTGroupColors.resolveGroupColor(entry.group, entry.fallbackIndex);
-    };
-  }
-
   // ── Pin rendering via shared renderer ────────────────────────────────────────
   /**
    * Send branch pins to the map via VRTMapRenderer.addCustomLayer /
@@ -103,7 +77,7 @@
     var layerId = 'portfolio-branches-v' + _pinVersion;
     // Compute colour-by callback from current module state
     var groups = (window.PortfolioState && window.PortfolioState.groups) || [];
-    var colorFor = makeColorFor(_colorBySetId, groups);
+    var colorFor = window.VRTGroupColors.makeBranchColorFor(groups, _colorBySetId);
     var opts = colorFor ? { directTap: false, colorFor: colorFor } : {};
     // Pin building/colouring is shared with the dashboard preview — one copy only.
     window.VRTMapRenderer.sendBranchPins(_renderer, located, layerId, opts);
@@ -456,20 +430,10 @@
     // ── Colour-by initialisation ───────────────────────────────────────────────
     var state     = window.PortfolioState || {};
     var groupSets = Array.isArray(state.groupSets) ? state.groupSets : [];
-    // client_admin bootstrap sets organizationId to null (server uses the session),
-    // so fall back to the organization record's id to keep the key per-org.
-    var orgId     = state.organizationId || (state.organization && state.organization.id) || '';
-    var lsKey     = 'pfm-color-by-' + orgId;
-    var storedColorBy = null;
-    try { storedColorBy = localStorage.getItem(lsKey); } catch (_) {}
-    // Validate stored id; fall back to first set
-    if (storedColorBy && groupSets.some(function (s) { return s.id === storedColorBy; })) {
-      _colorBySetId = storedColorBy;
-    } else if (groupSets.length > 0) {
-      _colorBySetId = groupSets[0].id;
-    } else {
-      _colorBySetId = null;
-    }
+    // Resolution (stored id → validate → first set → null) is shared with the
+    // dashboard preview so both surfaces always colour by the same set.
+    var lsKey     = window.VRTGroupColors.colorBySetStorageKey(state);
+    _colorBySetId = window.VRTGroupColors.resolveColorBySetId(state);
 
     function onColorByChange(newSetId) {
       _colorBySetId = newSetId;

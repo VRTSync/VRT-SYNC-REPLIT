@@ -16,5 +16,8 @@ A layer or asset-type colour change is never a one-line edit. Two *different* ta
 ## Dead copy
 A second, unserved copy of the portal map legend lives under the API server's `src/public/` tree. The API server registers no static middleware and its dist contains no public directory, so this copy is never served — but keep it in step so hex sweeps stay honest.
 
+## Group pin colours are a third, separate system
+Branch/location pins on portfolio surfaces are coloured by **group**, not by the layer palette above. The choice of *which group set* to colour by is per-org user state in localStorage, so any surface showing location pins must resolve it through the shared portfolio group-colour module — never re-derive the key or the fallback locally, or two pages on the same screen silently colour by different sets. A surface with no set selected must fall back to the renderer's own default pin colouring rather than rendering everything unassigned-grey.
+
 ## Layout gotcha
 The analytics layer bands switch between a two-column grid (wide) and a flex column (narrow). `align-items: start` set for the grid mode leaks into the flex mode as cross-axis start, which shrink-wraps the nested card grid to a single column. The narrow-screen media query must reassert `align-items: stretch`.
