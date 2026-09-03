@@ -1705,6 +1705,14 @@ tfoot .totals-row .bsub  { font-size: 11.5px; color: var(--gray-500); }
   max-width: 60%;
 }
 .dash-map-legend:empty { display: none; }
+.dash-map-caveat {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  color: var(--gray-600);
+  font-size: 12px;
+}
 .dml-row { display: flex; align-items: center; gap: 6px; line-height: 1.7; white-space: nowrap; }
 .dml-row b { margin-left: auto; padding-left: 10px; color: var(--navy); }
 .dml-dot {

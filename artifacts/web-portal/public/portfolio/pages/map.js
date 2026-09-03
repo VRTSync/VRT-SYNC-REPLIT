@@ -90,7 +90,11 @@
    */
   function sendBranchPins(branches) {
     if (!_renderer) return;
-    if (!branches || branches.length === 0) {
+    var located = (Array.isArray(branches) ? branches : []).filter(function (b) {
+      return b && b.lat != null && b.lng != null
+        && Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng));
+    });
+    if (located.length === 0) {
       _renderer.showCustomLayers([]);
       return;
     }
@@ -101,7 +105,7 @@
     var colorFor = makeColorFor(_colorBySetId, groups);
     var opts = colorFor ? { directTap: false, colorFor: colorFor } : {};
     // Pin building/colouring is shared with the dashboard preview — one copy only.
-    window.VRTMapRenderer.sendBranchPins(_renderer, branches, layerId, opts);
+    window.VRTMapRenderer.sendBranchPins(_renderer, located, layerId, opts);
     _renderer.fit();
   }
 
@@ -365,7 +369,10 @@
     if (!el) return;
     if (!unmapped || unmapped.length === 0) { el.style.display = 'none'; return; }
     el.style.display = '';
-    el.innerHTML = '<div class="pfm-unmapped-title">Not yet mapped (' + unmapped.length + ')</div>'
+    var count = unmapped.length;
+    el.innerHTML = '<div class="pfm-unmapped-title">' + count + ' '
+      + (count === 1 ? 'location is' : 'locations are')
+      + ' not yet mapped and omitted from this map.</div>'
       + '<div class="pfm-unmapped-chips">'
       + unmapped.map(function (b) {
           return '<span class="pfm-unmapped-chip" title="' + esc(b.name) + '">'
@@ -437,7 +444,10 @@
     var expandBtn = document.getElementById('pfm-map-expand-btn');
     var iframe    = document.getElementById('pf-map-iframe');
 
-    var allBranches = mapData.branches || [];
+    var allBranches = (Array.isArray(mapData.branches) ? mapData.branches : []).filter(function (b) {
+      return b && b.lat != null && b.lng != null
+        && Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng));
+    });
     var allUnmapped = mapData.unmapped || [];
     var branchById  = {};
     allBranches.forEach(function (b) { branchById[b.id] = b; });

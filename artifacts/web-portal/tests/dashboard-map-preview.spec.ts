@@ -25,11 +25,16 @@ const USER = { user: { id: 'u1', username: 'ca', displayName: 'Client Admin', ro
 
 const PORTFOLIO_ME = {
   organization: { id: 'org1', name: 'Acme Properties' },
-  branches: [],
-  groups: [
-    { id: 'g1', name: 'North' },
-    { id: 'g2', name: 'South' },
+  branches: [
+    { id: 'b1', code: 'N01', name: 'North Branch', lat: 39.7, lng: -104.9 },
+    { id: 'b2', code: 'N02', name: 'North Annex', lat: 40.0, lng: -105.2 },
+    { id: 'b3', code: 'S01', name: 'South Branch', lat: null, lng: null },
   ],
+  groups: [
+    { id: 'g1', name: 'North', setId: 'set1', branchIds: ['b1'] },
+    { id: 'g2', name: 'South', setId: 'set1', branchIds: ['b2', 'b3'] },
+  ],
+  groupSets: [{ id: 'set1', name: 'Region' }],
 };
 
 const DASHBOARD = {
@@ -72,6 +77,14 @@ async function mockApis(page: Page, branches: unknown[]) {
   await page.route('**/api/portfolio/me', (r) => r.fulfill({ json: PORTFOLIO_ME }));
   await page.route('**/api/portfolio/dashboard*', (r) => r.fulfill({ json: DASHBOARD }));
   await page.route('**/api/portfolio/branches*', (r) => r.fulfill({ json: branches }));
+  await page.route('**/api/portfolio/map*', (r) => r.fulfill({
+    json: {
+      branches: branches.filter((b: any) => b.lat != null && b.lng != null),
+      unmapped: branches
+        .filter((b: any) => b.lat == null || b.lng == null)
+        .map((b: any) => ({ id: b.id, code: b.code, name: b.name, lat: null, lng: null })),
+    },
+  }));
   await page.route('**/api/portfolio/work-orders*', (r) =>
     r.fulfill({ json: { pipeline: { awaitingApproval: 0 }, open: [], closed: [], cancelled: [] } }),
   );
@@ -107,6 +120,8 @@ test('map panel renders via shared renderer: pins, colours, fit-once, non-intera
   await expect(page.locator('#dash-map-panel .panel-head h2')).toHaveText('Portfolio Map');
   // Hint counts mapped locations only (2 of 3 have coordinates)
   await expect(page.locator('#dash-map-panel .hint')).toHaveText('2 locations');
+  await expect(page.locator('#dash-map-panel .dash-map-caveat'))
+    .toHaveText('1 location is not yet mapped and omitted from this map.');
 
   // Wait for pin push
   await expect.poll(async () => (await cmds(page)).filter((c) => c.fn === 'addLayers').length).toBe(1);
@@ -126,7 +141,7 @@ test('map panel renders via shared renderer: pins, colours, fit-once, non-intera
   // Fit exactly once, to the two mapped points
   const fits = all.filter((c) => c.fn === 'fitBounds');
   expect(fits.length).toBe(1);
-  expect(fits[0].args[0]).toEqual([[39.7, -104.9], [40.0, -105.2]]);
+  expect(fits[0].args[0]).toEqual([[39.7, -105.2], [40.0, -104.9]]);
 
   // Legend: group names with mapped counts + open-work-order key
   const legend = page.locator('#dash-map-legend');
@@ -162,6 +177,39 @@ test('org with zero mapped locations shows empty-state panel, no iframe, no erro
 
   await expect(page.locator('#dash-map-panel .hint')).toHaveText('0 locations');
   await expect(page.locator('#dash-map-panel .pf-empty')).toBeVisible();
+  await expect(page.locator('#dash-map-panel .dash-map-caveat'))
+    .toHaveText('3 locations are not yet mapped and omitted from this map.');
   await expect(page.locator('#dash-map-iframe')).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test('Portfolio Map fits mapped Denver-area pins and refits after a group filter', async ({ page }) => {
+  await mockApis(page, BRANCHES);
+  const fs = await import('fs');
+  const shell = fs.readFileSync('templates/portfolio-shell.html', 'utf-8');
+  await page.route('**/web/portfolio/**', (r) =>
+    r.fulfill({ contentType: 'text/html', body: shell }),
+  );
+
+  await page.goto('/web/portfolio/map');
+  await expect(page.locator('#pfm-unmapped .pfm-unmapped-title'))
+    .toHaveText('1 location is not yet mapped and omitted from this map.');
+  await expect.poll(async () => (await cmds(page)).filter((c) => c.fn === 'fitBounds').length)
+    .toBeGreaterThan(0);
+
+  let fits = (await cmds(page)).filter((c) => c.fn === 'fitBounds');
+  expect(fits.at(-1)?.args[0]).toEqual([[39.7, -105.2], [40.0, -104.9]]);
+
+  await page.locator('.pfm-group-cb[data-group="g1"]').evaluate((input) => {
+    const checkbox = input as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect.poll(async () => {
+    const currentFits = (await cmds(page)).filter((c) => c.fn === 'fitBounds');
+    return currentFits.at(-1)?.args[0];
+  }).toEqual([[39.7, -104.9], [39.7, -104.9]]);
+
+  fits = (await cmds(page)).filter((c) => c.fn === 'fitBounds');
+  expect(fits.at(-1)?.args[0]).toEqual([[39.7, -104.9], [39.7, -104.9]]);
 });

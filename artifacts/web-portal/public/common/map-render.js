@@ -102,6 +102,8 @@
     var _outlineGeojson   = null;
     var _outlineStyle     = null;
     var _addedLayerIds    = {};   // layerId → true
+    var _customLayers     = {};   // layerId → custom layer definition
+    var _visibleCustomLayerIds = {}; // layerId → true
     var _hasApplied       = false; // true after the first _applyState fit
     var _layerColors      = {};   // layerId → hex
     var _events           = { ready: [], assetTap: [], mapTap: [] };
@@ -488,6 +490,29 @@
         }
       }
 
+      // Custom layers are not part of _mapLayers, but their currently visible
+      // geometry must participate in the same fit calculation. Hidden custom
+      // layers are intentionally ignored so filtered portfolio pins refit to
+      // only the remaining locations.
+      var customIds = Object.keys(_visibleCustomLayerIds);
+      for (var customIdx = 0; customIdx < customIds.length; customIdx++) {
+        var customLayer = _customLayers[customIds[customIdx]];
+        var customGeojson = customLayer && customLayer.geojson;
+        if (!customGeojson) continue;
+        if (customGeojson.type === 'FeatureCollection' && Array.isArray(customGeojson.features)) {
+          for (var featureIdx = 0; featureIdx < customGeojson.features.length; featureIdx++) {
+            var customFeature = customGeojson.features[featureIdx];
+            if (customFeature && customFeature.geometry && customFeature.geometry.coordinates) {
+              walkCoords(customFeature.geometry.coordinates);
+            }
+          }
+        } else if (customGeojson.type === 'Feature' && customGeojson.geometry) {
+          walkCoords(customGeojson.geometry.coordinates);
+        } else if (customGeojson.coordinates) {
+          walkCoords(customGeojson.coordinates);
+        }
+      }
+
       // Controller / zone marker coordinates
       var isIrrCat = _activeCategory === 'irrigation' || _activeCategory === null;
       if (isIrrCat && _controllerData.length > 0) {
@@ -791,10 +816,15 @@
 
     // Ad-hoc custom layer support (e.g. branch pins in portfolio map)
     function addCustomLayer(layerDef) {
+      if (layerDef && layerDef.id) _customLayers[layerDef.id] = layerDef;
       _cmd('addLayers', [layerDef]);
     }
 
     function showCustomLayers(ids) {
+      _visibleCustomLayerIds = {};
+      (Array.isArray(ids) ? ids : []).forEach(function (id) {
+        _visibleCustomLayerIds[id] = true;
+      });
       _cmd('showLayerIds', ids);
     }
 
@@ -843,23 +873,27 @@
   //             pin click (no popup); used by the dashboard preview.
   function sendBranchPins(renderer, branches, layerId, opts) {
     if (!renderer) return;
-    if (!branches || branches.length === 0) {
+    var located = (Array.isArray(branches) ? branches : []).filter(function (b) {
+      return b && b.lat != null && b.lng != null
+        && Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng));
+    });
+    if (located.length === 0) {
       renderer.showCustomLayers([]);
       return;
     }
     var colorMap = {};
-    branches.forEach(function (b) {
+    located.forEach(function (b) {
       colorMap[b.id] = (opts && typeof opts.colorFor === 'function')
         ? opts.colorFor(b)
         : (b.openWorkOrders > 0 ? '#f59e0b' : '#0C1D31');
     });
     var geojson = {
       type: 'FeatureCollection',
-      features: branches.map(function (b) {
+      features: located.map(function (b) {
         return {
           type: 'Feature',
           id: b.id,
-          geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
+          geometry: { type: 'Point', coordinates: [Number(b.lng), Number(b.lat)] },
           properties: {
             featureId: b.id,
             label: (b.code ? b.code + ' \u2014 ' : '') + b.name,

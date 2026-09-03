@@ -314,12 +314,15 @@
 
   function mappedBranches(branches) {
     return (Array.isArray(branches) ? branches : []).filter(function (b) {
-      return b.lat != null && b.lng != null;
+      return b.lat != null && b.lng != null
+        && Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng));
     });
   }
 
   function renderMapPanel(branches) {
     var mapped = mappedBranches(branches);
+    var total = Array.isArray(branches) ? branches.length : 0;
+    var unmappedCount = total - mapped.length;
     var body;
     if (mapped.length === 0) {
       body = '<div class="pf-empty" style="flex:1;">No locations mapped yet. Locations appear here once their property maps have geometry.</div>';
@@ -329,11 +332,17 @@
         + '<div class="dash-map-legend" id="dash-map-legend"></div>'
         + '</div>';
     }
+    var caveat = unmappedCount > 0
+      ? '<div class="dash-map-caveat">' + esc(unmappedCount) + ' '
+        + (unmappedCount === 1 ? 'location is' : 'locations are')
+        + ' not yet mapped and omitted from this map.</div>'
+      : '';
     return '<div class="panel p-teal dash-map-panel" id="dash-map-panel" title="Open Portfolio Map">'
       + '<div class="panel-head"><h2>Portfolio Map</h2>'
       + '<span class="hint">' + esc(mapped.length) + ' ' + (mapped.length === 1 ? 'location' : 'locations') + '</span>'
       + '</div>'
       + body
+      + caveat
       + '</div>';
   }
 
@@ -402,7 +411,7 @@
       didInit = true;
       window.VRTMapRenderer.sendBranchPins(renderer, mapped, 'dash-branches', { directTap: true });
       // Fit the viewport to all mapped locations once, on first render.
-      renderer.cmdToIframe('fitBounds', mapped.map(function (b) { return [b.lat, b.lng]; }));
+      renderer.fit();
     });
 
     renderer.on('assetTap', function (data) {

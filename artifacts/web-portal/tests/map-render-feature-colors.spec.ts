@@ -163,3 +163,57 @@ test.describe('VRTMapRenderer.setFeatureColors', () => {
     expect(colorCommand?.args).toEqual(['custom-layer', { 'parcel-42': '#ff0000' }, '#cccccc']);
   });
 });
+
+test.describe('VRTMapRenderer custom-layer fitting', () => {
+  test('fits only currently shown custom geometry and ignores hidden layers', async ({ page }) => {
+    await setup(page);
+
+    await page.evaluate(() => {
+      const renderer = (window as any).testRenderer;
+      renderer.addCustomLayer({
+        id: 'denver',
+        layerKey: 'branch',
+        geojson: {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-105.03, 39.87] } },
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-104.80, 39.89] } },
+          ],
+        },
+      });
+      renderer.addCustomLayer({
+        id: 'hidden',
+        layerKey: 'branch',
+        geojson: {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', geometry: { type: 'Point', coordinates: [-73.98, 40.75] } },
+          ],
+        },
+      });
+      renderer.showCustomLayers(['denver']);
+      renderer.fit();
+    });
+
+    await expect.poll(async () => (await receivedCommands(page)).filter((c) => c.fn === 'fitBounds')).toHaveLength(1);
+    let fits = (await receivedCommands(page)).filter((c) => c.fn === 'fitBounds');
+    expect(fits[0].args[0]).toEqual([[39.87, -105.03], [39.89, -104.8]]);
+
+    await page.evaluate(() => {
+      const renderer = (window as any).testRenderer;
+      renderer.showCustomLayers(['hidden']);
+      renderer.fit();
+    });
+    await expect.poll(async () => (await receivedCommands(page)).filter((c) => c.fn === 'fitBounds')).toHaveLength(2);
+    fits = (await receivedCommands(page)).filter((c) => c.fn === 'fitBounds');
+    expect(fits[1].args[0]).toEqual([[40.75, -73.98], [40.75, -73.98]]);
+
+    await page.evaluate(() => {
+      const renderer = (window as any).testRenderer;
+      renderer.showCustomLayers([]);
+      renderer.fit();
+    });
+    await page.waitForTimeout(50);
+    expect((await receivedCommands(page)).filter((c) => c.fn === 'fitBounds')).toHaveLength(2);
+  });
+});
