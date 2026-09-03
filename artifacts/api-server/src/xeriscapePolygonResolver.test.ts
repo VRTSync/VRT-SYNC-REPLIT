@@ -167,4 +167,36 @@ describe("resolveXeriscapePolygons", () => {
       },
     });
   });
+
+  it("prefers a useful matched feature label over the canonical asset label", () => {
+    const result = resolveXeriscapePolygons({
+      communities: [{ id: "c1", name: "North" }],
+      assets: [asset({ id: "a1", communityId: "c1", label: "Imported name", mapLayerId: "l1", featureRef: "feature-1" })],
+      properties: [{ assetId: "a1", key: "sqFt", value: "100" }],
+      layers: [layer("l1", "c1", [
+        { type: "Feature", id: "feature-1", geometry: polygon, properties: { name: "North Turf" } },
+      ])],
+    });
+
+    assert.equal(result.features[0].properties.name, "North Turf");
+  });
+
+  it("ignores the imported placeholder and generates stable location fallbacks", () => {
+    const result = resolveXeriscapePolygons({
+      communities: [{ id: "c1", name: "North" }],
+      assets: [
+        asset({ id: "a2", communityId: "c1", label: "Untitled polygon", mapLayerId: "l1", featureRef: "b" }),
+        asset({ id: "a1", communityId: "c1", label: " ", mapLayerId: "l1", featureRef: "a" }),
+      ],
+      properties: [],
+      layers: [layer("l1", "c1", [
+        { type: "Feature", id: "a", geometry: polygon, properties: { name: "Untitled polygon" } },
+        { type: "Feature", id: "b", geometry: polygon, properties: { label: "Untitled polygon" } },
+      ])],
+    });
+
+    const names = new Map(result.features.map((feature) => [feature.id, feature.properties.name]));
+    assert.equal(names.get("a1"), "Area 1");
+    assert.equal(names.get("a2"), "Area 2");
+  });
 });

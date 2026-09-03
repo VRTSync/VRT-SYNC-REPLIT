@@ -50,6 +50,20 @@ export type XeriscapePolygonResolution = {
 
 type IndexedLayer = Map<string, any>;
 
+const PLACEHOLDER_LABEL = "untitled polygon";
+
+function cleanLabel(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const label = String(value).trim();
+  if (!label || label.toLowerCase() === PLACEHOLDER_LABEL) return null;
+  return label;
+}
+
+function getFeatureLabel(feature: any): string | null {
+  const props = feature?.properties;
+  return cleanLabel(props?.label) ?? cleanLabel(props?.name) ?? cleanLabel(props?.title);
+}
+
 function indexLayer(layer: MapLayer): { index: IndexedLayer; error?: "invalid_map_layer" } {
   if (!layer.geojsonData) return { index: new Map(), error: "invalid_map_layer" };
 
@@ -75,9 +89,9 @@ function indexLayer(layer: MapLayer): { index: IndexedLayer; error?: "invalid_ma
         }
       }
 
-      const name = feature.properties?.label || feature.properties?.name;
-      if (name !== undefined && name !== null && name !== "") {
-        const key = `__name__${String(name)}`;
+      const name = getFeatureLabel(feature);
+      if (name) {
+        const key = `__name__${name}`;
         if (!index.has(key)) index.set(key, feature);
       }
     }
@@ -138,6 +152,23 @@ export function resolveXeriscapePolygons(input: {
       !asset.isArchived &&
       communityById.has(asset.communityId),
   );
+  const fallbackNames = new Map<string, string>();
+  const assetsByCommunity = new Map<string, Asset[]>();
+  for (const asset of eligibleAssets) {
+    const communityAssets = assetsByCommunity.get(asset.communityId) ?? [];
+    communityAssets.push(asset);
+    assetsByCommunity.set(asset.communityId, communityAssets);
+  }
+  for (const communityAssets of assetsByCommunity.values()) {
+    communityAssets
+      .slice()
+      .sort((a, b) => {
+        const featureRefA = a.featureRef ?? "";
+        const featureRefB = b.featureRef ?? "";
+        return featureRefA.localeCompare(featureRefB) || a.id.localeCompare(b.id);
+      })
+      .forEach((asset, index) => fallbackNames.set(asset.id, `Area ${index + 1}`));
+  }
   const propertiesByAssetId = new Map<string, Record<string, string>>();
   for (const property of input.properties) {
     const properties = propertiesByAssetId.get(property.assetId) ?? {};
@@ -178,17 +209,21 @@ export function resolveXeriscapePolygons(input: {
 
     const props = propertiesByAssetId.get(asset.id) ?? {};
     const area = parseArea(props.sqFt);
+    const fallbackName = cleanLabel(asset.label) ?? fallbackNames.get(asset.id) ?? `Area 1`;
     let geometry: any = null;
+    let matchedFeature: any = null;
+    let displayName = fallbackName;
     let unresolvedReason: XeriscapePolygonUnresolvedAsset["reason"] | null = null;
 
     if (asset.mapLayerId && layerIndexes.has(asset.mapLayerId)) {
       const featureIndex = layerIndexes.get(asset.mapLayerId)!;
-      const feature =
+      matchedFeature =
         (asset.featureRef && featureIndex.get(String(asset.featureRef))) ||
         featureIndex.get(`__name__${asset.label}`) ||
         null;
-      if (feature?.geometry) {
-        geometry = feature.geometry;
+      displayName = getFeatureLabel(matchedFeature) ?? fallbackName;
+      if (matchedFeature?.geometry) {
+        geometry = matchedFeature.geometry;
       } else {
         unresolvedReason = layerErrors.has(asset.mapLayerId)
           ? "invalid_map_layer"
@@ -210,7 +245,7 @@ export function resolveXeriscapePolygons(input: {
       summary.unresolvedCount++;
       unresolved.push({
         assetId: asset.id,
-        name: asset.label,
+        name: displayName,
         communityId: community.id,
         communityName: community.name,
         featureRef: asset.featureRef,
@@ -227,7 +262,7 @@ export function resolveXeriscapePolygons(input: {
       geometry,
       properties: {
         id: asset.id,
-        name: asset.label,
+        name: displayName,
         area_sqft: area.areaSqft,
         featureRef: asset.featureRef,
         communityId: community.id,

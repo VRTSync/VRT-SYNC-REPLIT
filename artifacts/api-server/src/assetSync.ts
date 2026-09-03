@@ -32,11 +32,20 @@ function extractFeatureId(feature: any, index: number): string {
 
 function extractLabel(feature: any, assetType: string, index: number): string {
   const props = feature.properties || {};
-  if (props.name) return String(props.name);
-  if (props.label) return String(props.label);
-  if (props.title) return String(props.title);
+  for (const candidate of [props.name, props.label, props.title]) {
+    const label = candidate === undefined || candidate === null ? "" : String(candidate).trim();
+    if (label && label.toLowerCase() !== "untitled polygon") return label;
+  }
   const typeLabel = assetType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   return `${typeLabel} ${index + 1}`;
+}
+
+function hasUsableFeatureLabel(feature: any): boolean {
+  const props = feature?.properties || {};
+  return [props.name, props.label, props.title].some((candidate) => {
+    const label = candidate === undefined || candidate === null ? "" : String(candidate).trim();
+    return Boolean(label) && label.toLowerCase() !== "untitled polygon";
+  });
 }
 
 function resolveGeometry(feature: any): {
@@ -155,7 +164,9 @@ export async function syncAssetsFromLayer(
       if (existing) {
         await db.update(assets)
           .set({
-            label: label,
+            // Generic source names are not authoritative. Preserve a
+            // corrected/manual canonical label when a layer is re-synced.
+            label: hasUsableFeatureLabel(feature) ? label : existing.label,
             geometryType: geometryType,
             latitude: lat,
             longitude: lng,

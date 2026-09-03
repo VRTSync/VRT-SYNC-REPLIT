@@ -12,3 +12,4 @@
 - [Import batch skip audit](import-batch-skip-audit.md) — batch records need the per-row skip report + acknowledged codes, not just aggregate counts, or omissions are unexplainable later.
 - [Analytics Tier 1 scope rules](analytics-tier1-scope.md) — KPI row ignores layer focus, layer cards respect it; shares use one denominator + largest remainder to hit exactly 100%.
 - [Custom-layer map fitting](custom-layer-map-fitting.md) — shared viewport fitting must include currently shown custom geometry and ignore hidden custom layers.
+- [Imported placeholder labels](imported-placeholder-labels.md) — treat “Untitled polygon” as absent and preserve corrected canonical labels during GeoJSON re-sync.
