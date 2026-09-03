@@ -1180,6 +1180,30 @@ export const plannerRecordStatusEnum = pgEnum("planner_record_status", [
   "archived",
 ]);
 
+export const waterSavingsScenarios = pgTable("water_savings_scenarios", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  targetPct: doublePrecision("target_pct").notNull().default(20),
+  tier: text("tier").notNull().default("rock"),
+  annualBudget: doublePrecision("annual_budget"),
+  assumptionsJson: jsonb("assumptions_json").notNull(),
+  pinsJson: jsonb("pins_json").notNull().default(sql`'{}'::jsonb`),
+  status: text("status").notNull().default("draft"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("water_savings_scenarios_org_idx").on(table.organizationId),
+]);
+
+export type WaterSavingsScenario = typeof waterSavingsScenarios.$inferSelect;
+export type InsertWaterSavingsScenario = typeof waterSavingsScenarios.$inferInsert;
+
 export const plannerRecords = pgTable("planner_records", {
   id: varchar("id")
     .primaryKey()
@@ -1194,12 +1218,14 @@ export const plannerRecords = pgTable("planner_records", {
   totalEstimatedCost: doublePrecision("total_estimated_cost").notNull().default(0),
   totalAnnualSavings: doublePrecision("total_annual_savings").notNull().default(0),
   paybackYears: doublePrecision("payback_years"),
+  scenarioId: varchar("scenario_id").references(() => waterSavingsScenarios.id, { onDelete: "set null" }),
   createdBy: varchar("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("planner_records_property_idx").on(table.propertyId),
   index("planner_records_status_idx").on(table.status),
+  index("planner_records_scenario_idx").on(table.scenarioId),
 ]);
 
 export type PlannerRecord = typeof plannerRecords.$inferSelect;
@@ -1240,8 +1266,24 @@ export const xeriscapePacketsRelations = relations(xeriscapePackets, ({ one }) =
   generatedByUser: one(users, { fields: [xeriscapePackets.generatedBy], references: [users.id] }),
 }));
 
-export const plannerRecordsRelations = relations(plannerRecords, ({ many }) => ({
+export const plannerRecordsRelations = relations(plannerRecords, ({ one, many }) => ({
+  scenario: one(waterSavingsScenarios, {
+    fields: [plannerRecords.scenarioId],
+    references: [waterSavingsScenarios.id],
+  }),
   packets: many(xeriscapePackets),
+}));
+
+export const waterSavingsScenariosRelations = relations(waterSavingsScenarios, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [waterSavingsScenarios.organizationId],
+    references: [organizations.id],
+  }),
+  createdByUser: one(users, {
+    fields: [waterSavingsScenarios.createdBy],
+    references: [users.id],
+  }),
+  plannerRecords: many(plannerRecords),
 }));
 
 export type TaskPageMeta = {

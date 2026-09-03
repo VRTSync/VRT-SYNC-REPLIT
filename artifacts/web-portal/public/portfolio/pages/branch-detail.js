@@ -847,6 +847,9 @@
             + '<div class="summ-card-cat">' + esc(card.label) + '</div>'
             + '<div class="summ-card-count">' + esc(card.total) + '</div>'
             + (card.subLine ? '<div class="summ-card-sub">' + esc(card.subLine) + '</div>' : '')
+            + (card.key === 'community'
+              ? '<button class="summ-water-savings-link" data-water-savings-community="true">Plan water savings</button>'
+              : '')
             + '</div>';
         }).join('')
       + '</div>';
@@ -1232,6 +1235,13 @@
       card.addEventListener('click', goTab);
       card.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTab(); }
+      });
+    });
+
+    container.querySelectorAll('[data-water-savings-community]').forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        event.stopPropagation();
+        PortfolioRouter.navigate('water-savings-location', true, { id: branchId });
       });
     });
 

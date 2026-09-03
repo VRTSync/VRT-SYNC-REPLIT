@@ -504,7 +504,8 @@
       // Inline colours come from the API layer metadata — no hex hardcoded here.
       var cardStyle  = L.color ? ' style="border-left-color:' + esc(L.color) + '"' : '';
       var valueStyle = L.color ? ' style="color:' + esc(L.color) + '"' : '';
-      return '<div class="pa-layer-card"' + cardStyle + '>'
+      return '<div class="pa-layer-card"' + cardStyle
+        + (L.key === 'community' ? ' role="button" tabindex="0" data-water-savings-link="true"' : '') + '>'
         + '<div class="pa-layer-card-top">'
           + '<span class="pa-layer-card-name">' + esc(L.name) + '</span>'
           + '<span class="pa-layer-card-share">' + shares[i] + '% of assets</span>'
@@ -517,6 +518,13 @@
 
     container.innerHTML = summaryHtml
       + (layerCardsHtml ? '<div class="pa-layer-summary">' + layerCardsHtml + '</div>' : '');
+    container.querySelectorAll('[data-water-savings-link]').forEach(function (card) {
+      function openPlanner() { PortfolioRouter.navigate('water-savings', true, {}); }
+      card.addEventListener('click', openPlanner);
+      card.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPlanner(); }
+      });
+    });
   }
 
   // ── Tier 2: location table ─────────────────────────────────────────────────

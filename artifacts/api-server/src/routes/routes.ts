@@ -5899,10 +5899,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resolved = resolvePortfolioOrg(req);
       if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
 
-      const data = await storage.getPortfolioXeriscapePolygons(resolved.orgId);
+      const communityId = typeof req.query.communityId === "string" ? req.query.communityId : null;
+      if (communityId) {
+        const community = await storage.getWaterSavingsCommunity(resolved.orgId, communityId);
+        if (!community) return void res.status(404).json({ error: "Location not found" });
+      }
+
+      const allData = await storage.getPortfolioXeriscapePolygons(resolved.orgId);
+      const data = communityId
+        ? {
+            ...allData,
+            features: allData.features.filter((feature) => feature.properties.communityId === communityId),
+            unresolved: allData.unresolved.filter((item) => item.communityId === communityId),
+            byCommunity: allData.byCommunity.filter((item) => item.communityId === communityId),
+          }
+        : allData;
+      if (communityId) {
+        data.assetsFound = data.byCommunity.reduce((sum, item) => sum + item.assetsFound, 0);
+        data.featuresResolved = data.features.length;
+        data.sqFtResolved = data.byCommunity.reduce((sum, item) => sum + item.sqFtResolved, 0);
+      }
       req.log.info(
         {
           organizationId: resolved.orgId,
+          communityId,
           communityCount: data.byCommunity.length,
           assetsFound: data.assetsFound,
           featuresResolved: data.featuresResolved,
@@ -5914,6 +5934,184 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       req.log.error({ err: error }, "portfolio xeriscape polygons error");
       return void res.status(500).json({ error: "Failed to load portfolio xeriscape polygons" });
+    }
+  });
+
+  const waterSavingsAssumptionsSchema = z.object({
+    costPerSf: z.coerce.number().nonnegative(),
+    gallonsPerSfYear: z.coerce.number().nonnegative(),
+    waterRatePerKGal: z.coerce.number().nonnegative(),
+    maintenancePerSfYear: z.coerce.number().nonnegative(),
+    rebatePerSf: z.coerce.number().nonnegative(),
+  });
+  const waterSavingsPinsSchema = z.record(z.string(), z.enum(["in", "out"]));
+  const waterSavingsScenarioCreateSchema = z.object({
+    name: z.string().trim().min(1).max(120),
+    targetPct: z.coerce.number().min(0).max(100).default(20),
+    tier: z.enum(["rock", "colorado"]).default("rock"),
+    annualBudget: z.union([z.coerce.number().nonnegative(), z.null()]).optional(),
+    assumptions: waterSavingsAssumptionsSchema,
+    pins: waterSavingsPinsSchema.default({}),
+    status: z.enum(["draft", "saved", "archived"]).default("draft"),
+  });
+  const waterSavingsScenarioPatchSchema = waterSavingsScenarioCreateSchema.partial();
+
+  app.get("/api/portfolio/water-savings", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const [communitiesData, polygonData] = await Promise.all([
+        storage.getWaterSavingsCommunities(resolved.orgId),
+        storage.getPortfolioXeriscapePolygons(resolved.orgId),
+      ]);
+      const rollupByCommunity = new Map(
+        polygonData.byCommunity.map((item) => [item.communityId, item]),
+      );
+      const communitiesWithTurf = communitiesData.map((community) => ({
+        ...community,
+        turf: rollupByCommunity.get(community.id) ?? {
+          communityId: community.id,
+          communityName: community.name,
+          assetsFound: 0,
+          featuresResolved: 0,
+          sqFtResolved: 0,
+          unresolvedCount: 0,
+        },
+      }));
+      return void res.json({
+        communities: communitiesWithTurf,
+        totals: {
+          assetsFound: polygonData.assetsFound,
+          featuresResolved: polygonData.featuresResolved,
+          sqFtResolved: polygonData.sqFtResolved,
+          unresolvedCount: polygonData.unresolved.length,
+        },
+      });
+    } catch (error) {
+      req.log.error({ err: error }, "portfolio water savings summary error");
+      return void res.status(500).json({ error: "Failed to load Water Savings summary" });
+    }
+  });
+
+  app.get("/api/portfolio/water-savings/communities/:communityId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const communityId = req.params.communityId as string;
+      const community = await storage.getWaterSavingsCommunity(resolved.orgId, communityId);
+      if (!community) return void res.status(404).json({ error: "Location not found" });
+      const polygons = await storage.getXeriscapeCommunityPolygons(communityId);
+      return void res.json({ community, polygons });
+    } catch (error) {
+      req.log.error({ err: error }, "portfolio water savings location error");
+      return void res.status(500).json({ error: "Failed to load Water Savings location" });
+    }
+  });
+
+  app.get("/api/portfolio/water-savings/scenarios", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      return void res.json(await storage.listWaterSavingsScenarios(resolved.orgId));
+    } catch (error) {
+      req.log.error({ err: error }, "list Water Savings scenarios error");
+      return void res.status(500).json({ error: "Failed to list Water Savings scenarios" });
+    }
+  });
+
+  app.get("/api/portfolio/water-savings/scenarios/:scenarioId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const scenario = await storage.getWaterSavingsScenario(resolved.orgId, req.params.scenarioId as string);
+      if (!scenario) return void res.status(404).json({ error: "Scenario not found" });
+      return void res.json(scenario);
+    } catch (error) {
+      req.log.error({ err: error }, "get Water Savings scenario error");
+      return void res.status(500).json({ error: "Failed to load Water Savings scenario" });
+    }
+  });
+
+  app.post("/api/portfolio/water-savings/scenarios", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const parsed = waterSavingsScenarioCreateSchema.safeParse(req.body);
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.flatten() });
+      if (!await storage.waterSavingsPinsBelongToOrg(resolved.orgId, parsed.data.pins)) {
+        return void res.status(404).json({ error: "One or more mapped areas were not found" });
+      }
+      const scenario = await storage.createWaterSavingsScenario({
+        organizationId: resolved.orgId,
+        name: parsed.data.name,
+        targetPct: parsed.data.targetPct,
+        tier: parsed.data.tier,
+        annualBudget: parsed.data.annualBudget ?? null,
+        assumptionsJson: parsed.data.assumptions,
+        pinsJson: parsed.data.pins,
+        status: parsed.data.status,
+        createdBy: req.session.userId ?? null,
+      });
+      req.log.info(
+        { organizationId: resolved.orgId, scenarioId: scenario.id },
+        "create portfolio Water Savings scenario",
+      );
+      return void res.status(201).json(scenario);
+    } catch (error) {
+      req.log.error({ err: error }, "create Water Savings scenario error");
+      return void res.status(500).json({ error: "Failed to create Water Savings scenario" });
+    }
+  });
+
+  app.patch("/api/portfolio/water-savings/scenarios/:scenarioId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const scenarioId = req.params.scenarioId as string;
+      const existing = await storage.getWaterSavingsScenario(resolved.orgId, scenarioId);
+      if (!existing) return void res.status(404).json({ error: "Scenario not found" });
+      const parsed = waterSavingsScenarioPatchSchema.safeParse(req.body);
+      if (!parsed.success) return void res.status(400).json({ error: parsed.error.flatten() });
+      if (parsed.data.pins && !await storage.waterSavingsPinsBelongToOrg(resolved.orgId, parsed.data.pins)) {
+        return void res.status(404).json({ error: "One or more mapped areas were not found" });
+      }
+      const updates: Parameters<typeof storage.updateWaterSavingsScenario>[2] = {};
+      if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+      if (parsed.data.targetPct !== undefined) updates.targetPct = parsed.data.targetPct;
+      if (parsed.data.tier !== undefined) updates.tier = parsed.data.tier;
+      if (parsed.data.annualBudget !== undefined) updates.annualBudget = parsed.data.annualBudget;
+      if (parsed.data.assumptions !== undefined) updates.assumptionsJson = parsed.data.assumptions;
+      if (parsed.data.pins !== undefined) updates.pinsJson = parsed.data.pins;
+      if (parsed.data.status !== undefined) updates.status = parsed.data.status;
+      const scenario = await storage.updateWaterSavingsScenario(resolved.orgId, scenarioId, updates);
+      req.log.info(
+        { organizationId: resolved.orgId, scenarioId },
+        "update portfolio Water Savings scenario",
+      );
+      return void res.json(scenario);
+    } catch (error) {
+      req.log.error({ err: error }, "update Water Savings scenario error");
+      return void res.status(500).json({ error: "Failed to update Water Savings scenario" });
+    }
+  });
+
+  app.delete("/api/portfolio/water-savings/scenarios/:scenarioId", requireClientOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const resolved = resolvePortfolioOrg(req);
+      if (!resolved.orgId) return void res.status((resolved as any).status).json({ error: (resolved as any).error });
+      const scenarioId = req.params.scenarioId as string;
+      if (!await storage.getWaterSavingsScenario(resolved.orgId, scenarioId)) {
+        return void res.status(404).json({ error: "Scenario not found" });
+      }
+      await storage.deleteWaterSavingsScenario(resolved.orgId, scenarioId);
+      req.log.info(
+        { organizationId: resolved.orgId, scenarioId },
+        "delete portfolio Water Savings scenario",
+      );
+      return void res.status(204).end();
+    } catch (error) {
+      req.log.error({ err: error }, "delete Water Savings scenario error");
+      return void res.status(500).json({ error: "Failed to delete Water Savings scenario" });
     }
   });
 

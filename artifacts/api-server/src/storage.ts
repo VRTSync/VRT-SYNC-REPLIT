@@ -8,6 +8,7 @@ import {
   notifications, driveFolders, driveFiles, invoices, contracts, contacts, pushTickets,
   assetAttachments,
   organizations, branchGroups, branchGroupMembers, branchGroupSets,
+  waterSavingsScenarios,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
   type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
@@ -20,6 +21,7 @@ import {
   type TaskPageViewModel, type TaskPageTaskItem, type TaskPageCompletionItem,
   type Organization, type NewOrganization,
   type BranchGroup, type NewBranchGroup, type BranchGroupSet, type NewBranchGroupSet,
+  type WaterSavingsScenario, type InsertWaterSavingsScenario,
   userRoleEnum,
 } from "@workspace/db";
 import {
@@ -875,6 +877,115 @@ export async function getPortfolioXeriscapePolygons(orgId: string): Promise<Xeri
     properties,
     layers,
   });
+}
+
+export async function getWaterSavingsCommunities(orgId: string) {
+  return db
+    .select({
+      id: communities.id,
+      name: communities.name,
+      code: communities.code,
+      address: communities.address,
+      city: communities.city,
+    })
+    .from(communities)
+    .where(eq(communities.organizationId, orgId))
+    .orderBy(communities.name);
+}
+
+export async function getWaterSavingsCommunity(orgId: string, communityId: string) {
+  const [community] = await db
+    .select({
+      id: communities.id,
+      name: communities.name,
+      code: communities.code,
+      address: communities.address,
+      city: communities.city,
+    })
+    .from(communities)
+    .where(and(
+      eq(communities.id, communityId),
+      eq(communities.organizationId, orgId),
+    ));
+  return community ?? null;
+}
+
+export async function listWaterSavingsScenarios(orgId: string): Promise<WaterSavingsScenario[]> {
+  return db
+    .select()
+    .from(waterSavingsScenarios)
+    .where(eq(waterSavingsScenarios.organizationId, orgId))
+    .orderBy(desc(waterSavingsScenarios.updatedAt));
+}
+
+export async function getWaterSavingsScenario(
+  orgId: string,
+  scenarioId: string,
+): Promise<WaterSavingsScenario | null> {
+  const [scenario] = await db
+    .select()
+    .from(waterSavingsScenarios)
+    .where(and(
+      eq(waterSavingsScenarios.id, scenarioId),
+      eq(waterSavingsScenarios.organizationId, orgId),
+    ));
+  return scenario ?? null;
+}
+
+export async function createWaterSavingsScenario(
+  data: InsertWaterSavingsScenario,
+): Promise<WaterSavingsScenario> {
+  const [scenario] = await db.insert(waterSavingsScenarios).values(data).returning();
+  return scenario;
+}
+
+export async function updateWaterSavingsScenario(
+  orgId: string,
+  scenarioId: string,
+  data: Partial<Pick<
+    WaterSavingsScenario,
+    "name" | "targetPct" | "tier" | "annualBudget" | "assumptionsJson" | "pinsJson" | "status"
+  >>,
+): Promise<WaterSavingsScenario | null> {
+  const [scenario] = await db
+    .update(waterSavingsScenarios)
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(
+      eq(waterSavingsScenarios.id, scenarioId),
+      eq(waterSavingsScenarios.organizationId, orgId),
+    ))
+    .returning();
+  return scenario ?? null;
+}
+
+export async function deleteWaterSavingsScenario(orgId: string, scenarioId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(waterSavingsScenarios)
+    .where(and(
+      eq(waterSavingsScenarios.id, scenarioId),
+      eq(waterSavingsScenarios.organizationId, orgId),
+    ))
+    .returning({ id: waterSavingsScenarios.id });
+  return deleted.length > 0;
+}
+
+export async function waterSavingsPinsBelongToOrg(
+  orgId: string,
+  pins: Record<string, "in" | "out">,
+): Promise<boolean> {
+  const ids = Object.keys(pins);
+  if (ids.length === 0) return true;
+  const rows = await db
+    .select({ id: assets.id })
+    .from(assets)
+    .innerJoin(communities, eq(assets.communityId, communities.id))
+    .where(and(
+      inArray(assets.id, ids),
+      eq(assets.assetType, "bluegrass_area"),
+      eq(assets.isArchived, false),
+      eq(communities.organizationId, orgId),
+    ));
+  return rows.length === ids.length;
 }
 
 export async function upsertAssetProperty(assetId: string, key: string, value: string): Promise<void> {

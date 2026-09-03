@@ -38,7 +38,8 @@ window.PortfolioRouter = (function () {
 
     // Update nav active state
     document.querySelectorAll('.side-nav a[data-route]').forEach(function (link) {
-      link.classList.toggle('active', link.dataset.route === routeName);
+      var activeRoute = routeName === 'water-savings-location' ? 'water-savings' : routeName;
+      link.classList.toggle('active', link.dataset.route === activeRoute);
     });
 
     // Run any page-level teardown registered by the outgoing route (e.g. map ResizeObserver)

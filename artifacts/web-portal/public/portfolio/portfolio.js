@@ -44,6 +44,7 @@
     { route: 'branches',     label: 'Locations'     },
     { route: 'map',          label: 'Portfolio Map' },
     { route: 'analytics',    label: 'Analytics'     },
+    { route: 'water-savings',label: 'Water Savings' },
     { route: 'work-orders',  label: 'Work Orders'   },
     { route: 'groups',       label: 'Groups'        },
   ];

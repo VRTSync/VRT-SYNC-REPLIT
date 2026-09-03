@@ -12,3 +12,5 @@ Any consumer of the shared map renderer's `ready` event must treat it as "data a
 
 ## Related gotcha
 `use.executablePath` at the top level of a Playwright test config is silently ignored — it must live under `use.launchOptions`.
+
+Custom layers are not part of the renderer's fetched `_mapLayers`, so `fit()` cannot derive their bounds. Consumers that display only custom geometry must calculate its bounds and send `fitBounds` explicitly. Set `directTap: true` when custom features should select immediately rather than opening the standard detail popup.
