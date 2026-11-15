@@ -20,6 +20,7 @@ import { convertKmlToGeojson, normalizeGeojsonFeatureIds } from "../kmlConverter
 import { getDefaultLayerColor, CONTROLLER_COLORS } from "@workspace/layer-colors";
 import {
   insertCommunitySchema, insertTaskSchema, completeTaskSchema, registerPushTokenSchema,
+  updateTaskManagerSchema, updateTaskFieldSchema,
   insertAssetSchema, updateAssetSchema, upsertAssetPropertiesSchema, setTaskLinkSchema,
   insertMapLayerSchema, updateMapLayerSchema, insertOfflinePackSchema,
   insertTaskTemplateSchema, generateFromTemplateSchema, insertTaskScheduleSchema,
@@ -720,14 +721,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!allowed) {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
-      const { version, ...data } = req.body;
+      const updatingUser = await storage.getUserById(req.session.userId!);
+      const isManager = updatingUser?.role === "admin" || updatingUser?.role === "property_manager";
+      const isFieldWorker = updatingUser?.role === "contractor" &&
+        (task.assignedTo === req.session.userId || task.assignedTo === null);
+      if (!isManager && !isFieldWorker) {
+        return void res.status(403).json({ error: "You cannot edit this task" });
+      }
+      const { version, ...input } = req.body;
       if (typeof version !== "number") {
         return void res.status(400).json({ error: "version is required" });
       }
+      if (input.status === "completed" && updatingUser?.role !== "admin") {
+        return void res.status(400).json({ error: "Use the completion form to complete a task" });
+      }
+      const parsed = (isManager ? updateTaskManagerSchema : updateTaskFieldSchema).safeParse(input);
+      if (!parsed.success) {
+        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+      }
+      const data: ReturnType<typeof updateTaskManagerSchema.parse> = parsed.data;
+      if (data.assignedTo !== undefined && data.assignedTo !== null) {
+        const assignee = await storage.getUserById(data.assignedTo);
+        if (assignee?.role !== "contractor" ||
+            !await storage.isUserMemberOfCommunity(data.assignedTo, task.communityId)) {
+          return void res.status(400).json({ error: "Assignee must be a contractor in this community" });
+        }
+      }
 
       if (task!.origin === "HOA") {
-        const updatingUser = await storage.getUserById(req.session.userId!);
-        if (updatingUser?.role === "contractor" && data.priority !== undefined) {
+        // Preserve the existing explicit priority-lock response, even though the
+        // field-worker schema has already stripped this key from writable data.
+        if (updatingUser?.role === "contractor" && input.priority !== undefined) {
           return void res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
         }
         if (data.status === "acknowledged") {
@@ -752,12 +776,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      if (data.startDate) {
-        data.startDate = new Date(data.startDate);
-      }
-      if (data.dueDate) {
-        data.dueDate = new Date(data.dueDate);
-      }
       if (data.windowStart) {
         data.windowStart = String(data.windowStart);
       }
@@ -765,7 +783,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         data.windowEnd = String(data.windowEnd);
       }
       const previousAssignee = task!.assignedTo;
-      const updated = await storage.updateTask(req.params.id as string, version, data);
+      const updated = await storage.updateTask(req.params.id as string, version, {
+        ...data,
+        startDate: typeof data.startDate === "string" ? new Date(data.startDate) : data.startDate,
+        dueDate: typeof data.dueDate === "string" ? new Date(data.dueDate) : data.dueDate,
+      });
       if (!updated) {
         const latest = await storage.getTaskById(req.params.id as string);
         return void res.status(409).json({
@@ -814,6 +836,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!allowed) {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
+      const completingUser = await storage.getUserById(req.session.userId!);
+      if (completingUser?.role !== "admin" &&
+          !(completingUser?.role === "contractor" &&
+            (existingTask.assignedTo === req.session.userId || existingTask.assignedTo === null))) {
+        return void res.status(403).json({ error: "Only the assigned contractor can complete this task" });
+      }
 
       if (existingTask.origin === "HOA" && existingTask.status !== "acknowledged" && existingTask.status !== "in_progress") {
         return void res.status(400).json({ error: "HOA requests must be acknowledged or in progress before completing" });
@@ -832,7 +860,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const completingUser = await storage.getUserById(req.session.userId!);
       if (completingUser?.role !== 'admin' && existingTask.windowStart && existingTask.windowEnd) {
         const now = new Date();
         const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/Denver' });

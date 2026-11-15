@@ -768,6 +768,27 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   category: true,
 });
 
+// z.object strips unknown keys for compatibility with installed clients.
+export const updateTaskManagerSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  ticketType: z.string().nullable().optional(),
+  priority: z.enum(taskPriorityEnum.enumValues).optional(),
+  assignedTo: z.string().nullable().optional(),
+  startDate: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  windowStart: z.string().nullable().optional(),
+  windowEnd: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
+  status: z.enum(taskStatusEnum.enumValues).optional(),
+});
+
+export const updateTaskFieldSchema = z.object({
+  status: z.enum(["pending", "in_progress", "acknowledged"]).optional(),
+});
+
 export const createHoaRequestSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().min(1, "Description is required"),

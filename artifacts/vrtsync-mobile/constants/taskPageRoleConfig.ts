@@ -128,11 +128,11 @@ const HOA_ADMIN_CONFIG: TaskPageRoleConfig = {
   ],
   taskGrouping: 'priority',
   visibleMetadata: ['windowRange', 'address', 'dueDate', 'assignedTo', 'originBadge'],
-  cardActions: ['acknowledge', 'mapJump'],
+  cardActions: ['mapJump'],
   cardVariant: 'standard',
   showRequestsSeparately: false,
   showCompletionControls: false,
-  showAcknowledgmentControls: true,
+  showAcknowledgmentControls: false,
   showMapJump: true,
   readOnly: false,
   sectionLabelOverrides: {

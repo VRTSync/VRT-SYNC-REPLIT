@@ -13,3 +13,4 @@
 - [Analytics Tier 1 scope rules](analytics-tier1-scope.md) — KPI row ignores layer focus, layer cards respect it; shares use one denominator + largest remainder to hit exactly 100%.
 - [Custom-layer map fitting](custom-layer-map-fitting.md) — shared viewport fitting must include currently shown custom geometry and ignore hidden custom layers.
 - [Imported placeholder labels](imported-placeholder-labels.md) — treat “Untitled polygon” as absent and preserve corrected canonical labels during GeoJSON re-sync.
+- [HOA acknowledgement policy](hoa-acknowledgement-policy.md) — acknowledgement means contractor receipt; HOA users have no task-edit exception.

@@ -192,18 +192,28 @@ export async function deleteTask(id: string): Promise<boolean> {
 
 export async function updateTask(id: string, expectedVersion: number, data: Partial<{
   title: string;
-  description: string;
+  description: string | null;
   status: "pending" | "in_progress" | "completed" | "submitted" | "acknowledged";
   priority: "low" | "medium" | "high" | "urgent";
-  latitude: number;
-  longitude: number;
-  address: string;
-  assignedTo: string;
-  dueDate: Date;
-  windowStart: string;
-  windowEnd: string;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+  assignedTo: string | null;
+  startDate: Date | null;
+  dueDate: Date | null;
+  ticketType: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
 }>): Promise<Task | null> {
-  const setData: Record<string, unknown> = { ...data, version: expectedVersion + 1, updatedAt: new Date() };
+  const setData: Record<string, unknown> = { version: expectedVersion + 1, updatedAt: new Date() };
+  const allowedKeys = [
+    "title", "description", "ticketType", "priority", "assignedTo",
+    "startDate", "dueDate", "windowStart", "windowEnd", "address",
+    "latitude", "longitude", "status",
+  ] as const;
+  for (const key of allowedKeys) {
+    if (Object.hasOwn(data, key) && data[key] !== undefined) setData[key] = data[key];
+  }
   if (data.status === 'acknowledged') {
     setData.acknowledgedAt = new Date();
   }
