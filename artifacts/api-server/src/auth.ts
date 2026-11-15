@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { pool, db } from "./db";
 import * as storage from "./storage";
-import { insertUserSchema, loginSchema, users } from "@workspace/db";
+import { publicRegisterSchema, loginSchema, users } from "@workspace/db";
 import { ObjectStorageService } from "./objectStorage";
 
 const PgSession = connectPgSimple(session);
@@ -226,7 +226,7 @@ const authLimiter = rateLimit({
 export function registerAuthRoutes(app: any) {
   app.post("/api/auth/register", authLimiter, async (req: Request, res: Response) => {
     try {
-      const parsed = insertUserSchema.safeParse(req.body);
+      const parsed = publicRegisterSchema.safeParse(req.body);
       if (!parsed.success) {
         return void res.status(400).json({ message: "Invalid input", errors: parsed.error.flatten() });
       }
@@ -238,8 +238,10 @@ export function registerAuthRoutes(app: any) {
 
       const hashedPassword = await bcrypt.hash(parsed.data.password, 10);
       const user = await storage.createUser({
-        ...parsed.data,
+        username: parsed.data.username,
         password: hashedPassword,
+        displayName: parsed.data.displayName,
+        role: "contractor",
       });
 
       // Regenerate session to prevent fixation and cross-user bleed
@@ -247,12 +249,6 @@ export function registerAuthRoutes(app: any) {
         req.session.regenerate((err) => (err ? reject(err) : resolve()))
       );
       req.session.userId = user.id;
-      if (isHoaRole(user.role) && user.hoaCommunityId) {
-        req.session.hoaCommunityId = user.hoaCommunityId;
-      }
-      if (isClientRole(user.role) && user.organizationId) {
-        req.session.organizationId = user.organizationId;
-      }
       await new Promise<void>((resolve, reject) =>
         req.session.save((err) => (err ? reject(err) : resolve()))
       );

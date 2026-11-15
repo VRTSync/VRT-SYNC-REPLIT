@@ -103,7 +103,7 @@ type AuthContextType = {
   defaultCommunityId: string | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string, displayName: string, role: string) => Promise<void>;
+  register: (username: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (params: UpdateProfileParams) => Promise<void>;
 };
@@ -219,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { username: string; password: string; displayName: string; role: string }) => {
+    mutationFn: async (data: { username: string; password: string; displayName: string }) => {
       const res = await apiRequest('POST', '/api/auth/register', data);
       return res.json();
     },
@@ -254,8 +254,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loginMutation.mutateAsync({ username, password });
   }, [loginMutation]);
 
-  const register = useCallback(async (username: string, password: string, displayName: string, role: string) => {
-    await registerMutation.mutateAsync({ username, password, displayName, role });
+  const register = useCallback(async (username: string, password: string, displayName: string) => {
+    await registerMutation.mutateAsync({ username, password, displayName });
   }, [registerMutation]);
 
   const logout = useCallback(async () => {

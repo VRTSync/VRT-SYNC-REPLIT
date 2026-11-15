@@ -725,6 +725,12 @@ export const updateContactSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
+export const publicRegisterSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+  displayName: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,

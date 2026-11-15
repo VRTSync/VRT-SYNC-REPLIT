@@ -16,7 +16,6 @@ export default function RegisterScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [role, setRole] = useState<'contractor' | 'admin'>('contractor');
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [bannerError, setBannerError] = useState('');
@@ -44,7 +43,7 @@ export default function RegisterScreen() {
     setBannerError('');
     setLoading(true);
     try {
-      await register(username.trim(), password, displayName.trim(), role);
+      await register(username.trim(), password, displayName.trim());
     } catch (e: any) {
       setBannerError(e.message || 'Could not create account. Please try again.');
     } finally {
@@ -136,28 +135,6 @@ export default function RegisterScreen() {
               )}
             </View>
 
-            <View style={styles.roleContainer}>
-              <Text style={styles.roleLabel}>Role</Text>
-              <View style={styles.roleButtons}>
-                <TouchableOpacity
-                  style={[styles.roleButton, role === 'contractor' && styles.roleButtonActive]}
-                  onPress={() => setRole('contractor')}
-                >
-                  <Text style={[styles.roleButtonText, role === 'contractor' && styles.roleButtonTextActive]}>
-                    Contractor
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.roleButton, role === 'admin' && styles.roleButtonActive]}
-                  onPress={() => setRole('admin')}
-                >
-                  <Text style={[styles.roleButtonText, role === 'admin' && styles.roleButtonTextActive]}>
-                    Admin
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleRegister}
@@ -243,21 +220,6 @@ const styles = StyleSheet.create({
     color: '#E53935',
     paddingHorizontal: 8,
   },
-  roleContainer: { gap: 8 },
-  roleLabel: { fontSize: 14, color: '#666', fontWeight: '500' },
-  roleButtons: { flexDirection: 'row', gap: 12 },
-  roleButton: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    borderColor: '#e0e0e0',
-    alignItems: 'center',
-    backgroundColor: '#F5F7FA',
-  },
-  roleButtonActive: { borderColor: '#25C1AC', backgroundColor: '#E6F9F6' },
-  roleButtonText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  roleButtonTextActive: { color: '#25C1AC' },
   button: {
     backgroundColor: '#25C1AC',
     borderRadius: 999,
