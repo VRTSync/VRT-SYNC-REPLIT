@@ -14,3 +14,4 @@
 - [Custom-layer map fitting](custom-layer-map-fitting.md) — shared viewport fitting must include currently shown custom geometry and ignore hidden custom layers.
 - [Imported placeholder labels](imported-placeholder-labels.md) — treat “Untitled polygon” as absent and preserve corrected canonical labels during GeoJSON re-sync.
 - [HOA acknowledgement policy](hoa-acknowledgement-policy.md) — acknowledgement means contractor receipt; HOA users have no task-edit exception.
+- [Installed-client compatibility](installed-client-compatibility.md) — installed mobile clients send extra JSON fields; strip unknown fields rather than rejecting requests.

@@ -7,7 +7,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, requireClientOrAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
-import { ObjectStorageService, ObjectNotFoundError, parseUploadURL } from "../objectStorage";
+import { ObjectStorageService, ObjectNotFoundError, ObjectForbiddenError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy, getObjectAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
 import { notifyTaskAssigned, sendDueReminders, notifyTaskCompleted, notifyHoaRequestSubmitted, notifyRequestAcknowledged, notifyPortfolioWorkOrderSubmitted } from "../pushNotifications";
@@ -226,12 +226,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     try {
       const objectStorageService = new ObjectStorageService();
+      if (communityId) {
+        const user = await storage.getUserById(req.session.userId!);
+        const canAccess = user && (
+          user.role === "admin" ||
+          (isHoaRole(user.role) && user.hoaCommunityId === communityId) ||
+          await storage.isUserMemberOfCommunity(req.session.userId!, communityId)
+        );
+        if (!canAccess) {
+          return void res.status(403).json({ error: "You are not a member of this community" });
+        }
+      }
       const aclPolicy = communityId
         ? buildCommunityAclPolicy(req.session.userId!, communityId as string)
         : { owner: req.session.userId!, visibility: "private" as const };
-      const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
+      const objectPath = await objectStorageService.claimObjectForCaller(uploadURL, req.session.userId!, aclPolicy);
       res.json({ objectPath });
     } catch (error) {
+      if (error instanceof ObjectForbiddenError) {
+        return void res.status(403).json({ error: "You do not own this file" });
+      }
       console.error("Confirm upload error:", error);
       res.status(500).json({ error: "Failed to confirm upload" });
     }
@@ -948,7 +962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         : { owner: req.session.userId!, visibility: "private" as const };
       let objectPath: string;
       try {
-        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
+        objectPath = await objectStorageService.claimObjectForCaller(uploadURL, req.session.userId!, aclPolicy);
       } catch (error) {
         if (strictValidation && error instanceof ObjectNotFoundError) {
           return void res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
@@ -967,6 +981,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(201).json(attachment);
     } catch (error) {
+      if (error instanceof ObjectForbiddenError) {
+        return void res.status(403).json({ error: "You do not own this file" });
+      }
       console.error("Create attachment error:", error);
       res.status(500).json({ error: "Failed to create attachment" });
     }
@@ -1024,8 +1041,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const task = await storage.getTaskById(completion.taskId);
       if (task?.communityId && fileRef.startsWith("/objects/")) {
         const objectStorageService = new ObjectStorageService();
-        await objectStorageService.trySetObjectEntityAclPolicy(
+        await objectStorageService.claimObjectForCaller(
           fileRef,
+          req.session.userId!,
           buildCommunityAclPolicy(req.session.userId!, task.communityId),
         );
       }
@@ -1040,6 +1058,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(201).json(attachment);
     } catch (error) {
+      if (error instanceof ObjectForbiddenError) {
+        return void res.status(403).json({ error: "You do not own this file" });
+      }
       console.error("Create attachment (completion) error:", error);
       res.status(500).json({ error: "Failed to create attachment" });
     }
@@ -2569,7 +2590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const objectStorageService = new ObjectStorageService();
       let objectPath: string;
       try {
-        objectPath = await objectStorageService.trySetObjectEntityAclPolicy(uploadURL, aclPolicy);
+        objectPath = await objectStorageService.claimObjectForCaller(uploadURL, req.session.userId!, aclPolicy);
       } catch (error) {
         if (strictValidation && error instanceof ObjectNotFoundError) {
           return void res.status(422).json({ error: "Upload not received", code: "UPLOAD_NOT_RECEIVED" });
@@ -2589,6 +2610,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(201).json(attachment);
     } catch (error) {
+      if (error instanceof ObjectForbiddenError) {
+        return void res.status(403).json({ error: "You do not own this file" });
+      }
       req.log.error({ error }, "Create asset attachment error");
       res.status(500).json({ error: "Failed to create asset attachment" });
     }
@@ -7304,17 +7328,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             continue;
           }
 
-          // Validate that the calling user owns this object before attaching it.
-          // This prevents clients from claiming objects uploaded by other users.
-          const objectFile = await objectStorageService.getObjectEntityFile(key);
-          const aclPolicy = await getObjectAclPolicy(objectFile);
-          if (!aclPolicy || aclPolicy.owner !== req.session.userId!) {
-            rejected.push(key);
-            continue;
-          }
-          // Transfer the object ACL to community ownership (same as /api/objects/confirm)
-          await objectStorageService.trySetObjectEntityAclPolicy(
+          // Claim a fresh object or re-stamp one already owned by this caller.
+          await objectStorageService.claimObjectForCaller(
             key,
+            req.session.userId!,
             buildCommunityAclPolicy(req.session.userId!, task.communityId),
           );
           await storage.createAttachment({
@@ -7356,6 +7373,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`[POST /api/portfolio/work-orders/:taskId/photos] org=${orgId} task=${taskId} attached=${attached.length} rejected=${rejected.length} (${Date.now() - t0}ms)`);
       return void res.json({ attachments: attachments.map(a => ({ id: a.id, fileRef: a.fileRef, url: a.url })), rejected });
     } catch (error) {
+      if (error instanceof ObjectForbiddenError) {
+        return void res.status(403).json({ error: "You do not own this file" });
+      }
       console.error("Portfolio WO photos error:", error);
       return void res.status(500).json({ error: "Failed to attach photos" });
     }

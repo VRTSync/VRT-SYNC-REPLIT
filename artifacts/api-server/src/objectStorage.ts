@@ -37,6 +37,14 @@ export class ObjectNotFoundError extends Error {
   }
 }
 
+export class ObjectForbiddenError extends Error {
+  constructor() {
+    super("You do not own this file");
+    this.name = "ObjectForbiddenError";
+    Object.setPrototypeOf(this, ObjectForbiddenError.prototype);
+  }
+}
+
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -138,11 +146,21 @@ export class ObjectStorageService {
       const [metadata] = await file.getMetadata();
       const aclPolicy = await getObjectAclPolicy(file);
       const isPublic = aclPolicy?.visibility === "public";
+      const inlineTypes = new Set([
+        "image/jpeg", "image/png", "image/webp", "image/gif",
+        "image/heic", "image/heif", "application/pdf",
+      ]);
+      const contentType = metadata.contentType || "application/octet-stream";
+      const inline = inlineTypes.has(contentType.split(";")[0].trim().toLowerCase());
       res.set({
-        "Content-Type": metadata.contentType || "application/octet-stream",
+        "Content-Type": inline ? contentType : "application/octet-stream",
         "Content-Length": metadata.size,
         "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
+        "X-Content-Type-Options": "nosniff",
       });
+      if (!inline && !res.getHeader("Content-Disposition")) {
+        res.set("Content-Disposition", "attachment");
+      }
       const stream = file.createReadStream();
       stream.on("error", (err) => {
         console.error("Stream error:", err);
@@ -219,6 +237,25 @@ export class ObjectStorageService {
     return `/objects/${entityId}`;
   }
 
+  async claimObjectForCaller(
+    rawPath: string,
+    callerId: string,
+    aclPolicy: ObjectAclPolicy,
+  ): Promise<string> {
+    const normalizedPath = this.normalizeObjectEntityPath(rawPath);
+    if (!normalizedPath.startsWith("/")) {
+      return normalizedPath;
+    }
+    const objectFile = await this.getObjectEntityFile(normalizedPath);
+    const existingPolicy = await getObjectAclPolicy(objectFile);
+    if (existingPolicy && existingPolicy.owner !== callerId) {
+      throw new ObjectForbiddenError();
+    }
+    await setObjectAclPolicy(objectFile, { ...aclPolicy, owner: callerId });
+    return normalizedPath;
+  }
+
+  // Unrestricted helper for the existing backfill script only; routes must not call it.
   async trySetObjectEntityAclPolicy(
     rawPath: string,
     aclPolicy: ObjectAclPolicy,

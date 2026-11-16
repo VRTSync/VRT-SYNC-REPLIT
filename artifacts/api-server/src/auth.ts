@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { pool, db } from "./db";
 import * as storage from "./storage";
 import { publicRegisterSchema, loginSchema, users } from "@workspace/db";
-import { ObjectStorageService } from "./objectStorage";
+import { ObjectStorageService, ObjectForbiddenError } from "./objectStorage";
 
 const PgSession = connectPgSimple(session);
 
@@ -374,7 +374,17 @@ export function registerAuthRoutes(app: any) {
         } else {
           try {
             const objectStorageService = new ObjectStorageService();
-            const normalized = await objectStorageService.trySetObjectEntityAclPolicy(avatarUrl, {
+            const objectPath = objectStorageService.normalizeObjectEntityPath(avatarUrl);
+            if (!objectPath.startsWith("/objects/")) {
+              return void res.status(400).json({ message: "Invalid avatar URL" });
+            }
+            const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
+            const [metadata] = await objectFile.getMetadata();
+            const contentType = (metadata.contentType || "").split(";")[0].trim().toLowerCase();
+            if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(contentType)) {
+              return void res.status(400).json({ message: "Avatar must be an image" });
+            }
+            const normalized = await objectStorageService.claimObjectForCaller(avatarUrl, req.session.userId!, {
               owner: userId,
               visibility: "public",
             });
@@ -383,6 +393,9 @@ export function registerAuthRoutes(app: any) {
             }
             updates.avatarUrl = normalized;
           } catch (err) {
+            if (err instanceof ObjectForbiddenError) {
+              return void res.status(403).json({ message: "You do not own this file" });
+            }
             console.error("Avatar ACL error:", err);
             return void res.status(400).json({ message: "Failed to save avatar" });
           }
