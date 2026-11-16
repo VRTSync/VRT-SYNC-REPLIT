@@ -15,3 +15,4 @@
 - [Imported placeholder labels](imported-placeholder-labels.md) — treat “Untitled polygon” as absent and preserve corrected canonical labels during GeoJSON re-sync.
 - [HOA acknowledgement policy](hoa-acknowledgement-policy.md) — acknowledgement means contractor receipt; HOA users have no task-edit exception.
 - [Installed-client compatibility](installed-client-compatibility.md) — installed mobile clients send extra JSON fields; strip unknown fields rather than rejecting requests.
+- [Live account scope](live-account-scope.md) — null community or organization assignments mean access was removed; legacy session fallbacks must never retain prior access.

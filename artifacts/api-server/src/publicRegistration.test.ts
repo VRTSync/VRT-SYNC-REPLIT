@@ -54,13 +54,14 @@ describe("public registration and managed-account regressions (transactional Pos
     const built = await build({
       stdin: {
         contents: `
-          import { registerAuthRoutes, requireAdmin, requireAuth, isHoaRole, isClientRole } from "./auth";
+          import { registerAuthRoutes, loadCurrentUser, requireAdmin, requireAuth, isHoaRole, isClientRole } from "./auth";
           import * as storage from "./storage";
           import bcrypt from "bcryptjs";
           import { userRoleEnum } from "@workspace/db";
           ${helper}
           export { storage };
           export function setup(app: any) {
+            app.use(loadCurrentUser);
             registerAuthRoutes(app);
             ${admin}
             ${portal}

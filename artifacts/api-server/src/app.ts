@@ -2,7 +2,7 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import pinoHttp from "pino-http";
 import helmet from "helmet";
-import { setupSession } from "./auth";
+import { setupSession, loadCurrentUser } from "./auth";
 import { logger } from "./lib/logger";
 import healthRouter from "./routes/health";
 
@@ -72,6 +72,7 @@ app.use(
 );
 
 setupSession(app);
+app.use(loadCurrentUser);
 
 // Prevent authenticated API responses from being served from bfcache or HTTP cache.
 // Static asset paths (e.g. /objects signed URLs) set their own Cache-Control and are unaffected.

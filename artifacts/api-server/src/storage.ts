@@ -39,6 +39,18 @@ export async function getUserById(id: string): Promise<User | undefined> {
   return user;
 }
 
+export async function revokeUserSessions(userId: string, exceptSid?: string): Promise<void> {
+  await pool.query(
+    "DELETE FROM user_sessions WHERE sess->>'userId' = $1" +
+      (exceptSid !== undefined ? " AND sid <> $2" : ""),
+    exceptSid !== undefined ? [userId, exceptSid] : [userId],
+  );
+}
+
+export async function removeAllPushTokens(userId: string): Promise<void> {
+  await db.delete(pushTokens).where(eq(pushTokens.userId, userId));
+}
+
 export async function getUserByUsername(username: string): Promise<User | undefined> {
   const [user] = await db.select().from(users).where(eq(users.username, username));
   return user;

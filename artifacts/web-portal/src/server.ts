@@ -302,8 +302,8 @@ async function getUserRole(req: Request): Promise<string | null> {
   const userId = (req.session as any)?.userId;
   if (!userId) return null;
   // May throw — let Express error handler catch it
-  const result = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
-  if (result.rows.length === 0) return null;
+  const result = await pool.query("SELECT role, is_active FROM users WHERE id = $1", [userId]);
+  if (result.rows.length === 0 || result.rows[0].is_active === false) return null;
   return result.rows[0].role as string;
 }
 

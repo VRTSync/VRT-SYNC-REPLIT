@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { pool, db } from "./db";
 import * as storage from "./storage";
-import { publicRegisterSchema, loginSchema, users } from "@workspace/db";
+import { publicRegisterSchema, loginSchema, users, type User } from "@workspace/db";
 import { ObjectStorageService, ObjectForbiddenError } from "./objectStorage";
 
 const PgSession = connectPgSimple(session);
@@ -45,6 +45,46 @@ declare module "express-session" {
   }
 }
 
+declare global {
+  namespace Express {
+    interface Request {
+      currentUser?: User;
+    }
+  }
+}
+
+export async function loadCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  req.currentUser = undefined;
+  if (!req.session?.userId) return void next();
+  try {
+    const user = await storage.getUserById(req.session.userId);
+    if (!user || user.isActive === false) {
+      req.session.destroy((err) => {
+        if (err) return void res.status(500).json({ message: "Internal error" });
+        next();
+      });
+      return;
+    }
+    req.currentUser = user;
+    // Legacy handlers still read scope from the session. Keep those fields
+    // authoritative too: a null assignment means access was removed, not that
+    // the previous login-time assignment may be used as a fallback.
+    if (isHoaRole(user.role) && user.hoaCommunityId) {
+      req.session.hoaCommunityId = user.hoaCommunityId;
+    } else {
+      delete req.session.hoaCommunityId;
+    }
+    if (isClientRole(user.role) && user.organizationId) {
+      req.session.organizationId = user.organizationId;
+    } else {
+      delete req.session.organizationId;
+    }
+    next();
+  } catch {
+    res.status(500).json({ message: "Internal error" });
+  }
+}
+
 export function isHoaRole(role: string): boolean {
   return role === 'hoa_admin' || role === 'hoa_member';
 }
@@ -58,17 +98,17 @@ export function isClientRole(role: string): boolean {
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     return void res.status(401).json({ message: "Not authenticated" });
   }
   next();
 }
 
 export function enforceHoaScoping(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     return void res.status(401).json({ message: "Not authenticated" });
   }
-  const hoaCommunityId = req.session.hoaCommunityId;
+  const hoaCommunityId = isHoaRole(req.currentUser.role) ? req.currentUser.hoaCommunityId : null;
   if (!hoaCommunityId) {
     return next();
   }
@@ -83,46 +123,36 @@ export function enforceHoaScoping(req: Request, res: Response, next: NextFunctio
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     return void res.status(401).json({ message: "Not authenticated" });
   }
-  storage.getUserById(req.session.userId).then((user) => {
-    if (!user || user.role !== "admin") {
-      return void res.status(403).json({ message: "Admin access required" });
-    }
-    next();
-  }).catch(() => {
-    res.status(500).json({ message: "Internal error" });
-  });
+  if (req.currentUser.role !== "admin") {
+    return void res.status(403).json({ message: "Admin access required" });
+  }
+  next();
 }
 
 export async function requireClient(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     res.status(401).json({ message: "Not authenticated" });
     return;
   }
-  try {
-    const user = await storage.getUserById(req.session.userId);
-    if (!user || !isClientRole(user.role)) {
-      res.status(403).json({ message: "Client access required" });
-      return;
-    }
-    (req as any).currentUser = user;
-    next();
-  } catch {
-    res.status(500).json({ message: "Internal error" });
+  if (!isClientRole(req.currentUser.role)) {
+    res.status(403).json({ message: "Client access required" });
+    return;
   }
+  next();
 }
 
 export async function enforceOrgScoping(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     // Unauthenticated requests are handled downstream; don't block here
     next();
     return;
   }
   try {
-    const user = await storage.getUserById(req.session.userId);
-    if (!user || !isClientRole(user.role)) {
+    const user = req.currentUser;
+    if (!isClientRole(user.role)) {
       // Non-client roles are not org-scoped; pass through
       next();
       return;
@@ -169,40 +199,29 @@ export async function enforceOrgScoping(req: Request, res: Response, next: NextF
 }
 
 export function requireAdminOrMapCreator(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     return void res.status(401).json({ message: "Not authenticated" });
   }
-  storage.getUserById(req.session.userId).then((user) => {
-    if (!user || (user.role !== "admin" && !isMapCreatorRole(user.role))) {
-      return void res.status(403).json({ message: "Admin or map creator access required" });
-    }
-    (req as any).currentUser = user;
-    next();
-  }).catch(() => {
-    res.status(500).json({ message: "Internal error" });
-  });
+  if (req.currentUser.role !== "admin" && !isMapCreatorRole(req.currentUser.role)) {
+    return void res.status(403).json({ message: "Admin or map creator access required" });
+  }
+  next();
 }
 
 /**
  * requireClientOrAdmin — passes for admin OR client_admin roles.
- * Sets req.currentUser in both cases. Do not modify requireClient or enforceOrgScoping.
+ * Uses the current user loaded before routing.
  */
 export async function requireClientOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (!req.session.userId) {
+  if (!req.currentUser) {
     res.status(401).json({ message: "Not authenticated" });
     return;
   }
-  try {
-    const user = await storage.getUserById(req.session.userId);
-    if (!user || (user.role !== "admin" && !isClientRole(user.role))) {
-      res.status(403).json({ message: "Client admin or admin access required" });
-      return;
-    }
-    (req as any).currentUser = user;
-    next();
-  } catch {
-    res.status(500).json({ message: "Internal error" });
+  if (req.currentUser.role !== "admin" && !isClientRole(req.currentUser.role)) {
+    res.status(403).json({ message: "Client admin or admin access required" });
+    return;
   }
+  next();
 }
 
 // Rate limiters for auth endpoints
@@ -275,6 +294,9 @@ export function registerAuthRoutes(app: any) {
       const valid = await bcrypt.compare(parsed.data.password, user.password);
       if (!valid) {
         return void res.status(401).json({ message: "Invalid credentials" });
+      }
+      if (user.isActive === false) {
+        return void res.status(403).json({ message: "This account has been deactivated" });
       }
 
       // Regenerate session to prevent fixation and cross-user bleed
@@ -430,6 +452,9 @@ export function registerAuthRoutes(app: any) {
       if (!updated) {
         return void res.status(500).json({ message: "Failed to update user" });
       }
+      if (updates.password) {
+        await storage.revokeUserSessions(userId, req.sessionID);
+      }
 
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
@@ -440,13 +465,10 @@ export function registerAuthRoutes(app: any) {
   });
 
   app.get("/api/auth/me", async (req: Request, res: Response) => {
-    if (!req.session.userId) {
+    if (!req.currentUser) {
       return void res.status(401).json({ message: "Not authenticated" });
     }
-    const user = await storage.getUserById(req.session.userId);
-    if (!user) {
-      return void res.status(401).json({ message: "User not found" });
-    }
+    const user = req.currentUser;
     const { password: _, ...safeUser } = user;
 
     let communities: any[] = [];

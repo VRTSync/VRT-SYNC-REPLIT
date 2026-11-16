@@ -45,7 +45,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
     const built = await build({
       stdin: {
         contents: `
-          import { registerAuthRoutes, requireAuth, requireAdminOrMapCreator,
+          import { registerAuthRoutes, loadCurrentUser, requireAuth, requireAdminOrMapCreator,
             requireClientOrAdmin, isHoaRole } from "./auth";
           import { ObjectStorageService, ObjectForbiddenError, ObjectNotFoundError,
             objectStorageClient, parseUploadURL } from "./objectStorage";
@@ -57,7 +57,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
           const driveReadRoles = [];
           const requireDriveAccess = (req: any) => storage.getUserById(req.session.userId);
           const checkCommunityAccess = async () => true;
-          export function setup(app: any) { registerAuthRoutes(app); ${handlers} }
+          export function setup(app: any) { app.use(loadCurrentUser); registerAuthRoutes(app); ${handlers} }
         `,
         resolveDir: fileURLToPath(new URL(".", import.meta.url)),
         loader: "ts",

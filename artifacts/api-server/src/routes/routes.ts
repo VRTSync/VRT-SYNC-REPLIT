@@ -1690,6 +1690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return void res.status(404).json({ error: "User not found" });
       }
+      await storage.revokeUserSessions(req.params.id as string);
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
     } catch (error) {
@@ -1781,6 +1782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!updated) {
         return void res.status(500).json({ error: "Failed to update user" });
       }
+      if (updates.password) await storage.revokeUserSessions(userId);
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
     } catch (error) {
@@ -1800,6 +1802,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(404).json({ error: "User not found" });
       }
       await storage.deleteUser(userId);
+      await storage.revokeUserSessions(userId);
+      await storage.removeAllPushTokens(userId);
       res.json({ message: "User deleted" });
     } catch (error) {
       console.error("Delete user error:", error);
@@ -1857,6 +1861,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updated = await storage.updateUserStatus(req.params.id as string, isActive);
       if (!updated) return void res.status(404).json({ error: "User not found" });
+      if (!isActive) {
+        await storage.revokeUserSessions(req.params.id as string);
+        await storage.removeAllPushTokens(req.params.id as string);
+      }
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
     } catch (error) {
@@ -2000,12 +2008,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         const r = await storage.updateUserRole(req.params.id as string, role, targetUser.hoaCommunityId);
-        if (r) updated = r;
+        if (r) {
+          updated = r;
+          await storage.revokeUserSessions(req.params.id as string);
+        }
       }
 
       if (typeof isActive === "boolean") {
         const r = await storage.updateUserStatus(req.params.id as string, isActive);
-        if (r) updated = r;
+        if (r) {
+          updated = r;
+          if (!isActive) {
+            await storage.revokeUserSessions(req.params.id as string);
+            await storage.removeAllPushTokens(req.params.id as string);
+          }
+        }
       }
 
       const { password: _, ...safeUser } = updated;
@@ -2052,6 +2069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       /* Unlink from community (remove hoaCommunityId and community_members row), do NOT delete account */
       await storage.removeCommunityMember(targetUser.hoaCommunityId!, req.params.id as string);
       await storage.updateUserRole(req.params.id as string, targetUser.role, null);
+      await storage.revokeUserSessions(req.params.id as string);
       res.json({ message: "User removed from community" });
     } catch (error) {
       console.error("Remove portal user error:", error);
