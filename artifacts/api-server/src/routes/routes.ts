@@ -115,6 +115,16 @@ async function checkHoaLimits(communityId: string, role: string, excludeUserId?:
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  async function userCanAccessCommunity(user: NonNullable<Request["currentUser"]>, communityId: string): Promise<boolean> {
+    if (user.role === "admin" || user.role === "map_creator") return true;
+    if (isHoaRole(user.role)) return user.hoaCommunityId === communityId;
+    if (user.role === "client_admin") {
+      const community = await storage.getCommunityById(communityId);
+      return !!community?.organizationId && community.organizationId === user.organizationId;
+    }
+    return storage.isUserMemberOfCommunity(user.id, communityId);
+  }
+
   registerAuthRoutes(app);
 
   app.use("/api", enforceHoaScoping);
@@ -314,6 +324,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/communities/:id/bounds", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!(await userCanAccessCommunity(req.currentUser!, req.params.id as string))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const bounds = await storage.getCommunityBounds(req.params.id as string);
       res.json(bounds);
     } catch (error) {
@@ -324,12 +337,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/communities/:id/members", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!(await userCanAccessCommunity(req.currentUser!, req.params.id as string))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const members = await storage.getCommunityMembers(req.params.id as string);
       res.json(members.map((m) => ({
         id: m.id,
         userId: m.userId,
         displayName: m.user.displayName,
-        username: m.user.username,
+        ...(req.currentUser!.role === "admin" ? { username: m.user.username } : {}),
         role: m.user.role,
         joinedAt: m.joinedAt,
       })));
@@ -3489,6 +3505,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const layer = await storage.getMapLayerById(req.params.id as string);
       if (!layer) return void res.status(404).json({ error: "Layer not found" });
+      if (!(await userCanAccessCommunity(req.currentUser!, layer.communityId))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
 
       let featureCount = 0;
       if (layer.geojsonData) {
@@ -4501,6 +4520,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/communities/:communityId/service-schedules", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!(await userCanAccessCommunity(req.currentUser!, req.params.communityId as string))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const schedules = await storage.getServiceSchedulesByCommunity(req.params.communityId as string);
       res.json(schedules);
     } catch (error) {
@@ -4558,6 +4580,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/service-schedules/:scheduleId/visits", requireAuth, async (req: Request, res: Response) => {
     try {
+      const schedule = await storage.getServiceScheduleById(req.params.scheduleId as string);
+      if (!schedule) {
+        return void res.status(404).json({ error: "Service schedule not found" });
+      }
+      if (!(await userCanAccessCommunity(req.currentUser!, schedule.communityId))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const { from, to } = req.query as { from?: string; to?: string };
       const visits = await storage.getServiceVisits(req.params.scheduleId as string, { from, to });
       res.json(visits);
@@ -4569,6 +4598,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/communities/:communityId/service-visits", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (!(await userCanAccessCommunity(req.currentUser!, req.params.communityId as string))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const { from, to } = req.query as { from?: string; to?: string };
       const visits = await storage.getServiceVisitsByCommunity(req.params.communityId as string, { from, to });
       res.json(visits);
@@ -4588,12 +4620,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!schedule) {
         return void res.status(404).json({ error: "Service schedule not found" });
       }
+      const user = req.currentUser!;
+      if ((user.role !== "admin" && user.role !== "contractor") ||
+          !(await userCanAccessCommunity(user, schedule.communityId))) {
+        return void res.status(403).json({ error: "You do not have access to this community" });
+      }
       const visit = await storage.upsertServiceVisit({
         scheduleId: schedule.id,
         communityId: schedule.communityId,
         serviceDate: parsed.data.serviceDate,
         completedAt: parsed.data.completedAt ? new Date(parsed.data.completedAt) : new Date(),
-        completedBy: req.session.userId || null,
+        completedBy: user.id,
         employeeSignOffName: parsed.data.employeeSignOffName,
         notes: parsed.data.notes ?? null,
       });
@@ -5565,9 +5602,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   async function checkCommunityAccess(user: NonNullable<Awaited<ReturnType<typeof storage.getUserById>>>, communityId: string, res: Response): Promise<boolean> {
-    if (user.role === 'admin') return true;
-    const isMember = await storage.isUserMemberOfCommunity(user.id, communityId);
-    if (!isMember) {
+    if (!(await userCanAccessCommunity(user, communityId))) {
       res.status(403).json({ error: "Access denied" });
       return false;
     }
