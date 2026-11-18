@@ -34,11 +34,18 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   if (process.env.REPLIT_DOMAINS) {
     process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-      knownOrigins.add(`https://${d.trim()}`);
+      if (d.trim()) knownOrigins.add(`https://${d.trim()}`);
+    });
+  }
+  if (process.env.ALLOWED_ORIGINS) {
+    process.env.ALLOWED_ORIGINS.split(",").forEach((origin) => {
+      if (origin.trim()) knownOrigins.add(origin.trim());
     });
   }
 
-  if (origin && (knownOrigins.has(origin) || isLocalhost || isReplitDomain)) {
+  const allowDevelopmentOrigin =
+    process.env.NODE_ENV !== "production" && (isLocalhost || isReplitDomain);
+  if (origin && (knownOrigins.has(origin) || allowDevelopmentOrigin)) {
     res.header("Access-Control-Allow-Origin", origin);
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
