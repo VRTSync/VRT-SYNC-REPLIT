@@ -265,6 +265,7 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
       assert.deepEqual(result.body, [{
         id: "membership", userId: "crew", displayName: "Assignable crew", role: "contractor", joinedAt: "2026-01-01",
         ...(role === "admin" ? { username: "crew-login" } : {}),
+        ...(["admin", "property_manager"].includes(role) ? { companyName: null } : {}),
       }]);
     }
   });

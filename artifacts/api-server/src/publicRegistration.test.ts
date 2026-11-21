@@ -96,6 +96,21 @@ describe("public registration and managed-account regressions (transactional Pos
     client = await pool.connect();
     await client.query("BEGIN");
     const testDb = drizzle(client);
+    // Company/user creation now uses an explicit transaction. Keep nested
+    // production transactions inside this fixture's outer rollback.
+    let savepoint = 0;
+    testDb.transaction = (async (callback: (tx: any) => Promise<any>) => {
+      const name = `registration_test_${++savepoint}`;
+      await client.query(`SAVEPOINT ${name}`);
+      try {
+        const result = await callback(testDb);
+        await client.query(`RELEASE SAVEPOINT ${name}`);
+        return result;
+      } catch (error) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+        throw error;
+      }
+    }) as typeof testDb.transaction;
     const organization = await client.query(
       "INSERT INTO organizations (name) VALUES ('Registration test org') RETURNING id",
     );

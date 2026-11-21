@@ -23,6 +23,7 @@ import {
   type BranchGroup, type NewBranchGroup, type BranchGroupSet, type NewBranchGroupSet,
   type WaterSavingsScenario, type InsertWaterSavingsScenario,
   userRoleEnum,
+  companies, normalizeCompanyName, type Company,
 } from "@workspace/db";
 import {
   resolveXeriscapePolygons,
@@ -113,11 +114,12 @@ export async function getUserCommunities(userId: string): Promise<(CommunityMemb
   return members.map(m => ({ ...m.community_members, community: m.communities }));
 }
 
-export async function getCommunityMembers(communityId: string): Promise<(CommunityMember & { user: User })[]> {
+export async function getCommunityMembers(communityId: string): Promise<(CommunityMember & { user: User; companyName: string | null })[]> {
   const members = await db.select().from(communityMembers)
     .innerJoin(users, eq(communityMembers.userId, users.id))
+    .leftJoin(companies, eq(users.companyId, companies.id))
     .where(eq(communityMembers.communityId, communityId));
-  return members.map(m => ({ ...m.community_members, user: m.users }));
+  return members.map(m => ({ ...m.community_members, user: m.users, companyName: m.companies?.name ?? null }));
 }
 
 export async function createTask(data: {
@@ -399,13 +401,17 @@ export async function canUserAccessTask(userId: string, taskId: string): Promise
 }
 
 export async function getAllUsers(): Promise<User[]> {
-  return db.select().from(users).orderBy(users.displayName);
+  const rows = await db.select({ user: users, companyName: companies.name }).from(users)
+    .leftJoin(companies, eq(users.companyId, companies.id)).orderBy(users.displayName);
+  return rows.map(r => ({ ...r.user, companyName: r.companyName }));
 }
 
 export async function getUsersByCommunity(communityId: string): Promise<User[]> {
-  return db.select().from(users)
+  const rows = await db.select({ user: users, companyName: companies.name }).from(users)
+    .leftJoin(companies, eq(users.companyId, companies.id))
     .where(eq(users.hoaCommunityId, communityId))
     .orderBy(users.displayName);
+  return rows.map(r => ({ ...r.user, companyName: r.companyName }));
 }
 
 export async function getClientUsersByOrg(organizationId: string): Promise<{
@@ -450,7 +456,7 @@ export async function getActiveContractorUserIdsForCommunity(communityId: string
 
 export async function updateUserProfile(
   userId: string,
-  updates: { displayName?: string; password?: string },
+  updates: { displayName?: string; password?: string; companyId?: string | null },
 ): Promise<User | null> {
   if (Object.keys(updates).length === 0) {
     const [existing] = await db.select().from(users).where(eq(users.id, userId));
@@ -471,12 +477,96 @@ export async function updateUserStatus(userId: string, isActive: boolean): Promi
   return updated || null;
 }
 
-export async function updateUserRole(userId: string, role: string, hoaCommunityId?: string | null): Promise<User | null> {
-  const [updated] = await db.update(users)
-    .set({ role: role as any, hoaCommunityId: hoaCommunityId ?? null })
-    .where(eq(users.id, userId))
-    .returning();
-  return updated || null;
+export async function updateUserRole(userId: string, role: string, hoaCommunityId?: string | null, companyId?: string | null): Promise<User | null> {
+  return db.transaction(async tx => {
+    const [old] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+    if (!old) return null;
+    const isHoa = role === "hoa_admin" || role === "hoa_member";
+    const wasHoa = old.role === "hoa_admin" || old.role === "hoa_member";
+    const desiredCompany = role === "contractor" || role === "property_manager"
+      ? (companyId === undefined ? (old.role === role ? old.companyId : null) : companyId)
+      : null;
+    const [updated] = await tx.update(users)
+      .set({ role: role as User["role"], hoaCommunityId: isHoa ? hoaCommunityId ?? null : null, companyId: desiredCompany })
+      .where(eq(users.id, userId)).returning();
+    if (isHoa || wasHoa) {
+      await tx.delete(communityMembers).where(and(eq(communityMembers.userId, userId),
+        isHoa && hoaCommunityId ? ne(communityMembers.communityId, hoaCommunityId) : undefined));
+    }
+    if (isHoa && hoaCommunityId) {
+      await tx.insert(communityMembers).values({ userId, communityId: hoaCommunityId }).onConflictDoNothing();
+    }
+    return updated;
+  });
+}
+
+export async function getCompanyById(id: string): Promise<Company | undefined> {
+  const [company] = await db.select().from(companies).where(eq(companies.id, id));
+  return company;
+}
+
+export async function listCompanies(options: { search?: string; kind?: Company["kind"]; includeInactive?: boolean } = {}) {
+  const search = options.search ? normalizeCompanyName(options.search) : null;
+  // position() treats '%' and '_' literally, unlike an unescaped LIKE.
+  return db.select({
+    id: companies.id, name: companies.name, kind: companies.kind, isActive: companies.isActive,
+    userCount: sql<number>`(select count(*)::integer from users company_users where company_users.company_id = companies.id)`,
+  }).from(companies).where(and(
+    options.includeInactive ? undefined : eq(companies.isActive, true),
+    options.kind ? eq(companies.kind, options.kind) : undefined,
+    search ? sql`position(${search} in ${companies.normalizedName}) > 0` : undefined,
+  )).orderBy(companies.name);
+}
+
+export async function findSimilarCompanies(name: string, kind: Company["kind"]): Promise<Company[]> {
+  const normalized = normalizeCompanyName(name);
+  return db.select().from(companies).where(and(eq(companies.kind, kind),
+    or(eq(companies.normalizedName, normalized),
+      sql`position(${normalized} in ${companies.normalizedName}) > 0`,
+      sql`position(${companies.normalizedName} in ${normalized}) > 0`))).orderBy(companies.name);
+}
+
+export async function createCompany(name: string, kind: Company["kind"]): Promise<Company> {
+  const [company] = await db.insert(companies).values({ name: name.trim(), normalizedName: normalizeCompanyName(name), kind }).returning();
+  return company;
+}
+
+export async function updateCompany(id: string, updates: { name?: string; isActive?: boolean }): Promise<Company | undefined> {
+  const [company] = await db.update(companies).set({
+    ...(updates.name === undefined ? {} : { name: updates.name.trim(), normalizedName: normalizeCompanyName(updates.name) }),
+    ...(updates.isActive === undefined ? {} : { isActive: updates.isActive }),
+  }).where(eq(companies.id, id)).returning();
+  return company;
+}
+
+export async function setUserCompany(userId: string, companyId: string | null): Promise<User | undefined> {
+  const [user] = await db.update(users).set({ companyId }).where(eq(users.id, userId)).returning();
+  return user;
+}
+
+export async function getCompanyUserIds(companyId: string): Promise<string[]> {
+  const rows = await db.select({ id: users.id }).from(users)
+    .where(and(eq(users.companyId, companyId), eq(users.isActive, true)));
+  return rows.map(r => r.id);
+}
+
+export async function removeCompanyCommunityMembers(communityId: string, companyId: string): Promise<{ removed: number }> {
+  const removed = await db.delete(communityMembers).where(and(
+    eq(communityMembers.communityId, communityId),
+    inArray(communityMembers.userId, db.select({ id: users.id }).from(users).where(eq(users.companyId, companyId))),
+  )).returning({ id: communityMembers.id });
+  return { removed: removed.length };
+}
+
+/** User, company label and initial HOA membership commit or roll back together. */
+export async function createAdminUser(data: typeof users.$inferInsert): Promise<User> {
+  return db.transaction(async tx => {
+    const [user] = await tx.insert(users).values(data).returning();
+    if ((user.role === "hoa_admin" || user.role === "hoa_member") && user.hoaCommunityId) {
+      await tx.insert(communityMembers).values({ userId: user.id, communityId: user.hoaCommunityId }).onConflictDoNothing();
+    }
+    return user;
+  });
 }
 
 export async function getHoaUserCountByCommunity(communityId: string, role: string, excludeUserId?: string): Promise<number> {
@@ -501,21 +591,12 @@ export async function deleteUser(userId: string): Promise<boolean> {
 }
 
 export async function addCommunityMembers(communityId: string, userIds: string[]): Promise<{ added: number; skipped: number }> {
-  let added = 0;
-  let skipped = 0;
-  for (const userId of userIds) {
-    try {
-      await db.insert(communityMembers).values({ communityId, userId });
-      added++;
-    } catch (err: any) {
-      if (err?.code === '23505' || err?.message?.includes('duplicate')) {
-        skipped++;
-      } else {
-        throw err;
-      }
-    }
-  }
-  return { added, skipped };
+  if (!userIds.length) return { added: 0, skipped: 0 };
+  // A duplicate must not abort a surrounding user-management transaction.
+  const added = await db.insert(communityMembers)
+    .values([...new Set(userIds)].map(userId => ({ communityId, userId })))
+    .onConflictDoNothing().returning({ id: communityMembers.id });
+  return { added: added.length, skipped: userIds.length - added.length };
 }
 
 export async function getUserCommunitiesList(userId: string): Promise<Community[]> {

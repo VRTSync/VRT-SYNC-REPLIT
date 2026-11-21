@@ -16,3 +16,5 @@
 - [HOA acknowledgement policy](hoa-acknowledgement-policy.md) — acknowledgement means contractor receipt; HOA users have no task-edit exception.
 - [Installed-client compatibility](installed-client-compatibility.md) — installed mobile clients send extra JSON fields; strip unknown fields rather than rejecting requests.
 - [Live account scope](live-account-scope.md) — null community or organization assignments mean access was removed; legacy session fallbacks must never retain prior access.
+- [Company label scope](company-label-scope.md) — company labels are not commercial organizations or automatic access grants; company selection stays optional until the React screens.
+- [Transactional test fixtures](transactional-test-fixtures.md) — raw BEGIN plus drizzle(client) does not protect fixtures from nested storage transactions; use savepoints.

@@ -31,6 +31,7 @@ import {
   insertContractSchema, updateContractSchema,
   insertContactSchema, updateContactSchema,
   userRoleEnum,
+  normalizeCompanyName,
 } from "@workspace/db";
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
@@ -112,6 +113,21 @@ async function checkHoaLimits(communityId: string, role: string, excludeUserId?:
     return 'This community already has 4 HOA Members (limit: 4)';
   }
   return null;
+}
+
+/** Return the specified public validation error without changing access rules. */
+async function companySelectionError(role: string, companyId: unknown): Promise<string | null> {
+  if (companyId === undefined || companyId === null) return null;
+  if (!["contractor", "property_manager"].includes(role)) return "Only contractors and property managers can have a company";
+  if (typeof companyId !== "string" || !companyId) return "Company not found";
+  const company = await storage.getCompanyById(companyId);
+  if (!company?.isActive) return "Company not found";
+  if (company.kind !== (role === "contractor" ? "contractor" : "management_company")) return "Company type does not match the user's role";
+  return null;
+}
+
+function companyUniqueConflict(error: any): boolean {
+  return error?.code === "23505" || error?.cause?.code === "23505";
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -346,6 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: m.userId,
         displayName: m.user.displayName,
         ...(req.currentUser!.role === "admin" ? { username: m.user.username } : {}),
+        ...(["admin", "property_manager"].includes(req.currentUser!.role) ? { companyName: m.companyName ?? null } : {}),
         role: m.user.role,
         joinedAt: m.joinedAt,
       })));
@@ -357,8 +374,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/communities/:id/members", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { userId, userIds } = req.body;
-      const ids: string[] = userIds || (userId ? [userId] : []);
+      const { userId, userIds, companyId } = req.body;
+      let ids: string[];
+      if (companyId !== undefined) {
+        const company = typeof companyId === "string" ? await storage.getCompanyById(companyId) : undefined;
+        if (!company) {
+          return void res.status(404).json({ error: "Company not found" });
+        }
+        if (!company.isActive) return void res.status(400).json({ error: "Company not found" });
+        ids = await storage.getCompanyUserIds(companyId);
+      } else {
+        ids = userIds || (userId ? [userId] : []);
+      }
+      if (companyId !== undefined && ids.length === 0) return void res.status(201).json({ added: 0, skipped: 0 });
       if (ids.length === 0) {
         return void res.status(400).json({ error: "userId or userIds[] is required" });
       }
@@ -377,6 +405,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Remove member error:", error);
       res.status(500).json({ error: "Failed to remove member" });
+    }
+  });
+
+  app.delete("/api/communities/:id/companies/:companyId", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      if (!(await storage.getCompanyById(req.params.companyId as string))) {
+        return void res.status(404).json({ error: "Company not found" });
+      }
+      res.json(await storage.removeCompanyCommunityMembers(req.params.id as string, req.params.companyId as string));
+    } catch (error) {
+      console.error("Remove company members error:", error);
+      res.status(500).json({ error: "Failed to remove company members" });
     }
   });
 
@@ -1643,6 +1683,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Company management is intentionally staff-only, independent of community access.
+  app.get("/api/admin/companies", requireAdmin, async (req: Request, res: Response) => {
+    const parsed = z.object({
+      search: z.string().optional(), kind: z.enum(["contractor", "management_company"]).optional(),
+      includeInactive: z.enum(["true", "false"]).optional(),
+    }).safeParse(req.query);
+    if (!parsed.success) return void res.status(400).json({ error: parsed.error.flatten() });
+    try {
+      res.json(await storage.listCompanies({ ...parsed.data, includeInactive: parsed.data.includeInactive === "true" }));
+    } catch (error) {
+      console.error("List companies error:", error);
+      res.status(500).json({ error: "Failed to fetch companies" });
+    }
+  });
+
+  app.post("/api/admin/companies", requireAdmin, async (req: Request, res: Response) => {
+    const parsed = z.object({
+      name: z.string().trim().min(1), kind: z.enum(["contractor", "management_company"]), confirmNew: z.boolean().optional(),
+    }).safeParse(req.body);
+    if (!parsed.success || !normalizeCompanyName(parsed.data.name)) return void res.status(400).json({ error: "Name and kind are required" });
+    const { name, kind, confirmNew } = parsed.data;
+    try {
+      const matches = await storage.findSimilarCompanies(name, kind);
+      // The normalized-name constraint is global, including other kinds and
+      // inactive records; neither may be silently duplicated.
+      const exact = (await storage.listCompanies({ search: name, includeInactive: true }))
+        .filter(c => normalizeCompanyName(c.name) === normalizeCompanyName(name));
+      if (exact.length) {
+        return void res.status(409).json({ error: "A company with this name already exists", matches: exact });
+      }
+      if (matches.length && confirmNew !== true) return void res.status(409).json({ error: "Similar companies exist", matches });
+      res.status(201).json(await storage.createCompany(name, kind));
+    } catch (error) {
+      if (companyUniqueConflict(error)) {
+        const matches = (await storage.listCompanies({ search: name, includeInactive: true }))
+          .filter(c => normalizeCompanyName(c.name) === normalizeCompanyName(name));
+        return void res.status(409).json({ error: "A company with this name already exists", matches });
+      }
+      console.error("Create company error:", error);
+      res.status(500).json({ error: "Failed to create company" });
+    }
+  });
+
+  app.patch("/api/admin/companies/:id", requireAdmin, async (req: Request, res: Response) => {
+    const parsed = z.object({ name: z.string().trim().min(1).optional(), isActive: z.boolean().optional() }).safeParse(req.body);
+    if (!parsed.success || !Object.keys(parsed.data).length || (parsed.data.name !== undefined && !normalizeCompanyName(parsed.data.name))) {
+      return void res.status(400).json({ error: "Invalid company update" });
+    }
+    try {
+      const company = await storage.getCompanyById(req.params.id as string);
+      if (!company) return void res.status(404).json({ error: "Company not found" });
+      if (parsed.data.name !== undefined) {
+        const exactMatches = (await storage.listCompanies({ search: parsed.data.name, includeInactive: true }))
+          .filter(c => c.id !== company.id && normalizeCompanyName(c.name) === normalizeCompanyName(parsed.data.name!));
+        if (exactMatches.length) return void res.status(409).json({ error: "A company with this name already exists", matches: exactMatches });
+        const matches = (await storage.findSimilarCompanies(parsed.data.name, company.kind)).filter(c => c.id !== company.id);
+        if (matches.length) {
+          const exact = matches.some(c => c.normalizedName === normalizeCompanyName(parsed.data.name!));
+          return void res.status(409).json({ error: exact ? "A company with this name already exists" : "Similar companies exist", matches });
+        }
+      }
+      res.json(await storage.updateCompany(company.id, parsed.data));
+    } catch (error) {
+      if (companyUniqueConflict(error)) return void res.status(409).json({ error: "A company with this name already exists", matches: [] });
+      console.error("Update company error:", error);
+      res.status(500).json({ error: "Failed to update company" });
+    }
+  });
+
   app.get("/api/users", requireAuth, async (req: Request, res: Response) => {
     try {
       const actor = await storage.getUserById(req.session.userId!);
@@ -1685,7 +1794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/users/:id/role", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { role, hoaCommunityId } = req.body;
+      const { role, hoaCommunityId, companyId } = req.body;
       const validRoles = userRoleEnum.enumValues;
       if (!validRoles.includes(role as (typeof validRoles)[number])) {
         return void res.status(400).json({ error: "Invalid role" });
@@ -1702,7 +1811,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return void res.status(400).json({ error: limitCheck });
         }
       }
-      const updated = await storage.updateUserRole(req.params.id as string, role, isHoaRole(role) ? hoaCommunityId : null);
+      const companyError = companyId === undefined ? null : await companySelectionError(role, companyId);
+      if (companyError) return void res.status(400).json({ error: companyError });
+      const updated = await storage.updateUserRole(req.params.id as string, role, isHoaRole(role) ? hoaCommunityId : null, companyId);
       if (!updated) {
         return void res.status(404).json({ error: "User not found" });
       }
@@ -1717,7 +1828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/users", requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { username, password, displayName, role, hoaCommunityId, organizationId } = req.body;
+      const { username, password, displayName, role, hoaCommunityId, organizationId, companyId } = req.body;
       if (!username || !password) {
         return void res.status(400).json({ error: "username and password are required" });
       }
@@ -1745,17 +1856,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(409).json({ error: "Username already taken" });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({
+      const companyError = companyId === undefined ? null : await companySelectionError(role || "contractor", companyId);
+      if (companyError) return void res.status(400).json({ error: companyError });
+      const user = await storage.createAdminUser({
         username,
         password: hashedPassword,
         displayName: displayName || username,
         role: role || "contractor",
         hoaCommunityId: isHoaRole(role) ? hoaCommunityId : undefined,
         organizationId: isClientRole(role) ? organizationId : undefined,
-      } as any);
-      if (isHoaRole(role) && hoaCommunityId) {
-        await storage.addCommunityMembers(hoaCommunityId, [user.id]);
-      }
+        companyId: companyId ?? null,
+      });
       const { password: _, ...safeUser } = user;
       res.status(201).json(safeUser);
     } catch (error) {
@@ -1767,9 +1878,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/admin/users/:id", requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = req.params.id as string;
-      const { displayName, newPassword } = req.body ?? {};
+      const { displayName, newPassword, companyId } = req.body ?? {};
 
-      const updates: { displayName?: string; password?: string } = {};
+      const updates: { displayName?: string; password?: string; companyId?: string | null } = {};
 
       if (displayName !== undefined) {
         if (typeof displayName !== "string" || displayName.trim().length === 0) {
@@ -1785,6 +1896,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updates.password = await bcrypt.hash(newPassword, 10);
       }
 
+      if (companyId !== undefined) updates.companyId = companyId;
       if (Object.keys(updates).length === 0) {
         return void res.status(400).json({ error: "No changes provided" });
       }
@@ -1794,6 +1906,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(404).json({ error: "User not found" });
       }
 
+      const companyError = companyId === undefined ? null : await companySelectionError(existing.role, companyId);
+      if (companyError) return void res.status(400).json({ error: companyError });
       const updated = await storage.updateUserProfile(userId, updates);
       if (!updated) {
         return void res.status(500).json({ error: "Failed to update user" });

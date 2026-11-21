@@ -29,6 +29,25 @@ export const selectOrganizationSchema = createInsertSchema(organizations);
 export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
 
+export const companyKindEnum = pgEnum("company_kind", ["contractor", "management_company"]);
+export const companies = pgTable("companies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  normalizedName: text("normalized_name").notNull(),
+  kind: companyKindEnum("kind").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [uniqueIndex("companies_normalized_name_idx").on(table.normalizedName)]);
+export const insertCompanySchema = createInsertSchema(companies).omit({ id: true, createdAt: true });
+export type Company = typeof companies.$inferSelect;
+
+/** Keep these operations in the same order as the company seed migration. */
+export function normalizeCompanyName(name: string): string {
+  return name.toLowerCase().replace(/&/g, "and").replace(/[^\p{L}\p{N}\s]/gu, "")
+    .replace(/(?:^|\s+)(llc|inc|co|company|corp|corporation|ltd)\s*$/, "")
+    .replace(/\s+/g, " ").trim();
+}
+
 export const users = pgTable("users", {
   id: varchar("id")
     .primaryKey()
@@ -39,11 +58,12 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").notNull().default("contractor"),
   hoaCommunityId: varchar("hoa_community_id").references(() => communities.id),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: 'set null' }),
+  companyId: varchar("company_id").references(() => companies.id, { onDelete: 'restrict' }),
   avatarUrl: text("avatar_url"),
   isActive: boolean("is_active").notNull().default(true),
   notificationPreferences: jsonb("notification_preferences"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [index("users_company_id_idx").on(table.companyId)]);
 
 export const communities = pgTable("communities", {
   id: varchar("id")
@@ -518,6 +538,7 @@ export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
 }));
 
 export const usersRelations = relations(users, ({ one, many }) => ({
+  company: one(companies, { fields: [users.companyId], references: [companies.id] }),
   organization: one(organizations, { fields: [users.organizationId], references: [organizations.id] }),
   communityMembers: many(communityMembers),
   assignedTasks: many(tasks, { relationName: "assignedTasks" }),
@@ -527,6 +548,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   pushTokens: many(pushTokens),
   createdAssets: many(assets, { relationName: "createdAssets" }),
   updatedAssets: many(assets, { relationName: "updatedAssets" }),
+}));
+
+export const companiesRelations = relations(companies, ({ many }) => ({
+  users: many(users),
 }));
 
 export const offlinePacksRelations = relations(offlinePacks, ({ one }) => ({

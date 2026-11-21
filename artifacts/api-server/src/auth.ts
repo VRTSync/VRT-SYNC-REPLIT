@@ -470,6 +470,7 @@ export function registerAuthRoutes(app: any) {
     }
     const user = req.currentUser;
     const { password: _, ...safeUser } = user;
+    const companyName = user.companyId ? (await storage.getCompanyById(user.companyId))?.name ?? null : null;
 
     let communities: any[] = [];
     if (user.role === "admin") {
@@ -489,7 +490,7 @@ export function registerAuthRoutes(app: any) {
       : (communities.length > 0 ? communities[0].id : null);
 
     res.json({
-      user: safeUser,
+      user: { ...safeUser, companyId: user.companyId ?? null, companyName },
       communities,
       defaultCommunityId,
     });
