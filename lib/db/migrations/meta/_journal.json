@@ -162,6 +162,13 @@
       "when": 1795284910080,
       "tag": "0022_companies",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795289366444,
+      "tag": "0023_contractor_company_on_work",
+      "breakpoints": true
     }
   ]
 }

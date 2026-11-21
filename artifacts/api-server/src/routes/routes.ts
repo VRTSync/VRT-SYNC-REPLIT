@@ -511,7 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!isMember) return void res.status(403).json({ error: "You are not a member of this community" });
       }
       const data = await storage.getDashboardData(user.id, communityId, user.role === "admin");
-      res.json(data);
+      res.json(storage.toTaskResponse(data, user));
     } catch (error) {
       console.error("Dashboard error:", error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
@@ -546,7 +546,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const viewModel = await storage.getDashboardDataForRole(user.role, user.id, communityId);
-      res.json(viewModel);
+      res.json(storage.toTaskResponse(viewModel, user));
     } catch (error) {
       console.error("Dashboard role error:", error);
       res.status(500).json({ error: "Failed to fetch dashboard data" });
@@ -611,7 +611,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       console.log(`[GET /api/tasks/page-data] role=${user.role} user=${user.id} community=${communityId} collections=${JSON.stringify(collectionSizes)} (${Date.now() - t0}ms)`);
 
-      res.json(viewModel);
+      res.json(storage.toTaskResponse(viewModel, user));
     } catch (error) {
       console.error("Get task page data error:", error);
       res.status(500).json({ error: "Failed to fetch task page data" });
@@ -674,7 +674,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rawUserTasks = await storage.getTasksForUser(req.session.userId!, communityId);
       const userTasks = await storage.enrichTasksWithAssigneeName(rawUserTasks);
       console.log(`[GET /api/tasks] user=${user.id} community=${communityId ?? "none"} count=${userTasks.length} (${Date.now() - t0}ms)`);
-      res.json(userTasks);
+      res.json(storage.toTaskResponse(userTasks, user));
     } catch (error) {
       console.error("Get tasks error:", error);
       res.status(500).json({ error: "Failed to fetch tasks" });
@@ -694,7 +694,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
       console.log(`[GET /api/tasks/:id] task=${req.params.id} served (${Date.now() - t0}ms)`);
-      res.json(task);
+      res.json(storage.toTaskView(task, (await storage.getUserById(req.session.userId!))!));
     } catch (error) {
       console.error("Get task error:", error);
       res.status(500).json({ error: "Failed to fetch task" });
@@ -729,7 +729,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`[GET /api/tasks/:id/detail] task=${taskId} served (${Date.now() - t0}ms)`);
-      res.json({ task: { ...task, assignedToName }, completions, taskAttachments, taskLink: taskLink ?? null });
+      res.json({ task: storage.toTaskView({ ...task, assignedToName }, (await storage.getUserById(req.session.userId!))!), completions, taskAttachments, taskLink: taskLink ?? null });
     } catch (error) {
       console.error("Get task detail bundle error:", error);
       res.status(500).json({ error: "Failed to fetch task detail" });
@@ -753,7 +753,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
+      if (parsed.data.assignedTo) await storage.validateTaskAssignee(parsed.data.communityId, parsed.data.assignedTo);
       const task = await storage.createTask({
+        contractorCompanyId: parsed.data.contractorCompanyId,
         communityId: parsed.data.communityId,
         title: parsed.data.title,
         description: parsed.data.description ?? undefined,
@@ -777,6 +779,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(201).json(task);
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Create task error:", error);
       res.status(500).json({ error: "Failed to create task" });
     }
@@ -794,7 +797,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatingUser = await storage.getUserById(req.session.userId!);
       const isManager = updatingUser?.role === "admin" || updatingUser?.role === "property_manager";
       const isFieldWorker = updatingUser?.role === "contractor" &&
-        (task.assignedTo === req.session.userId || task.assignedTo === null);
+        task.assignedTo === req.session.userId;
       if (!isManager && !isFieldWorker) {
         return void res.status(403).json({ error: "You cannot edit this task" });
       }
@@ -811,11 +814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const data: ReturnType<typeof updateTaskManagerSchema.parse> = parsed.data;
       if (data.assignedTo !== undefined && data.assignedTo !== null) {
-        const assignee = await storage.getUserById(data.assignedTo);
-        if (assignee?.role !== "contractor" ||
-            !await storage.isUserMemberOfCommunity(data.assignedTo, task.communityId)) {
-          return void res.status(400).json({ error: "Assignee must be a contractor in this community" });
-        }
+        await storage.validateTaskAssignee(task.communityId, data.assignedTo);
       }
 
       if (task!.origin === "HOA") {
@@ -863,7 +862,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
-          latestTask: latest,
+          latestTask: storage.toTaskResponse(latest, updatingUser!),
         });
       }
 
@@ -876,8 +875,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notifyRequestAcknowledged(updated.id).catch(() => {});
       }
 
-      res.json(updated);
+      res.json(storage.toTaskView(updated, updatingUser!));
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Update task error:", error);
       res.status(500).json({ error: "Failed to update task" });
     }
@@ -909,7 +909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const completingUser = await storage.getUserById(req.session.userId!);
       if (completingUser?.role !== "admin" &&
           !(completingUser?.role === "contractor" &&
-            (existingTask.assignedTo === req.session.userId || existingTask.assignedTo === null))) {
+            existingTask.assignedTo === req.session.userId)) {
         return void res.status(403).json({ error: "Only the assigned contractor can complete this task" });
       }
 
@@ -926,7 +926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(409).json({
           error: "Conflict: task was modified by another user. Please refresh and try again.",
           code: "VERSION_CONFLICT",
-          latestTask: existingTask,
+          latestTask: storage.toTaskView(existingTask, completingUser!),
         });
       }
 
@@ -948,20 +948,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const updated = await storage.updateTask(req.params.id as string, parsed.data.version, {
-        status: "completed",
-      });
-      if (!updated) {
-        const latest = await storage.getTaskById(req.params.id as string);
-        return void res.status(409).json({
-          error: "Conflict: task was modified by another user.",
-          code: "VERSION_CONFLICT",
-          latestTask: latest,
-        });
-      }
-
-      const completion = await storage.createTaskCompletion({
-        taskId: req.params.id as string,
+      const result = await storage.completeTaskAtomically(req.params.id as string, parsed.data.version, {
         completedBy: req.session.userId!,
         notes: parsed.data.notes,
         employeeSignOffName: parsed.data.employeeSignOffName,
@@ -969,10 +956,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         materialsUsed: parsed.data.materialsUsed,
         followUpNeeded: parsed.data.followUpNeeded,
       });
+      const updated = result?.task;
+      if (!updated) {
+        const latest = await storage.getTaskById(req.params.id as string);
+        return void res.status(409).json({
+          error: "Conflict: task was modified by another user.",
+          code: "VERSION_CONFLICT",
+          latestTask: storage.toTaskResponse(latest, completingUser!),
+        });
+      }
+
+      const completion = result!.completion;
 
       notifyTaskCompleted(updated).catch(err => console.error("notifyTaskCompleted error:", err));
 
-      res.json({ task: updated, completion });
+      res.json({ task: storage.toTaskView(updated, completingUser!), completion });
     } catch (error) {
       console.error("Complete task error:", error);
       res.status(500).json({ error: "Failed to complete task" });
@@ -987,6 +985,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const { taskCompletionId, uploadURL, idempotencyKey } = req.body;
+      if (taskCompletionId) {
+        const completion = await storage.getCompletionById(taskCompletionId);
+        if (!completion || completion.taskId !== taskId) {
+          return void res.status(403).json({ error: "Completion does not belong to this task" });
+        }
+      }
       if (!uploadURL || !idempotencyKey) {
         return void res.status(400).json({ error: "uploadURL and idempotencyKey are required" });
       }
@@ -3726,7 +3730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const types = typesStr ? typesStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
       const results = await storage.searchAll(q, communityIds, types, user.id, isAdmin);
-      res.json(results);
+      res.json(storage.toTaskResponse(results, user));
     } catch (error) {
       console.error("Search error:", error);
       res.status(500).json({ error: "Search failed" });
@@ -4205,6 +4209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const count = await storage.bulkAssignTasks(taskIds, assignedTo);
       res.json({ updated: count });
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Bulk assign error:", error);
       res.status(500).json({ error: "Failed to bulk assign tasks" });
     }
@@ -4230,6 +4235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(400).json({ error: "CSV file is required" });
       }
 
+      if (req.body.assignedTo) await storage.validateTaskAssignee(communityId, req.body.assignedTo);
       const csvContent = req.file.buffer.toString("utf-8");
       const firstLine = csvContent.split(/\r?\n/)[0] || "";
       const delimiter = firstLine.includes("\t") ? "\t" : ",";
@@ -4259,6 +4265,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < records.length; i++) {
         const r = records[i] as any;
         const title = r["Ticket Title"] || r["Title"] || r["title"] || "";
+        const assignedTo = r["Assigned To"] || r["assigned_to"] || r["assignedTo"] || req.body.assignedTo || undefined;
+        if (assignedTo) await storage.validateTaskAssignee(communityId, assignedTo);
         const ticketType = r["Ticket Type"] || r["Type"] || r["ticket_type"] || "";
         const rawPriority = (r["Priority"] || r["priority"] || "medium").toLowerCase();
         const priority = priorityMap[rawPriority] || "medium";
@@ -4289,6 +4297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!title) errors.push("Title is required");
 
         rows.push({
+          assignedTo,
           row: i + 1,
           title,
           ticketType,
@@ -4331,6 +4340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const task = await storage.createTask({
             communityId,
+            assignedTo: row.assignedTo,
             title: row.title,
             description: row.description || undefined,
             priority: row.priority as any,
@@ -4356,6 +4366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         skipped,
       });
     } catch (error: any) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("CSV import error:", error);
       res.status(500).json({ error: error.message || "Failed to import CSV" });
     }
@@ -5200,10 +5211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`[HOA Request] Calling getCommunityMembers: communityId=${communityId}`);
         const members = await storage.getCommunityMembers(communityId);
         console.log(`[HOA Request] getCommunityMembers done (${Date.now() - startTime}ms), count=${members.length}`);
-        const match = members.find((m: any) => m.userId === assignedTo && (m.user.role === 'contractor' || m.user.role === 'admin'));
-        if (!match) {
-          return void res.status(400).json({ error: "Selected contractor is not a member of this community" });
-        }
+        await storage.validateTaskAssignee(communityId, assignedTo);
         validatedAssignedTo = assignedTo;
       }
 
@@ -5212,7 +5220,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (timeoutFired) return;
 
       console.log(`[HOA Request] Calling createTask: communityId=${communityId}, createdBy=${userId}`);
-      const task = await storage.createTask({
+      const task = await storage.createHoaTaskWithLink({
         communityId,
         title,
         description,
@@ -5224,21 +5232,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         latitude,
         longitude,
         createdBy: userId,
-      });
+      }, resolvedAssetId);
       console.log(`[HOA Request] createTask done (${Date.now() - startTime}ms), taskId=${task.id}`);
 
       if (timeoutFired) return;
-
-      if (resolvedAssetId) {
-        console.log(`[HOA Request] Calling setTaskLink: taskId=${task.id}, assetId=${resolvedAssetId}`);
-        await storage.setTaskLink(task.id, {
-          linkType: "asset",
-          assetId: resolvedAssetId,
-          latitude,
-          longitude,
-        });
-        console.log(`[HOA Request] setTaskLink done (${Date.now() - startTime}ms)`);
-      }
 
       if (timeoutFired) return;
 
@@ -5249,6 +5246,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.status(201).json(task);
       }
     } catch (error: any) {
+      if (error instanceof storage.WorkValidationError && !timeoutFired && !res.headersSent) {
+        return void res.status(400).json({ error: error.message });
+      }
       console.error("[HOA Request] Error:", error);
       if (!timeoutFired && !res.headersSent) {
         res.status(500).json({ error: "Failed to create HOA request" });
@@ -5429,6 +5429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await storage.createInvoice(parsed.data);
       res.status(201).json(invoice);
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Create invoice error:", error);
       res.status(500).json({ error: "Failed to create invoice" });
     }
@@ -5450,6 +5451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.updateInvoice((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Update invoice error:", error);
       res.status(500).json({ error: "Failed to update invoice" });
     }
@@ -5658,6 +5660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const contract = await storage.createContract(parsed.data);
       res.status(201).json(contract);
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Create contract error:", error);
       res.status(500).json({ error: "Failed to create contract" });
     }
@@ -5686,6 +5689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.updateContract((req.params.id as string), parsed.data);
       res.json(updated);
     } catch (error) {
+      if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
       console.error("Update contract error:", error);
       res.status(500).json({ error: "Failed to update contract" });
     }

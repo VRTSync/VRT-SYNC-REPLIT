@@ -57,6 +57,8 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
           import { userRoleEnum, registerPushTokenSchema, completeTaskSchema, createHoaRequestSchema } from "@workspace/db";
           const { requireAuth, requireAdmin, isHoaRole } = auth;
           const storage = { ...fixture.storage,
+            toTaskView: realStorage.toTaskView,
+            toTaskResponse: realStorage.toTaskResponse,
             revokeUserSessions: realStorage.revokeUserSessions,
             removeAllPushTokens: realStorage.removeAllPushTokens };
           const checkHoaLimits = async () => null;
@@ -147,6 +149,11 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
         canUserAccessTask: async () => ({ allowed: true, task: { id: "task", assignedTo: "target", version: 1 } }),
         updateTask: async (_id: string, _version: number, data: any) => ({ id: "task", ...data }),
         createTaskCompletion: async (data: any) => { completions.push(data); return data; },
+        completeTaskAtomically: async (taskId: string, version: number, data: any) => {
+          const completion = { taskId, ...data };
+          completions.push(completion);
+          return { task: { id: taskId, status: "completed", version: version + 1 }, completion };
+        },
         getUserById: async (id: string) => {
           if (lookupError) throw Error("lookup unavailable");
           const user = users.get(id);

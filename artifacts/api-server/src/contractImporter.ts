@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { db } from "./db";
 import { tasks, serviceSchedules, serviceVisits } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { resolveTaskContractorCompany } from "./storage";
 
 export interface ParseResult {
   columns: string[];
@@ -402,6 +403,7 @@ export async function commitImport(
   adminUserId: string,
   defaultPriority: string,
 ): Promise<CommitResult> {
+  return db.transaction(async tx => {
   let scheduleResult: CommitResult["scheduleResult"] = null;
   let createdCount = 0;
   let updatedCount = 0;
@@ -410,7 +412,7 @@ export async function commitImport(
 
   if (mowingSchedulePreview) {
     if (mowingSchedulePreview.action === "update" && mowingSchedulePreview.existingId) {
-      await db
+      await tx
         .update(serviceSchedules)
         .set({
           dayOfWeek: mowingSchedulePreview.dayOfWeek,
@@ -421,7 +423,7 @@ export async function commitImport(
         .where(eq(serviceSchedules.id, mowingSchedulePreview.existingId));
       scheduleResult = { action: "updated", id: mowingSchedulePreview.existingId };
     } else {
-      const [newSchedule] = await db
+      const [newSchedule] = await tx
         .insert(serviceSchedules)
         .values({
           communityId,
@@ -447,8 +449,11 @@ export async function commitImport(
     }
 
     try {
+      await tx.transaction(async rowTx => {
       if (tp.action === "create") {
-        await db.insert(tasks).values({
+        const contractorCompanyId = await resolveTaskContractorCompany(communityId, null, null, rowTx);
+        await rowTx.insert(tasks).values({
+          contractorCompanyId,
           communityId,
           title: tp.title,
           description: tp.description || null,
@@ -461,7 +466,7 @@ export async function commitImport(
         });
         createdCount++;
       } else if (tp.action === "update" && tp.existingTaskId) {
-        await db
+        await rowTx
           .update(tasks)
           .set({
             title: tp.title,
@@ -474,6 +479,7 @@ export async function commitImport(
           .where(eq(tasks.id, tp.existingTaskId));
         updatedCount++;
       }
+      });
     } catch (err) {
       console.error(`Failed to import task row ${tp.rowIndex}:`, err);
       errorCount++;
@@ -487,4 +493,5 @@ export async function commitImport(
     skippedCount,
     errorCount,
   };
+  });
 }

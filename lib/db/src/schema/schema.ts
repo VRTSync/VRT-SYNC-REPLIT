@@ -159,6 +159,7 @@ export const tasks = pgTable("tasks", {
   longitude: doublePrecision("longitude"),
   address: text("address"),
   assignedTo: varchar("assigned_to").references(() => users.id),
+  contractorCompanyId: varchar("contractor_company_id").references(() => companies.id, { onDelete: "restrict" }),
   createdBy: varchar("created_by").notNull().references(() => users.id),
   startDate: timestamp("start_date"),
   dueDate: timestamp("due_date"),
@@ -190,6 +191,7 @@ export const tasks = pgTable("tasks", {
   index("tasks_import_fingerprint_idx").on(table.importFingerprint),
   index("tasks_community_id_idx").on(table.communityId),
   index("tasks_assigned_to_idx").on(table.assignedTo),
+  index("tasks_contractor_company_id_idx").on(table.contractorCompanyId),
 ]);
 
 export const taskCompletions = pgTable("task_completions", {
@@ -783,6 +785,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
   longitude: true,
   address: true,
   assignedTo: true,
+  contractorCompanyId: true,
   startDate: true,
   dueDate: true,
   ticketType: true,
@@ -795,6 +798,7 @@ export const insertTaskSchema = createInsertSchema(tasks).pick({
 
 // z.object strips unknown keys for compatibility with installed clients.
 export const updateTaskManagerSchema = z.object({
+  contractorCompanyId: z.string().nullable().optional(),
   title: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   ticketType: z.string().nullable().optional(),
@@ -1089,6 +1093,7 @@ export const updateDriveFileSchema = z.object({
 });
 
 export const invoices = pgTable("invoices", {
+  contractorCompanyId: varchar("contractor_company_id").references(() => companies.id, { onDelete: "restrict" }),
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
@@ -1116,6 +1121,7 @@ export const invoices = pgTable("invoices", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("invoices_community_idx").on(table.communityId),
+  index("invoices_contractor_company_id_idx").on(table.contractorCompanyId),
   index("invoices_completion_date_idx").on(table.completionDate),
   index("invoices_status_idx").on(table.status),
   index("invoices_source_batch_idx").on(table.sourceBatch),
@@ -1124,6 +1130,7 @@ export const invoices = pgTable("invoices", {
 export type Invoice = typeof invoices.$inferSelect;
 
 export const insertInvoiceSchema = z.object({
+  contractorCompanyId: z.string().nullable().optional(),
   communityId: z.string().min(1),
   contractor: z.string().min(1, "Contractor name is required"),
   completionDate: z.string().min(1, "Completion date is required"),
@@ -1143,6 +1150,7 @@ export const insertInvoiceSchema = z.object({
 });
 
 export const updateInvoiceSchema = z.object({
+  contractorCompanyId: z.string().nullable().optional(),
   contractor: z.string().min(1).optional(),
   completionDate: z.string().min(1).optional(),
   serviceType: z.string().min(1).optional(),
@@ -1166,6 +1174,7 @@ export const invoicesRelations = relations(invoices, ({ one }) => ({
 }));
 
 export const contracts = pgTable("contracts", {
+  contractorCompanyId: varchar("contractor_company_id").references(() => companies.id, { onDelete: "restrict" }),
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
@@ -1182,6 +1191,7 @@ export const contracts = pgTable("contracts", {
 }, (table) => [
   index("contracts_community_idx").on(table.communityId),
   index("contracts_contractor_idx").on(table.contractorUserId),
+  index("contracts_contractor_company_id_idx").on(table.contractorCompanyId),
 ]);
 
 export type Contract = typeof contracts.$inferSelect;

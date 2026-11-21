@@ -78,19 +78,36 @@ describe("task permissions and compatibility (transactional PostgreSQL)", {
     client = await pool.connect();
     await client.query("BEGIN");
     notifications = [];
+    const database = drizzle(client);
+    let savepoint = 0;
+    database.transaction = (async (callback: (tx: any) => Promise<any>) => {
+      const name = `task_permission_${++savepoint}`;
+      await client.query(`SAVEPOINT ${name}`);
+      try {
+        const result = await callback(database);
+        await client.query(`RELEASE SAVEPOINT ${name}`);
+        return result;
+      } catch (error) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+        await client.query(`RELEASE SAVEPOINT ${name}`);
+        throw error;
+      }
+    }) as typeof database.transaction;
     const module = { exports: {} as any };
     new Function("require", "module", "exports", "__testDb", "__notifications", bundle)(
-      require, module, module.exports, drizzle(client), notifications,
+      require, module, module.exports, database, notifications,
     );
     storage = module.exports.storage;
     communityId = (await storage.createCommunity({ name: "Task permission fixture" })).id;
     otherCommunityId = (await storage.createCommunity({ name: "Other community" })).id;
     users = {};
+    const company = await storage.createCompany(`Permission fixture ${crypto.randomUUID()}`, "contractor");
     for (const role of [...schema.userRoleEnum.enumValues, "other", "outsider"]) {
       users[role] = await storage.createUser({
         username: `task-permission-${crypto.randomUUID()}`, password: "not-a-login",
         displayName: "Task fixture", role: role === "other" || role === "outsider" ? "contractor" : role,
         ...(role.startsWith("hoa_") ? { hoaCommunityId: communityId } : {}),
+        ...(["contractor", "other", "outsider"].includes(role) ? { companyId: company.id } : {}),
       });
       if (role !== "outsider") await storage.addCommunityMember(communityId, users[role].id);
     }
@@ -197,7 +214,7 @@ describe("task permissions and compatibility (transactional PostgreSQL)", {
   it("validates assignee existence, contractor role and community membership", async () => {
     for (const assignedTo of [users.outsider.id, users.hoa_member.id, "missing"]) {
       const res = await request("admin", { assignedTo, version: task.version });
-      assert.deepEqual(res, { status: 400, body: { error: "Assignee must be a contractor in this community" } });
+      assert.deepEqual(res, { status: 400, body: { error: "Assignee must be a contractor with a company in this community" } });
       await unchanged();
     }
     assert.equal((await request("property_manager", { assignedTo: null, description: null, version: task.version })).status, 200);
@@ -216,7 +233,7 @@ describe("task permissions and compatibility (transactional PostgreSQL)", {
   it("denies other-role completion and other-contractor edits/completion without writes", async () => {
     for (const role of ["hoa_member", "hoa_admin", "property_manager", "client_admin", "map_creator", "other"]) {
       const res = await request(role, { version: task.version, employeeSignOffName: "Crew" }, true);
-      assert.deepEqual(res, { status: 403, body: { error: "Only the assigned contractor can complete this task" } });
+      assert.deepEqual(res, { status: 403, body: { error: role === "other" ? "You do not have access to this task" : "Only the assigned contractor can complete this task" } });
       await unchanged();
     }
     assert.equal((await request("other", { status: "in_progress", version: task.version })).status, 403);
@@ -241,11 +258,11 @@ describe("task permissions and compatibility (transactional PostgreSQL)", {
     });
   }
 
-  it("permits contractor edits and completion on an unassigned task", async () => {
+  it("denies contractor edits and completion on an unassigned task", async () => {
     await client.query("UPDATE tasks SET assigned_to = NULL WHERE id = $1", [task.id]);
     const res = await request("contractor", { status: "in_progress", version: task.version });
-    assert.equal(res.status, 200);
-    assert.equal((await request("contractor", { version: res.body.version, employeeSignOffName: "Crew" }, true)).status, 200);
+    assert.equal(res.status, 403);
+    assert.equal((await request("contractor", { version: task.version, employeeSignOffName: "Crew" }, true)).status, 403);
   });
 
   it("keeps HOA transitions, priority lock, acknowledgement notification and form completion", async () => {

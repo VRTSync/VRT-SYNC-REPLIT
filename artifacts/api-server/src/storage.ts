@@ -122,6 +122,67 @@ export async function getCommunityMembers(communityId: string): Promise<(Communi
   return members.map(m => ({ ...m.community_members, user: m.users, companyName: m.companies?.name ?? null }));
 }
 
+export class WorkValidationError extends Error {
+  readonly status = 400;
+}
+
+export async function validateContractorCompany(id: string, database: Pick<typeof db, "select"> = db): Promise<string> {
+  const [company] = await database.select().from(companies).where(eq(companies.id, id));
+  if (!company?.isActive || company.kind !== "contractor") throw new WorkValidationError("Company must be an active contractor");
+  return company.id;
+}
+
+export async function validateTaskAssignee(communityId: string, assignedTo: string, database: Pick<typeof db, "select"> = db): Promise<User> {
+  const [assignee] = await database.select().from(users).where(eq(users.id, assignedTo));
+  const [member] = await database.select().from(communityMembers).where(and(
+    eq(communityMembers.communityId, communityId), eq(communityMembers.userId, assignedTo),
+  ));
+  if (!assignee?.isActive || assignee.role !== "contractor" || !assignee.companyId || !member) {
+    throw new WorkValidationError("Assignee must be a contractor with a company in this community");
+  }
+  const [company] = await database.select().from(companies).where(eq(companies.id, assignee.companyId));
+  if (!company?.isActive || company.kind !== "contractor") {
+    throw new WorkValidationError("Assignee must be a contractor with a company in this community");
+  }
+  return assignee;
+}
+
+export async function resolveTaskContractorCompany(
+  communityId: string, assignedTo?: string | null, explicitCompanyId?: string | null,
+  database: Pick<typeof db, "select"> = db,
+): Promise<string | null> {
+  if (assignedTo) {
+    const [assignee] = await database.select().from(users).where(eq(users.id, assignedTo));
+    if (assignee?.role !== "contractor" || !assignee.companyId) {
+      throw new WorkValidationError("Assignee must be a contractor with a company");
+    }
+    await validateTaskAssignee(communityId, assignedTo, database);
+    return assignee.companyId;
+  }
+  if (explicitCompanyId) return validateContractorCompany(explicitCompanyId, database);
+  const holders = await database.select({ companyId: contracts.contractorCompanyId }).from(contracts)
+    .where(and(eq(contracts.communityId, communityId), eq(contracts.isActive, true)));
+  if (!holders.length || holders.some(h => !h.companyId)) return null;
+  const ids = [...new Set(holders.map(h => h.companyId!))];
+  if (ids.length !== 1) return null;
+  const [company] = await database.select().from(companies).where(eq(companies.id, ids[0]));
+  return company?.isActive && company.kind === "contractor" ? company.id : null;
+}
+
+export function toTaskView<T extends object>(task: T, viewer: { role: string }): T {
+  return viewer.role === "contractor" ? { ...task, estimateCents: null } : task;
+}
+
+/** Preserve bundle shapes, redacting task projections as well as full task rows. */
+export function toTaskResponse<T>(value: T, viewer: { role: string }): T {
+  if (viewer.role !== "contractor" || value === null || typeof value !== "object" || value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(item => toTaskResponse(item, viewer)) as T;
+  const record = value as Record<string, unknown>;
+  const result = Object.fromEntries(Object.entries(record).map(([key, item]) => [key, toTaskResponse(item, viewer)]));
+  return ("id" in record && (record.type === "task" || ("title" in record && ("status" in record || "completedAt" in record)))
+    ? toTaskView(result, viewer) : result) as T;
+}
+
 export async function createTask(data: {
   communityId: string;
   title: string;
@@ -132,6 +193,7 @@ export async function createTask(data: {
   longitude?: number;
   address?: string;
   assignedTo?: string;
+  contractorCompanyId?: string | null;
   createdBy: string;
   startDate?: Date;
   dueDate?: Date;
@@ -140,9 +202,31 @@ export async function createTask(data: {
   windowEnd?: string;
   origin?: string;
   category?: string;
-}): Promise<Task> {
-  const [task] = await db.insert(tasks).values(data).returning();
+}, database: Pick<typeof db, "select" | "insert"> = db): Promise<Task> {
+  const contractorCompanyId = await resolveTaskContractorCompany(data.communityId, data.assignedTo, data.contractorCompanyId, database);
+  const [task] = await database.insert(tasks).values({ ...data, contractorCompanyId }).returning();
   return task;
+}
+
+export async function createHoaTaskWithLink(data: Parameters<typeof createTask>[0], assetId?: string): Promise<Task> {
+  return db.transaction(async tx => {
+    const task = await createTask(data, tx);
+    if (assetId) await tx.insert(taskLinks).values({ taskId: task.id, linkType: "asset", assetId,
+      latitude: data.latitude, longitude: data.longitude });
+    return task;
+  });
+}
+
+export async function completeTaskAtomically(
+  taskId: string, expectedVersion: number, data: Omit<Parameters<typeof createTaskCompletion>[0], "taskId">,
+) {
+  return db.transaction(async tx => {
+    const [task] = await tx.update(tasks).set({ status: "completed", version: expectedVersion + 1, updatedAt: new Date() })
+      .where(and(eq(tasks.id, taskId), eq(tasks.version, expectedVersion))).returning();
+    if (!task) return null;
+    const [completion] = await tx.insert(taskCompletions).values({ ...data, taskId }).returning();
+    return { task, completion };
+  });
 }
 
 export async function getTaskById(id: string): Promise<Task | undefined> {
@@ -186,16 +270,22 @@ export async function getTasksDueInRange(from: Date, to: Date): Promise<Task[]> 
 }
 
 export async function getTasksForUser(userId: string, communityId?: string): Promise<Task[]> {
+  const user = await getUserById(userId);
+  const membership = user?.role === "contractor"
+    ? sql`EXISTS (SELECT 1 FROM community_members m WHERE m.community_id = ${tasks.communityId} AND m.user_id = ${userId})`
+    : undefined;
   if (communityId) {
     return db.select().from(tasks)
       .where(and(
         eq(tasks.communityId, communityId),
-        or(eq(tasks.assignedTo, userId), isNull(tasks.assignedTo))
+        eq(tasks.assignedTo, userId),
+        membership
       ))
       .orderBy(desc(tasks.createdAt));
   }
   return db.select().from(tasks)
-    .where(eq(tasks.assignedTo, userId))
+    .where(and(eq(tasks.assignedTo, userId),
+      membership))
     .orderBy(desc(tasks.createdAt));
 }
 
@@ -213,17 +303,35 @@ export async function updateTask(id: string, expectedVersion: number, data: Part
   longitude: number | null;
   address: string | null;
   assignedTo: string | null;
+  contractorCompanyId: string | null;
   startDate: Date | null;
   dueDate: Date | null;
   ticketType: string | null;
   windowStart: string | null;
   windowEnd: string | null;
 }>): Promise<Task | null> {
+  const existing = await getTaskById(id);
+  if (!existing || existing.version !== expectedVersion) return null;
+  if (data.contractorCompanyId != null) await validateContractorCompany(data.contractorCompanyId);
+  if (data.assignedTo) {
+    const assignee = await validateTaskAssignee(existing.communityId, data.assignedTo);
+    if (data.contractorCompanyId != null && data.contractorCompanyId !== assignee.companyId) {
+      throw new WorkValidationError("Assignee works for a different contractor");
+    }
+    if (existing.contractorCompanyId && existing.contractorCompanyId !== assignee.companyId &&
+        data.contractorCompanyId !== assignee.companyId) {
+      throw new WorkValidationError("Assignee works for a different contractor");
+    }
+    data = { ...data, contractorCompanyId: assignee.companyId };
+  } else if (data.contractorCompanyId !== undefined && existing.assignedTo && data.assignedTo === undefined) {
+    const assignee = await getUserById(existing.assignedTo);
+    if (assignee?.companyId !== data.contractorCompanyId) data = { ...data, assignedTo: null };
+  }
   const setData: Record<string, unknown> = { version: expectedVersion + 1, updatedAt: new Date() };
   const allowedKeys = [
     "title", "description", "ticketType", "priority", "assignedTo",
     "startDate", "dueDate", "windowStart", "windowEnd", "address",
-    "latitude", "longitude", "status",
+    "latitude", "longitude", "status", "contractorCompanyId",
   ] as const;
   for (const key of allowedKeys) {
     if (Object.hasOwn(data, key) && data[key] !== undefined) setData[key] = data[key];
@@ -386,6 +494,9 @@ export async function canUserAccessTask(userId: string, taskId: string): Promise
   if (!task) { console.log(`[canUserAccessTask] task=${taskId} not found (${Date.now() - t0}ms)`); return { allowed: false, task: undefined }; }
   if (!user) { console.log(`[canUserAccessTask] user=${userId} not found (${Date.now() - t0}ms)`); return { allowed: false, task }; }
   if (user.role === 'admin') { console.log(`[canUserAccessTask] admin access granted (${Date.now() - t0}ms)`); return { allowed: true, task }; }
+  if (user.role === "contractor") {
+    return { allowed: task.assignedTo === userId && await isUserMemberOfCommunity(userId, task.communityId), task };
+  }
   if (user.role === 'hoa_admin' || user.role === 'hoa_member') {
     const allowed = user.hoaCommunityId === task.communityId;
     console.log(`[canUserAccessTask] hoa role check allowed=${allowed} (${Date.now() - t0}ms)`);
@@ -2759,10 +2870,18 @@ export async function getTemplateRuns(templateId?: string): Promise<TemplateRun[
 }
 
 export async function bulkAssignTasks(taskIds: string[], assignedTo: string): Promise<number> {
-  const result = await db.update(tasks)
-    .set({ assignedTo, updatedAt: new Date() })
-    .where(inArray(tasks.id, taskIds));
-  return taskIds.length;
+  return db.transaction(async tx => {
+    const rows = await tx.select().from(tasks).where(inArray(tasks.id, taskIds)).for("update");
+    for (const task of rows) {
+      const assignee = await validateTaskAssignee(task.communityId, assignedTo, tx);
+      if (task.contractorCompanyId && task.contractorCompanyId !== assignee.companyId) {
+        throw new WorkValidationError("Assignee works for a different contractor");
+      }
+      await tx.update(tasks).set({ assignedTo, contractorCompanyId: assignee.companyId,
+        version: task.version + 1, updatedAt: new Date() }).where(eq(tasks.id, task.id));
+    }
+    return rows.length;
+  });
 }
 
 // --- Task Schedules ---
@@ -2866,6 +2985,7 @@ export async function taskExistsWithInstanceKey(key: string): Promise<boolean> {
 }
 
 export async function createTaskWithInstanceKey(data: {
+  contractorCompanyId?: string | null;
   communityId: string;
   title: string;
   description?: string;
@@ -2877,7 +2997,8 @@ export async function createTaskWithInstanceKey(data: {
   dueDate?: Date;
   scheduleInstanceKey: string;
 }): Promise<Task> {
-  const [task] = await db.insert(tasks).values(data).returning();
+  const contractorCompanyId = await resolveTaskContractorCompany(data.communityId, data.assignedTo, data.contractorCompanyId);
+  const [task] = await db.insert(tasks).values({ ...data, contractorCompanyId }).returning();
   return task;
 }
 
@@ -3520,6 +3641,7 @@ export async function getInvoiceById(id: string): Promise<(Invoice & { community
 }
 
 export async function createInvoice(data: {
+  contractorCompanyId?: string | null;
   communityId: string;
   contractor: string;
   completionDate: string;
@@ -3539,14 +3661,25 @@ export async function createInvoice(data: {
   sourceBatch?: string | null;
 }): Promise<Invoice> {
   const { paidAt, ...rest } = data;
+  let contractorCompanyId = data.contractorCompanyId;
+  if (contractorCompanyId != null) await validateContractorCompany(contractorCompanyId);
+  if (contractorCompanyId === undefined) {
+    const [company] = await db.select().from(companies).where(and(
+      eq(companies.normalizedName, normalizeCompanyName(data.contractor)),
+      eq(companies.kind, "contractor"), eq(companies.isActive, true),
+    ));
+    contractorCompanyId = company?.id ?? null;
+  }
   const [invoice] = await db.insert(invoices).values({
     ...rest,
+    contractorCompanyId,
     paidAt: paidAt != null ? new Date(paidAt) : null,
   }).returning();
   return invoice;
 }
 
 export async function updateInvoice(id: string, data: Partial<{
+  contractorCompanyId: string | null;
   contractor: string;
   completionDate: string;
   serviceType: string;
@@ -3564,6 +3697,7 @@ export async function updateInvoice(id: string, data: Partial<{
   source: string | null;
   sourceBatch: string | null;
 }>): Promise<Invoice | null> {
+  if (data.contractorCompanyId != null) await validateContractorCompany(data.contractorCompanyId);
   const { paidAt, ...restData } = data;
   // Only include paidAt in the SET clause when the caller explicitly passed it
   // (undefined = caller did not mention this field → leave it alone in the DB).
@@ -3650,7 +3784,9 @@ export async function createContract(data: {
   pdfObjectKey?: string | null;
   isActive?: boolean;
 }): Promise<Contract> {
-  const [contract] = await db.insert(contracts).values(data).returning();
+  const contractor = await getUserById(data.contractorUserId);
+  if (!contractor?.companyId) throw new WorkValidationError("Contractor must have a company");
+  const [contract] = await db.insert(contracts).values({ ...data, contractorCompanyId: contractor.companyId }).returning();
   return contract;
 }
 
@@ -3663,8 +3799,12 @@ export async function updateContract(id: string, data: Partial<{
   pdfObjectKey: string | null;
   isActive: boolean;
 }>): Promise<Contract | null> {
+  const existing = await getContractById(id);
+  if (!existing) return null;
+  const contractor = await getUserById(data.contractorUserId ?? existing.contractorUserId);
+  if (!contractor?.companyId) throw new WorkValidationError("Contractor must have a company");
   const [contract] = await db.update(contracts)
-    .set({ ...data, updatedAt: new Date() })
+    .set({ ...data, contractorCompanyId: contractor.companyId, updatedAt: new Date() })
     .where(eq(contracts.id, id))
     .returning();
   return contract || null;
