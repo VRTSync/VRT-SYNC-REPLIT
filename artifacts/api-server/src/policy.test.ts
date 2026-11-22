@@ -132,3 +132,80 @@ describe("permission engine role matrix", () => {
     assert.notEqual(api.actorFrom({ currentUser } as Request), currentUser);
   });
 });
+
+describe("HOA permission compatibility", () => {
+  const cases: {
+    name: string; role: Actor["role"]; hoa?: string | null;
+    member?: boolean; assigned?: boolean; company?: string;
+    expected: [string | null, boolean, boolean];
+  }[] = [
+    { name: "HOA admin with community", role: "hoa_admin", hoa: "member-community", member: true, expected: ["member-community", true, true] },
+    { name: "HOA admin without community", role: "hoa_admin", member: true, expected: [null, false, true] },
+    { name: "HOA member in community", role: "hoa_member", hoa: "member-community", member: true, expected: ["member-community", true, false] },
+    { name: "HOA member outside community", role: "hoa_member", hoa: "elsewhere", member: true, expected: ["elsewhere", false, false] },
+    { name: "admin", role: "admin", expected: [null, true, false] },
+    { name: "PM member", role: "property_manager", member: true, expected: [null, true, false] },
+    { name: "PM non-member", role: "property_manager", expected: [null, false, false] },
+    { name: "contractor assigned", role: "contractor", member: true, assigned: true, expected: [null, true, false] },
+    { name: "contractor unassigned", role: "contractor", member: true, expected: [null, false, false] },
+    { name: "manager same company", role: "contractor_manager", member: true, company: "company", expected: [null, true, false] },
+    { name: "manager other company", role: "contractor_manager", member: true, company: "other", expected: [null, false, false] },
+    { name: "client admin member", role: "client_admin", member: true, expected: [null, true, false] },
+    { name: "client admin organization only", role: "client_admin", expected: [null, false, false] },
+  ];
+  for (const row of cases) it(row.name, async () => {
+    const { api } = await policyFixture();
+    const person = actor(row.role, { hoaCommunityId: row.hoa ?? null, companyId: row.company ?? null });
+    const task = {
+      communityId: row.member ? "member-community" : "other-community",
+      assignedTo: row.assigned ? person.id : "someone-else",
+      contractorCompanyId: "company",
+    };
+    assert.deepEqual([
+      api.hoaPortalCommunity(person),
+      await api.canReadHoaRequest(person, task),
+      api.canCreateHoaRequest(person),
+    ], row.expected);
+  });
+
+  it("preserves user-first logical-OR session fallback for request submission", async () => {
+    const { api } = await policyFixture();
+    const cases: [string | null, string | undefined, string | null][] = [
+      ["current", "session", "current"], [null, "session", "session"], [null, undefined, null],
+      ["", "session", "session"], [null, "", null],
+    ];
+    for (const [current, session, expected] of cases) {
+      assert.equal(api.hoaRequestCommunity(actor("hoa_admin", { hoaCommunityId: current }), session), expected);
+    }
+  });
+});
+
+describe("portfolio permission compatibility", () => {
+  it("preserves explicit admin selection and nullish client session fallback", async () => {
+    const { api } = await policyFixture();
+    const cases: [Actor["role"], string | null, string | undefined, string | undefined, object][] = [
+      ["admin", "ignored", "session", "selected", { orgId: "selected" }],
+      ["admin", "ignored", "session", undefined, { orgId: null, status: 400, error: "organizationId query param is required for admin" }],
+      ["client_admin", "current", "session", "ignored", { orgId: "current" }],
+      ["client_admin", null, "session", "ignored", { orgId: "session" }],
+      ["client_admin", null, undefined, undefined, { orgId: null, status: 403, error: "No organization assigned to this account" }],
+      ["client_admin", "", "session", undefined, { orgId: null, status: 403, error: "No organization assigned to this account" }],
+    ];
+    for (const [role, current, session, query, expected] of cases) {
+      assert.deepEqual(api.resolvePortfolioOrg({
+        currentUser: actor(role, { organizationId: current }),
+        session: { organizationId: session }, query: { organizationId: query },
+      } as unknown as Request), expected);
+    }
+  });
+
+  it("requires an existing community with an exactly matching organization", async () => {
+    const { api } = await policyFixture();
+    for (const [community, expected] of [
+      [{ organizationId: "org" }, true], [{ organizationId: "other" }, false],
+      [{ organizationId: null }, false], [undefined, false], [null, false],
+    ] as const) {
+      assert.equal(api.orgOwnsCommunity("org", community), expected);
+    }
+  });
+});

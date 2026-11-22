@@ -21,6 +21,21 @@ export function readRouteFixtureSource(): string {
   insertBefore('  app.get("/api/map-layers",', handlers.slice(13, 15).join("\n\n"));
   insertBefore("  // CSV Task Import", handlers[15]);
   insertBefore("  // Task Schedules CRUD", handlers[16]);
+  for (const [file, register, expected] of [
+    ["hoa", "registerHoaRoutes", 4],
+    ["portfolioWorkOrders", "registerPortfolioWorkOrderRoutes", 9],
+  ] as const) {
+    const module = readFileSync(new URL(`../routes/${file}.ts`, import.meta.url), "utf8");
+    const count = [...module.matchAll(/^  app\.(?:get|post|patch|put|delete)\("[^\n]*\n[\s\S]*?^  \}\)\);/gm)].length;
+    if (count !== expected) throw new Error(`${file} fixture expected exactly ${expected} production handlers`);
+    const signature = `export function ${register}(app: Express): void {\n`;
+    const start = module.indexOf(signature);
+    const call = `  ${register}(app);`;
+    if (start < 0 || !module.endsWith("}\n") || source.split(call).length !== 2) {
+      throw new Error(`Missing or ambiguous ${file} fixture boundary`);
+    }
+    source = source.replace(call, module.slice(start + signature.length, -2).trimEnd());
+  }
   return source;
 }
 

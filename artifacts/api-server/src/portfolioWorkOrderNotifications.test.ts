@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import { readRouteFixtureSource } from "./testUtils/routeFixtureSource";
 import type { Task } from "@workspace/db";
 import {
   notifyPortfolioWorkOrderSubmitted,
@@ -139,7 +140,7 @@ describe("portfolio work-order notifications", () => {
 });
 
 describe("portfolio work-order route notification contract", () => {
-  const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+  const routes = readRouteFixtureSource();
   const routeStart = routes.indexOf('app.post("/api/portfolio/work-orders"');
   const routeEnd = routes.indexOf('app.post("/api/portfolio/work-orders/:taskId/approve"');
   const route = routes.slice(routeStart, routeEnd);

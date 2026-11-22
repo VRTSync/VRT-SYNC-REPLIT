@@ -106,3 +106,52 @@ describe("task route structure and compatibility", () => {
     }
   });
 });
+
+describe("HOA and portfolio work-order route structure", () => {
+  const modules = [
+    {
+      file: "hoa", register: "registerHoaRoutes",
+      inventory: [
+        "get /api/hoa/dashboard", "get /api/hoa/requests",
+        "get /api/hoa/requests/:id", "post /api/hoa/requests",
+      ],
+    },
+    {
+      file: "portfolioWorkOrders", register: "registerPortfolioWorkOrderRoutes",
+      inventory: [
+        "get /api/portfolio/work-orders", "post /api/portfolio/work-orders",
+        "post /api/portfolio/work-orders/:taskId/approve", "get /api/portfolio/work-orders/:taskId",
+        "patch /api/portfolio/work-orders/:taskId", "post /api/portfolio/work-orders/:taskId/cancel",
+        "post /api/portfolio/work-orders/:taskId/decline", "post /api/portfolio/work-orders/:taskId/comments",
+        "post /api/portfolio/work-orders/:taskId/photos",
+      ],
+    },
+  ];
+  it("removes all moved handler registrations from the main module", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:hoa\/|portfolio\/work-orders)/);
+  });
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`keeps the exact ${module.file} inventory, order, middleware and wrappers`, () => {
+      assert.deepEqual([...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+        .map(([, method, path]) => `${method} ${path}`), module.inventory);
+      assert.equal((source.match(/route\(async /g) ?? []).length, module.inventory.length);
+      const middleware = module.file === "hoa" ? "requireAuth" : "requireClientOrAdmin";
+      assert.equal((source.match(new RegExp(`app\\.\\w+\\("[^"]+", ${middleware}, route\\(async`, "g")) ?? []).length, module.inventory.length);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+    });
+    it(`keeps ${module.file} authorization in the policy module`, () => {
+      assert.doesNotMatch(source, /canUserAccessTask\s*\(|isHoaRole\s*\(|isClientRole\s*\(/);
+      assert.doesNotMatch(source, /\.role\s*(?:===|!==)/);
+      assert.doesNotMatch(source, /\.organizationId\s*!==/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("retains registration positions relative to unchanged neighboring routes", () => {
+    assert.ok(main.indexOf("registerHoaRoutes(app);") < main.indexOf('app.get("/api/notification-preferences",'));
+    const workOrders = main.indexOf("registerPortfolioWorkOrderRoutes(app);");
+    assert.ok(main.indexOf('app.delete("/api/portfolio/group-sets/:setId",') < workOrders);
+    assert.ok(workOrders < main.indexOf('app.post("/api/admin/organizations",'));
+  });
+});

@@ -14,3 +14,9 @@ Existing test assertions and expected values remain immutable during behavior-pr
 **Why:** The user approved adapting source-loading, bundling and mock fixtures for the task-route extraction, but did not approve weakening the regression expectations.
 
 **How to apply:** Route moves can require harness changes so tests still execute real production handlers and policies. Preserve every existing assertion and expected response while updating that setup.
+
+During behavior-preserving permission extraction, retain the legacy HOA submission and portfolio organization session fallbacks, even when the current user record has no assignment.
+
+**Why:** The user explicitly scoped these known stale-session access gaps out of this extraction. Removing them here would combine a security behavior change with a structural refactor.
+
+**How to apply:** Preserve the HOA logical-OR fallback and portfolio nullish fallback exactly. Close either gap only in a separately approved security change.
