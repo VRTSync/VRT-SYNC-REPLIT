@@ -18,3 +18,4 @@
 - [Live account scope](live-account-scope.md) — null community or organization assignments mean access was removed; legacy session fallbacks must never retain prior access.
 - [Company label scope](company-label-scope.md) — companies do not grant community access; managers require a contractor company, while crew and PM selection stays optional.
 - [Transactional test fixtures](transactional-test-fixtures.md) — raw BEGIN plus drizzle(client) does not protect fixtures from nested storage transactions; use savepoints.
+- [Permission refactor compatibility](permission-refactor-compatibility.md) — preserve legacy endpoint differences during policy extraction; broader security changes require a separate slice.

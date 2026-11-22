@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
 import { db, pool } from "./db";
+import { actorFromUser, canReadTask } from "./policy";
 import { isContractorSide } from "./auth";
 import { getAssetTypeCache, getAssetTypeTemplate } from "./assetTypeCache";
 import {
@@ -527,33 +528,13 @@ export async function isUserMemberOfCommunity(userId: string, communityId: strin
 }
 
 export async function canUserAccessTask(userId: string, taskId: string): Promise<{ allowed: boolean; task: Task | undefined }> {
-  const t0 = Date.now();
   const [[task], [user]] = await Promise.all([
     db.select().from(tasks).where(eq(tasks.id, taskId)),
     db.select().from(users).where(eq(users.id, userId)),
   ]);
-  if (!task) { console.log(`[canUserAccessTask] task=${taskId} not found (${Date.now() - t0}ms)`); return { allowed: false, task: undefined }; }
-  if (!user) { console.log(`[canUserAccessTask] user=${userId} not found (${Date.now() - t0}ms)`); return { allowed: false, task }; }
-  if (user.role === 'admin') { console.log(`[canUserAccessTask] admin access granted (${Date.now() - t0}ms)`); return { allowed: true, task }; }
-  if (user.role === "contractor") {
-    return { allowed: task.assignedTo === userId && await isUserMemberOfCommunity(userId, task.communityId), task };
-  }
-  if (user.role === "contractor_manager") {
-    return { allowed: !!user.companyId && task.contractorCompanyId === user.companyId &&
-      await isUserMemberOfCommunity(userId, task.communityId), task };
-  }
-  if (user.role === 'hoa_admin' || user.role === 'hoa_member') {
-    const allowed = user.hoaCommunityId === task.communityId;
-    console.log(`[canUserAccessTask] hoa role check allowed=${allowed} (${Date.now() - t0}ms)`);
-    return { allowed, task };
-  }
-  if (task.assignedTo === userId) { console.log(`[canUserAccessTask] assignee access granted (${Date.now() - t0}ms)`); return { allowed: true, task }; }
-  const [membership] = await db.select({ id: communityMembers.id })
-    .from(communityMembers)
-    .where(and(eq(communityMembers.userId, userId), eq(communityMembers.communityId, task.communityId)));
-  const isMember = !!membership;
-  console.log(`[canUserAccessTask] membership join isMember=${isMember} (${Date.now() - t0}ms)`);
-  return { allowed: isMember, task };
+  if (!task) return { allowed: false, task: undefined };
+  if (!user) return { allowed: false, task };
+  return { allowed: await canReadTask(actorFromUser(user), task), task };
 }
 
 export async function getAllUsers(): Promise<User[]> {

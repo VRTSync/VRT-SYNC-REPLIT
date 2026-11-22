@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, afterEach, describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import { readRouteFixtureSource, taskFixtureImports } from "./testUtils/routeFixtureSource";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -12,7 +13,7 @@ import { build } from "esbuild";
 // Run production auth, management handlers and revocation SQL with isolated I/O.
 // No real accounts, tokens, secrets or database records are touched.
 const require = createRequire(import.meta.url);
-const source = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const source = readRouteFixtureSource();
 const portalSource = readFileSync(new URL("../../web-portal/src/server.ts", import.meta.url), "utf8");
 function between(text: string, start: string, end: string) {
   const from = text.indexOf(start);
@@ -51,6 +52,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
     const built = await build({
       stdin: {
         contents: `
+          ${taskFixtureImports}
           import * as auth from "./auth";
           import * as realStorage from "./storage";
           import bcrypt from "bcryptjs";
@@ -99,15 +101,17 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
           builder.onLoad({ filter: /.*/, namespace: "fixture-db" }, () => ({
             contents: "export const db = fixture.db; export const pool = fixture.pool;", loader: "js",
           }));
-          // Auth uses fixture user I/O, but revocation and token deletion remain real.
-          builder.onResolve({ filter: /^\.\/storage$/ }, (args) =>
-            args.importer.endsWith("/auth.ts") ? { path: "storage", namespace: "fixture-storage" } : undefined);
+          // Auth/policy use fixture user I/O; revocation and token deletion remain real.
+          builder.onResolve({ filter: /^(?:\.\/|\.\.\/)storage$/ }, (args) =>
+            args.importer.endsWith("/auth.ts") || /\/policy\/(?:actor|community)\.ts$/.test(args.importer)
+              ? { path: "storage", namespace: "fixture-storage" } : undefined);
           builder.onLoad({ filter: /.*/, namespace: "fixture-storage" }, () => ({
             contents: `
               export const getUserById = (...a) => fixture.storage.getUserById(...a);
               export const getUserByUsername = (...a) => fixture.storage.getUserByUsername(...a);
               export const getCommunities = async () => [];
               export const getCommunityById = (...a) => fixture.storage.getCommunityById(...a);
+              export const isUserMemberOfCommunity = (...a) => fixture.storage.isUserMemberOfCommunity(...a);
               export const getUserCommunities = async () => [];
               export const createUser = async () => { throw Error("not used"); };
               export const removePushTokenByDevice = (...a) => fixture.storage.removePushTokenByDevice(...a);
@@ -146,7 +150,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
         getTokensForUser: async (id: string) => (tokens.get(id) ?? []).map((token) => ({ token })),
         insertPushTickets: async () => {},
         getLatestOfflinePack: async (communityId: string) => ({ id: "pack", communityId, packVersion: 1 }),
-        canUserAccessTask: async () => ({ allowed: true, task: { id: "task", assignedTo: "target", version: 1 } }),
+        getTaskById: async () => ({ id: "task", communityId: "old", assignedTo: "target", version: 1 }),
         updateTask: async (_id: string, _version: number, data: any) => ({ id: "task", ...data }),
         createTaskCompletion: async (data: any) => { completions.push(data); return data; },
         completeTaskAtomically: async (taskId: string, version: number, data: any) => {

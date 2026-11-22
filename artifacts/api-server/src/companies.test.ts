@@ -38,6 +38,7 @@ describe("company labels (production handlers and transactional PostgreSQL)", ()
     const built = await build({
       stdin: {
         contents: `
+          import * as policy from "./policy";
           import * as storage from "./storage";
           import { requireAdmin, requireAuth, loadCurrentUser, isHoaRole, isClientRole, isContractorSide, registerAuthRoutes } from "./auth";
           import { normalizeCompanyName, userRoleEnum } from "@workspace/db";

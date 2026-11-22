@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, after, afterEach, describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import { readRouteFixtureSource, taskFixtureImports } from "./testUtils/routeFixtureSource";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -11,7 +12,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { build } from "esbuild";
 
 const require = createRequire(import.meta.url);
-const source = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const source = readRouteFixtureSource();
 function between(start: string, end: string) {
   const from = source.indexOf(start), to = source.indexOf(end, from + start.length);
   assert.ok(from >= 0 && to > from, `Missing verified boundary: ${start}`);
@@ -47,6 +48,7 @@ describe("account managers (real handlers and isolated PostgreSQL fixtures)", ()
     const built = await build({
       stdin: {
         contents: `
+          ${taskFixtureImports}
           import * as storage from "./storage";
           import { requireAuth, requireAdmin, requireAdminOrMapCreator, loadCurrentUser, enforceHoaScoping, enforceOrgScoping,
             isHoaRole, isClientRole, isMapCreatorRole, isContractorSide } from "./auth";

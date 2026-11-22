@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
-import { readFileSync } from "node:fs";
+import { readRouteFixtureSource, taskFixtureImports } from "./testUtils/routeFixtureSource";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -12,7 +12,7 @@ import * as schema from "../../../lib/db/src/schema/schema";
 
 // Use the exact production handlers and storage, isolated in a rollback-only
 // transaction. Notifications are captured rather than sent to real users.
-const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const routes = readRouteFixtureSource();
 function between(start: string, end: string) {
   const from = routes.indexOf(start);
   const to = routes.indexOf(end, from + start.length);
@@ -44,10 +44,12 @@ describe("task permissions and compatibility (transactional PostgreSQL)", {
     const built = await build({
       stdin: {
         contents: `
+          ${taskFixtureImports}
           import * as storage from "./storage";
           import { updateTaskManagerSchema, updateTaskFieldSchema, completeTaskSchema } from "@workspace/db";
-          const requireAuth = (req: any, res: any, next: any) => {
+          const requireAuth = async (req: any, res: any, next: any) => {
             if (!req.session.userId) return res.sendStatus(401);
+            req.currentUser = await storage.getUserById(req.session.userId);
             next();
           };
           const notifyTaskAssigned = async (...args: any[]) => __notifications.push(["assigned", ...args]);

@@ -65,6 +65,7 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
     const built = await build({
       stdin: {
         contents: `
+          import * as policy from "./policy";
           import { loadCurrentUser, requireAuth, enforceHoaScoping, enforceOrgScoping, isHoaRole } from "./auth";
           import * as storage from "./storage";
           import { logServiceVisitSchema } from "@workspace/db";
@@ -90,7 +91,7 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
       plugins: [{
         name: "isolated-community-storage",
         setup(builder) {
-          builder.onResolve({ filter: /^\.\/storage$/ }, () => ({ path: "storage", namespace: "fixture" }));
+          builder.onResolve({ filter: /^(?:\.\/|\.\.\/)storage$/ }, () => ({ path: "storage", namespace: "fixture" }));
           builder.onResolve({ filter: /^\.\/db$/ }, () => ({ path: "db", namespace: "fixture" }));
           builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({
             contents: path === "storage" ? "module.exports = __storage;"

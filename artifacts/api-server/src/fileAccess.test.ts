@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, afterEach, describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import { readRouteFixtureSource, taskFixtureImports } from "./testUtils/routeFixtureSource";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -12,7 +13,7 @@ import { build } from "esbuild";
 // Execute the real route bodies, auth middleware, object service and ACL code.
 // Only GCS and database/storage I/O are in-memory fixtures. No real file policies,
 // accounts, database rows, or environment secrets are read or written.
-const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const routes = readRouteFixtureSource();
 function between(start: string, end: string) {
   const from = routes.indexOf(start);
   const to = routes.indexOf(end, from + start.length);
@@ -45,6 +46,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
     const built = await build({
       stdin: {
         contents: `
+          ${taskFixtureImports}
           import { registerAuthRoutes, loadCurrentUser, requireAuth, requireAdminOrMapCreator,
             requireClientOrAdmin, isHoaRole } from "./auth";
           import { ObjectStorageService, ObjectForbiddenError, ObjectNotFoundError,
@@ -67,7 +69,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
       plugins: [{
         name: "isolated-file-access-io",
         setup(builder) {
-          builder.onResolve({ filter: /^\.\/storage$/ }, () => ({ path: "storage", namespace: "fixture" }));
+          builder.onResolve({ filter: /^(?:\.\/|\.\.\/)storage$/ }, () => ({ path: "storage", namespace: "fixture" }));
           builder.onResolve({ filter: /^\.\/db$/ }, () => ({ path: "db", namespace: "fixture" }));
           builder.onLoad({ filter: /.*/, namespace: "fixture" }, ({ path }) => ({
             contents: path === "storage" ? "module.exports = __storage;"
@@ -96,7 +98,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
       mapper: { id: "mapper", role: "map_creator" },
       client: { id: "client", role: "client_admin", organizationId: "org" },
     };
-    const task = { id: "task", communityId: "community", origin: "client", acknowledgedAt: null };
+    const task = { id: "task", communityId: "community", assignedTo: "member", origin: "client", acknowledgedAt: null };
     const persist = async (data: any) => {
       const row = { id: String(attachments.length + 1), ...data };
       attachments.push(row);
