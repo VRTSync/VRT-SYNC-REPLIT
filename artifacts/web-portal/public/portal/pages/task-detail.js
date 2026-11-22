@@ -154,7 +154,7 @@
     var isHoa = task.origin === 'hoa_request' || task.origin === 'HOA';
     var windowRange = (!isHoa) ? M.fmtDateRange(task.windowStart, task.windowEnd) : '';
 
-    var isContractor = role === 'contractor';
+    var isContractor = role === 'contractor' || role === 'contractor_manager';
     var isHoaAdmin = role === 'hoa_admin';
     var isHoaMember = role === 'hoa_member';
     var isPm = role === 'property_manager';

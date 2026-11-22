@@ -41,7 +41,7 @@ PortalRouter.register('tasks', async function (container) {
     return;
   }
 
-  var isContractor = role === 'contractor';
+  var isContractor = role === 'contractor' || role === 'contractor_manager';
   var isHoa = role === 'hoa_admin' || role === 'hoa_member';
   var isPM = role === 'property_manager';
   var roleCopy = (window.PortalRoleCopy ? window.PortalRoleCopy.get(role) : null) || {};

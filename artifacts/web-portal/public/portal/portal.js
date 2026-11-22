@@ -22,6 +22,12 @@
       { route: 'map',              label: 'Map',               icon: iconMap() },
       { route: 'service-schedule', label: 'Service Schedule',  icon: iconCalendar() },
     ],
+    contractor_manager: [
+      { route: 'dashboard',        label: 'Dashboard',         icon: iconGrid() },
+      { route: 'tasks',            label: 'Tasks',             icon: iconCheckSquare() },
+      { route: 'map',              label: 'Map',               icon: iconMap() },
+      { route: 'service-schedule', label: 'Service Schedule',  icon: iconCalendar() },
+    ],
     hoa_admin: [
       { route: 'dashboard',  label: 'Dashboard',       icon: iconGrid() },
       { route: 'tasks',      label: 'Tasks',           icon: iconCheckSquare() },
@@ -69,7 +75,7 @@
     refreshCommunities,
     isHoaRole:    () => currentUser && (currentUser.role === 'hoa_admin' || currentUser.role === 'hoa_member'),
     isAdmin:      () => currentUser && (currentUser.role === 'admin' || currentUser.role === 'property_manager'),
-    isContractor: () => currentUser && currentUser.role === 'contractor',
+    isContractor: () => currentUser && ['contractor', 'contractor_manager'].includes(currentUser.role),
   };
 
   /* ─── Bootstrap ─────────────────────────────────────────────────────────── */
@@ -155,6 +161,7 @@
       admin:            '/web/admin/dashboard',
       property_manager: '/web/pm/dashboard',
       contractor:       '/web/contractor/dashboard',
+      contractor_manager: '/web/contractor/dashboard',
       hoa_admin:        '/web/hoa/dashboard',
       hoa_member:       '/web/hoa/dashboard',
     };

@@ -39,7 +39,7 @@ describe("company labels (production handlers and transactional PostgreSQL)", ()
       stdin: {
         contents: `
           import * as storage from "./storage";
-          import { requireAdmin, requireAuth, loadCurrentUser, isHoaRole, isClientRole, registerAuthRoutes } from "./auth";
+          import { requireAdmin, requireAuth, loadCurrentUser, isHoaRole, isClientRole, isContractorSide, registerAuthRoutes } from "./auth";
           import { normalizeCompanyName, userRoleEnum } from "@workspace/db";
           import { z } from "zod";
           import bcrypt from "bcryptjs";

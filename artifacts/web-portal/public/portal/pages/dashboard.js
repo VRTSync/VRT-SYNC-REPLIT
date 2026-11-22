@@ -36,7 +36,7 @@ PortalRouter.register('dashboard', async function (container) {
   container.innerHTML = '<div class="loading-spinner" style="margin-top:80px;">Loading dashboard…</div>';
 
   try {
-    if (role === 'contractor')       await renderContractor(container, ctx);
+    if (role === 'contractor' || role === 'contractor_manager') await renderContractor(container, ctx);
     else if (role === 'hoa_admin')   await renderHoa(container, ctx);
     else if (role === 'hoa_member')  await renderHoaMember(container, ctx);
     else if (role === 'property_manager') await renderPM(container, ctx);

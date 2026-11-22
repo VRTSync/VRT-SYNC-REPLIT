@@ -677,7 +677,8 @@ PortalRouter.register('map', async function (container) {
         body.innerHTML = '<div class="mdp-empty-tab">No work history found for this asset.</div>';
         return;
       }
-      const isContractor = role === 'contractor';
+      // Crew prices stay hidden; account managers use the same map with prices.
+      const isCrew = role === 'contractor';
       body.innerHTML = `
         <div class="mdp-history-list">
           ${history.map(item => {
@@ -687,7 +688,7 @@ PortalRouter.register('map', async function (container) {
             if (item.status) html += `<span class="mdp-hist-status">${esc(item.status.replace(/_/g, ' '))}</span>`;
             if (item.completedAt || item.windowEnd) html += `<span class="mdp-hist-date">${new Date(item.completedAt || item.windowEnd).toLocaleDateString()}</span>`;
             html += `</div>`;
-            if (!isContractor && item.invoiceAmount != null) html += `<div class="mdp-hist-amount">$${Number(item.invoiceAmount).toFixed(2)}</div>`;
+            if (!isCrew && item.invoiceAmount != null) html += `<div class="mdp-hist-amount">$${Number(item.invoiceAmount).toFixed(2)}</div>`;
             html += `</div>`;
             return html;
           }).join('')}

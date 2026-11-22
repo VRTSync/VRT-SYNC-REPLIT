@@ -1,5 +1,6 @@
 import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
 import { db, pool } from "./db";
+import { isContractorSide } from "./auth";
 import { getAssetTypeCache, getAssetTypeTemplate } from "./assetTypeCache";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
@@ -269,8 +270,35 @@ export async function getTasksDueInRange(from: Date, to: Date): Promise<Task[]> 
     ));
 }
 
+/** Read the live company and membership on every query; absent scope never grants work. */
+function managerTaskScope(userId: string) {
+  return sql`EXISTS (SELECT 1 FROM users manager JOIN community_members m ON m.user_id = manager.id
+    WHERE manager.id = ${userId} AND manager.role = 'contractor_manager'
+    AND manager.company_id = ${tasks.contractorCompanyId} AND m.community_id = ${tasks.communityId})`;
+}
+
+async function contractorTaskScope(userId: string) {
+  const user = await getUserById(userId);
+  return user?.role === "contractor_manager" ? managerTaskScope(userId) : eq(tasks.assignedTo, userId);
+}
+
+export async function getCompanyCrew(communityId: string, companyId: string) {
+  return db.select({ id: users.id, displayName: users.displayName }).from(users)
+    .innerJoin(communityMembers, eq(communityMembers.userId, users.id))
+    .innerJoin(companies, eq(companies.id, users.companyId))
+    .where(and(eq(communityMembers.communityId, communityId), eq(users.companyId, companyId),
+      eq(users.role, "contractor"), eq(users.isActive, true), eq(companies.isActive, true),
+      eq(companies.kind, "contractor"))).orderBy(users.displayName);
+}
+
 export async function getTasksForUser(userId: string, communityId?: string): Promise<Task[]> {
   const user = await getUserById(userId);
+  if (user?.role === "contractor_manager") {
+    return db.select().from(tasks).where(and(
+      await contractorTaskScope(userId),
+      communityId ? eq(tasks.communityId, communityId) : undefined,
+    )).orderBy(desc(tasks.createdAt));
+  }
   const membership = user?.role === "contractor"
     ? sql`EXISTS (SELECT 1 FROM community_members m WHERE m.community_id = ${tasks.communityId} AND m.user_id = ${userId})`
     : undefined;
@@ -397,6 +425,19 @@ export async function getAttachmentsByTaskId(taskId: string): Promise<Attachment
     .orderBy(desc(attachments.createdAt));
 }
 
+/** Apply task ownership before the community-level file ACL for account managers. */
+export async function canManagerReadTaskObject(userId: string, objectPath: string): Promise<boolean> {
+  const linked = await db.select({ taskId: attachments.taskId, completionTaskId: taskCompletions.taskId })
+    .from(attachments).leftJoin(taskCompletions, eq(taskCompletions.id, attachments.taskCompletionId))
+    .where(or(eq(attachments.fileRef, objectPath), eq(attachments.url, objectPath)));
+  for (const row of linked) {
+    for (const taskId of [row.taskId, row.completionTaskId]) {
+      if (taskId && !(await canUserAccessTask(userId, taskId)).allowed) return false;
+    }
+  }
+  return true;
+}
+
 export async function getAttachmentByIdempotencyKey(taskCompletionId: string, idempotencyKey: string): Promise<Attachment | null> {
   const [row] = await db.select().from(attachments).where(
     and(eq(attachments.taskCompletionId, taskCompletionId), eq(attachments.idempotencyKey, idempotencyKey))
@@ -497,6 +538,10 @@ export async function canUserAccessTask(userId: string, taskId: string): Promise
   if (user.role === "contractor") {
     return { allowed: task.assignedTo === userId && await isUserMemberOfCommunity(userId, task.communityId), task };
   }
+  if (user.role === "contractor_manager") {
+    return { allowed: !!user.companyId && task.contractorCompanyId === user.companyId &&
+      await isUserMemberOfCommunity(userId, task.communityId), task };
+  }
   if (user.role === 'hoa_admin' || user.role === 'hoa_member') {
     const allowed = user.hoaCommunityId === task.communityId;
     console.log(`[canUserAccessTask] hoa role check allowed=${allowed} (${Date.now() - t0}ms)`);
@@ -594,8 +639,8 @@ export async function updateUserRole(userId: string, role: string, hoaCommunityI
     if (!old) return null;
     const isHoa = role === "hoa_admin" || role === "hoa_member";
     const wasHoa = old.role === "hoa_admin" || old.role === "hoa_member";
-    const desiredCompany = role === "contractor" || role === "property_manager"
-      ? (companyId === undefined ? (old.role === role ? old.companyId : null) : companyId)
+    const desiredCompany = isContractorSide(role) || role === "property_manager"
+      ? (companyId === undefined ? (old.role === role || (isContractorSide(old.role) && isContractorSide(role)) ? old.companyId : null) : companyId)
       : null;
     const [updated] = await tx.update(users)
       .set({ role: role as User["role"], hoaCommunityId: isHoa ? hoaCommunityId ?? null : null, companyId: desiredCompany })
@@ -1548,7 +1593,7 @@ export async function generateGeojsonBundle(communityId: string) {
   return bundle;
 }
 
-export async function generateWorkHistorySnapshot(communityId: string, limit = 5) {
+export async function generateWorkHistorySnapshot(communityId: string, limit = 5, managerId?: string) {
   const communityAssets = await db.select({ id: assets.id }).from(assets)
     .where(eq(assets.communityId, communityId));
   if (communityAssets.length === 0) return {};
@@ -1557,7 +1602,7 @@ export async function generateWorkHistorySnapshot(communityId: string, limit = 5
   const snapshot: Record<string, any[]> = {};
 
   for (const assetId of assetIds) {
-    const history = await getAssetWorkHistory(assetId);
+    const history = await getAssetWorkHistory(assetId, managerId);
     if (history.length > 0) {
       snapshot[assetId] = history.slice(0, limit);
     }
@@ -1605,7 +1650,7 @@ export async function generateSearchIndex(communityId: string, userId?: string, 
 
   const taskConditions: any[] = [eq(tasks.communityId, communityId)];
   if (!isAdmin && userId) {
-    taskConditions.push(eq(tasks.assignedTo, userId));
+    taskConditions.push(await contractorTaskScope(userId));
   }
   const communityTasks = await db.select().from(tasks)
     .where(and(...taskConditions));
@@ -1647,7 +1692,7 @@ export async function generateSearchIndex(communityId: string, userId?: string, 
   return { assets: searchAssets, tasks: searchTasks };
 }
 
-export async function getAssetWorkHistory(assetId: string) {
+export async function getAssetWorkHistory(assetId: string, managerId?: string) {
   const linkedTasks = await db.select({ taskId: taskLinks.taskId })
     .from(taskLinks)
     .where(and(eq(taskLinks.assetId, assetId), eq(taskLinks.linkType, 'asset')));
@@ -1672,7 +1717,7 @@ export async function getAssetWorkHistory(assetId: string) {
     .from(taskCompletions)
     .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
     .innerJoin(users, eq(taskCompletions.completedBy, users.id))
-    .where(inArray(taskCompletions.taskId, taskIds))
+    .where(and(inArray(taskCompletions.taskId, taskIds), managerId ? managerTaskScope(managerId) : undefined))
     .orderBy(desc(taskCompletions.completedAt));
 
   if (completionRows.length === 0) return [];
@@ -1725,7 +1770,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
 
   const baseConditions = isAdmin
     ? [eq(tasks.communityId, communityId), ne(tasks.status, "completed")]
-    : [eq(tasks.communityId, communityId), eq(tasks.assignedTo, userId), ne(tasks.status, "completed")];
+    : [eq(tasks.communityId, communityId), await contractorTaskScope(userId), ne(tasks.status, "completed")];
 
   const dueTodayTasks = await db.select().from(tasks)
     .where(and(
@@ -1761,7 +1806,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       ne(tasks.status, "completed"),
       isNotNull(taskCompletions.followUpNeeded),
       ne(taskCompletions.followUpNeeded, ''),
-      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+      ...(isAdmin ? [] : [await contractorTaskScope(userId)]),
     ))
     .orderBy(desc(taskCompletions.completedAt))
     .limit(5);
@@ -1769,7 +1814,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
   const noDueDateTasks = await db.select().from(tasks)
     .where(and(
       ...baseConditions,
-      ...[isAdmin ? undefined : eq(tasks.assignedTo, userId)].filter(Boolean) as any[],
+      ...[isAdmin ? undefined : await contractorTaskScope(userId)].filter(Boolean) as any[],
     ))
     .orderBy(desc(tasks.priority), desc(tasks.createdAt))
     .limit(10);
@@ -1792,7 +1837,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       eq(tasks.communityId, communityId),
       eq(tasks.origin, "HOA"),
       inArray(tasks.status, ["submitted", "acknowledged"]),
-      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+      ...(isAdmin ? [] : [await contractorTaskScope(userId)]),
     ))
     .groupBy(tasks.priority);
 
@@ -1814,7 +1859,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       eq(tasks.communityId, communityId),
       eq(tasks.origin, "HOA"),
       inArray(tasks.status, ["submitted", "acknowledged"]),
-      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+      ...(isAdmin ? [] : [await contractorTaskScope(userId)]),
     ))
     .groupBy(tasks.status);
 
@@ -1839,7 +1884,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       lte(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
       // @ts-ignore
       gte(tasks.windowEnd, new Date(todayDateStr + "T00:00:00.000Z")),
-      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+      ...(isAdmin ? [] : [await contractorTaskScope(userId)]),
     ))
     .orderBy(asc(tasks.windowEnd), asc(tasks.priority))
     .limit(20);
@@ -1852,7 +1897,7 @@ export async function getDashboardData(userId: string, communityId: string, isAd
       isNotNull(tasks.windowEnd),
       // @ts-ignore
       gt(tasks.windowStart, new Date(todayDateStr + "T23:59:59.999Z")),
-      ...(isAdmin ? [] : [eq(tasks.assignedTo, userId)]),
+      ...(isAdmin ? [] : [await contractorTaskScope(userId)]),
     ))
     .orderBy(asc(tasks.windowStart))
     .limit(3);
@@ -1977,7 +2022,7 @@ async function buildRecentCompletions(communityId: string, limit = 8, assignedTo
   const conditions = [
     eq(tasks.communityId, communityId),
     eq(tasks.status, "completed" as const),
-    ...(assignedTo ? [eq(tasks.assignedTo, assignedTo)] : []),
+    ...(assignedTo ? [await contractorTaskScope(assignedTo)] : []),
   ] as const;
 
   const completedTaskRows = await db.select().from(tasks)
@@ -2043,12 +2088,12 @@ export async function getDashboardDataForRole(
 
   const viewModel: DashboardViewModel = { role, communityId };
 
-  if (role === "contractor") {
+  if (isContractorSide(role)) {
     const [assignedActiveTasks, overdueTasks, requestsNeedingAcknowledgment, followUpResults, inWindowTasks, comingUpTasks] = await Promise.all([
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
         ))
         .orderBy(asc(tasks.dueDate), asc(tasks.priority))
@@ -2056,7 +2101,7 @@ export async function getDashboardDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           lt(tasks.dueDate, todayStart),
         ))
@@ -2065,7 +2110,7 @@ export async function getDashboardDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           eq(tasks.origin, "HOA"),
           eq(tasks.status, "submitted"),
         ))
@@ -2082,7 +2127,7 @@ export async function getDashboardDataForRole(
         .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           isNotNull(taskCompletions.followUpNeeded),
           ne(taskCompletions.followUpNeeded, ''),
@@ -2092,7 +2137,7 @@ export async function getDashboardDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
           isNotNull(tasks.windowEnd),
@@ -2106,7 +2151,7 @@ export async function getDashboardDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
           // @ts-ignore
@@ -2393,10 +2438,10 @@ export async function getTaskPageDataForRole(
     throw new Error(`getTaskPageDataForRole: unrecognised role "${role}"`);
   }
 
-  if (role === "contractor") {
+  if (isContractorSide(role)) {
     if (!communityId) {
       return {
-        role: "contractor",
+        role: role as "contractor" | "contractor_manager",
         meta,
         activeTasks: [],
         overdueTasks: [],
@@ -2410,7 +2455,7 @@ export async function getTaskPageDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
         ))
         .orderBy(asc(tasks.dueDate), asc(tasks.priority))
@@ -2418,7 +2463,7 @@ export async function getTaskPageDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           lt(tasks.dueDate, todayStart),
         ))
@@ -2427,7 +2472,7 @@ export async function getTaskPageDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           eq(tasks.origin, "HOA"),
           eq(tasks.status, "submitted"),
         ))
@@ -2436,7 +2481,7 @@ export async function getTaskPageDataForRole(
       db.select().from(tasks)
         .where(and(
           eq(tasks.communityId, communityId),
-          eq(tasks.assignedTo, userId),
+          await contractorTaskScope(userId),
           ne(tasks.status, "completed"),
           isNotNull(tasks.windowStart),
           // @ts-ignore – drizzle PgDate accepts Date at runtime despite string-mode TS types
@@ -2449,7 +2494,7 @@ export async function getTaskPageDataForRole(
     const recentCompletions = await buildTaskPageCompletions(communityId, 10, userId);
 
     return {
-      role: "contractor",
+      role: role as "contractor" | "contractor_manager",
       meta,
       activeTasks: activeTasks.map(toTaskPageItem),
       overdueTasks: overdueTasks.map(toTaskPageItem),
@@ -2757,7 +2802,7 @@ export async function searchAll(
       ),
     ];
     if (!isAdmin) {
-      taskConditions.push(eq(tasks.assignedTo, userId));
+      taskConditions.push(await contractorTaskScope(userId));
     }
 
     const taskRows = await db.select().from(tasks)
@@ -2869,9 +2914,23 @@ export async function getTemplateRuns(templateId?: string): Promise<TemplateRun[
     .orderBy(desc(templateRuns.runAt));
 }
 
-export async function bulkAssignTasks(taskIds: string[], assignedTo: string): Promise<number> {
+export class WorkAccessError extends Error {
+  readonly status = 403;
+}
+
+export async function bulkAssignTasks(taskIds: string[], assignedTo: string, managerId?: string): Promise<number> {
   return db.transaction(async tx => {
     const rows = await tx.select().from(tasks).where(inArray(tasks.id, taskIds)).for("update");
+    if (managerId) {
+      const [manager] = await tx.select().from(users).where(eq(users.id, managerId)).for("share");
+      const memberships = await tx.select().from(communityMembers).where(eq(communityMembers.userId, managerId)).for("share");
+      if (!manager?.companyId || manager.role !== "contractor_manager" ||
+          rows.length !== new Set(taskIds).size ||
+          rows.some(task => task.contractorCompanyId !== manager.companyId ||
+            !memberships.some(m => m.communityId === task.communityId))) {
+        throw new WorkAccessError("You do not have access to these tasks");
+      }
+    }
     for (const task of rows) {
       const assignee = await validateTaskAssignee(task.communityId, assignedTo, tx);
       if (task.contractorCompanyId && task.contractorCompanyId !== assignee.companyId) {
@@ -3596,6 +3655,17 @@ export async function deleteDriveFile(id: string): Promise<DriveFile> {
 export async function getDriveFile(id: string): Promise<DriveFile | null> {
   const [file] = await db.select().from(driveFiles).where(eq(driveFiles.id, id));
   return file || null;
+}
+
+export async function getManagerInvoices(userId: string, communityId?: string) {
+  return db.select({ invoice: invoices, communityName: communities.name }).from(invoices)
+    .innerJoin(communities, eq(communities.id, invoices.communityId))
+    .where(and(
+      sql`EXISTS (SELECT 1 FROM users manager JOIN community_members m ON m.user_id = manager.id
+        WHERE manager.id = ${userId} AND manager.role = 'contractor_manager'
+        AND manager.company_id = ${invoices.contractorCompanyId} AND m.community_id = ${invoices.communityId})`,
+      communityId ? eq(invoices.communityId, communityId) : undefined,
+    )).orderBy(desc(invoices.completionDate)).then(rows => rows.map(r => ({ ...r.invoice, communityName: r.communityName })));
 }
 
 export async function getInvoices(communityId?: string): Promise<(Invoice & { communityName?: string })[]> {

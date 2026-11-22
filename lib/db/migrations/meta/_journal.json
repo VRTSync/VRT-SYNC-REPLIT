@@ -169,6 +169,13 @@
       "when": 1795289366444,
       "tag": "0023_contractor_company_on_work",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795306664597,
+      "tag": "0024_contractor_manager_role",
+      "breakpoints": true
     }
   ]
 }

@@ -246,7 +246,7 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
 </div>
 <footer>&copy; 2026 VRTSync</footer>
 <script>
-const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard',client_admin:'/web/portfolio/dashboard'};
+const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',contractor_manager:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard',client_admin:'/web/portfolio/dashboard'};
 document.getElementById('btn').addEventListener('click',doLogin);
 document.getElementById('u').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('p').focus()}});
 document.getElementById('p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
@@ -311,6 +311,7 @@ const roleDashboard: Record<string, string> = {
   admin: "/web/admin/dashboard",
   property_manager: "/web/pm/dashboard",
   contractor: "/web/contractor/dashboard",
+  contractor_manager: "/web/contractor/dashboard",
   hoa_admin: "/web/hoa/dashboard",
   hoa_member: "/web/hoa/dashboard",
   client_admin: "/web/portfolio/dashboard",
@@ -369,7 +370,7 @@ app.get("/web/contractor", (_req: Request, res: Response) =>
   res.redirect("/web/contractor/dashboard")
 );
 
-app.get(/^\/web\/contractor\/.*$/, requireRole(["contractor"]), (_req: Request, res: Response) => {
+app.get(/^\/web\/contractor\/.*$/, requireRole(["contractor", "contractor_manager"]), (_req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(contractorShell);

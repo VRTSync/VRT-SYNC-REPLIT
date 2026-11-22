@@ -55,7 +55,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
           import * as realStorage from "./storage";
           import bcrypt from "bcryptjs";
           import { userRoleEnum, registerPushTokenSchema, completeTaskSchema, createHoaRequestSchema } from "@workspace/db";
-          const { requireAuth, requireAdmin, isHoaRole } = auth;
+          const { requireAuth, requireAdmin, isHoaRole, isContractorSide } = auth;
           const storage = { ...fixture.storage,
             toTaskView: realStorage.toTaskView,
             toTaskResponse: realStorage.toTaskResponse,

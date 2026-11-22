@@ -54,7 +54,7 @@ describe("public registration and managed-account regressions (transactional Pos
     const built = await build({
       stdin: {
         contents: `
-          import { registerAuthRoutes, loadCurrentUser, requireAdmin, requireAuth, isHoaRole, isClientRole } from "./auth";
+          import { registerAuthRoutes, loadCurrentUser, requireAdmin, requireAuth, isHoaRole, isClientRole, isContractorSide } from "./auth";
           import * as storage from "./storage";
           import bcrypt from "bcryptjs";
           import { userRoleEnum } from "@workspace/db";
@@ -293,12 +293,14 @@ describe("public registration and managed-account regressions (transactional Pos
     assert.ok(blocked.headers.get("retry-after"));
   });
 
-  it("keeps admin creation for all seven roles, HOA memberships, org assignment, limits and duplicates", async () => {
+  it("keeps admin creation for all roles, HOA memberships, org assignment, limits and duplicates", async () => {
     const cookie = await login(await createUser("admin"));
+    const company = await auth.storage.createCompany(`Registration contractor ${randomUUID()}`, "contractor");
     for (const role of schema.userRoleEnum.enumValues) {
       const body = registration({
         role, ...(role.startsWith("hoa_") ? { hoaCommunityId: communityId } : {}),
         ...(role === "client_admin" ? { organizationId } : {}),
+        ...(role === "contractor_manager" ? { companyId: company.id } : {}),
       });
       const res = await request("/api/admin/users", body, cookie);
       assert.equal(res.status, 201, `admin creates ${role}`);

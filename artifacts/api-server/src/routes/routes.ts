@@ -6,7 +6,7 @@ import path from "node:path";
 import multer from "multer";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, requireClientOrAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole } from "../auth";
+import { requireAuth, requireAdmin, requireAdminOrMapCreator, requireClient, requireClientOrAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping, isHoaRole, isMapCreatorRole, isClientRole, isContractorSide } from "../auth";
 import { ObjectStorageService, ObjectNotFoundError, ObjectForbiddenError, parseUploadURL } from "../objectStorage";
 import { ObjectPermission, buildCommunityAclPolicy, getObjectAclPolicy } from "../objectAcl";
 import * as storage from "../storage";
@@ -117,12 +117,13 @@ async function checkHoaLimits(communityId: string, role: string, excludeUserId?:
 
 /** Return the specified public validation error without changing access rules. */
 async function companySelectionError(role: string, companyId: unknown): Promise<string | null> {
+  if (role === "contractor_manager" && !companyId) return "Account managers must have a contractor company";
   if (companyId === undefined || companyId === null) return null;
-  if (!["contractor", "property_manager"].includes(role)) return "Only contractors and property managers can have a company";
+  if (!isContractorSide(role) && role !== "property_manager") return "Only contractors and property managers can have a company";
   if (typeof companyId !== "string" || !companyId) return "Company not found";
   const company = await storage.getCompanyById(companyId);
   if (!company?.isActive) return "Company not found";
-  if (company.kind !== (role === "contractor" ? "contractor" : "management_company")) return "Company type does not match the user's role";
+  if (company.kind !== (isContractorSide(role) ? "contractor" : "management_company")) return "Company type does not match the user's role";
   return null;
 }
 
@@ -165,6 +166,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const userId = req.session.userId;
     const objectStorageService = new ObjectStorageService();
     try {
+      if (req.currentUser!.role === "contractor_manager" &&
+          !await storage.canManagerReadTaskObject(req.currentUser!.id, req.path)) {
+        return void res.status(403).json({ error: "You do not have access to this task attachment" });
+      }
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       const canAccess = await objectStorageService.canAccessObjectEntity({
         objectFile,
@@ -348,6 +353,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get community bounds error:", error);
       res.status(500).json({ error: "Failed to compute community bounds" });
+    }
+  });
+
+  app.get("/api/communities/:id/crew", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.currentUser!;
+      if (!["admin", "contractor_manager"].includes(user.role)) return void res.status(403).json({ error: "Access denied" });
+      if (user.role === "contractor_manager" &&
+          (!user.companyId || !await storage.isUserMemberOfCommunity(user.id, req.params.id as string))) {
+        return void res.status(403).json({ error: "Access denied" });
+      }
+      const companyId = user.role === "admin" ? req.query.companyId : user.companyId;
+      if (typeof companyId !== "string" || !companyId) return void res.status(400).json({ error: "companyId is required" });
+      res.json(await storage.getCompanyCrew(req.params.id as string, companyId));
+    } catch (error) {
+      req.log.error({ error }, "Get crew error");
+      res.status(500).json({ error: "Failed to fetch crew" });
     }
   });
 
@@ -565,7 +587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (isHoaRole(user.role) && user.hoaCommunityId) {
         communityId = user.hoaCommunityId;
-      } else if (!communityId && user.role === "contractor") {
+      } else if (!communityId && (user.role === "contractor" || user.role === "contractor_manager")) {
         const memberships = await storage.getUserCommunities(user.id);
         communityId = memberships.length > 0 ? memberships[0].community.id : null;
       }
@@ -657,7 +679,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.json([]);
       }
 
-      if (!communityId) {
+      if (!communityId && user.role !== "contractor_manager") {
         const memberships = await storage.getUserCommunities(user.id);
         if (memberships.length > 0) {
           communityId = memberships[0].community.id;
@@ -740,22 +762,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const actor = await storage.getUserById(req.session.userId!);
       if (!actor) return void res.status(401).json({ error: "User not found" });
-      if (actor.role !== "admin" && actor.role !== "property_manager") {
+      if (actor.role !== "admin" && actor.role !== "property_manager" && actor.role !== "contractor_manager") {
         return void res.status(403).json({ error: "Only admins and property managers can create tasks" });
       }
       const parsed = insertTaskSchema.safeParse(req.body);
       if (!parsed.success) {
         return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
-      if (actor.role === "property_manager") {
+      if (actor.role === "contractor_manager" && !actor.companyId) {
+        return void res.status(403).json({ error: "Access denied" });
+      }
+      if (actor.role === "property_manager" || actor.role === "contractor_manager") {
         const isMember = await storage.isUserMemberOfCommunity(actor.id, parsed.data.communityId);
         if (!isMember) {
           return void res.status(403).json({ error: "You are not a member of this community" });
         }
       }
-      if (parsed.data.assignedTo) await storage.validateTaskAssignee(parsed.data.communityId, parsed.data.assignedTo);
+      if (parsed.data.assignedTo) {
+        const assignee = await storage.validateTaskAssignee(parsed.data.communityId, parsed.data.assignedTo);
+        if (actor.role === "contractor_manager" && assignee.companyId !== actor.companyId) {
+          return void res.status(400).json({ error: "Assignee works for a different contractor" });
+        }
+      }
       const task = await storage.createTask({
-        contractorCompanyId: parsed.data.contractorCompanyId,
+        contractorCompanyId: actor.role === "contractor_manager" ? actor.companyId : parsed.data.contractorCompanyId,
         communityId: parsed.data.communityId,
         title: parsed.data.title,
         description: parsed.data.description ?? undefined,
@@ -795,7 +825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const updatingUser = await storage.getUserById(req.session.userId!);
-      const isManager = updatingUser?.role === "admin" || updatingUser?.role === "property_manager";
+      const isManager = updatingUser?.role === "admin" || updatingUser?.role === "property_manager" || updatingUser?.role === "contractor_manager";
       const isFieldWorker = updatingUser?.role === "contractor" &&
         task.assignedTo === req.session.userId;
       if (!isManager && !isFieldWorker) {
@@ -808,11 +838,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (input.status === "completed" && updatingUser?.role !== "admin") {
         return void res.status(400).json({ error: "Use the completion form to complete a task" });
       }
-      const parsed = (isManager ? updateTaskManagerSchema : updateTaskFieldSchema).safeParse(input);
+      const schema = updatingUser?.role === "contractor_manager"
+        ? updateTaskManagerSchema.omit({ contractorCompanyId: true })
+        : isManager ? updateTaskManagerSchema : updateTaskFieldSchema;
+      const parsed = schema.safeParse(input);
       if (!parsed.success) {
         return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       }
       const data: ReturnType<typeof updateTaskManagerSchema.parse> = parsed.data;
+      if (updatingUser?.role === "contractor_manager") delete data.contractorCompanyId;
       if (data.assignedTo !== undefined && data.assignedTo !== null) {
         await storage.validateTaskAssignee(task.communityId, data.assignedTo);
       }
@@ -824,7 +858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return void res.status(403).json({ error: "Contractors cannot change priority on HOA requests" });
         }
         if (data.status === "acknowledged") {
-          if (updatingUser?.role !== "contractor" && updatingUser?.role !== "admin") {
+          if (!["contractor", "contractor_manager", "admin"].includes(updatingUser?.role || "")) {
             return void res.status(403).json({ error: "Only contractors and admins can acknowledge HOA requests" });
           }
         }
@@ -907,7 +941,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(403).json({ error: "You do not have access to this task" });
       }
       const completingUser = await storage.getUserById(req.session.userId!);
-      if (completingUser?.role !== "admin" &&
+      if (completingUser?.role !== "admin" && completingUser?.role !== "contractor_manager" &&
           !(completingUser?.role === "contractor" &&
             existingTask.assignedTo === req.session.userId)) {
         return void res.status(403).json({ error: "Only the assigned contractor can complete this task" });
@@ -1815,7 +1849,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return void res.status(400).json({ error: limitCheck });
         }
       }
-      const companyError = companyId === undefined ? null : await companySelectionError(role, companyId);
+      const targetUser = await storage.getUserById(req.params.id as string);
+      const effectiveCompanyId = companyId === undefined && isContractorSide(targetUser?.role || "") && isContractorSide(role)
+        ? targetUser?.companyId : companyId;
+      const companyError = companyId === undefined && role !== "contractor_manager" ? null : await companySelectionError(role, effectiveCompanyId);
       if (companyError) return void res.status(400).json({ error: companyError });
       const updated = await storage.updateUserRole(req.params.id as string, role, isHoaRole(role) ? hoaCommunityId : null, companyId);
       if (!updated) {
@@ -1860,7 +1897,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return void res.status(409).json({ error: "Username already taken" });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
-      const companyError = companyId === undefined ? null : await companySelectionError(role || "contractor", companyId);
+      const companyError = await companySelectionError(role || "contractor", companyId);
       if (companyError) return void res.status(400).json({ error: companyError });
       const user = await storage.createAdminUser({
         username,
@@ -2376,7 +2413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isMember = await storage.isUserMemberOfCommunity(user.id, asset.communityId);
         if (!isMember) return void res.status(403).json({ error: "You do not have access to this asset's history" });
       }
-      const history = await storage.getAssetWorkHistory(asset.id);
+      const history = await storage.getAssetWorkHistory(asset.id, req.currentUser!.role === "contractor_manager" ? req.currentUser!.id : undefined);
       res.json(history);
     } catch (error) {
       console.error("Get asset history error:", error);
@@ -3990,7 +4027,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.generatePackManifest(communityId),
         storage.generateAssetIndex(communityId),
         storage.generateGeojsonBundle(communityId),
-        storage.generateWorkHistorySnapshot(communityId),
+        storage.generateWorkHistorySnapshot(communityId, 5, user.role === "contractor_manager" ? user.id : undefined),
         storage.generateSearchIndex(communityId, user.id, isAdmin),
       ]);
 
@@ -4200,16 +4237,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk assign tasks
-  app.post("/api/tasks/bulk/assign", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/tasks/bulk/assign", requireAuth, async (req: Request, res: Response) => {
     try {
+      const actor = req.currentUser!;
+      if (!["admin", "contractor_manager"].includes(actor.role)) return void res.status(403).json({ error: "Admin access required" });
       const { taskIds, assignedTo } = req.body;
       if (!Array.isArray(taskIds) || taskIds.length === 0 || !assignedTo) {
         return void res.status(400).json({ error: "taskIds[] and assignedTo are required" });
       }
-      const count = await storage.bulkAssignTasks(taskIds, assignedTo);
+      const count = await storage.bulkAssignTasks(taskIds, assignedTo, actor.role === "contractor_manager" ? actor.id : undefined);
       res.json({ updated: count });
     } catch (error) {
       if (error instanceof storage.WorkValidationError) return void res.status(400).json({ error: error.message });
+      if (error instanceof storage.WorkAccessError) return void res.status(403).json({ error: error.message });
       console.error("Bulk assign error:", error);
       res.status(500).json({ error: "Failed to bulk assign tasks" });
     }
@@ -5346,6 +5386,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) return void res.status(401).json({ error: "User not found" });
       if (user.role === 'contractor') return void res.status(403).json({ error: "Access denied" });
 
+      if (user.role === "contractor_manager") {
+        const communityId = req.query.communityId as string | undefined;
+        if (communityId && !await storage.isUserMemberOfCommunity(user.id, communityId)) {
+          return void res.status(403).json({ error: "Access denied" });
+        }
+        return void res.json(await storage.getManagerInvoices(user.id, communityId));
+      }
+
       if (user.role === 'admin') {
         const communityId = req.query.communityId as string | undefined;
         const rows = await storage.getInvoices(communityId || undefined);
@@ -5392,6 +5440,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoice = await storage.getInvoiceById((req.params.id as string));
       if (!invoice) return void res.status(404).json({ error: "Invoice not found" });
 
+      if (user.role === "contractor_manager") {
+        if (!user.companyId || invoice.contractorCompanyId !== user.companyId ||
+            !await storage.isUserMemberOfCommunity(user.id, invoice.communityId)) {
+          return void res.status(403).json({ error: "Access denied" });
+        }
+        return void res.json(invoice);
+      }
+
       if (isClientRole(user.role)) {
         const orgId = user.organizationId || req.session.organizationId;
         if (!orgId) return void res.status(403).json({ error: "Access denied: no organization" });
@@ -5416,9 +5472,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/invoices", requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/invoices", requireAuth, async (req: Request, res: Response) => {
     try {
-      const parsed = insertInvoiceSchema.safeParse(req.body);
+      const actor = req.currentUser!;
+      if (!["admin", "contractor_manager"].includes(actor.role)) return void res.status(403).json({ message: "Admin access required" });
+      let input = req.body;
+      if (actor.role === "contractor_manager") {
+        if (!actor.companyId || !await storage.isUserMemberOfCommunity(actor.id, input.communityId)) {
+          return void res.status(403).json({ error: "Access denied" });
+        }
+        const company = await storage.getCompanyById(actor.companyId);
+        if (!company) return void res.status(403).json({ error: "Access denied" });
+        if (input.status === "approved") return void res.status(403).json({ error: "Only VRTSync staff can approve invoices" });
+        if (input.status !== undefined && !["draft", "submitted"].includes(input.status)) {
+          return void res.status(400).json({ error: "Account managers can create only draft or submitted invoices" });
+        }
+        input = { ...input, contractorCompanyId: actor.companyId, contractor: company.name };
+      }
+      const parsed = insertInvoiceSchema.safeParse(input);
       if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       if (parsed.data.attachmentLayerId) {
         const layer = await storage.getMapLayerById(parsed.data.attachmentLayerId);
@@ -5435,11 +5506,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
+  app.put("/api/invoices/:id", requireAuth, async (req: Request, res: Response) => {
     try {
+      const actor = req.currentUser!;
+      if (!["admin", "contractor_manager"].includes(actor.role)) return void res.status(403).json({ message: "Admin access required" });
       const existing = await storage.getInvoiceById((req.params.id as string));
       if (!existing) return void res.status(404).json({ error: "Invoice not found" });
-      const parsed = updateInvoiceSchema.safeParse(req.body);
+      if (actor.role === "contractor_manager") {
+        if (!actor.companyId || actor.companyId !== existing.contractorCompanyId ||
+            !await storage.isUserMemberOfCommunity(actor.id, existing.communityId)) {
+          return void res.status(403).json({ error: "Access denied" });
+        }
+        if (req.body.status === "approved") return void res.status(403).json({ error: "Only VRTSync staff can approve invoices" });
+        if (req.body.status !== undefined && !["draft", "submitted", "paid", "void"].includes(req.body.status)) {
+          return void res.status(400).json({ error: "Invalid invoice status" });
+        }
+      }
+      const parsed = (actor.role === "contractor_manager"
+        ? updateInvoiceSchema.omit({ contractorCompanyId: true }) : updateInvoiceSchema).safeParse(req.body);
       if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const targetCommunityId = (parsed.data as any).communityId || existing.communityId;
       if (parsed.data.attachmentLayerId) {
@@ -5457,10 +5541,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoices/:id", requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/invoices/:id", requireAuth, async (req: Request, res: Response) => {
     try {
+      const actor = req.currentUser!;
+      if (!["admin", "contractor_manager"].includes(actor.role)) return void res.status(403).json({ message: "Admin access required" });
       const existing = await storage.getInvoiceById((req.params.id as string));
       if (!existing) return void res.status(404).json({ error: "Invoice not found" });
+      if (actor.role === "contractor_manager" && (!actor.companyId || actor.companyId !== existing.contractorCompanyId ||
+          !await storage.isUserMemberOfCommunity(actor.id, existing.communityId) || existing.status !== "draft")) {
+        return void res.status(403).json({ error: "Only your company's draft invoices can be deleted" });
+      }
       await storage.deleteInvoice((req.params.id as string));
       res.status(204).send();
     } catch (error) {

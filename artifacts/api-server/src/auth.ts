@@ -97,6 +97,10 @@ export function isClientRole(role: string): boolean {
   return role === 'client_admin';
 }
 
+export function isContractorSide(role: string): boolean {
+  return role === "contractor" || role === "contractor_manager";
+}
+
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.currentUser) {
     return void res.status(401).json({ message: "Not authenticated" });
