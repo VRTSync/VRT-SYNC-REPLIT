@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 import express from "express";
 import { policyFixture } from "./testUtils/policyFixture";
+import { readRouteFixtureSource } from "./testUtils/routeFixtureSource";
 
 const main = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
 const tasks = readFileSync(new URL("./routes/tasks.ts", import.meta.url), "utf8");
@@ -14,6 +15,412 @@ const inventory = [
   "get /api/tasks/:id/task-attachments", "put /api/tasks/:id/link", "get /api/tasks/:id/link",
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
+
+describe("community, dashboard and search route structure", () => {
+  const modules = [
+    { file: "communities", register: "registerCommunityRoutes", inventory: [
+      ["get /api/communities", "requireAuth"],
+      ["post /api/communities", "requireAdminOrMapCreator"],
+      ["patch /api/communities/:id", "requireAdmin"],
+      ["get /api/communities/:id/bounds", "requireAuth"],
+      ["get /api/communities/:id/crew", "requireAuth"],
+      ["get /api/communities/:id/members", "requireAuth"],
+      ["post /api/communities/:id/members", "requireAdmin"],
+      ["delete /api/communities/:id/members/:userId", "requireAdmin"],
+      ["delete /api/communities/:id/companies/:companyId", "requireAdmin"],
+      ["get /api/communities/:id/controllers", "requireAuth"],
+    ] },
+    { file: "dashboard", register: "registerDashboardRoutes", inventory: [
+      ["get /api/dashboard", "requireAuth"], ["get /api/dashboard/role", "requireAuth"],
+    ] },
+    { file: "search", register: "registerSearchRoutes", inventory: [
+      ["get /api/communities/:communityId/assets/completeness", "requireAdmin"],
+      ["get /api/communities/:communityId/assets/incomplete", "requireAdmin"],
+      ["get /api/search", "requireAuth"],
+    ] },
+  ];
+  const registrations = (source: string) => [...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+    .map(([, method, path]) => `${method} ${path}`);
+  const allRegistrations = readdirSync(new URL("./routes/", import.meta.url))
+    .filter(file => file.endsWith(".ts"))
+    .flatMap(file => registrations(readFileSync(new URL(`./routes/${file}`, import.meta.url), "utf8")));
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`retains the exact ${module.file} inventory, order, guards and wrappers`, () => {
+      const expected = module.inventory.map(([path]) => path);
+      assert.deepEqual(registrations(source), expected);
+      for (const path of expected) assert.equal(allRegistrations.filter(found => found === path).length, 1, path);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.equal((source.match(/route\(async /g) ?? []).length, expected.length);
+      assert.equal((source.match(/^    try \{/gm) ?? []).length, expected.length);
+      assert.equal((source.match(/^    \} catch \(error\) \{/gm) ?? []).length, expected.length);
+      const declarations = source.split("\n").filter(line => /^  app\./.test(line));
+      declarations.forEach((line, i) => {
+        assert.ok(line.includes(`", ${module.inventory[i][1]}, route(async `), line);
+      });
+    });
+    it(`keeps all ${module.file} permission decisions in policy`, () => {
+      assert.doesNotMatch(source, /\.role\s*[!=]==?|\.includes\([^)]*\brole\b/);
+      assert.doesNotMatch(source, /isHoaRole\s*\(|isMapCreatorRole\s*\(|isUserMemberOfCommunity\s*\(|userCanAccessCommunity\s*\(/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("preserves register positions and leaves only the approved service paths in main", () => {
+    assert.match(main, /registerObjectRoutes\(app\);\s*registerCommunityRoutes\(app\);\s*registerDashboardRoutes\(app\);\s*registerTaskRoutes\(app\);/);
+    assert.match(main, /registerMapLayerRoutes\(app\);\s*registerSearchRoutes\(app\);\s*\/\/ ── Asset Types catalogue/);
+    assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:dashboard|search)/);
+    // Explicitly approved F3h exception: these service routes belong to F3j.
+    assert.deepEqual(registrations(main).filter(path => /^\w+ \/api\/communities(?:\/|$)/.test(path)), [
+      "get /api/communities/:communityId/service-schedules",
+      "post /api/communities/:communityId/service-schedules",
+      "get /api/communities/:communityId/service-visits",
+    ]);
+  });
+  it("reconstructs 10/2/3 handlers with the original cross-module fixture boundaries", () => {
+    const harness = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
+    for (const [file, register, count] of [
+      ["communities", "registerCommunityRoutes", 10], ["dashboard", "registerDashboardRoutes", 2],
+      ["search", "registerSearchRoutes", 3],
+    ] as const) assert.ok(harness.includes(`["${file}", "${register}", ${count}]`));
+    const fixture = readRouteFixtureSource();
+    const between = (start: string, end: string) => {
+      const from = fixture.indexOf(start), to = fixture.indexOf(end, from + start.length);
+      assert.ok(from >= 0 && to > from, start);
+      return fixture.slice(from, to);
+    };
+    assert.deepEqual(registrations(between('app.get("/api/map-layers/:id/summary",',
+      'app.get("/api/communities/:communityId/assets/completeness",')), ["get /api/map-layers/:id/summary"]);
+    assert.deepEqual(registrations(between('app.get("/api/communities/:id/crew",',
+      'app.get("/api/communities/:id/controllers",')), modules[0].inventory.slice(4, 9).map(([path]) => path));
+    assert.deepEqual(registrations(between('app.get("/api/dashboard",',
+      'app.get("/api/admin/migrations",')).slice(0, 2), modules[1].inventory.map(([path]) => path));
+    assert.deepEqual(registrations(between('app.get("/api/search",', "// ── Asset Types catalogue")), ["get /api/search"]);
+    assert.ok(between('app.post("/api/objects/confirm",', 'app.get("/api/communities",'));
+  });
+  it("retains every other user lookup, the list actor exception and the two non-decision role values", () => {
+    const communities = readFileSync(new URL("./routes/communities.ts", import.meta.url), "utf8");
+    const dashboard = readFileSync(new URL("./routes/dashboard.ts", import.meta.url), "utf8");
+    const search = readFileSync(new URL("./routes/search.ts", import.meta.url), "utf8");
+    assert.equal((communities.match(/storage\.getUserById\(/g) ?? []).length, 1);
+    assert.equal((dashboard.match(/storage\.getUserById\(/g) ?? []).length, 2);
+    assert.equal((search.match(/storage\.getUserById\(/g) ?? []).length, 1);
+    assert.match(communities, /policy\.communityListPlan\(policy\.actorFromUser\(req\.currentUser!\)\)/);
+    assert.deepEqual(communities.match(/\b\w+\.role\b/g), ["user.role"]);
+    assert.match(communities, /role: m\.user\.role/);
+    assert.deepEqual(dashboard.match(/\b\w+\.role\b/g), ["user.role"]);
+    assert.match(dashboard, /storage\.getDashboardDataForRole\(user\.role, user\.id, communityId\)/);
+    assert.doesNotMatch(search, /\.role\b/);
+  });
+});
+
+describe("community, dashboard and search handler response compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
+  const users: Record<string, any> = Object.fromEntries(roles.map(role => [role, {
+    id: role, role, companyId: role === "contractor_manager" ? "own-company" : null,
+    hoaCommunityId: role === "hoa_admin" || role === "hoa_member" ? "member" : null,
+    organizationId: role === "client_admin" ? "org" : null,
+  }]));
+  users.unassigned = { id: "unassigned", role: "hoa_admin", hoaCommunityId: null };
+  const communities = [{ id: "member", organizationId: null }, { id: "branch", organizationId: "org" }];
+  async function withHandlers(overrides: Record<string, any>, check: (
+    request: (user: string, path: string, method?: string, body?: unknown) =>
+      Promise<{ status: number; body: any }>,
+  ) => Promise<void>) {
+    const { api } = await policyFixture({
+      getUserById: async (id: string) => users[id],
+      getCommunities: async () => communities,
+      getCommunityById: async (id: string) => communities.find(community => community.id === id),
+      getUserCommunities: async () => communities.map(community => ({ community })),
+      isUserMemberOfCommunity: async (_id: string, community: string) => ["member", "branch"].includes(community),
+      getDashboardData: async (...args: any[]) => ({ args }),
+      getDashboardDataForRole: async (...args: any[]) => ({ args }),
+      searchAll: async (...args: any[]) => ({ args }),
+      ...overrides,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const id = req.headers["x-user"] as string;
+      req.currentUser = users[id];
+      req.session = { userId: id } as any;
+      req.log = { error() {} } as any;
+      next();
+    });
+    api.registerCommunityRoutes(app);
+    api.registerDashboardRoutes(app);
+    api.registerSearchRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>(resolve => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      await check(async (user, path, method = "GET", body) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method, headers: { "x-user": user, "Content-Type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: response.status, body: await response.json() };
+      });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }
+
+  it("preserves every role's community picker and uses only the approved live list actor", async () => {
+    await withHandlers({
+      getUserById: async () => { throw Error("The list must not re-fetch its actor"); },
+    }, async request => {
+      for (const role of roles) {
+        assert.deepEqual(await request(role, "/api/communities"), {
+          status: 200, body: role === "admin" || role === "map_creator" ? communities : [communities[0]],
+        });
+      }
+      assert.deepEqual(await request("unassigned", "/api/communities"), { status: 200, body: [communities[0]] });
+    });
+    await withHandlers({ getCommunityById: async () => undefined }, async request => {
+      assert.deepEqual(await request("hoa_admin", "/api/communities"), { status: 200, body: [] });
+    });
+  });
+
+  it("retains create/rename inputs and adds only map creators as new members", async () => {
+    const calls: any[][] = [];
+    await withHandlers({
+      createCommunity: async (data: any) => { calls.push(["create", data]); return { id: "created", ...data }; },
+      addCommunityMember: async (...args: any[]) => { calls.push(["join", ...args]); },
+      updateCommunity: async (id: string, data: any) => id === "missing" ? undefined : { id, ...data },
+    }, async request => {
+      const invalid = await request("admin", "/api/communities", "POST", {});
+      assert.equal(invalid.status, 400);
+      assert.equal(invalid.body.error, "Invalid input");
+      assert.ok(invalid.body.details);
+      assert.deepEqual(calls, []);
+      for (const role of ["admin", "map_creator"]) {
+        assert.deepEqual(await request(role, "/api/communities", "POST", { name: "New", description: "Desc", ignored: true }),
+          { status: 201, body: { id: "created", name: "New", description: "Desc" } });
+      }
+      assert.deepEqual(calls, [
+        ["create", { name: "New", description: "Desc" }],
+        ["create", { name: "New", description: "Desc" }], ["join", "created", "map_creator"],
+      ]);
+      assert.deepEqual(await request("admin", "/api/communities/member", "PATCH", { name: "Renamed", description: null, ignored: true }),
+        { status: 200, body: { id: "member", name: "Renamed", description: null } });
+      assert.deepEqual(await request("admin", "/api/communities/missing", "PATCH", { name: "Renamed" }),
+        { status: 404, body: { error: "Community not found" } });
+    });
+  });
+
+  it("retains member-field visibility for every role", async () => {
+    await withHandlers({
+      getCommunityById: async (id: string) => ({ id, organizationId: "org" }),
+      getCommunityMembers: async () => [{
+        id: "membership", userId: "crew", joinedAt: "date", companyName: "Company",
+        user: { displayName: "Crew", username: "private", role: "contractor" },
+      }],
+    }, async request => {
+      for (const role of roles) assert.deepEqual(await request(role, "/api/communities/member/members"), {
+        status: 200, body: [{
+          id: "membership", userId: "crew", displayName: "Crew", role: "contractor", joinedAt: "date",
+          ...(role === "admin" ? { username: "private" } : {}),
+          ...(role === "admin" || role === "property_manager" ? { companyName: "Company" } : {}),
+        }],
+      });
+    });
+  });
+
+  it("retains membership administration responses, company checks and input precedence", async () => {
+    const calls: any[][] = [];
+    await withHandlers({
+      getCompanyById: async (id: string) => id === "missing" ? undefined : { id, isActive: id !== "inactive" },
+      getCompanyUserIds: async (id: string) => id === "empty" ? [] : ["company-user"],
+      addCommunityMembers: async (...args: any[]) => { calls.push(["add", ...args]); return { added: 1, skipped: 0 }; },
+      removeCommunityMember: async (...args: any[]) => { calls.push(["remove", ...args]); },
+      removeCompanyCommunityMembers: async (...args: any[]) => { calls.push(["remove-company", ...args]); return { removed: 1 }; },
+    }, async request => {
+      const path = "/api/communities/member/members";
+      for (const [body, ids] of [
+        [{ userId: "single" }, ["single"]],
+        [{ userIds: ["list"], userId: "ignored" }, ["list"]],
+        [{ companyId: "active", userIds: ["ignored"] }, ["company-user"]],
+      ] as const) {
+        assert.deepEqual(await request("admin", path, "POST", body), { status: 201, body: { added: 1, skipped: 0 } });
+        assert.deepEqual(calls.at(-1), ["add", "member", ids]);
+      }
+      assert.deepEqual(await request("admin", path, "POST", {}), { status: 400, body: { error: "userId or userIds[] is required" } });
+      for (const companyId of ["missing", null, 42]) assert.deepEqual(
+        await request("admin", path, "POST", { companyId }), { status: 404, body: { error: "Company not found" } });
+      assert.deepEqual(await request("admin", path, "POST", { companyId: "inactive" }),
+        { status: 400, body: { error: "Company not found" } });
+      assert.deepEqual(await request("admin", path, "POST", { companyId: "empty" }), { status: 201, body: { added: 0, skipped: 0 } });
+      assert.deepEqual(await request("admin", path + "/crew", "DELETE"), { status: 200, body: { message: "Member removed" } });
+      assert.deepEqual(calls.at(-1), ["remove", "member", "crew"]);
+      assert.deepEqual(await request("admin", "/api/communities/member/companies/missing", "DELETE"),
+        { status: 404, body: { error: "Company not found" } });
+      assert.deepEqual(await request("admin", "/api/communities/member/companies/active", "DELETE"), { status: 200, body: { removed: 1 } });
+      assert.deepEqual(calls.at(-1), ["remove-company", "member", "active"]);
+    });
+  });
+
+  it("retains crew role/company restrictions and validation responses", async () => {
+    await withHandlers({ getCompanyCrew: async (...args: any[]) => args }, async request => {
+      assert.deepEqual(await request("admin", "/api/communities/outside/crew?companyId=selected"),
+        { status: 200, body: ["outside", "selected"] });
+      assert.deepEqual(await request("admin", "/api/communities/member/crew"),
+        { status: 400, body: { error: "companyId is required" } });
+      assert.deepEqual(await request("admin", "/api/communities/member/crew?companyId=a&companyId=b"),
+        { status: 400, body: { error: "companyId is required" } });
+      assert.deepEqual(await request("contractor_manager", "/api/communities/member/crew?companyId=foreign"),
+        { status: 200, body: ["member", "own-company"] });
+      assert.deepEqual(await request("contractor_manager", "/api/communities/outside/crew"),
+        { status: 403, body: { error: "Access denied" } });
+      for (const role of roles.filter(role => role !== "admin" && role !== "contractor_manager")) {
+        assert.deepEqual(await request(role, "/api/communities/member/crew?companyId=own-company"),
+          { status: 403, body: { error: "Access denied" } });
+      }
+    });
+  });
+
+  it("retains dashboard flags, role arguments, HOA query ignoring and unassigned denial", async () => {
+    await withHandlers({}, async request => {
+      for (const role of roles) {
+        assert.deepEqual(await request(role, "/api/dashboard?communityId=member"),
+          { status: 200, body: { args: [role, "member", role === "admin"] } });
+        assert.deepEqual(await request(role, "/api/dashboard"),
+          { status: 400, body: { error: "communityId is required" } });
+        assert.deepEqual(await request(role, "/api/dashboard?communityId=outside"), role === "admin" ?
+          { status: 200, body: { args: [role, "outside", true] } } :
+          { status: 403, body: { error: "You are not a member of this community" } });
+        const hoa = role === "hoa_admin" || role === "hoa_member";
+        assert.deepEqual(await request(role, "/api/dashboard/role?communityId=member"),
+          { status: 200, body: { args: [role, role, "member"] } });
+        assert.deepEqual(await request(role, "/api/dashboard/role"), hoa ?
+          { status: 200, body: { args: [role, role, "member"] } } :
+          { status: 400, body: { error: "communityId is required" } });
+        assert.deepEqual(await request(role, "/api/dashboard/role?communityId=outside"),
+          hoa || role === "admin" ? { status: 200, body: { args: [role, role, hoa ? "member" : "outside"] } } :
+            { status: 403, body: { error: "You are not a member of this community" } });
+      }
+      for (const query of ["", "?communityId=member"]) assert.deepEqual(await request("unassigned", "/api/dashboard/role" + query),
+        { status: 403, body: { error: "HOA user is not assigned to a community" } });
+    });
+  });
+
+  it("retains search trimming, type parsing, role flags and commercial-branch exclusions", async () => {
+    await withHandlers({}, async request => {
+      for (const role of roles) {
+        assert.deepEqual(await request(role, "/api/search?q=%20find%20&types=task,%20asset%20,,"),
+          { status: 200, body: { args: ["find", role === "admin" ? ["member", "branch"] : ["member"],
+            ["task", "asset"], role, role === "admin"] } });
+        assert.deepEqual(await request(role, "/api/search?q=find&communityId=member"),
+          { status: 200, body: { args: ["find", ["member"], [], role, role === "admin"] } });
+        for (const community of ["branch", "outside"]) {
+          assert.deepEqual(await request(role, `/api/search?q=find&communityId=${community}`), role === "admin" ?
+            { status: 200, body: { args: ["find", [community], [], role, true] } } :
+            { status: 403, body: { error: "Not a member of this community" } });
+        }
+      }
+    });
+  });
+
+  it("keeps empty-search short-circuiting and all four historical missing-user 401 responses", async () => {
+    const lookups: string[] = [];
+    await withHandlers({ getUserById: async (id: string) => { lookups.push(id); return undefined; } }, async request => {
+      assert.deepEqual(await request("missing", "/api/search?q=%20"), { status: 200, body: [] });
+      assert.deepEqual(lookups, []);
+      for (const path of ["/api/dashboard", "/api/dashboard/role", "/api/search?q=find", "/api/communities/member/controllers"]) {
+        assert.deepEqual(await request("missing", path), { status: 401, body: { error: "User not found" } });
+      }
+      assert.deepEqual(lookups, ["missing", "missing", "missing", "missing"]);
+    });
+  });
+
+  it("retains completeness counts, required-field calculation and incomplete query arguments", async () => {
+    const propertyReads: string[] = [];
+    await withHandlers({
+      assetTypeRows: async () => [{ key: "tree", requiredKeys: ["species", "size"] }],
+      getAssetsByCommunitySorted: async (...args: any[]) => {
+        assert.deepEqual(args, ["member", "tree", true]);
+        return [
+          { id: "complete", label: "Complete", assetType: "tree", isArchived: false },
+          { id: "incomplete", label: "Incomplete", assetType: "tree", isArchived: false },
+          { id: "archived", assetType: "tree", isArchived: true },
+        ];
+      },
+      getAssetProperties: async (id: string) => {
+        propertyReads.push(id);
+        return id === "complete" ? [{ key: "species" }, { key: "size" }] : [{ key: "species" }];
+      },
+      getIncompleteAssets: async (...args: any[]) => args,
+    }, async request => {
+      assert.deepEqual(await request("admin", "/api/communities/member/assets/completeness?type=tree"), {
+        status: 200, body: { total: 3, active: 2, archived: 1, missingRequired: 1,
+          missingRequiredAssets: [{ id: "incomplete", label: "Incomplete", assetType: "tree", missingKeys: ["size"] }] },
+      });
+      assert.deepEqual(propertyReads, ["complete", "incomplete"]);
+      assert.deepEqual(await request("admin", "/api/communities/member/assets/incomplete?assetType=tree&mapLayerId=layer&missingKey=size"),
+        { status: 200, body: ["member", "tree", "layer", "size"] });
+    });
+  });
+
+  it("retains controller membership checks and controller/zone response shaping", async () => {
+    await withHandlers({
+      getAssetsByCommunitySorted: async (_id: string, type: string) => type === "controller" ? [
+        { id: "archived", isArchived: true }, { id: "controller", label: "Control", featureRef: "ref", latitude: 1, longitude: 2 },
+      ] : [
+        { id: "zone", label: "Zone", featureRef: "zone-ref", latitude: 3, longitude: 4 },
+        { id: "archived-zone", isArchived: true },
+      ],
+      getAssetPropertiesBulk: async () => [
+        { assetId: "controller", key: "controllerKey", value: "A" },
+        { assetId: "zone", key: "controllerFeatureRef", value: "ref" },
+        { assetId: "zone", key: "zoneNumber", value: "2" },
+      ],
+    }, async request => {
+      assert.deepEqual(await request("admin", "/api/communities/outside/controllers"), {
+        status: 200, body: [{
+          id: "controller", label: "Control", featureRef: "ref", controllerKey: "A", controllerColor: "#999999",
+          latitude: 1, longitude: 2, zoneCount: 1, zones: [{
+            id: "zone", label: "Zone", featureRef: "zone-ref", zoneNumber: 2, zoneType: null, zoneLabelShort: null,
+            zoneColor: null, valveBoxRef: null, valveBoxLabel: null, latitude: 3, longitude: 4,
+          }],
+        }],
+      });
+      for (const role of roles.filter(role => role !== "admin")) assert.deepEqual(
+        await request(role, "/api/communities/outside/controllers"),
+        { status: 403, body: { error: "You are not a member of this community" } });
+    });
+  });
+
+  it("retains each moved handler's historical 500 body", async () => {
+    const fail = async () => { throw Error("Expected fixture failure"); };
+    await withHandlers({
+      getCommunities: fail, createCommunity: fail, updateCommunity: fail, getCommunityBounds: fail,
+      getCompanyCrew: fail, getCommunityMembers: fail, addCommunityMembers: fail, removeCommunityMember: fail,
+      getCompanyById: fail, getAssetsByCommunitySorted: fail, getDashboardData: fail,
+      getDashboardDataForRole: fail, getIncompleteAssets: fail, searchAll: fail,
+    }, async request => {
+      for (const [method, path, body, message] of [
+        ["GET", "/api/communities", undefined, "Failed to fetch communities"],
+        ["POST", "/api/communities", { name: "New" }, "Failed to create community"],
+        ["PATCH", "/api/communities/member", {}, "Failed to update community"],
+        ["GET", "/api/communities/member/bounds", undefined, "Failed to compute community bounds"],
+        ["GET", "/api/communities/member/crew?companyId=company", undefined, "Failed to fetch crew"],
+        ["GET", "/api/communities/member/members", undefined, "Failed to fetch members"],
+        ["POST", "/api/communities/member/members", { userId: "crew" }, "Failed to add member"],
+        ["DELETE", "/api/communities/member/members/crew", undefined, "Failed to remove member"],
+        ["DELETE", "/api/communities/member/companies/company", undefined, "Failed to remove company members"],
+        ["GET", "/api/communities/member/controllers", undefined, "Failed to fetch controllers"],
+        ["GET", "/api/dashboard?communityId=member", undefined, "Failed to fetch dashboard data"],
+        ["GET", "/api/dashboard/role?communityId=member", undefined, "Failed to fetch dashboard data"],
+        ["GET", "/api/communities/member/assets/completeness", undefined, "Failed to fetch asset completeness"],
+        ["GET", "/api/communities/member/assets/incomplete", undefined, "Failed to fetch incomplete assets"],
+        ["GET", "/api/search?q=find&communityId=member", undefined, "Search failed"],
+      ] as const) assert.deepEqual(await request("admin", path, method, body), { status: 500, body: { error: message } });
+    });
+  });
+});
 
 describe("object, drive and contact route structure", () => {
   const modules = [
@@ -57,7 +464,7 @@ describe("object, drive and contact route structure", () => {
   }
   it("removes all moved paths from main and retains their exact registration positions", () => {
     assert.doesNotMatch(main, /app\.\w+\(["']\/(?:objects|public-objects|api\/(?:objects|drive|contacts))/);
-    assert.match(main, /app\.use\("\/api", enforceHoaScoping\);\s*app\.use\("\/api", enforceOrgScoping\);\s*registerObjectRoutes\(app\);\s*app\.get\("\/api\/communities"/);
+    assert.match(main, /app\.use\("\/api", enforceHoaScoping\);\s*app\.use\("\/api", enforceOrgScoping\);\s*registerObjectRoutes\(app\);\s*registerCommunityRoutes\(app\);/);
     assert.match(main, /registerContractRoutes\(app\);\s*registerDriveRoutes\(app\);\s*registerContactRoutes\(app\);\s*registerPortfolioRoutes\(app\);/);
   });
   it("retains drive constants solely as fixture boundaries, never as decisions", () => {
@@ -345,8 +752,9 @@ describe("asset route structure", () => {
     assert.equal(main.split("registerAssetRoutes(app);").length - 1, 1);
     assert.equal((assets.match(/route\(async /g) ?? []).length, 16);
     assert.ok(main.indexOf("registerAssetRoutes(app);") < main.indexOf("registerMapLayerRoutes(app);"));
-    assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/completeness"/);
-    assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/incomplete"/);
+    const search = readFileSync(new URL("./routes/search.ts", import.meta.url), "utf8");
+    assert.match(search, /app\.get\("\/api\/communities\/:communityId\/assets\/completeness"/);
+    assert.match(search, /app\.get\("\/api\/communities\/:communityId\/assets\/incomplete"/);
   });
   it("keeps role and membership decisions in the policy module", () => {
     assert.doesNotMatch(assets, /\.role\s*(?:===|!==)/);

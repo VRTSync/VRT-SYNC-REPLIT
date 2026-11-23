@@ -43,6 +43,126 @@ function actor(role: Actor["role"], extra: Partial<Actor> = {}): Actor {
   return { id: "actor", role, companyId: null, hoaCommunityId: null, organizationId: "org", ...extra };
 }
 
+describe("community, dashboard and search permission compatibility", () => {
+  const roles = [
+    { role: "admin", list: "all", joins: false, usernames: true, companies: true, admin: true },
+    { role: "property_manager", list: "memberships_non_commercial", joins: false, usernames: false, companies: true, admin: false },
+    { role: "contractor", list: "memberships_non_commercial", joins: false, usernames: false, companies: false, admin: false },
+    { role: "contractor_manager", list: "memberships_non_commercial", joins: false, usernames: false, companies: false, admin: false },
+    { role: "map_creator", list: "all", joins: true, usernames: false, companies: false, admin: false },
+    { role: "hoa_admin", list: "hoa", joins: false, usernames: false, companies: false, admin: false },
+    { role: "hoa_member", list: "hoa", joins: false, usernames: false, companies: false, admin: false },
+    { role: "client_admin", list: "memberships_non_commercial", joins: false, usernames: false, companies: false, admin: false },
+  ] as const;
+  for (const row of roles) {
+    it(`list, creation and response-shaping decisions for ${row.role}`, async () => {
+      const { api, calls } = await policyFixture();
+      const person = actor(row.role, { hoaCommunityId: "assigned" });
+      assert.deepEqual(api.communityListPlan(person),
+        row.list === "hoa" ? { kind: "hoa", communityId: "assigned" } : { kind: row.list });
+      assert.equal(api.joinsCreatedCommunity(person), row.joins);
+      assert.equal(api.seesMemberUsernames(person), row.usernames);
+      assert.equal(api.seesMemberCompanies(person), row.companies);
+      assert.equal(api.isAdminView(person), row.admin);
+      assert.deepEqual(calls, []);
+    });
+    for (const member of [true, false]) {
+      it(`plain dashboard and controller membership for ${row.role}, member=${member}`, async () => {
+        const { api } = await policyFixture();
+        const communityId = member ? "member-community" : "other-community";
+        const person = actor(row.role, { hoaCommunityId: communityId });
+        assert.equal(await api.dashboardAccess(person, communityId), row.admin || member);
+        assert.equal(await api.canUseCommunityAssets(person, communityId), row.admin || member);
+      });
+    }
+    for (const [query, member] of [
+      [undefined, false], ["", false], ["member-community", true], ["other-community", false],
+    ] as const) {
+      it(`role dashboard ${row.role} with query=${query}`, async () => {
+        const { api, calls } = await policyFixture();
+        const person = actor(row.role, { hoaCommunityId: "assigned" });
+        const hoa = row.list === "hoa";
+        const expected = hoa ? { communityId: "assigned" } : !query ? "community_required" :
+          row.admin || member ? { communityId: query } : "not_member";
+        assert.deepEqual(await api.roleDashboardCommunity(person, query), expected);
+        assert.equal(calls.length, hoa || row.admin || !query ? 0 : 1);
+      });
+    }
+    for (const [query, commercial, expected] of [
+      [undefined, false, row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
+      ["", false, row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
+      ["member-community", false, { kind: "one", communityId: "member-community" }],
+      ["member-community", true, row.admin ? { kind: "one", communityId: "member-community" } : "not_member"],
+      ["other-community", false, row.admin ? { kind: "one", communityId: "other-community" } : "not_member"],
+    ] as const) {
+      it(`search ${row.role}, query=${query}, commercial=${commercial}`, async () => {
+        const lookups: string[] = [];
+        const { api, calls } = await policyFixture({
+          getCommunityById: async (id: string) => {
+            lookups.push(id);
+            return { id, organizationId: commercial ? "org" : null };
+          },
+        });
+        assert.deepEqual(await api.searchScope(actor(row.role, { hoaCommunityId: query ?? null }), query), expected);
+        assert.equal(calls.length, !query || row.admin ? 0 : 1);
+        assert.deepEqual(lookups, query === "member-community" && !row.admin ? [query] : []);
+      });
+    }
+  }
+  for (const role of ["hoa_admin", "hoa_member"] as const) {
+    for (const assignment of [null, ""] as const) {
+      it(`${role} without assignment lists memberships but cannot use the role dashboard`, async () => {
+        const { api, calls } = await policyFixture();
+        const person = actor(role, { hoaCommunityId: assignment });
+        assert.deepEqual(api.communityListPlan(person), { kind: "memberships_non_commercial" });
+        for (const query of [undefined, "member-community", "outside"]) {
+          assert.equal(await api.roleDashboardCommunity(person, query), "hoa_unassigned");
+        }
+        assert.deepEqual(calls, []);
+      });
+    }
+  }
+  const crewCases: [string, Actor, string, unknown, unknown, number][] = [
+    ["admin selected company", actor("admin"), "other-community", "selected", { companyId: "selected" }, 0],
+    ["admin missing company despite own company", actor("admin", { companyId: "own" }), "other-community", undefined, "company_required", 0],
+    ["admin empty company", actor("admin"), "member-community", "", "company_required", 0],
+    ["admin array company", actor("admin"), "member-community", ["selected"], "company_required", 0],
+    ["admin object company", actor("admin"), "member-community", { id: "selected" }, "company_required", 0],
+    ["manager company member ignores query", actor("contractor_manager", { companyId: "own" }), "member-community", "foreign", { companyId: "own" }, 1],
+    ["manager company member without query", actor("contractor_manager", { companyId: "own" }), "member-community", undefined, { companyId: "own" }, 1],
+    ["manager company nonmember", actor("contractor_manager", { companyId: "own" }), "other-community", "own", "denied", 1],
+    ["manager without company member", actor("contractor_manager"), "member-community", "selected", "denied", 0],
+    ["manager without company nonmember", actor("contractor_manager"), "other-community", undefined, "denied", 0],
+    ["manager empty company", actor("contractor_manager", { companyId: "" }), "member-community", "selected", "denied", 0],
+    ...(["property_manager", "contractor", "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const)
+      .map(role => [role, actor(role, { companyId: "own" }), "member-community", "selected", "denied", 0] as
+        [string, Actor, string, unknown, unknown, number]),
+  ];
+  for (const [name, person, community, query, expected, checks] of crewCases) {
+    it(`crew access: ${name}`, async () => {
+      const { api, calls } = await policyFixture();
+      assert.deepEqual(await api.crewAccess(person, community, query), expected);
+      assert.equal(calls.length, checks);
+    });
+  }
+  it("preserves search membership-before-community lookup and missing-community behavior", async () => {
+    const calls: string[] = [];
+    const { api } = await policyFixture({
+      isUserMemberOfCommunity: async (_id: string, community: string) => {
+        calls.push(`membership:${community}`);
+        return community === "member-community";
+      },
+      getCommunityById: async (community: string) => { calls.push(`community:${community}`); return undefined; },
+    });
+    assert.equal(await api.searchScope(actor("property_manager"), "outside"), "not_member");
+    assert.deepEqual(calls, ["membership:outside"]);
+    calls.length = 0;
+    assert.deepEqual(await api.searchScope(actor("property_manager"), "member-community"),
+      { kind: "one", communityId: "member-community" });
+    assert.deepEqual(calls, ["membership:member-community", "community:member-community"]);
+  });
+});
+
 describe("file, drive and contact permission compatibility", () => {
   const roles = ["admin", "property_manager", "contractor", "contractor_manager",
     "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;

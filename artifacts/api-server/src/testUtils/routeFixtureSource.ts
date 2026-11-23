@@ -17,6 +17,9 @@ export function readRouteFixtureSource(): string {
     source = source.replace(boundary, `${content}\n\n${boundary}`);
   };
   for (const [file, register, expected] of [
+    ["communities", "registerCommunityRoutes", 10],
+    ["dashboard", "registerDashboardRoutes", 2],
+    ["search", "registerSearchRoutes", 3],
     ["hoa", "registerHoaRoutes", 4],
     ["portfolioWorkOrders", "registerPortfolioWorkOrderRoutes", 9],
     ["portfolio", "registerPortfolioRoutes", 25],

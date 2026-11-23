@@ -10,11 +10,12 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { build } from "esbuild";
 import { normalizeCompanyName } from "../../../lib/db/src/schema/schema";
+import { readRouteFixtureSource } from "./testUtils/routeFixtureSource";
 
 // Like communityAccess.test.ts, exercise the production handlers over HTTP.
 // Here storage uses real PostgreSQL, with every fixture rolled back.
 const require = createRequire(import.meta.url);
-const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const routes = readRouteFixtureSource();
 function between(start: string, end: string) {
   const from = routes.indexOf(start), to = routes.indexOf(end, from + start.length);
   assert.ok(from >= 0 && to > from, `Missing verified boundary: ${start}`);
@@ -39,6 +40,7 @@ describe("company labels (production handlers and transactional PostgreSQL)", ()
       stdin: {
         contents: `
           import * as policy from "./policy";
+          import { route } from "./routes/handler";
           import * as storage from "./storage";
           import { requireAdmin, requireAuth, loadCurrentUser, isHoaRole, isClientRole, isContractorSide, registerAuthRoutes } from "./auth";
           import { normalizeCompanyName, userRoleEnum } from "@workspace/db";

@@ -9,3 +9,4 @@ export * from "./billing";
 export * from "./files";
 export * from "./drive";
 export * from "./contacts";
+export * from "./communities";
