@@ -41,6 +41,7 @@ describe("company labels (production handlers and transactional PostgreSQL)", ()
         contents: `
           import * as policy from "./policy";
           import { route } from "./routes/handler";
+          import { targetHasHoaRole } from "./routes/userRules";
           import * as storage from "./storage";
           import { requireAdmin, requireAuth, loadCurrentUser, isHoaRole, isClientRole, isContractorSide, registerAuthRoutes } from "./auth";
           import { normalizeCompanyName, userRoleEnum } from "@workspace/db";

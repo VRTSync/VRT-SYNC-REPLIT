@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { Request } from "express";
 import type { Actor, TaskEditLevel } from "./policy";
 import { policyFixture } from "./testUtils/policyFixture";
+import { userRoleEnum } from "@workspace/db";
 
 type MatrixRow = {
   name: string;
@@ -42,6 +43,147 @@ const rows: MatrixRow[] = [
 function actor(role: Actor["role"], extra: Partial<Actor> = {}): Actor {
   return { id: "actor", role, companyId: null, hoaCommunityId: null, organizationId: "org", ...extra };
 }
+
+describe("user and company permission compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
+  const unrestricted = roles.map(() => "ok");
+  const pmAssignments = ["pm_role_only", "pm_role_only", "pm_role_only", "pm_role_only",
+    "pm_role_only", "ok", "ok", "pm_role_only"];
+  const hoaAssignments = ["hoa_role_only", "hoa_role_only", "hoa_role_only", "hoa_role_only",
+    "hoa_role_only", "hoa_role_only", "ok", "hoa_role_only"];
+  // Community columns: member, outside, null, empty string.
+  // Missing/empty list queries are tested separately from portal list policy.
+  const table: {
+    name: string; person: Actor; member?: boolean; status: boolean; portal: boolean;
+    contractors: string[]; users: string[]; portalList: string[];
+    targets: string[]; memberTargetsOnly?: boolean; assign: string[]; createScope: string[];
+  }[] = [
+    { name: "admin", person: actor("admin"), status: true, portal: false,
+      contractors: ["ok_community", "ok_community", "ok_all", "ok_all"],
+      users: ["all", "all", "all", "all"],
+      portalList: Array(4).fill("not_authorized"), targets: Array(4).fill("ok"),
+      assign: unrestricted, createScope: Array(4).fill("ok") },
+    { name: "PM member", person: actor("property_manager"), member: true, status: true, portal: true,
+      contractors: ["ok_community", "not_member", "community_required", "community_required"],
+      users: ["community", "not_member", "community_required", "community_required"],
+      portalList: ["ok", "not_member", "not_member", "not_member"],
+      targets: ["ok", "not_in_community", "no_community", "no_community"],
+      assign: pmAssignments, createScope: ["ok", "not_member", "not_member", "not_member"] },
+    { name: "PM non-member", person: actor("property_manager"), status: true, portal: true,
+      contractors: ["not_member", "not_member", "community_required", "community_required"],
+      users: ["not_member", "not_member", "community_required", "community_required"],
+      portalList: Array(4).fill("not_member"),
+      targets: ["not_in_community", "not_in_community", "no_community", "no_community"],
+      assign: pmAssignments, createScope: Array(4).fill("not_member") },
+    { name: "HOA admin matching", person: actor("hoa_admin", { hoaCommunityId: "member-community" }),
+      status: true, portal: true, contractors: Array(4).fill("denied"),
+      users: ["community", "other_community", "community_required", "community_required"],
+      portalList: ["ok", "other_community", "other_community", "other_community"],
+      targets: ["ok", "not_in_community", "not_in_community", "not_in_community"], memberTargetsOnly: true,
+      assign: hoaAssignments, createScope: ["ok", "other_community", "other_community", "other_community"] },
+    { name: "HOA admin other community", person: actor("hoa_admin", { hoaCommunityId: "outside" }),
+      status: true, portal: true, contractors: Array(4).fill("denied"),
+      users: ["other_community", "community", "community_required", "community_required"],
+      portalList: ["other_community", "ok", "other_community", "other_community"],
+      targets: ["not_in_community", "ok", "not_in_community", "not_in_community"], memberTargetsOnly: true,
+      assign: hoaAssignments, createScope: ["other_community", "ok", "other_community", "other_community"] },
+    { name: "HOA admin unassigned null", person: actor("hoa_admin"),
+      status: true, portal: true, contractors: Array(4).fill("denied"),
+      users: ["other_community", "other_community", "community_required", "community_required"],
+      portalList: ["other_community", "other_community", "ok", "other_community"],
+      targets: ["not_in_community", "not_in_community", "ok", "not_in_community"], memberTargetsOnly: true,
+      assign: hoaAssignments, createScope: ["other_community", "other_community", "ok", "other_community"] },
+    { name: "HOA admin unassigned empty", person: actor("hoa_admin", { hoaCommunityId: "" }),
+      status: true, portal: true, contractors: Array(4).fill("denied"),
+      users: ["other_community", "other_community", "community_required", "community_required"],
+      portalList: ["other_community", "other_community", "other_community", "ok"],
+      targets: ["not_in_community", "not_in_community", "not_in_community", "ok"], memberTargetsOnly: true,
+      assign: hoaAssignments, createScope: ["other_community", "other_community", "other_community", "ok"] },
+    ...(["hoa_member", "contractor", "contractor_manager", "map_creator", "client_admin"] as const).map(role => ({
+      name: role, person: actor(role, { hoaCommunityId: "member-community" }), member: true,
+      status: false, portal: false, contractors: Array(4).fill("denied"),
+      users: Array(4).fill("not_authorized"), portalList: Array(4).fill("not_authorized"),
+      targets: Array(4).fill("ok"), assign: unrestricted, createScope: Array(4).fill("ok"),
+    })),
+  ];
+  it("explicitly enumerates every assignable role", () => {
+    assert.deepEqual([...roles].sort(), [...userRoleEnum.enumValues].sort());
+  });
+  for (const row of table) {
+    const fixture = () => policyFixture({
+      isUserMemberOfCommunity: async (_id: string, community: string) =>
+        Boolean(row.member && community === "member-community"),
+    });
+    it(`${row.name}: separate status and portal gates`, async () => {
+      const { api } = await fixture();
+      assert.equal(api.canManageUserStatus(row.person), row.status);
+      assert.equal(api.canManagePortalUsers(row.person), row.portal);
+    });
+    for (const [i, community] of ["member-community", "outside", null, ""].entries()) {
+      it(`${row.name}: contractor, user and portal lists, community=${community}`, async () => {
+        const { api } = await fixture();
+        const query = community ?? undefined;
+        assert.equal(await api.contractorListAccess({ ...row.person }, query), row.contractors[i]);
+        assert.equal(await api.userListAccess({ ...row.person }, query), row.users[i]);
+        // Portal policy runs after the route's required-community check; retain
+        // raw equality even for malformed/null inputs in the legacy comparison.
+        assert.equal(await api.portalUserListAccess({ ...row.person }, community as string), row.portalList[i]);
+      });
+      for (const targetRole of roles) {
+        it(`${row.name}: target=${targetRole}, community=${community}`, async () => {
+          const { api } = await fixture();
+          const expected = row.targets[i] === "ok" && row.memberTargetsOnly && targetRole !== "hoa_member"
+            ? "hoa_member_only" : row.targets[i];
+          for (const context of ["portal", "status"] as const) {
+            assert.equal(await api.portalTargetAccess({ ...row.person },
+              { role: targetRole, hoaCommunityId: community }, context), expected);
+          }
+        });
+      }
+      for (const [r, role] of roles.entries()) {
+        it(`${row.name}: create/assign=${role}, community=${community}`, async () => {
+          const { api } = await fixture();
+          assert.equal(api.portalRoleAssignAccess(row.person, role), row.assign[r]);
+          assert.equal(await api.portalCreateAccess({ ...row.person }, role, community as string),
+            row.assign[r] === "ok" ? row.createScope[i] : row.assign[r]);
+        });
+      }
+    }
+    it(`${row.name}: invalid and missing assignment roles preserve gate ordering`, async () => {
+      const { api } = await fixture();
+      for (const role of [undefined, null, "", "invalid", [], {}]) {
+        const expected = row.assign[0];
+        assert.equal(api.portalRoleAssignAccess(row.person, role), expected);
+        assert.equal(await api.portalCreateAccess({ ...row.person }, role, "outside"), expected);
+      }
+    });
+  }
+  it("preserves membership short-circuits and the status-specific unassigned lookup", async () => {
+    const { api, calls } = await policyFixture();
+    const pm = () => actor("property_manager");
+    const target = { role: "hoa_member", hoaCommunityId: null };
+    assert.equal(await api.portalTargetAccess(pm(), target), "no_community");
+    assert.deepEqual(calls, []);
+    assert.equal(await api.portalTargetAccess(pm(), target, "status"), "no_community");
+    assert.deepEqual(calls, [["actor", ""]]);
+    calls.length = 0;
+    assert.equal(await api.portalCreateAccess(pm(), "admin", "outside"), "pm_role_only");
+    assert.equal(await api.contractorListAccess(actor("contractor"), "member-community"), "denied");
+    assert.equal(await api.userListAccess(pm()), "community_required");
+    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), target), "ok");
+    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), { ...target, role: "hoa_admin" }), "hoa_member_only");
+    assert.deepEqual(calls, []);
+  });
+  it("preserves membership failures before status denial but after portal's no-community denial", async () => {
+    const { api } = await policyFixture({
+      isUserMemberOfCommunity: async () => { throw Error("membership unavailable"); },
+    });
+    const target = { role: "hoa_member", hoaCommunityId: null };
+    assert.equal(await api.portalTargetAccess(actor("property_manager"), target), "no_community");
+    await assert.rejects(api.portalTargetAccess(actor("property_manager"), target, "status"), /membership unavailable/);
+  });
+});
 
 describe("community, dashboard and search permission compatibility", () => {
   const roles = [

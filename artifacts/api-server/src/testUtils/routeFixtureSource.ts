@@ -8,6 +8,13 @@ import { readFileSync } from "node:fs";
  */
 export function readRouteFixtureSource(): string {
   let source = readFileSync(new URL("../routes/routes.ts", import.meta.url), "utf8");
+  // Preserve helper-to-helper and helper-to-registerRoutes extraction boundaries.
+  // Fixture bundles provide their own imports, so include only declarations.
+  const userRules = readFileSync(new URL("../routes/userRules.ts", import.meta.url), "utf8");
+  const helperStart = userRules.indexOf("export async function checkHoaLimits(");
+  if (helperStart < 0) throw new Error("Missing user validation fixture boundary");
+  source = source.replace("export async function registerRoutes(",
+    `${userRules.slice(helperStart).replace(/^export /gm, "")}\nexport async function registerRoutes(`);
   const tasks = readFileSync(new URL("../routes/tasks.ts", import.meta.url), "utf8");
   const handlers = [...tasks.matchAll(/^  app\.(?:get|post|put|delete)\("\/api\/(?:tasks|task-completions)[^\n]*\n[\s\S]*?^  \}\)\);/gm)]
     .map(match => match[0]);
@@ -17,6 +24,8 @@ export function readRouteFixtureSource(): string {
     source = source.replace(boundary, `${content}\n\n${boundary}`);
   };
   for (const [file, register, expected] of [
+    ["companies", "registerCompanyRoutes", 4],
+    ["users", "registerUserRoutes", 11],
     ["communities", "registerCommunityRoutes", 10],
     ["dashboard", "registerDashboardRoutes", 2],
     ["search", "registerSearchRoutes", 3],
@@ -58,4 +67,5 @@ export function readRouteFixtureSource(): string {
 export const taskFixtureImports = `
   import * as policy from "./policy";
   import { route } from "./routes/handler";
+  import { targetHasHoaRole } from "./routes/userRules";
 `;

@@ -16,6 +16,320 @@ const inventory = [
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
 
+describe("user and company route structure", () => {
+  const modules = [
+    { file: "companies", register: "registerCompanyRoutes", inventory: [
+      ["get /api/contractors", "requireAuth"],
+      ["get /api/admin/companies", "requireAdmin"],
+      ["post /api/admin/companies", "requireAdmin"],
+      ["patch /api/admin/companies/:id", "requireAdmin"],
+    ] },
+    { file: "users", register: "registerUserRoutes", inventory: [
+      ["get /api/users", "requireAuth"],
+      ["put /api/users/:id/role", "requireAdmin"],
+      ["post /api/admin/users", "requireAdmin"],
+      ["patch /api/admin/users/:id", "requireAdmin"],
+      ["delete /api/admin/users/:id", "requireAdmin"],
+      ["get /api/users/:id/communities", "requireAdmin"],
+      ["put /api/users/:id/status", "requireAuth"],
+      ["get /api/portal/users", "requireAuth"],
+      ["post /api/portal/users", "requireAuth"],
+      ["put /api/portal/users/:id", "requireAuth"],
+      ["delete /api/portal/users/:id", "requireAuth"],
+    ] },
+  ];
+  const registrations = (source: string) => [...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+    .map(([, method, path]) => `${method} ${path}`);
+  const allRegistrations = readdirSync(new URL("./routes/", import.meta.url))
+    .filter(file => file.endsWith(".ts"))
+    .flatMap(file => registrations(readFileSync(new URL(`./routes/${file}`, import.meta.url), "utf8")));
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`preserves ${module.file} inventory, order, middleware, wrappers and catches`, () => {
+      const expected = module.inventory.map(([path]) => path);
+      assert.deepEqual(registrations(source), expected);
+      for (const path of expected) assert.equal(allRegistrations.filter(found => found === path).length, 1, path);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.equal((source.match(/route\(async /g) ?? []).length, expected.length);
+      assert.equal((source.match(/^    try \{/gm) ?? []).length, expected.length);
+      assert.equal((source.match(/^    \} catch \(error\) \{/gm) ?? []).length, expected.length);
+      source.split("\n").filter(line => /^  app\./.test(line)).forEach((line, i) => {
+        assert.ok(line.includes(`", ${module.inventory[i][1]}, route(async `), line);
+      });
+    });
+    it(`keeps ${module.file} caller and target-access decisions in policy`, () => {
+      assert.doesNotMatch(source, /actor\.role\s*[!=]==?|\.includes\(actor\.role\)/);
+      assert.doesNotMatch(source, /isHoaRole\s*\(|isUserMemberOfCommunity\s*\(/);
+      assert.doesNotMatch(source, /targetUser\.role\s*[!=]==?/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("removes moved paths and helpers from main and preserves the original register position", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:users|admin\/users|portal\/users|admin\/companies|contractors)(?:[/"'])/);
+    assert.doesNotMatch(main, /function (?:checkHoaLimits|companySelectionError|companyUniqueConflict)\(/);
+    assert.match(main, /registerCompanyRoutes\(app\);\s*registerUserRoutes\(app\);\s*app\.get\("\/api\/ping"/);
+    assert.ok(main.indexOf('app.put("/api/admin/xeriscape/records/:recordId/packets/:packetId"') <
+      main.indexOf("  registerCompanyRoutes(app);"));
+    assert.match(main, /function nextControllerKey\(/);
+    assert.match(readFileSync(new URL("./routes/companies.ts", import.meta.url), "utf8"),
+      /\/\/ Company management is intentionally staff-only, independent of community access\./);
+  });
+  it("reconstructs all 15 routes and unchanged helper/handler extraction boundaries", () => {
+    const fixture = readRouteFixtureSource();
+    const harness = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
+    assert.ok(harness.includes('["companies", "registerCompanyRoutes", 4]'));
+    assert.ok(harness.includes('["users", "registerUserRoutes", 11]'));
+    const start = fixture.indexOf('app.get("/api/contractors",');
+    const end = fixture.indexOf('app.get("/api/ping",', start);
+    assert.ok(start >= 0 && end > start);
+    assert.deepEqual(registrations(fixture.slice(start, end)), modules.flatMap(module => module.inventory.map(([path]) => path)));
+    const between = (from: string, to: string) => {
+      const a = fixture.indexOf(from), b = fixture.indexOf(to, a + from.length);
+      assert.ok(a >= 0 && b > a, from);
+      return fixture.slice(a, b);
+    };
+    assert.match(between("async function companySelectionError(", "function companyUniqueConflict("),
+      /Account managers must have a contractor company/);
+    assert.match(between("async function checkHoaLimits(", "export async function registerRoutes("),
+      /function companyUniqueConflict\(/);
+    assert.ok(between('app.put("/api/users/:id/role",', 'app.get("/api/assets",'));
+    assert.ok(between('app.get("/api/admin/companies",', 'app.delete("/api/admin/users/:id",'));
+    assert.ok(between('app.put("/api/users/:id/status",', '/* ── Community-scoped user list'));
+    assert.ok(between('app.put("/api/portal/users/:id",', 'app.get("/api/ping",'));
+  });
+  it("retains role expressions only for target validation and response filtering", () => {
+    const source = readFileSync(new URL("./routes/users.ts", import.meta.url), "utf8");
+    assert.deepEqual(source.match(/\b\w+\.role\b/g), [
+      "query.role", "u.role", "existing.role", "targetUser.role",
+    ]);
+    assert.match(source, /targetHasHoaRole\(role\)/);
+    assert.match(source, /isClientRole\(role\)/);
+    assert.match(source, /isContractorSide\(targetUser\?\.role \|\| ""\)/);
+    assert.match(source, /companyId === undefined && role !== "contractor_manager"/);
+    assert.match(source, /validRoles\.includes\(role/);
+    assert.match(source, /validPortalRoles\.includes\(role\)/);
+  });
+});
+
+describe("user and company handler response compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
+  const users: Record<string, any> = Object.fromEntries(roles.map(role => [role, {
+    id: role, role, hoaCommunityId: "member", companyId: null, organizationId: null,
+  }]));
+  users.unassigned = { id: "unassigned", role: "hoa_admin", hoaCommunityId: null };
+  users.target = { id: "target", role: "hoa_member", hoaCommunityId: "member", password: "hidden" };
+  users.other = { id: "other", role: "hoa_admin", hoaCommunityId: "outside" };
+  users.board = { id: "board", role: "hoa_admin", hoaCommunityId: "member" };
+  users.noCommunity = { id: "noCommunity", role: "hoa_member", hoaCommunityId: null };
+  async function withHandlers(overrides: Record<string, any>, check: (
+    request: (user: string, path: string, method?: string, body?: unknown) =>
+      Promise<{ status: number; body: any }>,
+    calls: any[][],
+  ) => Promise<void>) {
+    const calls: any[][] = [];
+    const { api } = await policyFixture({
+      getUserById: async (id: string) => { calls.push(["lookup", id]); return users[id]; },
+      isUserMemberOfCommunity: async (_id: string, community: string) => {
+        calls.push(["membership", community]); return community === "member";
+      },
+      getAllContractors: async () => [users.target],
+      getContractorsForCommunity: async () => [users.target],
+      getAllUsers: async () => [users.target, users.board],
+      getUsersByCommunity: async () => [users.target],
+      updateUserStatus: async (id: string, isActive: boolean) => {
+        calls.push(["status", id, isActive]); return { ...users[id], isActive };
+      },
+      updateUserRole: async (...args: any[]) => { calls.push(["role", ...args]); return users[args[0]]; },
+      revokeUserSessions: async (id: string) => { calls.push(["revoke", id]); },
+      removeAllPushTokens: async (id: string) => { calls.push(["tokens", id]); },
+      removeCommunityMember: async (...args: any[]) => { calls.push(["unlink", ...args]); },
+      ...overrides,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.session = { userId: req.headers["x-user"] } as any;
+      req.log = { error() {} } as any;
+      next();
+    });
+    api.registerCompanyRoutes(app);
+    api.registerUserRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>(resolve => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      await check(async (user, path, method = "GET", body) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method, headers: { "x-user": user, "Content-Type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: response.status, body: await response.json() };
+      }, calls);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }
+  it("preserves missing-actor messages, list errors and password redaction", async () => {
+    await withHandlers({}, async request => {
+      assert.deepEqual(await request("missing", "/api/contractors"),
+        { status: 401, body: { error: "User not found" } });
+      for (const [method, path] of [
+        ["GET", "/api/users"], ["PUT", "/api/users/target/status"], ["GET", "/api/portal/users"],
+        ["POST", "/api/portal/users"], ["PUT", "/api/portal/users/target"], ["DELETE", "/api/portal/users/target"],
+      ]) assert.deepEqual(await request("missing", path, method, method === "GET" ? undefined : {}),
+        { status: 401, body: { error: "Not authenticated" } });
+      assert.deepEqual(await request("property_manager", "/api/contractors"),
+        { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual(await request("property_manager", "/api/contractors?communityId=outside"),
+        { status: 403, body: { error: "You are not a member of this community" } });
+      assert.deepEqual(await request("contractor_manager", "/api/contractors"),
+        { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("property_manager", "/api/users"),
+        { status: 400, body: { error: "communityId is required for this role" } });
+      assert.deepEqual(await request("property_manager", "/api/users?communityId=outside"),
+        { status: 403, body: { error: "Not a member of this community" } });
+      assert.deepEqual(await request("hoa_admin", "/api/users?communityId=outside"),
+        { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("admin", "/api/portal/users"),
+        { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual(await request("admin", "/api/portal/users?communityId=member"),
+        { status: 403, body: { error: "Not authorized" } });
+      assert.deepEqual(await request("admin", "/api/users?role=hoa_member"),
+        { status: 200, body: [{ id: "target", role: "hoa_member", hoaCommunityId: "member" }] });
+      for (const [person, path] of [
+        ["admin", "/api/contractors"], ["property_manager", "/api/contractors?communityId=member"],
+        ["property_manager", "/api/users?communityId=member"], ["hoa_admin", "/api/portal/users?communityId=member"],
+      ]) assert.deepEqual(await request(person, path),
+        { status: 200, body: [{ id: "target", role: "hoa_member", hoaCommunityId: "member" }] });
+    });
+  });
+  it("preserves caller, missing-target, self, target-scope and boolean-validation order", async () => {
+    await withHandlers({}, async (request, calls) => {
+      for (const role of roles.filter(role => !["admin", "property_manager", "hoa_admin"].includes(role))) {
+        calls.length = 0;
+        assert.deepEqual(await request(role, "/api/users/missing/status", "PUT", {}),
+          { status: 403, body: { error: "Not authorized" } });
+        assert.deepEqual(calls, [["lookup", role]]);
+      }
+      assert.deepEqual(await request("admin", "/api/users/missing/status", "PUT", {}),
+        { status: 404, body: { error: "User not found" } });
+      for (const role of ["admin", "property_manager", "hoa_admin"]) assert.deepEqual(
+        await request(role, `/api/users/${role}/status`, "PUT", {}),
+        { status: 400, body: { error: "Cannot change your own status" } });
+      assert.deepEqual(await request("hoa_admin", "/api/users/other/status", "PUT", {}),
+        { status: 403, body: { error: "User is not in your community" } });
+      assert.deepEqual(await request("hoa_admin", "/api/users/board/status", "PUT", {}),
+        { status: 403, body: { error: "HOA Admins can only manage HOA Members" } });
+      assert.deepEqual(await request("property_manager", "/api/users/noCommunity/status", "PUT", {}),
+        { status: 403, body: { error: "User is not in your community" } });
+      assert.deepEqual(await request("admin", "/api/users/target/status", "PUT", {}),
+        { status: 400, body: { error: "isActive (boolean) is required" } });
+      for (const [method, suffix, noCommunity, memberOnly, self] of [
+        ["PUT", "edit", "User has no community assignment", "HOA Admins can only edit HOA Members", "Cannot edit yourself"],
+        ["DELETE", "remove", "User has no community", "HOA Admins can only remove HOA Members", "Cannot remove yourself"],
+      ]) {
+        assert.ok(suffix);
+        assert.deepEqual(await request("hoa_admin", "/api/portal/users/hoa_admin", method, {}),
+          { status: 400, body: { error: self } });
+        assert.deepEqual(await request("hoa_admin", "/api/portal/users/other", method, {}),
+          { status: 403, body: { error: "User is not in your community" } });
+        assert.deepEqual(await request("hoa_admin", "/api/portal/users/board", method, {}),
+          { status: 403, body: { error: memberOnly } });
+        assert.deepEqual(await request("property_manager", "/api/portal/users/noCommunity", method, {}),
+          { status: 403, body: { error: noCommunity } });
+      }
+    });
+  });
+  it("retains portal create/assignment errors before username checks or writes", async () => {
+    await withHandlers({ getUserByUsername: async () => { throw Error("must not reach username lookup"); } }, async request => {
+      const input = { username: "new", password: "password", communityId: "outside", role: "admin" };
+      assert.deepEqual(await request("admin", "/api/portal/users", "POST", {}),
+        { status: 403, body: { error: "Not authorized" } });
+      assert.deepEqual(await request("hoa_admin", "/api/portal/users", "POST", {}),
+        { status: 400, body: { error: "username, password, and communityId are required" } });
+      assert.deepEqual(await request("hoa_admin", "/api/portal/users", "POST", { ...input, password: "x" }),
+        { status: 400, body: { error: "Password must be at least 6 characters" } });
+      for (const [role, message] of [
+        ["hoa_admin", "HOA Admins can only create HOA Member users"],
+        ["property_manager", "Property Managers can only create HOA Admin or HOA Member users"],
+      ]) assert.deepEqual(await request(role, "/api/portal/users", "POST", input),
+        { status: 403, body: { error: message } });
+      assert.deepEqual(await request("hoa_admin", "/api/portal/users", "POST", { ...input, role: "hoa_member" }),
+        { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("property_manager", "/api/portal/users", "POST", { ...input, role: "hoa_member" }),
+        { status: 403, body: { error: "Not a member of this community" } });
+      for (const [person, message] of [
+        ["hoa_admin", "HOA Admins can only assign HOA Member role"],
+        ["property_manager", "Property Managers can only assign HOA Admin or HOA Member roles"],
+      ]) assert.deepEqual(await request(person, "/api/portal/users/target", "PUT", { role: "admin", isActive: false }),
+        { status: 403, body: { error: message } });
+    });
+  });
+  it("keeps deactivation revocation, activation and community unlinking distinct", async () => {
+    await withHandlers({}, async (request, calls) => {
+      for (const [person, path] of [
+        ["admin", "/api/users/target/status"], ["property_manager", "/api/portal/users/target"],
+      ]) {
+        calls.length = 0;
+        assert.equal((await request(person, path, "PUT", { isActive: false })).status, 200);
+        assert.deepEqual(calls.filter(([name]) => ["status", "revoke", "tokens"].includes(name)),
+          [["status", "target", false], ["revoke", "target"], ["tokens", "target"]]);
+        calls.length = 0;
+        assert.equal((await request(person, path, "PUT", { isActive: true })).status, 200);
+        assert.deepEqual(calls.filter(([name]) => ["status", "revoke", "tokens"].includes(name)),
+          [["status", "target", true]]);
+      }
+      calls.length = 0;
+      assert.deepEqual(await request("property_manager", "/api/portal/users/target", "DELETE"),
+        { status: 200, body: { message: "User removed from community" } });
+      assert.deepEqual(calls.filter(([name]) => !["lookup", "membership"].includes(name)),
+        [["unlink", "member", "target"], ["role", "target", "hoa_member", null], ["revoke", "target"]]);
+      assert.equal(users.target.hoaCommunityId, "member", "fixture records were not mutated");
+      assert.equal((await request("unassigned", "/api/users/noCommunity/status", "PUT", { isActive: true })).status, 200);
+      assert.equal((await request("unassigned", "/api/portal/users/noCommunity", "PUT", { isActive: true })).status, 200);
+    });
+  });
+  it("keeps the status route's failing membership lookup and portal short-circuit responses", async () => {
+    await withHandlers({ isUserMemberOfCommunity: async () => { throw Error("Expected lookup failure"); } }, async request => {
+      assert.deepEqual(await request("property_manager", "/api/users/noCommunity/status", "PUT", {}),
+        { status: 500, body: { error: "Failed to update user status" } });
+      assert.deepEqual(await request("property_manager", "/api/portal/users/noCommunity", "PUT", {}),
+        { status: 403, body: { error: "User has no community assignment" } });
+      assert.deepEqual(await request("property_manager", "/api/portal/users/noCommunity", "DELETE"),
+        { status: 403, body: { error: "User has no community" } });
+    });
+  });
+  it("retains all 15 route-specific 500 responses", async () => {
+    const fail = async () => { throw Error("Expected fixture failure"); };
+    await withHandlers({
+      getUserById: fail, listCompanies: fail, findSimilarCompanies: fail, getUserCommunitiesList: fail,
+      getUserByUsername: fail, getHoaUserCountByCommunity: fail,
+    }, async request => {
+      for (const [method, path, body, message] of [
+        ["GET", "/api/contractors", undefined, "Failed to fetch contractors"],
+        ["GET", "/api/admin/companies", undefined, "Failed to fetch companies"],
+        ["POST", "/api/admin/companies", { name: "Valid", kind: "contractor" }, "Failed to create company"],
+        ["PATCH", "/api/admin/companies/id", { name: "Valid" }, "Failed to update company"],
+        ["GET", "/api/users", undefined, "Failed to fetch users"],
+        ["PUT", "/api/users/id/role", { role: "contractor" }, "Failed to update role"],
+        ["POST", "/api/admin/users", { username: "new", password: "password" }, "Failed to create user"],
+        ["PATCH", "/api/admin/users/id", { displayName: "New" }, "Failed to update user"],
+        ["DELETE", "/api/admin/users/id", undefined, "Failed to delete user"],
+        ["GET", "/api/users/id/communities", undefined, "Failed to fetch user communities"],
+        ["PUT", "/api/users/id/status", {}, "Failed to update user status"],
+        ["GET", "/api/portal/users?communityId=member", undefined, "Failed to fetch users"],
+        ["POST", "/api/portal/users", {}, "Failed to create user"],
+        ["PUT", "/api/portal/users/id", {}, "Failed to edit user"],
+        ["DELETE", "/api/portal/users/id", undefined, "Failed to remove user from community"],
+      ] as const) assert.deepEqual(await request("admin", path, method, body), { status: 500, body: { error: message } });
+    });
+  });
+});
+
 describe("community, dashboard and search route structure", () => {
   const modules = [
     { file: "communities", register: "registerCommunityRoutes", inventory: [

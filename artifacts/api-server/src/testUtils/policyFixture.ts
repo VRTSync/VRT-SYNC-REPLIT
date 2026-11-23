@@ -21,6 +21,8 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
         export { registerCommunityRoutes } from "./routes/communities";
         export { registerDashboardRoutes } from "./routes/dashboard";
         export { registerSearchRoutes } from "./routes/search";
+        export { registerCompanyRoutes } from "./routes/companies";
+        export { registerUserRoutes } from "./routes/users";
       `,
       resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "ts",
     },
@@ -41,6 +43,9 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
               export const requireAuth = (req,res,next) => next();
               export const requireAdmin = requireAuth;
               export const requireAdminOrMapCreator = requireAuth;
+              export const isHoaRole = role => role === "hoa_admin" || role === "hoa_member";
+              export const isClientRole = role => role === "client_admin";
+              export const isContractorSide = role => role === "contractor" || role === "contractor_manager";
             ` : path === "objectStorage" ? `
               export class ObjectStorageService {
                 getObjectEntityFile(...args) { return fixture.storage.getObjectEntityFile(...args); }
@@ -91,6 +96,7 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
     typeof import("../routes/invoices") & typeof import("../routes/reports") &
     typeof import("../routes/contracts") & typeof import("../routes/drive") &
     typeof import("../routes/contacts") & typeof import("../routes/communities") &
-    typeof import("../routes/dashboard") & typeof import("../routes/search");
+    typeof import("../routes/dashboard") & typeof import("../routes/search") &
+    typeof import("../routes/companies") & typeof import("../routes/users");
   return { api, calls, storage };
 }

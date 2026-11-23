@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, beforeEach, describe, it } from "node:test";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -12,6 +11,7 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { build } from "esbuild";
 import * as schema from "../../../lib/db/src/schema/schema";
+import { readRouteFixtureSource, taskFixtureImports } from "./testUtils/routeFixtureSource";
 
 // Exercise the real handlers, storage, schemas, bcrypt, sessions and limiter.
 // Only the database connection is replaced with a transaction-scoped connection.
@@ -22,7 +22,7 @@ import * as schema from "../../../lib/db/src/schema/schema";
 // before the review. Keep account details private. Do not deactivate unfamiliar
 // accounts automatically; deactivation enforcement belongs to a later slice.
 const sourceDir = fileURLToPath(new URL(".", import.meta.url));
-const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const routes = readRouteFixtureSource();
 function sourceBetween(start: string, end: string) {
   const from = routes.indexOf(start);
   const to = routes.indexOf(end, from + start.length);
@@ -54,6 +54,7 @@ describe("public registration and managed-account regressions (transactional Pos
     const built = await build({
       stdin: {
         contents: `
+          ${taskFixtureImports}
           import { registerAuthRoutes, loadCurrentUser, requireAdmin, requireAuth, isHoaRole, isClientRole, isContractorSide } from "./auth";
           import * as storage from "./storage";
           import bcrypt from "bcryptjs";
