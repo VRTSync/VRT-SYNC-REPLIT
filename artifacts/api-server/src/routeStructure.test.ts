@@ -16,6 +16,169 @@ const inventory = [
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
 
+describe("admin-only route extraction", () => {
+  const modules = [
+    { file: "adminOverview", register: "registerAdminOverviewRoutes", inventory: [
+      "get /api/admin/migrations", "get /api/admin/summary",
+      "get /api/admin/dashboard", "get /api/admin/completed-tasks",
+    ], comments: [] },
+    { file: "xeriscape", register: "registerXeriscapeRoutes", inventory: [
+      "get /api/admin/xeriscape/records", "post /api/admin/xeriscape/records",
+      "put /api/admin/xeriscape/records/:id", "post /api/admin/xeriscape/records/:id/duplicate",
+      "delete /api/admin/xeriscape/records/:id",
+      "get /api/admin/xeriscape/community/:communityId/polygons",
+      "get /api/admin/xeriscape/records/:recordId/packets",
+      "post /api/admin/xeriscape/records/:recordId/packets",
+      "put /api/admin/xeriscape/records/:recordId/packets/:packetId",
+    ], comments: [
+      "// ── Xeriscape Planning Records", "// ── Xeriscape Community Polygons",
+      "// ── Xeriscape Packet CRUD",
+    ] },
+    { file: "taskTemplates", register: "registerTaskTemplateRoutes", inventory: [
+      "get /api/task-templates", "post /api/task-templates", "patch /api/task-templates/:id",
+      "delete /api/task-templates/:id", "post /api/task-templates/:id/preview",
+      "post /api/task-templates/:id/generate",
+    ], comments: ["// Task Templates CRUD", "// CSV Task Import"] },
+    { file: "taskSchedules", register: "registerTaskScheduleRoutes", inventory: [
+      "get /api/task-schedules", "post /api/task-schedules", "patch /api/task-schedules/:id",
+      "delete /api/task-schedules/:id", "get /api/task-schedules/:id/runs",
+      "post /api/task-schedules/run-now",
+    ], comments: ["// Task Schedules CRUD"] },
+    { file: "exports", register: "registerExportRoutes", inventory: [
+      "post /api/exports/proof-of-work", "get /api/exports", "get /api/exports/:id",
+      "get /api/exports/:id/download/pdf", "get /api/exports/:id/download/zip",
+    ], comments: ["// ── Export endpoints ──"] },
+    { file: "imports", register: "registerImportRoutes", inventory: [
+      "post /api/admin/import/master-bill/parse", "post /api/admin/import/master-bill/preview",
+      "post /api/admin/import/master-bill/commit", "post /api/admin/import/seasonal/parse",
+      "post /api/admin/import/seasonal/preview", "post /api/admin/import/seasonal/commit",
+      "get /api/admin/import/batches", "delete /api/admin/import/batches/:id",
+      "post /api/admin/import/contract-tasks/parse", "post /api/admin/import/contract-tasks/preview",
+      "post /api/admin/import/contract-tasks/commit",
+    ], comments: [
+      "// ── Master Bill import routes", "// ── Seasonal import routes",
+      "// ── Import batch history", "// ── Contract-tasks import routes (unchanged)",
+    ] },
+    { file: "organizations", register: "registerOrganizationRoutes", inventory: [
+      "post /api/admin/organizations", "get /api/admin/organizations",
+      "get /api/admin/organizations/:id", "patch /api/admin/organizations/:id",
+      "delete /api/admin/organizations/:id", "get /api/admin/organizations/:id/portfolio",
+      "get /api/admin/organizations/:id/branches", "post /api/admin/organizations/:id/branches",
+      "delete /api/admin/branches/:communityId", "patch /api/admin/branches/:communityId",
+      "get /api/admin/organizations/:id/groups", "post /api/admin/organizations/:id/groups",
+      "patch /api/admin/groups/:groupId", "delete /api/admin/groups/:groupId",
+      "put /api/admin/groups/:groupId/members", "get /api/admin/organizations/:id/group-sets",
+      "post /api/admin/organizations/:id/group-sets", "patch /api/admin/group-sets/:setId",
+      "delete /api/admin/group-sets/:setId", "get /api/admin/organizations/:id/users",
+    ], comments: [
+      "// ── Admin: Organization provisioning routes", "// ── Admin: Branch (community) routes",
+      "// ── Admin: Branch group routes", "// ── Admin: Branch group set routes",
+      "// ── Admin: Organization users",
+    ] },
+  ];
+  const registrations = (source: string) =>
+    [...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+      .map(([, method, path]) => `${method} ${path}`);
+  const allRegistrations = readdirSync(new URL("./routes/", import.meta.url))
+    .filter(file => file.endsWith(".ts"))
+    .flatMap(file => registrations(readFileSync(new URL(`./routes/${file}`, import.meta.url), "utf8")));
+  const fixture = readRouteFixtureSource();
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`preserves ${module.file} inventory, order, admin guards, wrappers and catches`, () => {
+      assert.deepEqual(registrations(source), module.inventory);
+      for (const path of module.inventory) {
+        assert.equal(allRegistrations.filter(found => found === path).length, 1, path);
+      }
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.match(main, new RegExp(`import \\{ ${module.register} \\} from "\\./${module.file}";`));
+      assert.equal((source.match(/route\(async /g) ?? []).length, module.inventory.length);
+      assert.equal((source.match(/^    try \{/gm) ?? []).length, module.inventory.length);
+      assert.equal((source.match(/^    \} catch \(error(?:: any)?\) \{/gm) ?? []).length,
+        module.inventory.length);
+      const lines = source.split("\n").filter(line => /^  app\./.test(line));
+      for (const line of lines) {
+        assert.match(line, /", requireAdmin, (?:upload\.single\("file"\), )?route\(async /);
+      }
+      assert.doesNotMatch(source,
+        /\.role\b|\brole\s*[!=]==?|(?:isUserMemberOfCommunity|userCanAccessCommunity|canUserAccessTask)\s*\(/);
+    });
+    it(`restores ${module.file} routes and comments in the fixture view`, () => {
+      const harness = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
+      assert.ok(harness.includes(`["${module.file}", "${module.register}", ${module.inventory.length}]`));
+      assert.deepEqual(registrations(fixture).filter(path => module.inventory.includes(path)), module.inventory);
+      let previous = -1;
+      for (const comment of module.comments) {
+        assert.equal(source.split(comment).length - 1, 1, comment);
+        assert.equal(fixture.split(comment).length - 1, 1, comment);
+        const position = fixture.indexOf(comment);
+        assert.ok(position > previous, comment);
+        previous = position;
+      }
+    });
+  }
+  it("leaves ping as the only direct HTTP handler in main", () => {
+    assert.deepEqual(registrations(main), ["get /api/ping"]);
+    assert.deepEqual([...main.matchAll(/app\.use\("([^"]+)", (\w+)\);/g)]
+      .map(([, path, middleware]) => [path, middleware]),
+    [["/api", "enforceHoaScoping"], ["/api", "enforceOrgScoping"]]);
+    assert.doesNotMatch(main, /requireAdmin|upload|storage|adminDashboardCache|nextControllerKey/);
+    assert.match(main, /async function userCanAccessCommunity\([\s\S]*?return policy\.canAccessCommunity\(policy\.actorFromUser\(user\), communityId\);/);
+    assert.match(main, /const httpServer = createServer\(app\);\s*return httpServer;/);
+  });
+  it("retains the complete middleware and registration order", () => {
+    assert.deepEqual([...main.matchAll(/^  (register\w+Routes)\(app\);|^  app\.(use|get)\("([^"]+)"/gm)]
+      .map(([, register, method, path]) => register ?? `${method} ${path}`), [
+      "registerAuthRoutes", "use /api", "use /api", "registerObjectRoutes",
+      "registerCommunityRoutes", "registerDashboardRoutes", "registerTaskRoutes",
+      "registerAdminOverviewRoutes", "registerXeriscapeRoutes", "registerCompanyRoutes",
+      "registerUserRoutes", "get /api/ping", "registerPushRoutes", "registerAssetRoutes",
+      "registerMapLayerRoutes", "registerSearchRoutes", "registerAssetTypeRoutes",
+      "registerOfflinePackRoutes", "registerTaskTemplateRoutes", "registerTaskScheduleRoutes",
+      "registerExportRoutes", "registerServiceScheduleRoutes", "registerImportRoutes",
+      "registerHoaRoutes", "registerNotificationRoutes", "registerInvoiceRoutes",
+      "registerReportRoutes", "registerContractRoutes", "registerDriveRoutes",
+      "registerContactRoutes", "registerPortfolioRoutes", "registerPortfolioWorkOrderRoutes",
+      "registerOrganizationRoutes",
+    ]);
+  });
+  it("retains the task insertion and extraction boundaries", () => {
+    const between = (start: string, end: string) => {
+      const from = fixture.indexOf(start), to = fixture.indexOf(end, from + start.length);
+      assert.ok(from >= 0 && to > from, start);
+      return fixture.slice(from, to);
+    };
+    assert.deepEqual(registrations(between("// Task Templates CRUD", '  app.post("/api/tasks/bulk/assign",')),
+      modules[2].inventory);
+    assert.deepEqual(registrations(between('  app.post("/api/tasks/bulk/assign",', "// CSV Task Import")),
+      ["post /api/tasks/bulk/assign"]);
+    assert.deepEqual(registrations(between("// CSV Task Import", "// Task Schedules CRUD")),
+      ["post /api/tasks/import-csv"]);
+    assert.deepEqual(registrations(between("// Task Schedules CRUD", "// ── Export endpoints ──")),
+      modules[3].inventory);
+    assert.ok(between('app.get("/api/communities/:communityId/offline-pack-data",', "// Task Templates CRUD"));
+    assert.ok(between('app.get("/api/service-schedules/:scheduleId/visits",', "// ── Master Bill import routes"));
+  });
+  it("keeps the three parse uploads after requireAdmin and before their handlers", () => {
+    const source = readFileSync(new URL("./routes/imports.ts", import.meta.url), "utf8");
+    assert.deepEqual([...source.matchAll(/^  app\.post\("([^"]+)", requireAdmin, upload\.single\("file"\), route\(async /gm)]
+      .map(([, path]) => path), [
+      "/api/admin/import/master-bill/parse", "/api/admin/import/seasonal/parse",
+      "/api/admin/import/contract-tasks/parse",
+    ]);
+    assert.equal((source.match(/upload\.single\(/g) ?? []).length, 3);
+  });
+  it("keeps the existing dashboard cache owned only by the overview module", () => {
+    const source = readFileSync(new URL("./routes/adminOverview.ts", import.meta.url), "utf8");
+    assert.match(source, /^let adminDashboardCache:/m);
+    assert.match(source, /adminDashboardCache = \{ data, expiresAt: now \+ 60_000 \};/);
+    for (const module of modules.slice(1)) {
+      assert.doesNotMatch(readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8"),
+        /adminDashboardCache/);
+    }
+  });
+});
+
 describe("service schedule, notification and push route structure", () => {
   const modules = [
     { file: "serviceSchedules", register: "registerServiceScheduleRoutes", inventory: [
@@ -70,8 +233,8 @@ describe("service schedule, notification and push route structure", () => {
     assert.doesNotMatch(main, /app\.\w+\(["'][^"']*(?:\/service-schedules|\/service-visits|\/api\/notification|\/api\/push-tokens|\/api\/push\/)/);
     assert.equal(registrations(main).filter(path => path === "get /api/ping").length, 1);
     assert.match(main, /app\.get\("\/api\/ping", [\s\S]*?res\.json\(\{ ok: true, ts: Date\.now\(\) \}\);\s*\}\);\s*registerPushRoutes\(app\);\s*registerAssetRoutes\(app\);/);
-    assert.match(main, /registerServiceScheduleRoutes\(app\);\s*\/\/ ── Master Bill import routes/);
-    const download = main.indexOf('app.get("/api/exports/:id/download/zip"');
+    assert.match(main, /registerServiceScheduleRoutes\(app\);\s*registerImportRoutes\(app\);/);
+    const download = main.indexOf("  registerExportRoutes(app);");
     assert.ok(download >= 0 && download < main.indexOf("  registerServiceScheduleRoutes(app);"));
     assert.match(main, /registerHoaRoutes\(app\);\s*registerNotificationRoutes\(app\);\s*registerInvoiceRoutes\(app\);/);
   });
@@ -167,9 +330,10 @@ describe("user and company route structure", () => {
     assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:users|admin\/users|portal\/users|admin\/companies|contractors)(?:[/"'])/);
     assert.doesNotMatch(main, /function (?:checkHoaLimits|companySelectionError|companyUniqueConflict)\(/);
     assert.match(main, /registerCompanyRoutes\(app\);\s*registerUserRoutes\(app\);\s*app\.get\("\/api\/ping"/);
-    assert.ok(main.indexOf('app.put("/api/admin/xeriscape/records/:recordId/packets/:packetId"') <
+    assert.ok(main.indexOf("  registerXeriscapeRoutes(app);") >= 0);
+    assert.ok(main.indexOf("  registerXeriscapeRoutes(app);") <
       main.indexOf("  registerCompanyRoutes(app);"));
-    assert.match(main, /function nextControllerKey\(/);
+    assert.doesNotMatch(main, /function nextControllerKey\(/);
     assert.match(readFileSync(new URL("./routes/companies.ts", import.meta.url), "utf8"),
       /\/\/ Company management is intentionally staff-only, independent of community access\./);
   });
@@ -1180,7 +1344,9 @@ describe("task route structure and compatibility", () => {
       .map(([, method, path]) => `${method} ${path}`), inventory);
     assert.equal((tasks.match(/route\(async /g) ?? []).length, 17);
     assert.match(tasks, /import \{ upload \} from "\.\/upload"/);
-    assert.match(main, /import \{ upload \} from "\.\/upload"/);
+    assert.match(readFileSync(new URL("./routes/imports.ts", import.meta.url), "utf8"),
+      /import \{ upload \} from "\.\/upload"/);
+    assert.doesNotMatch(main, /import \{ upload \} from "\.\/upload"/);
     assert.doesNotMatch(main, /multer\(/);
   });
 
@@ -1309,7 +1475,7 @@ describe("HOA and portfolio work-order route structure", () => {
     assert.ok(main.indexOf("registerHoaRoutes(app);") < main.indexOf("registerNotificationRoutes(app);"));
     const workOrders = main.indexOf("registerPortfolioWorkOrderRoutes(app);");
     assert.ok(main.indexOf('app.delete("/api/portfolio/group-sets/:setId",') < workOrders);
-    assert.ok(workOrders < main.indexOf('app.post("/api/admin/organizations",'));
+    assert.ok(workOrders < main.indexOf("registerOrganizationRoutes(app);"));
   });
 });
 
@@ -1428,7 +1594,7 @@ describe("map layers, asset types and offline pack route structure", () => {
     assert.match(main, /registerAssetRoutes\(app\);\s*registerMapLayerRoutes\(app\);/);
     assert.match(main, /\/\/ ── Asset Types catalogue \(data-driven\)[^\n]*\n\s*registerAssetTypeRoutes\(app\);\s*registerOfflinePackRoutes\(app\);/);
     assert.ok(main.indexOf("registerMapLayerRoutes(app);") < main.indexOf("registerAssetTypeRoutes(app);"));
-    assert.ok(main.indexOf("registerOfflinePackRoutes(app);") < main.indexOf("// Task Templates CRUD"));
+    assert.ok(main.indexOf("registerOfflinePackRoutes(app);") < main.indexOf("registerTaskTemplateRoutes(app);"));
   });
   it("keeps upload middleware and the approved actor loading exception", () => {
     const maps = readFileSync(new URL("./routes/mapLayers.ts", import.meta.url), "utf8");

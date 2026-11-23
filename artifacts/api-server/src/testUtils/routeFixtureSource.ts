@@ -24,6 +24,13 @@ export function readRouteFixtureSource(): string {
     source = source.replace(boundary, `${content}\n\n${boundary}`);
   };
   for (const [file, register, expected] of [
+    ["adminOverview", "registerAdminOverviewRoutes", 4],
+    ["xeriscape", "registerXeriscapeRoutes", 9],
+    ["taskTemplates", "registerTaskTemplateRoutes", 6],
+    ["taskSchedules", "registerTaskScheduleRoutes", 6],
+    ["exports", "registerExportRoutes", 5],
+    ["imports", "registerImportRoutes", 11],
+    ["organizations", "registerOrganizationRoutes", 20],
     ["companies", "registerCompanyRoutes", 4],
     ["users", "registerUserRoutes", 11],
     ["serviceSchedules", "registerServiceScheduleRoutes", 7],
@@ -57,8 +64,8 @@ export function readRouteFixtureSource(): string {
     }
     source = source.replace(call, module.slice(start + signature.length, -2).trimEnd());
   }
-  // Restore module handlers first: the task link fixture boundary lives in the
-  // map-layer module now, but must retain its original position in this view.
+  // Restore every module first: task insertion boundaries live in the map-layer,
+  // task-template and task-schedule modules, at their original positions.
   if (!source.includes("  registerTaskRoutes(app);")) throw new Error("Missing task registration");
   source = source.replace("  registerTaskRoutes(app);", handlers.slice(0, 13).join("\n\n"));
   insertBefore('  app.get("/api/map-layers",', handlers.slice(13, 15).join("\n\n"));
