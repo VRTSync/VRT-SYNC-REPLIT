@@ -5,3 +5,4 @@ export * from "./hoa";
 export * from "./portfolio";
 export * from "./assets";
 export * from "./maps";
+export * from "./billing";

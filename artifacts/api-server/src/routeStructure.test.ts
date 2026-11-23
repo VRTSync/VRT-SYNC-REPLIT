@@ -312,3 +312,262 @@ describe("map layers, asset types and offline pack route structure", () => {
     assert.match(maps, /policy\.canAccessCommunity\(policy\.actorFromUser\(req\.currentUser!\), layer\.communityId\)/);
   });
 });
+
+describe("billing route structure", () => {
+  const modules = [
+    { file: "invoices", register: "registerInvoiceRoutes", inventory: [
+      "get /api/invoices", "get /api/invoices/:id", "post /api/invoices",
+      "put /api/invoices/:id", "delete /api/invoices/:id",
+    ] },
+    { file: "reports", register: "registerReportRoutes", inventory: [
+      "get /api/reports/water-usage", "get /api/reports/tree-inventory", "get /api/reports/invoices/monthly",
+    ] },
+    { file: "contracts", register: "registerContractRoutes", inventory: [
+      "get /api/contracts", "get /api/contracts/:id", "post /api/contracts",
+      "put /api/contracts/:id", "delete /api/contracts/:id",
+    ] },
+  ];
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`keeps the exact ${module.file} inventory, middleware, wrappers and order`, () => {
+      assert.deepEqual([...source.matchAll(/app\.(get|post|put|delete)\("([^"]+)"/g)]
+        .map(([, method, path]) => `${method} ${path}`), module.inventory);
+      assert.equal((source.match(/route\(async /g) ?? []).length, module.inventory.length);
+      assert.equal((source.match(/    try \{/g) ?? []).length, module.inventory.length);
+      const declarations = source.split("\n").filter(line => /^  app\./.test(line));
+      declarations.forEach((line, index) => {
+        const middleware = module.file === "contracts" && index >= 2 ? "requireAdmin" : "requireAuth";
+        assert.match(line, new RegExp(`, ${middleware}, route\\(async `));
+      });
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+    });
+    it(`keeps ${module.file} permissions exclusively in central policy`, () => {
+      assert.doesNotMatch(source, /\.role\s*(?:===|!==)|\.includes\((?:user|actor)\.role\)/);
+      assert.doesNotMatch(source, /isHoaRole\s*\(|isClientRole\s*\(|isUserMemberOfCommunity\s*\(/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("registers once at the original location, with no billing handlers left in main", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:invoices|reports\/|contracts)/);
+    assert.match(main, /registerInvoiceRoutes\(app\);\s*registerReportRoutes\(app\);\s*registerContractRoutes\(app\);/);
+    assert.ok(main.indexOf('app.put("/api/notifications/:id/read",') < main.indexOf("registerInvoiceRoutes(app);"));
+    assert.ok(main.indexOf("registerContractRoutes(app);") < main.indexOf("const driveMutateRoles ="));
+  });
+  it("retains only the required unused invoice role boundaries", () => {
+    const invoices = readFileSync(new URL("./routes/invoices.ts", import.meta.url), "utf8");
+    assert.match(invoices, /export function registerInvoiceRoutes\(app: Express\): void \{\n  const invoiceReadRoles = \['admin', 'property_manager', 'hoa_admin', 'hoa_member'\];\n  const invoiceMutateRoles = \['admin'\];/);
+    assert.equal((invoices.match(/invoiceReadRoles/g) ?? []).length, 1);
+    assert.equal((invoices.match(/invoiceMutateRoles/g) ?? []).length, 1);
+    const reports = readFileSync(new URL("./routes/reports.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(reports, /reportReadRoles|resolveReportCommunityId/);
+  });
+  it("preserves invoice denial before lookup and manager validation ordering", () => {
+    const source = readFileSync(new URL("./routes/invoices.ts", import.meta.url), "utf8");
+    const detail = source.slice(source.indexOf('app.get("/api/invoices/:id"'), source.indexOf('app.post("/api/invoices"'));
+    assert.ok(detail.indexOf("policy.canRequestInvoice(actor)") < detail.indexOf("storage.getInvoiceById("));
+    const create = source.slice(source.indexOf('app.post("/api/invoices"'), source.indexOf('app.put("/api/invoices/:id"'));
+    const ordered = ["policy.managerCanCreateInvoice(", "storage.getCompanyById(", "policy.invoiceStatusRule(", "insertInvoiceSchema.safeParse("];
+    ordered.forEach((expression, i) => {
+      assert.ok(create.includes(expression));
+      if (i) assert.ok(create.indexOf(ordered[i - 1]) < create.indexOf(expression));
+    });
+    assert.match(source, /updateInvoiceSchema\.omit\(\{ contractorCompanyId: true \}\)/);
+    assert.equal((source.match(/sessionOrganizationId: req\.session\.organizationId/g) ?? []).length, 2);
+  });
+});
+
+describe("billing handler response compatibility", () => {
+  const users: Record<string, any> = {
+    admin: { id: "admin", role: "admin" },
+    pm: { id: "pm", role: "property_manager" },
+    hoa: { id: "hoa", role: "hoa_admin", hoaCommunityId: "member-community" },
+    manager: { id: "manager", role: "contractor_manager", companyId: "company" },
+    crew: { id: "crew", role: "contractor" },
+    client: { id: "client", role: "client_admin", organizationId: "org" },
+    sessionClient: { id: "sessionClient", role: "client_admin", organizationId: null },
+  };
+  async function withBilling(overrides: Record<string, any>, check: (
+    request: (user: string, path: string, method?: string, body?: unknown, sessionOrg?: string) =>
+      Promise<{ status: number; body: any }>,
+  ) => Promise<void>) {
+    const { api } = await policyFixture({
+      getUserById: async (id: string) => users[id],
+      getInvoiceById: async () => undefined,
+      ...overrides,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      const id = req.headers["x-user"] as string;
+      req.currentUser = users[id];
+      req.session = { userId: id, organizationId: req.headers["x-org"] as string | undefined } as any;
+      req.log = { error() {} } as any;
+      next();
+    });
+    api.registerInvoiceRoutes(app);
+    api.registerReportRoutes(app);
+    api.registerContractRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>(resolve => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      await check(async (user, path, method = "GET", body, sessionOrg) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method, headers: {
+            "x-user": user, "Content-Type": "application/json",
+            ...(sessionOrg === undefined ? {} : { "x-org": sessionOrg }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: response.status, body: response.status === 204 ? null : await response.json() };
+      });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }
+
+  it("keeps missing-user bodies and contractor denial before missing-invoice lookup", async () => {
+    let lookups = 0;
+    await withBilling({ getInvoiceById: async () => { lookups++; return undefined; } }, async request => {
+      for (const path of ["/api/invoices", "/api/invoices/missing", "/api/contracts", "/api/contracts/missing"]) {
+        assert.deepEqual(await request("missing-user", path), { status: 401, body: { error: "User not found" } });
+      }
+      assert.deepEqual(await request("missing-user", "/api/reports/water-usage"), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("crew", "/api/invoices/missing"), { status: 403, body: { error: "Access denied" } });
+      assert.equal(lookups, 0);
+      assert.deepEqual(await request("admin", "/api/invoices/missing"), { status: 404, body: { error: "Invoice not found" } });
+      assert.equal(lookups, 1);
+    });
+  });
+
+  it("dispatches each invoice list plan and retains the logical-OR session fallback", async () => {
+    await withBilling({
+      getInvoices: async (communityId: string | undefined) => ({ communityId: communityId ?? "all" }),
+      getManagerInvoices: async (id: string, communityId: string | undefined) => ({ id, communityId: communityId ?? "all" }),
+      getInvoicesByOrganization: async (orgId: string) => ({ orgId }),
+    }, async request => {
+      assert.deepEqual(await request("admin", "/api/invoices"), { status: 200, body: { communityId: "all" } });
+      assert.deepEqual((await request("admin", "/api/invoices?communityId=selected")).body, { communityId: "selected" });
+      assert.deepEqual((await request("hoa", "/api/invoices?communityId=ignored")).body, { communityId: "member-community" });
+      assert.deepEqual((await request("manager", "/api/invoices")).body, { id: "manager", communityId: "all" });
+      assert.deepEqual(await request("manager", "/api/invoices?communityId=outside"), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual((await request("client", "/api/invoices", "GET", undefined, "ignored")).body, { orgId: "org" });
+      assert.deepEqual((await request("sessionClient", "/api/invoices", "GET", undefined, "session")).body, { orgId: "session" });
+      assert.deepEqual((await request("sessionClient", "/api/invoices?communityId=selected", "GET", undefined, "session")).body, { communityId: "selected" });
+      assert.deepEqual(await request("sessionClient", "/api/invoices"), { status: 403, body: { error: "Access denied: no organization" } });
+      assert.deepEqual(await request("pm", "/api/invoices"), { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual((await request("pm", "/api/invoices?communityId=member-community")).body, { communityId: "member-community" });
+      assert.deepEqual(await request("pm", "/api/invoices?communityId=outside"), { status: 403, body: { error: "Access denied" } });
+    });
+  });
+
+  it("retains detail organization fallback and checks existence before client organization", async () => {
+    const invoice = { id: "existing", communityId: "member-community", contractorCompanyId: "company" };
+    await withBilling({ getInvoiceById: async (id: string) => id === "existing" ? invoice : undefined }, async request => {
+      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "org"), { status: 200, body: invoice });
+      assert.deepEqual(await request("sessionClient", "/api/invoices/existing"), { status: 403, body: { error: "Access denied: no organization" } });
+      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "foreign"), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("sessionClient", "/api/invoices/missing"), { status: 404, body: { error: "Invoice not found" } });
+    });
+  });
+
+  it("keeps mutation role-gate bodies and manager company existence ahead of approval", async () => {
+    await withBilling({ getCompanyById: async () => undefined }, async request => {
+      for (const method of ["POST", "PUT", "DELETE"]) {
+        const path = method === "POST" ? "/api/invoices" : "/api/invoices/missing";
+        assert.deepEqual(await request("pm", path, method, {}), { status: 403, body: { message: "Admin access required" } });
+      }
+      assert.deepEqual(await request("manager", "/api/invoices", "POST", {
+        communityId: "member-community", status: "approved",
+      }), { status: 403, body: { error: "Access denied" } });
+    });
+  });
+
+  for (const [path, expected] of [
+    ["/api/reports/water-usage", []],
+    ["/api/reports/tree-inventory", { groups: [], total: 0 }],
+    ["/api/reports/invoices/monthly", { groups: [], total: 0 }],
+  ] as const) it(`retains role, community and response handling for ${path}`, async () => {
+    const queries: any[][] = [];
+    await withBilling({
+      reportQuery: async (...args: any[]) => { queries.push(args); return { rows: [] }; },
+    }, async request => {
+      const query = path + "?month=11&year=2026";
+      assert.deepEqual(await request("manager", query), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("admin", query), { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual(await request("pm", query + "&communityId=outside"), { status: 403, body: { error: "Access denied" } });
+      assert.equal(queries.length, 0);
+      assert.deepEqual(await request("hoa", query + "&communityId=ignored"), { status: 200, body: expected });
+      assert.ok(queries.every(([, params]) => params[0] === "member-community"));
+      assert.deepEqual(await request("pm", query + "&communityId=member-community"), { status: 200, body: expected });
+      assert.deepEqual(await request("admin", query + "&communityId=selected"), { status: 200, body: expected });
+    });
+  });
+
+  it("retains report scope errors before month/year validation", async () => {
+    await withBilling({}, async request => {
+      assert.deepEqual(await request("pm", "/api/reports/invoices/monthly?communityId=outside"), {
+        status: 403, body: { error: "Access denied" },
+      });
+      assert.deepEqual(await request("pm", "/api/reports/invoices/monthly?communityId=member-community"), {
+        status: 400, body: { error: "Valid month (1-12) and year are required" },
+      });
+    });
+  });
+
+  it("keeps contract role/existence ordering, membership, filters and list input", async () => {
+    const records = [
+      { id: "active", isActive: true, startDate: "1900-01-01", endDate: "2999-01-01" },
+      { id: "upcoming", isActive: true, startDate: "2998-01-01", endDate: "2999-01-01" },
+      { id: "expired", isActive: true, startDate: "1900-01-01", endDate: "1901-01-01" },
+      { id: "disabled", isActive: false, startDate: "1900-01-01", endDate: "2999-01-01" },
+    ];
+    const queries: unknown[][] = [];
+    await withBilling({
+      getContracts: async (...args: unknown[]) => { queries.push(args); return records; },
+      getContractById: async (id: string) => id === "missing" ? undefined : { id, communityId: id },
+    }, async request => {
+      assert.deepEqual(await request("manager", "/api/contracts/missing"), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("pm", "/api/contracts/missing"), { status: 404, body: { error: "Contract not found" } });
+      assert.deepEqual(await request("pm", "/api/contracts"), { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual(await request("pm", "/api/contracts/outside"), { status: 403, body: { error: "Access denied" } });
+      assert.equal((await request("pm", "/api/contracts/member-community")).status, 200);
+      assert.equal((await request("pm", "/api/contracts?communityId=member-community&contractorUserId=crew")).status, 200);
+      assert.deepEqual(queries, [["member-community", "crew"]]);
+      for (const [status, ids] of [
+        ["active", ["active"]], ["upcoming", ["upcoming"]], ["expired", ["expired", "disabled"]],
+      ] as const) {
+        const response = await request("admin", `/api/contracts?status=${status}`);
+        assert.equal(response.status, 200);
+        assert.deepEqual(response.body.map((r: any) => r.id), ids);
+      }
+      assert.equal((await request("admin", "/api/contracts")).body.length, 4);
+    });
+  });
+
+  it("retains contract assignee input validation after schema and date checks", async () => {
+    const lookups: string[] = [];
+    await withBilling({
+      getUserById: async (id: string) => { lookups.push(id); return users[id]; },
+      getContractById: async () => ({ id: "contract", startDate: "2026-01-01", endDate: "2026-12-31" }),
+    }, async request => {
+      const input = { communityId: "member-community", contractorUserId: "manager",
+        contractType: "Fixture", startDate: "2026-01-01", endDate: "2026-12-31" };
+      assert.deepEqual(await request("admin", "/api/contracts", "POST", { ...input, endDate: "2025-01-01" }), {
+        status: 400, body: { error: "End date must be on or after start date" },
+      });
+      assert.deepEqual(lookups, []);
+      for (const contractorUserId of ["manager", "admin", "missing"]) {
+        assert.deepEqual(await request("admin", "/api/contracts", "POST", { ...input, contractorUserId }), {
+          status: 400, body: { error: "Selected user is not a contractor" },
+        });
+        assert.deepEqual(await request("admin", "/api/contracts/contract", "PUT", { contractorUserId }), {
+          status: 400, body: { error: "Selected user is not a contractor" },
+        });
+      }
+    });
+  });
+});

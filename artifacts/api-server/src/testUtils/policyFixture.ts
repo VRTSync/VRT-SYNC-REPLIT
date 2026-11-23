@@ -13,6 +13,9 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
         export * from "./policy";
         export { route } from "./routes/handler";
         export { registerTaskRoutes } from "./routes/tasks";
+        export { registerInvoiceRoutes } from "./routes/invoices";
+        export { registerReportRoutes } from "./routes/reports";
+        export { registerContractRoutes } from "./routes/contracts";
       `,
       resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "ts",
     },
@@ -20,11 +23,12 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
     plugins: [{
       name: "policy-fixture-io",
       setup(builder) {
-        builder.onResolve({ filter: /^\.\.\/(?:storage|auth|objectStorage|pushNotifications)$/ }, args => ({
+        builder.onResolve({ filter: /^\.\.\/(?:storage|auth|db|objectStorage|pushNotifications)$/ }, args => ({
           path: args.path.slice(3), namespace: "policy-fixture",
         }));
         builder.onLoad({ filter: /.*/, namespace: "policy-fixture" }, ({ path }) => ({
           contents: path === "storage" ? "module.exports = fixture.storage;"
+            : path === "db" ? "export const pool = { query: (...args) => fixture.storage.reportQuery(...args) };"
             : path === "auth" ? `
               export const requireAuth = (req,res,next) => next();
               export const requireAdmin = requireAuth;
@@ -54,6 +58,7 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
     },
     getCommunityById: async (id: string) => ({ id, organizationId: "org" }),
     getUserById: async (id: string) => ({ id }),
+    reportQuery: async (..._args: any[]) => ({ rows: [] }),
     getUserCommunities: async () => [],
     getTaskPageDataForRole: async () => ({ role: "admin", source: "page-data" }),
     getTaskById: async (id: string) => ({ id, communityId: "member-community", source: "task" }),
@@ -68,6 +73,8 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
     require, module, module.exports, { storage },
   );
   const api = module.exports as typeof import("../policy") &
-    typeof import("../routes/tasks") & typeof import("../routes/handler");
+    typeof import("../routes/tasks") & typeof import("../routes/handler") &
+    typeof import("../routes/invoices") & typeof import("../routes/reports") &
+    typeof import("../routes/contracts");
   return { api, calls, storage };
 }

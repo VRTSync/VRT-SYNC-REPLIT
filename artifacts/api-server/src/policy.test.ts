@@ -348,3 +348,170 @@ describe("map and offline permission compatibility", () => {
     assert.equal(await api.canUseCommunityMapData(person, "other-community"), false);
   });
 });
+
+describe("billing permission compatibility", () => {
+  const member = "member-community", outside = "other-community";
+  const manager = actor("contractor_manager", { companyId: "company" });
+  const client = actor("client_admin");
+  const hoa = actor("hoa_admin", { hoaCommunityId: member });
+  const invoice = { communityId: member, contractorCompanyId: "company", status: "draft" };
+  const listCases: [string, Actor, string | undefined, string | undefined, object][] = [
+    ["crew", actor("contractor"), member, undefined, { kind: "denied" }],
+    ["manager all memberships", manager, undefined, undefined, { kind: "manager", communityId: undefined }],
+    ["manager member", manager, member, undefined, { kind: "manager", communityId: member }],
+    ["manager nonmember", manager, outside, undefined, { kind: "not_member" }],
+    ["manager without company still delegates all", actor("contractor_manager"), undefined, undefined, { kind: "manager", communityId: undefined }],
+    ["manager without company member", actor("contractor_manager"), member, undefined, { kind: "manager", communityId: member }],
+    ["admin all", actor("admin"), undefined, undefined, { kind: "all", communityId: undefined }],
+    ["admin selected", actor("admin"), outside, undefined, { kind: "all", communityId: outside }],
+    ["admin empty query", actor("admin"), "", undefined, { kind: "all", communityId: undefined }],
+    ["HOA assignment ignores query", hoa, outside, undefined, { kind: "community", communityId: member }],
+    ["HOA assignment without query", hoa, undefined, undefined, { kind: "community", communityId: member }],
+    ["HOA without assignment or query", actor("hoa_admin"), undefined, undefined, { kind: "community_required" }],
+    ["HOA without assignment member", actor("hoa_admin"), member, undefined, { kind: "community", communityId: member }],
+    ["HOA without assignment nonmember", actor("hoa_admin"), outside, undefined, { kind: "not_member" }],
+    ["HOA member assignment", actor("hoa_member", { hoaCommunityId: outside }), member, undefined, { kind: "community", communityId: outside }],
+    ["client user org wins", client, undefined, "other", { kind: "organization", orgId: "org" }],
+    ["client user org branch", client, member, undefined, { kind: "community", communityId: member }],
+    ["client session org", actor("client_admin", { organizationId: null }), undefined, "org", { kind: "organization", orgId: "org" }],
+    ["client session org branch", actor("client_admin", { organizationId: null }), member, "org", { kind: "community", communityId: member }],
+    ["client empty user org falls back", actor("client_admin", { organizationId: "" }), undefined, "org", { kind: "organization", orgId: "org" }],
+    ["client no org", actor("client_admin", { organizationId: null }), undefined, undefined, { kind: "no_organization" }],
+    ["client no org with branch", actor("client_admin", { organizationId: null }), member, undefined, { kind: "no_organization" }],
+    ["client branch relies on middleware", client, outside, undefined, { kind: "community", communityId: outside }],
+    ["PM without community", actor("property_manager"), undefined, undefined, { kind: "community_required" }],
+    ["PM member", actor("property_manager"), member, undefined, { kind: "community", communityId: member }],
+    ["PM nonmember", actor("property_manager"), outside, undefined, { kind: "not_member" }],
+    ["map creator member", actor("map_creator"), member, undefined, { kind: "community", communityId: member }],
+  ];
+  for (const [name, person, communityId, sessionOrganizationId, expected] of listCases) {
+    it(`invoice list: ${name}`, async () => {
+      const { api } = await policyFixture();
+      assert.deepEqual(await api.invoiceListPlan(person, { communityId, sessionOrganizationId }), expected);
+    });
+  }
+
+  const readCases: [string, Actor, string, string | null, string | undefined, string][] = [
+    ["crew member", actor("contractor"), member, "company", undefined, "denied"],
+    ["crew outside", actor("contractor"), outside, "company", undefined, "denied"],
+    ["manager own company member", manager, member, "company", undefined, "ok"],
+    ["manager own company nonmember", manager, outside, "company", undefined, "denied"],
+    ["manager foreign company member", manager, member, "foreign", undefined, "denied"],
+    ["manager no company", actor("contractor_manager"), member, null, undefined, "denied"],
+    ["admin member", actor("admin"), member, null, undefined, "ok"],
+    ["admin outside", actor("admin"), outside, null, undefined, "ok"],
+    ["HOA own", hoa, member, null, undefined, "ok"],
+    ["HOA outside despite membership", actor("hoa_admin", { hoaCommunityId: outside }), member, null, undefined, "denied"],
+    ["HOA unassigned member", actor("hoa_admin"), member, null, undefined, "ok"],
+    ["HOA unassigned nonmember", actor("hoa_admin"), outside, null, undefined, "denied"],
+    ["HOA member own", actor("hoa_member", { hoaCommunityId: member }), member, null, undefined, "ok"],
+    ["HOA member outside", actor("hoa_member", { hoaCommunityId: outside }), member, null, undefined, "denied"],
+    ["client user org", client, member, null, "foreign", "ok"],
+    ["client foreign org", actor("client_admin", { organizationId: "foreign" }), member, null, "org", "denied"],
+    ["client session org", actor("client_admin", { organizationId: null }), member, null, "org", "ok"],
+    ["client foreign session org", actor("client_admin", { organizationId: null }), member, null, "foreign", "denied"],
+    ["client empty org falls back", actor("client_admin", { organizationId: "" }), member, null, "org", "ok"],
+    ["client no org", actor("client_admin", { organizationId: null }), member, null, undefined, "no_organization"],
+    ["PM member", actor("property_manager"), member, null, undefined, "ok"],
+    ["PM nonmember", actor("property_manager"), outside, null, undefined, "denied"],
+    ["map creator member", actor("map_creator"), member, null, undefined, "ok"],
+    ["map creator nonmember", actor("map_creator"), outside, null, undefined, "denied"],
+  ];
+  for (const [name, person, communityId, contractorCompanyId, sessionOrganizationId, expected] of readCases) {
+    it(`invoice read: ${name}`, async () => {
+      const { api } = await policyFixture();
+      assert.equal(await api.invoiceReadAccess(person, { communityId, contractorCompanyId }, { sessionOrganizationId }), expected);
+    });
+  }
+  for (const community of [undefined, { organizationId: null }, { organizationId: "foreign" }]) {
+    it(`denies client invoice when community is ${JSON.stringify(community)}`, async () => {
+      const { api } = await policyFixture({ getCommunityById: async () => community });
+      assert.equal(await api.invoiceReadAccess(client, invoice, {}), "denied");
+    });
+  }
+
+  for (const role of ["contractor_manager", "admin"] as const) {
+    for (const mode of ["create", "update"] as const) {
+      for (const status of [undefined, "draft", "submitted", "approved", "paid", "void", null, "invalid", "", 0]) {
+        it(`${role} invoice ${mode} status ${String(status)}`, async () => {
+          const { api } = await policyFixture();
+          const expected = role === "admin" ? "ok" : status === "approved" ? "staff_only"
+            : status === undefined || status === "draft" || status === "submitted" ||
+              (mode === "update" && (status === "paid" || status === "void")) ? "ok" : "invalid";
+          assert.equal(api.invoiceStatusRule(actor(role), status, mode), expected);
+        });
+      }
+    }
+  }
+
+  for (const [name, person, communityId, company, status, expected] of [
+    ["admin any invoice", actor("admin"), outside, "foreign", "approved", true],
+    ["manager own draft", manager, member, "company", "draft", true],
+    ["manager own submitted", manager, member, "company", "submitted", false],
+    ["manager foreign draft", manager, member, "foreign", "draft", false],
+    ["manager nonmember draft", manager, outside, "company", "draft", false],
+    ["manager companyless draft", actor("contractor_manager"), member, null, "draft", false],
+  ] as const) it(`invoice delete: ${name}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.canDeleteInvoice(person, { communityId, contractorCompanyId: company, status }), expected);
+  });
+
+  for (const role of ["admin", "property_manager", "contractor", "contractor_manager",
+    "hoa_admin", "hoa_member", "client_admin", "map_creator"] as const) {
+    it(`billing role gates for ${role}`, async () => {
+      const { api } = await policyFixture();
+      const person = actor(role);
+      assert.equal(api.canRequestInvoice(person), role !== "contractor");
+      assert.equal(api.canManageInvoices(person), role === "admin" || role === "contractor_manager");
+      assert.equal(api.hasFixedInvoiceCompany(person), role === "contractor_manager");
+      assert.equal(api.canReadReports(person), ["admin", "property_manager", "hoa_admin", "hoa_member"].includes(role));
+      assert.equal(api.canReadContracts(person), role === "admin" || role === "property_manager");
+      assert.equal(api.canHoldContract(person), role === "contractor");
+    });
+  }
+
+  for (const [name, person, communityId, expected] of [
+    ["company and membership", manager, member, true],
+    ["company without membership", manager, outside, false],
+    ["membership without company", actor("contractor_manager"), member, false],
+  ] as const) it(`manager create/write: ${name}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.managerCanCreateInvoice(person, communityId), expected);
+    assert.equal(await api.managerCanWriteInvoice(person, { communityId, contractorCompanyId: "company" }), expected);
+  });
+  it("checks company before membership and status after membership", async () => {
+    const { api, calls } = await policyFixture();
+    assert.equal(await api.managerCanWriteInvoice(manager, { ...invoice, contractorCompanyId: "foreign" }), false);
+    assert.equal(await api.managerCanCreateInvoice(actor("contractor_manager"), member), false);
+    assert.deepEqual(calls, []);
+    assert.equal(await api.canDeleteInvoice(manager, { ...invoice, status: "submitted" }), false);
+    assert.deepEqual(calls, [["actor", member]]);
+  });
+
+  for (const [name, person, query, expected] of [
+    ["admin missing query", actor("admin"), undefined, "community_required"],
+    ["admin empty query", actor("admin"), "", "community_required"],
+    ["admin selected", actor("admin"), outside, { communityId: outside }],
+    ["HOA assigned ignores query", hoa, outside, { communityId: member }],
+    ["HOA assigned no query", hoa, undefined, { communityId: member }],
+    ["HOA member assigned", actor("hoa_member", { hoaCommunityId: member }), outside, { communityId: member }],
+    ["HOA unassigned missing query", actor("hoa_admin"), undefined, "community_required"],
+    ["HOA unassigned member", actor("hoa_admin"), member, { communityId: member }],
+    ["HOA unassigned nonmember", actor("hoa_member"), outside, "not_member"],
+    ["PM missing query", actor("property_manager"), undefined, "community_required"],
+    ["PM member", actor("property_manager"), member, { communityId: member }],
+    ["PM nonmember", actor("property_manager"), outside, "not_member"],
+  ] as const) it(`report community: ${name}`, async () => {
+    const { api } = await policyFixture();
+    assert.deepEqual(await api.reportCommunity(person, query), expected);
+  });
+
+  for (const [role, communityId, expected] of [
+    ["admin", undefined, "ok"], ["admin", outside, "ok"],
+    ["property_manager", undefined, "community_required"], ["property_manager", "", "community_required"],
+    ["property_manager", member, "ok"], ["property_manager", outside, "not_member"],
+  ] as const) it(`contract community: ${role} ${String(communityId)}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.contractCommunityAccess(actor(role), communityId), expected);
+  });
+});
