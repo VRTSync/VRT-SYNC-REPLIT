@@ -15,6 +15,316 @@ const inventory = [
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
 
+describe("object, drive and contact route structure", () => {
+  const modules = [
+    { file: "objects", register: "registerObjectRoutes", inventory: [
+      "get /public-objects/{*filePath}", "get /objects/{*objectPath}",
+      "post /api/objects/upload", "delete /api/objects", "post /api/objects/confirm",
+    ] },
+    { file: "drive", register: "registerDriveRoutes", inventory: [
+      "get /api/drive", "post /api/drive/folders", "patch /api/drive/folders/:id",
+      "delete /api/drive/folders/:id", "post /api/drive/files", "patch /api/drive/files/:id",
+      "delete /api/drive/files/:id", "get /api/drive/files/:id/download",
+    ] },
+    { file: "contacts", register: "registerContactRoutes", inventory: [
+      "get /api/contacts", "post /api/contacts", "put /api/contacts/:id", "delete /api/contacts/:id",
+    ] },
+  ];
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`keeps the ${module.file} inventory, middleware, wrappers and registration order`, () => {
+      assert.deepEqual([...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+        .map(([, method, path]) => `${method} ${path}`), module.inventory);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.equal((source.match(/route\(async /g) ?? []).length, module.inventory.length);
+      assert.equal((source.match(/^    try \{/gm) ?? []).length, module.inventory.length);
+      const declarations = source.split("\n").filter(line => /^  app\./.test(line));
+      declarations.forEach((line, i) => {
+        if (module.file === "objects" && i === 0) {
+          assert.match(line, /", route\(async /);
+          assert.doesNotMatch(line, /requireAuth/);
+        } else {
+          assert.match(line, /", requireAuth, route\(async /);
+        }
+      });
+    });
+    it(`keeps ${module.file} role and community decisions in central policy`, () => {
+      assert.doesNotMatch(source, /\.role\s*[!=]==?|\.includes\([^)]*\.role/);
+      assert.doesNotMatch(source, /isHoaRole\s*\(|isUserMemberOfCommunity\s*\(|userCanAccessCommunity\s*\(/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("removes all moved paths from main and retains their exact registration positions", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["']\/(?:objects|public-objects|api\/(?:objects|drive|contacts))/);
+    assert.match(main, /app\.use\("\/api", enforceHoaScoping\);\s*app\.use\("\/api", enforceOrgScoping\);\s*registerObjectRoutes\(app\);\s*app\.get\("\/api\/communities"/);
+    assert.match(main, /registerContractRoutes\(app\);\s*registerDriveRoutes\(app\);\s*registerContactRoutes\(app\);\s*registerPortfolioRoutes\(app\);/);
+  });
+  it("retains drive constants solely as fixture boundaries, never as decisions", () => {
+    const drive = readFileSync(new URL("./routes/drive.ts", import.meta.url), "utf8");
+    assert.match(drive, /export function registerDriveRoutes\(app: Express\): void \{\n  const driveMutateRoles = \['admin', 'property_manager', 'hoa_admin'\];\n  const driveReadRoles = \['admin', 'property_manager', 'hoa_admin', 'hoa_member'\];/);
+    for (const constant of ["driveMutateRoles", "driveReadRoles"]) {
+      assert.equal(drive.split(constant).length - 1, 1);
+    }
+    assert.equal((drive.match(/requireDriveAccess\(req, res, policy.canReadDrive\)/g) ?? []).length, 2);
+    assert.equal((drive.match(/requireDriveAccess\(req, res, policy.canChangeDrive\)/g) ?? []).length, 6);
+    assert.match(drive, /policy\.canUseCommunityDrive\(policy\.actorFromUser\(user\), communityId\)/);
+  });
+  it("keeps task-attachment scope before object lookup and ACL enforcement", () => {
+    const objects = readFileSync(new URL("./routes/objects.ts", import.meta.url), "utf8");
+    const start = objects.indexOf('app.get("/objects/');
+    const end = objects.indexOf('app.post("/api/objects/upload"');
+    const read = objects.slice(start, end);
+    const order = ["policy.needsManagerTaskObjectCheck(", "storage.canManagerReadTaskObject(",
+      "objectStorageService.getObjectEntityFile(", "objectStorageService.canAccessObjectEntity(",
+      "objectStorageService.downloadObject("];
+    order.forEach((expression, i) => {
+      assert.ok(read.includes(expression));
+      if (i) assert.ok(read.indexOf(order[i - 1]) < read.indexOf(expression));
+    });
+  });
+  it("reconstructs exactly 5/8/4 production handlers for existing fixture consumers", () => {
+    const source = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
+    assert.match(source, /\["objects", "registerObjectRoutes", 5\]/);
+    assert.match(source, /\["drive", "registerDriveRoutes", 8\]/);
+    assert.match(source, /\["contacts", "registerContactRoutes", 4\]/);
+  });
+});
+
+describe("drive and contact handler response compatibility", () => {
+  const users: Record<string, any> = {
+    admin: { id: "admin", role: "admin" },
+    pm: { id: "pm", role: "property_manager" },
+    hoa: { id: "hoa", role: "hoa_admin", hoaCommunityId: "member-community" },
+    unassigned: { id: "unassigned", role: "hoa_admin" },
+    reader: { id: "reader", role: "hoa_member", hoaCommunityId: "member-community" },
+    crew: { id: "crew", role: "contractor" },
+  };
+  async function withHandlers(overrides: Record<string, any>, check: (
+    request: (user: string, path: string, method?: string, body?: unknown) =>
+      Promise<{ status: number; body: any }>,
+  ) => Promise<void>) {
+    const { api } = await policyFixture({
+      getUserById: async (id: string) => users[id],
+      getDriveFolder: async (id: string) => id === "missing" ? undefined : { id, communityId: "member-community" },
+      getDriveFile: async (id: string) => id === "missing" ? undefined :
+        { id, communityId: "member-community", fileRef: "/objects/file", name: "Report.pdf" },
+      getContactById: async (id: string) => id === "missing" ? undefined : { id, communityId: "member-community" },
+      ...overrides,
+    });
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.session = { userId: req.headers["x-user"] } as any;
+      req.log = { error() {} } as any;
+      next();
+    });
+    api.registerDriveRoutes(app);
+    api.registerContactRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>(resolve => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      assert.ok(address && typeof address !== "string");
+      await check(async (user, path, method = "GET", body) => {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method, headers: { "x-user": user, "Content-Type": "application/json" },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: response.status, body: response.status === 204 ? null : await response.json() };
+      });
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    }
+  }
+
+  it("retains missing-user bodies and drive read/write differences before validation and lookups", async () => {
+    await withHandlers({}, async request => {
+      for (const [method, path] of [
+        ["GET", "/api/drive"], ["POST", "/api/drive/folders"],
+        ["PATCH", "/api/drive/folders/missing"], ["DELETE", "/api/drive/folders/missing"],
+        ["POST", "/api/drive/files"], ["PATCH", "/api/drive/files/missing"],
+        ["DELETE", "/api/drive/files/missing"], ["GET", "/api/drive/files/missing/download"],
+      ]) {
+        assert.deepEqual(await request("missing-user", path, method, method === "GET" ? undefined : {}),
+          { status: 403, body: { error: "Access denied" } });
+        assert.deepEqual(await request("crew", path, method, method === "GET" ? undefined : {}),
+          { status: 403, body: { error: "Access denied" } });
+        if (method !== "GET") assert.deepEqual(await request("reader", path, method, {}),
+          { status: 403, body: { error: "Access denied" } });
+      }
+      for (const [method, path] of [
+        ["GET", "/api/contacts"], ["POST", "/api/contacts"],
+        ["PUT", "/api/contacts/missing"], ["DELETE", "/api/contacts/missing"],
+      ]) {
+        assert.deepEqual(await request("missing-user", path, method, method === "GET" ? undefined : {}),
+          { status: 401, body: { error: "User not found" } });
+      }
+      assert.deepEqual(await request("reader", "/api/drive"), { status: 400, body: { error: "communityId is required" } });
+      assert.deepEqual(await request("reader", "/api/drive/files/missing/download"),
+        { status: 404, body: { error: "File not found" } });
+    });
+  });
+
+  it("keeps drive folder community checks before parent validation, but file parent checks before access", async () => {
+    const calls: string[] = [];
+    await withHandlers({
+      isUserMemberOfCommunity: async () => { calls.push("membership"); return false; },
+      getDriveFolder: async () => { calls.push("folder"); return { communityId: "foreign" }; },
+    }, async request => {
+      assert.deepEqual(await request("pm", "/api/drive/folders", "POST", {
+        communityId: "outside", parentId: "foreign", name: "Folder",
+      }), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(calls, ["membership"]);
+      calls.length = 0;
+      assert.deepEqual(await request("pm", "/api/drive/files", "POST", {
+        communityId: "outside", folderId: "foreign", name: "File", fileRef: "/objects/file",
+      }), { status: 400, body: { error: "Folder not found or belongs to a different community" } });
+      assert.deepEqual(calls, ["folder"]);
+      calls.length = 0;
+      assert.deepEqual(await request("pm", "/api/drive/files", "POST", {
+        communityId: "outside", folderId: "foreign", name: "File", fileRef: "https://invalid",
+      }), { status: 400, body: { error: "Invalid file reference" } });
+      assert.deepEqual(calls, []);
+      assert.deepEqual(await request("admin", "/api/drive/folders", "POST", {
+        communityId: "member-community", parentId: "foreign", name: "Folder",
+      }), { status: 400, body: { error: "Parent folder not found or belongs to a different community" } });
+    });
+  });
+
+  it("preserves drive 404s before access, access before rename validation, and delete failure responses", async () => {
+    await withHandlers({
+      getDriveFolder: async (id: string) => id === "missing" ? undefined : { id, communityId: "outside" },
+      getDriveFile: async (id: string) => id === "missing" ? undefined : { id, communityId: "outside" },
+      deleteDriveFolder: async () => { throw Error("FOLDER_NOT_EMPTY"); },
+    }, async request => {
+      for (const resource of ["folders", "files"]) {
+        for (const method of ["PATCH", "DELETE"]) {
+          assert.deepEqual(await request("pm", `/api/drive/${resource}/missing`, method, {}),
+            { status: 404, body: { error: resource === "folders" ? "Folder not found" : "File not found" } });
+          assert.deepEqual(await request("pm", `/api/drive/${resource}/existing`, method, {}),
+            { status: 403, body: { error: "Access denied" } });
+        }
+      }
+      assert.deepEqual(await request("admin", "/api/drive/folders/existing", "DELETE"),
+        { status: 409, body: { error: "Cannot delete a folder that contains files or subfolders. Please remove its contents first." } });
+    });
+  });
+
+  it("retains successful drive browse, create, rename, delete and download behavior", async () => {
+    const calls: any[][] = [];
+    const record = (name: string) => async (...args: any[]) => { calls.push([name, ...args]); return args[1] ?? args[0]; };
+    await withHandlers({
+      getDriveFolders: async () => [{ id: "folder" }], getDriveFiles: async () => [{ id: "file" }],
+      createDriveFolder: record("createFolder"), updateDriveFolder: record("updateFolder"),
+      deleteDriveFolder: record("deleteFolder"), createDriveFile: record("createFile"),
+      updateDriveFile: record("updateFile"), deleteObject: record("deleteObject"),
+      deleteDriveFile: record("deleteFile"), getObjectEntityFile: record("object"),
+      downloadObject: async (_object: any, res: any) => res.json({ downloaded: true }),
+    }, async request => {
+      for (const user of ["admin", "pm", "hoa", "reader"]) {
+        assert.deepEqual(await request(user, "/api/drive?communityId=member-community"),
+          { status: 200, body: { folders: [{ id: "folder" }], files: [{ id: "file" }] } });
+      }
+      for (const user of ["admin", "pm", "hoa"]) {
+        const folder = await request(user, "/api/drive/folders", "POST", { communityId: "member-community", name: "Folder", extra: true });
+        assert.deepEqual(folder, { status: 201, body: { communityId: "member-community", name: "Folder", createdBy: user } });
+        const file = await request(user, "/api/drive/files", "POST", { communityId: "member-community", name: "File", fileRef: "/objects/file", extra: true });
+        assert.deepEqual(file, { status: 201, body: { communityId: "member-community", name: "File", fileRef: "/objects/file", uploadedBy: user } });
+        for (const resource of ["folders", "files"]) {
+          assert.deepEqual(await request(user, `/api/drive/${resource}/existing`, "PATCH", { name: "Renamed", extra: true }),
+            { status: 200, body: { name: "Renamed" } });
+          assert.deepEqual(await request(user, `/api/drive/${resource}/existing`, "DELETE"), { status: 204, body: null });
+        }
+      }
+      assert.deepEqual(await request("reader", "/api/drive/files/existing/download"), { status: 200, body: { downloaded: true } });
+      const deletions = calls.filter(([name]) => name === "deleteObject" || name === "deleteFile");
+      assert.deepEqual(deletions, Array.from({ length: 3 }, () => [["deleteObject", "/objects/file"], ["deleteFile", "existing"]]).flat());
+    });
+  });
+
+  it("dispatches contact lists including all PM communities, HOA query ignoring and unassigned denial", async () => {
+    await withHandlers({
+      getContacts: async (communityId: string | undefined) => ({ communityId: communityId ?? "all" }),
+      getUserCommunitiesList: async () => [{ id: "member-community" }, { id: "second" }],
+      getContactsForCommunities: async (ids: string[]) => ids,
+    }, async request => {
+      assert.deepEqual(await request("admin", "/api/contacts"), { status: 200, body: { communityId: "all" } });
+      assert.deepEqual((await request("admin", "/api/contacts?communityId=outside")).body, { communityId: "outside" });
+      assert.deepEqual((await request("pm", "/api/contacts")).body, ["member-community", "second"]);
+      assert.deepEqual((await request("pm", "/api/contacts?communityId=member-community")).body, { communityId: "member-community" });
+      assert.deepEqual(await request("pm", "/api/contacts?communityId=outside"),
+        { status: 403, body: { error: "Not a member of this community" } });
+      for (const user of ["hoa", "reader"]) assert.deepEqual((await request(user, "/api/contacts?communityId=ignored")).body,
+        { communityId: "member-community" });
+      for (const user of ["unassigned", "crew"]) assert.deepEqual(await request(user, "/api/contacts"),
+        { status: 403, body: { error: "Access denied" } });
+    });
+    await withHandlers({ getUserCommunitiesList: async () => [] }, async request => {
+      assert.deepEqual(await request("pm", "/api/contacts"), { status: 200, body: [] });
+    });
+  });
+
+  it("keeps contact write gates, existence checks, membership checks and validation ordering", async () => {
+    await withHandlers({
+      getContactById: async (id: string) => id === "missing" ? undefined : { id, communityId: "outside" },
+    }, async request => {
+      for (const user of ["reader", "crew"]) for (const [method, path] of [
+        ["POST", "/api/contacts"], ["PUT", "/api/contacts/missing"], ["DELETE", "/api/contacts/missing"],
+      ]) assert.deepEqual(await request(user, path, method, {}), { status: 403, body: { error: "Access denied" } });
+      for (const user of ["pm", "hoa"]) {
+        for (const method of ["PUT", "DELETE"]) {
+          assert.deepEqual(await request(user, "/api/contacts/missing", method, {}),
+            { status: 404, body: { error: "Contact not found" } });
+          assert.deepEqual(await request(user, "/api/contacts/existing", method, {}),
+            { status: 403, body: { error: user === "pm" ? "Not a member of this community" : "Access denied" } });
+        }
+        const invalid = await request(user, "/api/contacts", "POST", {});
+        assert.equal(invalid.status, 400);
+        assert.equal(invalid.body.error, "Invalid input");
+        assert.ok(invalid.body.details);
+      }
+      assert.deepEqual(await request("pm", "/api/contacts", "POST", { name: "Contact", communityId: "outside" }),
+        { status: 403, body: { error: "Not a member of this community" } });
+      assert.deepEqual(await request("hoa", "/api/contacts", "POST", { name: "Contact", communityId: "outside" }),
+        { status: 403, body: { error: "Cannot create contacts for other communities" } });
+    });
+  });
+
+  it("preserves unassigned HOA-admin writes and prohibits every HOA-admin move", async () => {
+    await withHandlers({
+      createContact: async (data: any) => data, updateContact: async (_id: string, data: any) => data,
+      deleteContact: async () => {},
+    }, async request => {
+      for (const user of ["admin", "pm", "hoa", "unassigned"]) {
+        const communityId = user === "unassigned" ? "outside" : "member-community";
+        assert.deepEqual(await request(user, "/api/contacts", "POST", { communityId, name: "Contact", extra: true }), {
+          status: 201, body: { communityId, name: "Contact", title: null, company: null, phone: null, email: null, contactType: "Other", notes: null },
+        });
+        assert.deepEqual(await request(user, "/api/contacts/existing", "PUT", { name: "Renamed", extra: true }),
+          { status: 200, body: { name: "Renamed" } });
+        assert.deepEqual(await request(user, "/api/contacts/existing", "DELETE"), { status: 204, body: null });
+      }
+      for (const user of ["hoa", "unassigned"]) assert.deepEqual(
+        await request(user, "/api/contacts/existing", "PUT", { communityId: "outside" }),
+        { status: 403, body: { error: "Cannot move contacts to another community" } });
+      assert.deepEqual(await request("pm", "/api/contacts/existing", "PUT", { communityId: "outside" }),
+        { status: 403, body: { error: "Not a member of the target community" } });
+      assert.deepEqual(await request("admin", "/api/contacts/existing", "PUT", { communityId: "outside" }),
+        { status: 200, body: { communityId: "outside" } });
+      assert.deepEqual(await request("pm", "/api/contacts/existing", "PUT", { communityId: "member-community" }),
+        { status: 200, body: { communityId: "member-community" } });
+    });
+    await withHandlers({
+      isUserMemberOfCommunity: async () => true, updateContact: async (_id: string, data: any) => data,
+    }, async request => {
+      assert.deepEqual(await request("pm", "/api/contacts/existing", "PUT", { communityId: "second-member-community" }),
+        { status: 200, body: { communityId: "second-member-community" } });
+    });
+  });
+});
+
 describe("asset route structure", () => {
   const assets = readFileSync(new URL("./routes/assets.ts", import.meta.url), "utf8");
   const assetInventory = [
@@ -352,7 +662,7 @@ describe("billing route structure", () => {
     assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:invoices|reports\/|contracts)/);
     assert.match(main, /registerInvoiceRoutes\(app\);\s*registerReportRoutes\(app\);\s*registerContractRoutes\(app\);/);
     assert.ok(main.indexOf('app.put("/api/notifications/:id/read",') < main.indexOf("registerInvoiceRoutes(app);"));
-    assert.ok(main.indexOf("registerContractRoutes(app);") < main.indexOf("const driveMutateRoles ="));
+    assert.ok(main.indexOf("registerContractRoutes(app);") < main.indexOf("registerDriveRoutes(app);"));
   });
   it("retains only the required unused invoice role boundaries", () => {
     const invoices = readFileSync(new URL("./routes/invoices.ts", import.meta.url), "utf8");

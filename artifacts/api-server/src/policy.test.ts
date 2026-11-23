@@ -43,6 +43,104 @@ function actor(role: Actor["role"], extra: Partial<Actor> = {}): Actor {
   return { id: "actor", role, companyId: null, hoaCommunityId: null, organizationId: "org", ...extra };
 }
 
+describe("file, drive and contact permission compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
+  for (const role of roles) it(`retains file and drive role gates for ${role}`, async () => {
+    const { api } = await policyFixture();
+    const person = actor(role);
+    assert.equal(api.needsManagerTaskObjectCheck(person), role === "contractor_manager");
+    assert.equal(api.canReadDrive(person), ["admin", "property_manager", "hoa_admin", "hoa_member"].includes(role));
+    assert.equal(api.canChangeDrive(person), ["admin", "property_manager", "hoa_admin"].includes(role));
+    assert.equal(api.canWriteContacts(person), ["admin", "property_manager", "hoa_admin"].includes(role));
+  });
+
+  for (const [name, person, community, expected] of [
+    ["admin", actor("admin"), "other-community", true],
+    ["HOA admin matching without membership", actor("hoa_admin", { hoaCommunityId: "other-community" }), "other-community", true],
+    ["HOA member matching without membership", actor("hoa_member", { hoaCommunityId: "other-community" }), "other-community", true],
+    ["HOA admin mismatch", actor("hoa_admin", { hoaCommunityId: "elsewhere" }), "other-community", false],
+    ["HOA member mismatch", actor("hoa_member", { hoaCommunityId: "elsewhere" }), "other-community", false],
+    ["HOA mismatch but member", actor("hoa_admin", { hoaCommunityId: "elsewhere" }), "member-community", true],
+    ["HOA unassigned member", actor("hoa_member"), "member-community", true],
+    ["member", actor("contractor"), "member-community", true],
+    ["nonmember", actor("contractor"), "other-community", false],
+    ["organization alone", actor("client_admin"), "other-community", false],
+  ] as const) it(`file attachment: ${name}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.canAttachFileToCommunity(person, community), expected);
+  });
+
+  for (const [name, person, community, expected] of [
+    ["assigned HOA without membership", actor("hoa_admin", { hoaCommunityId: "other-community" }), "other-community", true],
+    ["assigned HOA member without membership", actor("hoa_member", { hoaCommunityId: "other-community" }), "other-community", true],
+    ["HOA mismatch despite membership", actor("hoa_admin", { hoaCommunityId: "elsewhere" }), "member-community", false],
+    ["commercial organization branch", actor("client_admin"), "other-community", true],
+    ["foreign organization", actor("client_admin", { organizationId: "foreign" }), "other-community", false],
+    ["PM nonmember", actor("property_manager"), "other-community", false],
+    ["PM member", actor("property_manager"), "member-community", true],
+  ] as const) it(`general drive community access: ${name}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.canUseCommunityDrive(person, community), expected);
+  });
+
+  const member = "member-community", outside = "other-community";
+  const ownCommunity = { kind: "community", communityId: member };
+  const contactCases: {
+    name: string; person: Actor; list: [unknown, unknown, unknown];
+    create: [string, string]; change: [string, string]; move: [string, string];
+  }[] = [
+    { name: "admin", person: actor("admin"),
+      list: [{ kind: "all", communityId: undefined }, { kind: "all", communityId: member }, { kind: "all", communityId: outside }],
+      create: ["ok", "ok"], change: ["ok", "ok"], move: ["ok", "ok"] },
+    { name: "PM member and nonmember", person: actor("property_manager"),
+      list: [{ kind: "my_communities" }, { kind: "community", communityId: member }, "not_member"],
+      create: ["ok", "not_member"], change: ["ok", "not_member"], move: ["ok", "not_member_target"] },
+    { name: "HOA admin matching and other", person: actor("hoa_admin", { hoaCommunityId: member }),
+      list: [ownCommunity, ownCommunity, ownCommunity],
+      create: ["ok", "other_community"], change: ["ok", "denied"], move: ["hoa_cannot_move", "hoa_cannot_move"] },
+    { name: "HOA admin without assignment", person: actor("hoa_admin"),
+      list: ["denied", "denied", "denied"],
+      create: ["ok", "ok"], change: ["ok", "ok"], move: ["hoa_cannot_move", "hoa_cannot_move"] },
+    { name: "HOA member matching and other (write gate denies)", person: actor("hoa_member", { hoaCommunityId: member }),
+      list: [ownCommunity, ownCommunity, ownCommunity],
+      create: ["ok", "other_community"], change: ["ok", "ok"], move: ["ok", "ok"] },
+    { name: "HOA member without assignment (write gate denies)", person: actor("hoa_member"),
+      list: ["denied", "denied", "denied"],
+      create: ["ok", "ok"], change: ["ok", "ok"], move: ["ok", "ok"] },
+    ...(["contractor", "contractor_manager", "client_admin", "map_creator"] as const).map(role => ({
+      name: `${role} (write gate denies)`, person: actor(role),
+      list: ["denied", "denied", "denied"] as [unknown, unknown, unknown],
+      create: ["ok", "ok"] as [string, string], change: ["ok", "ok"] as [string, string], move: ["ok", "ok"] as [string, string],
+    })),
+  ];
+  for (const row of contactCases) {
+    for (const [i, community] of [undefined, member, outside].entries()) {
+      it(`contact list ${row.name}, community=${community}`, async () => {
+        const { api } = await policyFixture();
+        assert.deepEqual(await api.contactListPlan(row.person, community), row.list[i]);
+      });
+    }
+    for (const [i, community] of [member, outside].entries()) {
+      it(`contact create/change/move ${row.name}, community=${community}`, async () => {
+        const { api } = await policyFixture();
+        assert.equal(await api.contactCreateAccess(row.person, community), row.create[i]);
+        assert.equal(await api.contactChangeAccess(row.person, { communityId: community }), row.change[i]);
+        assert.equal(await api.contactMoveAccess(row.person, community), row.move[i]);
+      });
+    }
+  }
+  it("retains empty contact filters and short-circuits membership checks", async () => {
+    const { api, calls } = await policyFixture();
+    assert.deepEqual(await api.contactListPlan(actor("admin"), ""), { kind: "all", communityId: undefined });
+    assert.deepEqual(await api.contactListPlan(actor("property_manager"), ""), { kind: "my_communities" });
+    assert.equal(await api.canAttachFileToCommunity(actor("admin"), outside), true);
+    assert.equal(await api.canAttachFileToCommunity(actor("hoa_admin", { hoaCommunityId: outside }), outside), true);
+    assert.equal(await api.contactMoveAccess(actor("hoa_admin"), outside), "hoa_cannot_move");
+    assert.deepEqual(calls, []);
+  });
+});
+
 describe("permission engine role matrix", () => {
   for (const row of rows) it(row.name, async () => {
     const { api } = await policyFixture();

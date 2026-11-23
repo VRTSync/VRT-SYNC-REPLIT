@@ -22,12 +22,14 @@ function between(start: string, end: string) {
 }
 const handlers = [
   between('app.get("/public-objects/', 'app.post("/api/objects/upload",'),
+  between('app.post("/api/objects/upload",', 'app.post("/api/objects/confirm",'),
   between('app.post("/api/objects/confirm",', 'app.get("/api/communities",'),
   between('app.post("/api/tasks/:id/attachments",', 'app.get("/api/task-completions/:id/attachments",'),
   between('app.post("/api/assets/:id/attachments",', 'app.get("/api/assets/:id/attachments",'),
   between('app.post("/api/portfolio/work-orders/:taskId/photos",', '// ── Admin: Organization provisioning'),
   between('app.get("/api/drive/files/:id/download",', '/* ─── Contacts'),
 ].join("\n");
+const driveHelpers = between("const driveMutateRoles =", 'app.get("/api/drive",');
 const require = createRequire(import.meta.url);
 type Policy = { owner: string; visibility: "public" | "private"; aclRules?: any[] };
 type StoredFile = { type?: string; policy?: Policy; bytes: Buffer; writes: number };
@@ -56,9 +58,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
           export { ObjectStorageService, ObjectForbiddenError, objectStorageClient };
           const resolvePortfolioOrg = () => ({ orgId: "org" });
           const isUniqueViolation = () => false;
-          const driveReadRoles = [];
-          const requireDriveAccess = (req: any) => storage.getUserById(req.session.userId);
-          const checkCommunityAccess = async () => true;
+          ${driveHelpers}
           export function setup(app: any) { app.use(loadCurrentUser); registerAuthRoutes(app); ${handlers} }
         `,
         resolveDir: fileURLToPath(new URL(".", import.meta.url)),
@@ -142,6 +142,7 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
       file: (name: string) => ({
         name,
         exists: async () => [files.has(name)],
+        delete: async () => { files.delete(name); },
         getMetadata: async () => {
           const file = files.get(name);
           assert.ok(file, `missing fixture: ${name}`);
@@ -197,6 +198,52 @@ describe("file ownership and safe serving (isolated HTTP regressions)", () => {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   }
+
+  it("retains upload URL success and failure bodies without real signing I/O", async () => {
+    const original = api.ObjectStorageService.prototype.getObjectEntityUploadURL;
+    try {
+      api.ObjectStorageService.prototype.getObjectEntityUploadURL = async () => "https://example.invalid/fixture-upload";
+      const success = await request("/api/objects/upload", {});
+      assert.equal(success.status, 200);
+      assert.deepEqual(await success.json(), { uploadURL: "https://example.invalid/fixture-upload" });
+      api.ObjectStorageService.prototype.getObjectEntityUploadURL = async () => { throw Error("signing failed"); };
+      const failed = await request("/api/objects/upload", {});
+      assert.equal(failed.status, 500);
+      assert.deepEqual(await failed.json(), { error: "Failed to generate upload URL" });
+    } finally {
+      api.ObjectStorageService.prototype.getObjectEntityUploadURL = original;
+    }
+  });
+
+  it("retains cleanup validation and deletes only unshared caller-owned objects", async () => {
+    for (const objectPaths of [undefined, [], "not-an-array"]) {
+      const response = await request("/api/objects", { objectPaths }, "a", "DELETE");
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "objectPaths[] is required" });
+    }
+    const tooMany = await request("/api/objects", { objectPaths: Array(21).fill("/objects/unused") }, "a", "DELETE");
+    assert.equal(tooMany.status, 400);
+    assert.deepEqual(await tooMany.json(), { error: "Too many objectPaths; max 20 per call" });
+    const own = upload("image/jpeg", { owner: "a", visibility: "private" });
+    const emptyRules = upload("image/jpeg", { owner: "a", visibility: "private", aclRules: [] });
+    const foreign = upload("image/jpeg", { owner: "b", visibility: "private" });
+    const shared = upload("image/jpeg", { owner: "a", visibility: "private",
+      aclRules: [{ group: { type: "community_member", id: "community" }, permission: "read" }] });
+    const noAcl = upload("image/jpeg");
+    const response = await request("/api/objects", {
+      objectPaths: [own.path, emptyRules.path, foreign.path, shared.path, noAcl.path, "/objects/missing", "/bad", 12],
+    }, "a", "DELETE");
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { results: [
+      { key: own.path, deleted: true }, { key: emptyRules.path, deleted: true },
+      { key: foreign.path, deleted: false }, { key: shared.path, deleted: false },
+      { key: noAcl.path, deleted: false }, { key: "/objects/missing", deleted: true },
+      { key: "/bad", deleted: false }, { key: "12", deleted: false },
+    ] });
+    assert.equal(files.has(`private/uploads/${own.id}`), false);
+    assert.equal(files.has(`private/uploads/${emptyRules.id}`), false);
+    for (const item of [foreign, shared, noAcl]) assert.equal(files.has(`private/uploads/${item.id}`), true);
+  });
 
   it("forbids B confirming A's file without changing the policy", async () => {
     const item = upload("image/jpeg", { owner: "a", visibility: "private" });

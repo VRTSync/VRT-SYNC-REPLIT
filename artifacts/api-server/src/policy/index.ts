@@ -6,3 +6,6 @@ export * from "./portfolio";
 export * from "./assets";
 export * from "./maps";
 export * from "./billing";
+export * from "./files";
+export * from "./drive";
+export * from "./contacts";

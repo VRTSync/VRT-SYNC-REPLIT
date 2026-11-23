@@ -16,6 +16,8 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
         export { registerInvoiceRoutes } from "./routes/invoices";
         export { registerReportRoutes } from "./routes/reports";
         export { registerContractRoutes } from "./routes/contracts";
+        export { registerDriveRoutes } from "./routes/drive";
+        export { registerContactRoutes } from "./routes/contacts";
       `,
       resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "ts",
     },
@@ -33,7 +35,11 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
               export const requireAuth = (req,res,next) => next();
               export const requireAdmin = requireAuth;
             ` : path === "objectStorage" ? `
-              export class ObjectStorageService {}
+              export class ObjectStorageService {
+                getObjectEntityFile(...args) { return fixture.storage.getObjectEntityFile(...args); }
+                deleteObject(...args) { return fixture.storage.deleteObject(...args); }
+                downloadObject(...args) { return fixture.storage.downloadObject(...args); }
+              }
               export class ObjectNotFoundError extends Error {}
               export class ObjectForbiddenError extends Error {}
               export const parseUploadURL = () => ({ valid: true });
@@ -75,6 +81,7 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
   const api = module.exports as typeof import("../policy") &
     typeof import("../routes/tasks") & typeof import("../routes/handler") &
     typeof import("../routes/invoices") & typeof import("../routes/reports") &
-    typeof import("../routes/contracts");
+    typeof import("../routes/contracts") & typeof import("../routes/drive") &
+    typeof import("../routes/contacts");
   return { api, calls, storage };
 }
