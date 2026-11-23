@@ -15,6 +15,37 @@ const inventory = [
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
 
+describe("asset route structure", () => {
+  const assets = readFileSync(new URL("./routes/assets.ts", import.meta.url), "utf8");
+  const assetInventory = [
+    "get /api/communities/:communityId/assets", "get /api/assets/by-feature",
+    "post /api/assets/bulk/properties", "get /api/assets/:id",
+    "get /api/assets/:id/history", "get /api/assets/:id/notes",
+    "post /api/assets/:id/notes", "delete /api/assets/:assetId/notes/:noteId",
+    "patch /api/communities/:id/map-creator-lock", "get /api/assets", "post /api/assets",
+    "post /api/assets/:id/attachments", "get /api/assets/:id/attachments",
+    "delete /api/assets/:id/attachments/:attachmentId", "patch /api/assets/:id",
+    "put /api/assets/:id/properties",
+  ];
+  it("registers all 16 paths only in the asset module, in original order", () => {
+    const registrations = (source: string) => [...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+      .map(([, method, path]) => `${method} ${path}`);
+    assert.deepEqual(registrations(assets), assetInventory);
+    assert.deepEqual(registrations(main).filter(path => assetInventory.includes(path)), []);
+    assert.equal(main.split("registerAssetRoutes(app);").length - 1, 1);
+    assert.equal((assets.match(/route\(async /g) ?? []).length, 16);
+    assert.ok(main.indexOf("registerAssetRoutes(app);") < main.indexOf('app.get("/api/map-layers",'));
+    assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/completeness"/);
+    assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/incomplete"/);
+  });
+  it("keeps role and membership decisions in the policy module", () => {
+    assert.doesNotMatch(assets, /\.role\s*(?:===|!==)/);
+    assert.doesNotMatch(assets, /isMapCreatorRole\s*\(|isHoaRole\s*\(|isUserMemberOfCommunity\s*\(|userCanAccessCommunity\s*\(/);
+    assert.deepEqual(assets.match(/(?:reqUser|user|currentUser)\.role/g), ["reqUser.role"]);
+    assert.match(assets, /communityId, userId: reqUser\.id, role: reqUser\.role/);
+  });
+});
+
 describe("task route structure and compatibility", () => {
   it("registers all 17 paths only in the task module, in the original order", () => {
     assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:tasks|task-completions)/);

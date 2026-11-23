@@ -20,3 +20,9 @@ During behavior-preserving permission extraction, retain the legacy HOA submissi
 **Why:** The user explicitly scoped these known stale-session access gaps out of this extraction. Removing them here would combine a security behavior change with a structural refactor.
 
 **How to apply:** Preserve the HOA logical-OR fallback and portfolio nullish fallback exactly. Close either gap only in a separately approved security change.
+
+Asset permission extraction must retain the narrower “admin or community membership row” rule, rather than granting access from an HOA assignment or commercial organization alone. Asset-note deletion retains author-or-admin access without a current membership check.
+
+**Why:** The user explicitly designated both differences as intentional compatibility constraints, with broader asset access deferred to a product decision and former-member note deletion deferred to a security slice.
+
+**How to apply:** Keep asset-specific decisions separate from general community access. Do not broaden reads or tighten note deletion as part of structural refactors.

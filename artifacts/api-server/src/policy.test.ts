@@ -133,6 +133,57 @@ describe("permission engine role matrix", () => {
   });
 });
 
+describe("asset permission compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "client_admin"] as const;
+  for (const role of roles) for (const member of [true, false]) {
+    it(`${role} ${member ? "member" : "non-member"} uses the plain asset membership rule`, async () => {
+      const { api } = await policyFixture();
+      const community = member ? "member-community" : "other-community";
+      const person = actor(role, { hoaCommunityId: community });
+      assert.equal(await api.canUseCommunityAssets(person, community), role === "admin" || member);
+    });
+  }
+
+  for (const [role, author, expected] of [
+    ["admin", "other", true], ["contractor", "actor", true], ["contractor", "other", false],
+  ] as const) it(`checks note deletion for ${role} with author ${author}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(api.canDeleteAssetNote(actor(role), { createdBy: author }), expected);
+  });
+
+  it("scopes history only for account managers and selects only the map-creator pin path", async () => {
+    const { api } = await policyFixture();
+    assert.equal(api.assetHistoryCompanyScope(actor("contractor_manager")), "actor");
+    assert.equal(api.assetHistoryCompanyScope(actor("admin")), undefined);
+    for (const role of roles) {
+      assert.equal(api.usesMapCreatorPinPath(actor(role)), role === "map_creator");
+      assert.equal(api.canCreateAdminAsset(actor(role)), role === "admin");
+    }
+  });
+
+  for (const [role, member, locked, expected] of [
+    ["admin", false, true, "ok"], ["map_creator", true, false, "ok"],
+    ["map_creator", true, true, "locked"], ["map_creator", false, true, "not_member"],
+    ["property_manager", true, true, "ok"], ["contractor", false, false, "not_member"],
+  ] as const) it(`checks ${role} writes with membership=${member} and lock=${locked}`, async () => {
+    const { api } = await policyFixture();
+    assert.equal(await api.assetWriteAccess(actor(role), {
+      id: member ? "member-community" : "other-community", isMapCreatorLocked: locked,
+    }), expected);
+  });
+
+  for (const [role, member, locked, expected] of [
+    ["admin", false, true, "ok"], ["admin", false, false, "ok"],
+    ["map_creator", true, true, "ok"], ["map_creator", false, true, "not_member"],
+    ["map_creator", true, false, "unlock_admin_only"], ["map_creator", false, false, "unlock_admin_only"],
+  ] as const) it(`checks ${role} lock changes with membership=${member} and locked=${locked}`, async () => {
+    const { api, calls } = await policyFixture();
+    assert.equal(await api.mapCreatorLockAccess(actor(role), member ? "member-community" : "other-community", locked), expected);
+    assert.equal(calls.length, role === "map_creator" && locked ? 1 : 0);
+  });
+});
+
 describe("HOA permission compatibility", () => {
   const cases: {
     name: string; role: Actor["role"]; hoa?: string | null;
