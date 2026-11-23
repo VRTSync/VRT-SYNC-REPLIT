@@ -18,13 +18,12 @@ function between(start: string, end: string) {
   assert.ok(from >= 0 && to > from, `Missing verified route boundary: ${start}`);
   return source.slice(from, to);
 }
-const helper = between("async function userCanAccessCommunity(", "  registerAuthRoutes(app);");
 const handlers = [
   between('app.get("/api/communities/:id/bounds",', 'app.post("/api/communities/:id/members",'),
   between('app.get("/api/map-layers/:id/summary",', 'app.get("/api/communities/:communityId/assets/completeness",'),
   between('app.get("/api/communities/:communityId/service-schedules",', 'app.post("/api/communities/:communityId/service-schedules",'),
   between('app.get("/api/service-schedules/:scheduleId/visits",', "// ── Master Bill import routes"),
-  between("const driveMutateRoles =", 'app.post("/api/drive/folders",'),
+  between("async function requireDriveAccess(", 'app.post("/api/drive/folders",'),
 ].join("\n");
 const denial = { error: "You do not have access to this community" };
 const visitBody = {
@@ -71,8 +70,9 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
           import { loadCurrentUser, requireAuth, enforceHoaScoping, enforceOrgScoping, isHoaRole } from "./auth";
           import * as storage from "./storage";
           import { logServiceVisitSchema } from "@workspace/db";
-          ${helper}
-          export { userCanAccessCommunity };
+          // Preserve the existing test API while exercising the real central policy.
+          export const userCanAccessCommunity = (user: any, communityId: string) =>
+            policy.canAccessCommunity(policy.actorFromUser(user), communityId);
           export function createVisitSync(fixture: any) {
             const useCallback = (callback: any) => callback;
             const { svcSyncingRef, pendingSvcRef, setPendingServiceVisits,

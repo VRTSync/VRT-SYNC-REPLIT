@@ -22,7 +22,6 @@ function between(start: string, end: string) {
   return routes.slice(from, to);
 }
 const helpers = between("async function checkHoaLimits(", "export async function registerRoutes(");
-const communityHelper = between("async function userCanAccessCommunity(", "  registerAuthRoutes(app);");
 const handlers = between('app.get("/api/admin/companies",', 'app.delete("/api/admin/users/:id",') +
   between('app.get("/api/communities/:id/bounds",', 'app.get("/api/communities/:id/controllers",');
 const migration = readFileSync(new URL("../../../lib/db/migrations/0022_companies.sql", import.meta.url), "utf8")
@@ -48,7 +47,6 @@ describe("company labels (production handlers and transactional PostgreSQL)", ()
           import { z } from "zod";
           import bcrypt from "bcryptjs";
           ${helpers}
-          ${communityHelper}
           export {storage};
           export function setup(app: any) { app.use(loadCurrentUser); ${handlers} registerAuthRoutes(app); }
         `, resolveDir: fileURLToPath(new URL(".", import.meta.url)), loader: "ts",

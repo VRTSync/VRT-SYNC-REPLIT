@@ -527,6 +527,7 @@ export async function isUserMemberOfCommunity(userId: string, communityId: strin
   return !!row;
 }
 
+/** Storage-internal compatibility helper; routes must use policy.canReadTask instead. */
 export async function canUserAccessTask(userId: string, taskId: string): Promise<{ allowed: boolean; task: Task | undefined }> {
   const [[task], [user]] = await Promise.all([
     db.select().from(tasks).where(eq(tasks.id, taskId)),

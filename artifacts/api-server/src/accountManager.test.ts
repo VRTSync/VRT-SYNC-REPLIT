@@ -28,7 +28,7 @@ const handlers = [
   between('app.get("/api/search",', "// ── Asset Types catalogue"),
   between('app.get("/api/communities/:communityId/offline-pack-data",', "// Task Templates CRUD"),
   between('app.post("/api/tasks/bulk/assign",', "// CSV Task Import"),
-  between("const invoiceReadRoles =", 'app.post("/api/contracts",'),
+  between('app.get("/api/invoices",', 'app.post("/api/contracts",'),
   between('app.post("/api/contracts",', 'app.delete("/api/contracts/:id",'),
 ].join("\n");
 const companyValidation = between("async function companySelectionError(", "function companyUniqueConflict(");

@@ -29,7 +29,7 @@ const handlers = [
   between('app.post("/api/portfolio/work-orders/:taskId/photos",', '// ── Admin: Organization provisioning'),
   between('app.get("/api/drive/files/:id/download",', '/* ─── Contacts'),
 ].join("\n");
-const driveHelpers = between("const driveMutateRoles =", 'app.get("/api/drive",');
+const driveHelpers = between("async function requireDriveAccess(", 'app.get("/api/drive",');
 const require = createRequire(import.meta.url);
 type Policy = { owner: string; visibility: "public" | "private"; aclRules?: any[] };
 type StoredFile = { type?: string; policy?: Policy; bytes: Buffer; writes: number };

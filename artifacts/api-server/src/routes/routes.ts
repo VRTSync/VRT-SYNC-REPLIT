@@ -29,16 +29,11 @@ import { registerTaskScheduleRoutes } from "./taskSchedules";
 import { registerExportRoutes } from "./exports";
 import { registerImportRoutes } from "./imports";
 import { registerOrganizationRoutes } from "./organizations";
-import * as policy from "../policy";
 import { enforceOrgScoping, registerAuthRoutes, enforceHoaScoping } from "../auth";
 
 export { PUSH_TOKEN_RATE_LIMIT_MS, pushTokenLastReg } from "./push";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  async function userCanAccessCommunity(user: NonNullable<Request["currentUser"]>, communityId: string): Promise<boolean> {
-    return policy.canAccessCommunity(policy.actorFromUser(user), communityId);
-  }
-
   registerAuthRoutes(app);
 
   app.use("/api", enforceHoaScoping);

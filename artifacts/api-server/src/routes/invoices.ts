@@ -6,9 +6,6 @@ import * as policy from "../policy";
 import { route } from "./handler";
 
 export function registerInvoiceRoutes(app: Express): void {
-  const invoiceReadRoles = ['admin', 'property_manager', 'hoa_admin', 'hoa_member'];
-  const invoiceMutateRoles = ['admin'];
-
   app.get("/api/invoices", requireAuth, route(async (req: Request, res: Response) => {
     try {
       const user = await storage.getUserById(req.session.userId!);

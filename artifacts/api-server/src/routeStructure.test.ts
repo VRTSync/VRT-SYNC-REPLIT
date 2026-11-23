@@ -123,7 +123,7 @@ describe("admin-only route extraction", () => {
       .map(([, path, middleware]) => [path, middleware]),
     [["/api", "enforceHoaScoping"], ["/api", "enforceOrgScoping"]]);
     assert.doesNotMatch(main, /requireAdmin|upload|storage|adminDashboardCache|nextControllerKey/);
-    assert.match(main, /async function userCanAccessCommunity\([\s\S]*?return policy\.canAccessCommunity\(policy\.actorFromUser\(user\), communityId\);/);
+    assert.doesNotMatch(main, /userCanAccessCommunity/);
     assert.match(main, /const httpServer = createServer\(app\);\s*return httpServer;/);
   });
   it("retains the complete middleware and registration order", () => {
@@ -1039,11 +1039,11 @@ describe("object, drive and contact route structure", () => {
     assert.match(main, /app\.use\("\/api", enforceHoaScoping\);\s*app\.use\("\/api", enforceOrgScoping\);\s*registerObjectRoutes\(app\);\s*registerCommunityRoutes\(app\);/);
     assert.match(main, /registerContractRoutes\(app\);\s*registerDriveRoutes\(app\);\s*registerContactRoutes\(app\);\s*registerPortfolioRoutes\(app\);/);
   });
-  it("retains drive constants solely as fixture boundaries, never as decisions", () => {
+  it("removes unused drive constants while retaining policy decisions", () => {
     const drive = readFileSync(new URL("./routes/drive.ts", import.meta.url), "utf8");
-    assert.match(drive, /export function registerDriveRoutes\(app: Express\): void \{\n  const driveMutateRoles = \['admin', 'property_manager', 'hoa_admin'\];\n  const driveReadRoles = \['admin', 'property_manager', 'hoa_admin', 'hoa_member'\];/);
+    assert.match(drive, /export function registerDriveRoutes\(app: Express\): void \{/);
     for (const constant of ["driveMutateRoles", "driveReadRoles"]) {
-      assert.equal(drive.split(constant).length - 1, 1);
+      assert.equal(drive.split(constant).length - 1, 0);
     }
     assert.equal((drive.match(/requireDriveAccess\(req, res, policy.canReadDrive\)/g) ?? []).length, 2);
     assert.equal((drive.match(/requireDriveAccess\(req, res, policy.canChangeDrive\)/g) ?? []).length, 6);
@@ -1646,11 +1646,11 @@ describe("billing route structure", () => {
     assert.ok(main.indexOf('app.put("/api/notifications/:id/read",') < main.indexOf("registerInvoiceRoutes(app);"));
     assert.ok(main.indexOf("registerContractRoutes(app);") < main.indexOf("registerDriveRoutes(app);"));
   });
-  it("retains only the required unused invoice role boundaries", () => {
+  it("removes unused invoice role boundaries", () => {
     const invoices = readFileSync(new URL("./routes/invoices.ts", import.meta.url), "utf8");
-    assert.match(invoices, /export function registerInvoiceRoutes\(app: Express\): void \{\n  const invoiceReadRoles = \['admin', 'property_manager', 'hoa_admin', 'hoa_member'\];\n  const invoiceMutateRoles = \['admin'\];/);
-    assert.equal((invoices.match(/invoiceReadRoles/g) ?? []).length, 1);
-    assert.equal((invoices.match(/invoiceMutateRoles/g) ?? []).length, 1);
+    assert.match(invoices, /export function registerInvoiceRoutes\(app: Express\): void \{/);
+    assert.equal((invoices.match(/invoiceReadRoles/g) ?? []).length, 0);
+    assert.equal((invoices.match(/invoiceMutateRoles/g) ?? []).length, 0);
     const reports = readFileSync(new URL("./routes/reports.ts", import.meta.url), "utf8");
     assert.doesNotMatch(reports, /reportReadRoles|resolveReportCommunityId/);
   });

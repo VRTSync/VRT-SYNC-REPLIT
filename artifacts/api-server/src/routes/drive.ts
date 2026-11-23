@@ -7,10 +7,6 @@ import * as policy from "../policy";
 import { route } from "./handler";
 
 export function registerDriveRoutes(app: Express): void {
-  const driveMutateRoles = ['admin', 'property_manager', 'hoa_admin'];
-  const driveReadRoles = ['admin', 'property_manager', 'hoa_admin', 'hoa_member'];
-
-  // The constants above are retained only as legacy fixture boundaries.
   async function requireDriveAccess(req: Request, res: Response, canAccess: typeof policy.canReadDrive): Promise<ReturnType<typeof storage.getUserById> | null> {
     const user = await storage.getUserById(req.session.userId!);
     if (!user || !canAccess(policy.actorFromUser(user))) {
