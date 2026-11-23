@@ -23,6 +23,9 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
         export { registerSearchRoutes } from "./routes/search";
         export { registerCompanyRoutes } from "./routes/companies";
         export { registerUserRoutes } from "./routes/users";
+        export { registerServiceScheduleRoutes } from "./routes/serviceSchedules";
+        export { registerNotificationRoutes } from "./routes/notifications";
+        export { registerPushRoutes, PUSH_TOKEN_RATE_LIMIT_MS, pushTokenLastReg } from "./routes/push";
       `,
       resolveDir: fileURLToPath(new URL("..", import.meta.url)), loader: "ts",
     },
@@ -59,6 +62,7 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
               export const notifyTaskAssigned = async () => {};
               export const notifyTaskCompleted = async () => {};
               export const notifyRequestAcknowledged = async () => {};
+              export const sendDueReminders = (...args) => fixture.storage.sendDueReminders(...args);
             `,
           loader: "js",
         }));
@@ -97,6 +101,8 @@ export async function policyFixture(overrides: Record<string, any> = {}) {
     typeof import("../routes/contracts") & typeof import("../routes/drive") &
     typeof import("../routes/contacts") & typeof import("../routes/communities") &
     typeof import("../routes/dashboard") & typeof import("../routes/search") &
-    typeof import("../routes/companies") & typeof import("../routes/users");
+    typeof import("../routes/companies") & typeof import("../routes/users") &
+    typeof import("../routes/serviceSchedules") & typeof import("../routes/notifications") &
+    typeof import("../routes/push");
   return { api, calls, storage };
 }

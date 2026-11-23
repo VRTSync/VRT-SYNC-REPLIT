@@ -16,6 +16,104 @@ const inventory = [
   "post /api/tasks/bulk/assign", "post /api/tasks/import-csv",
 ];
 
+describe("service schedule, notification and push route structure", () => {
+  const modules = [
+    { file: "serviceSchedules", register: "registerServiceScheduleRoutes", inventory: [
+      ["get /api/communities/:communityId/service-schedules", "requireAuth"],
+      ["post /api/communities/:communityId/service-schedules", "requireAdmin"],
+      ["patch /api/service-schedules/:id", "requireAdmin"],
+      ["delete /api/service-schedules/:id", "requireAdmin"],
+      ["get /api/service-schedules/:scheduleId/visits", "requireAuth"],
+      ["get /api/communities/:communityId/service-visits", "requireAuth"],
+      ["post /api/service-schedules/:scheduleId/log", "requireAuth"],
+    ] },
+    { file: "notifications", register: "registerNotificationRoutes", inventory: [
+      ["get /api/notification-preferences", "requireAuth"],
+      ["put /api/notification-preferences", "requireAuth"],
+      ["get /api/notifications", "requireAuth"],
+      ["get /api/notifications/unread-count", "requireAuth"],
+      ["put /api/notifications/read-all", "requireAuth"],
+      ["put /api/notifications/:id/read", "requireAuth"],
+    ] },
+    { file: "push", register: "registerPushRoutes", inventory: [
+      ["post /api/push-tokens", "requireAuth"],
+      ["delete /api/push-tokens", "requireAuth"],
+      ["post /api/push/due-reminders", "requireAdmin"],
+    ] },
+  ];
+  const registrations = (source: string) => [...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+    .map(([, method, path]) => `${method} ${path}`);
+  const allRegistrations = readdirSync(new URL("./routes/", import.meta.url))
+    .filter(file => file.endsWith(".ts"))
+    .flatMap(file => registrations(readFileSync(new URL(`./routes/${file}`, import.meta.url), "utf8")));
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`preserves ${module.file} inventory, order, guards, wrappers and catches`, () => {
+      const expected = module.inventory.map(([path]) => path);
+      assert.deepEqual(registrations(source), expected);
+      for (const path of expected) assert.equal(allRegistrations.filter(found => found === path).length, 1, path);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.equal((source.match(/route\(async /g) ?? []).length, expected.length);
+      assert.equal((source.match(/^    try \{/gm) ?? []).length, expected.length);
+      assert.equal((source.match(/^    \} catch \(error\) \{/gm) ?? []).length, expected.length);
+      source.split("\n").filter(line => /^  app\./.test(line)).forEach((line, i) => {
+        assert.ok(line.includes(`", ${module.inventory[i][1]}, route(async `), line);
+      });
+    });
+    it(`keeps caller role and community decisions out of ${module.file}`, () => {
+      assert.doesNotMatch(source, /\.role\b|\brole\s*[!=]==?|\.includes\([^)]*\brole\b/);
+      assert.doesNotMatch(source, /userCanAccessCommunity\s*\(|canAccessCommunity\s*\(|isUserMemberOfCommunity\s*\(/);
+      assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
+    });
+  }
+  it("keeps ping in main immediately before push and preserves the other original registration positions", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["'][^"']*(?:\/service-schedules|\/service-visits|\/api\/notification|\/api\/push-tokens|\/api\/push\/)/);
+    assert.equal(registrations(main).filter(path => path === "get /api/ping").length, 1);
+    assert.match(main, /app\.get\("\/api\/ping", [\s\S]*?res\.json\(\{ ok: true, ts: Date\.now\(\) \}\);\s*\}\);\s*registerPushRoutes\(app\);\s*registerAssetRoutes\(app\);/);
+    assert.match(main, /registerServiceScheduleRoutes\(app\);\s*\/\/ ── Master Bill import routes/);
+    const download = main.indexOf('app.get("/api/exports/:id/download/zip"');
+    assert.ok(download >= 0 && download < main.indexOf("  registerServiceScheduleRoutes(app);"));
+    assert.match(main, /registerHoaRoutes\(app\);\s*registerNotificationRoutes\(app\);\s*registerInvoiceRoutes\(app\);/);
+  });
+  it("reconstructs 7/6/3 handlers and preserves service and HOA extraction boundaries", () => {
+    const harness = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
+    const fixture = readRouteFixtureSource();
+    const between = (start: string, end: string) => {
+      const from = fixture.indexOf(start), to = fixture.indexOf(end, from + start.length);
+      assert.ok(from >= 0 && to > from, start);
+      return registrations(fixture.slice(from, to));
+    };
+    for (const module of modules) {
+      assert.ok(harness.includes(`["${module.file}", "${module.register}", ${module.inventory.length}]`));
+    }
+    assert.deepEqual(between('app.get("/api/communities/:communityId/service-schedules",', "// ── Master Bill import routes"),
+      modules[0].inventory.map(([path]) => path));
+    assert.deepEqual(between('app.get("/api/communities/:communityId/service-schedules",',
+      'app.post("/api/communities/:communityId/service-schedules",'), [modules[0].inventory[0][0]]);
+    assert.deepEqual(between('app.get("/api/service-schedules/:scheduleId/visits",', "// ── Master Bill import routes"),
+      modules[0].inventory.slice(4).map(([path]) => path));
+    assert.deepEqual(between('app.post("/api/hoa/requests",', 'app.get("/api/notification-preferences",'),
+      ["post /api/hoa/requests"]);
+    assert.deepEqual(between('app.get("/api/notification-preferences",', 'app.get("/api/invoices",'),
+      modules[1].inventory.map(([path]) => path));
+    assert.deepEqual(between('app.post("/api/push-tokens",', 'app.get("/api/communities/:communityId/assets",'),
+      modules[2].inventory.map(([path]) => path));
+    assert.deepEqual(between('app.post("/api/push-tokens",', 'app.delete("/api/push-tokens",'),
+      [modules[2].inventory[0][0]]);
+  });
+  it("owns push throttle state in one module and preserves the main module re-export", () => {
+    const push = readFileSync(new URL("./routes/push.ts", import.meta.url), "utf8");
+    assert.match(main, /export \{ PUSH_TOKEN_RATE_LIMIT_MS, pushTokenLastReg \} from "\.\/push";/);
+    assert.doesNotMatch(main, /(?:const|let) (?:PUSH_TOKEN_RATE_LIMIT_MS|pushTokenLastReg)\b/);
+    assert.match(push, /export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000;/);
+    assert.match(push, /export const pushTokenLastReg = new Map/);
+    const schedules = readFileSync(new URL("./routes/serviceSchedules.ts", import.meta.url), "utf8");
+    assert.equal((schedules.match(/policy\.canViewServiceSchedules\(/g) ?? []).length, 3);
+    assert.equal((schedules.match(/policy\.canLogServiceVisit\(/g) ?? []).length, 1);
+    assert.match(schedules, /policy\.actorFromUser\(req\.currentUser!\)/);
+  });
+});
+
 describe("user and company route structure", () => {
   const modules = [
     { file: "companies", register: "registerCompanyRoutes", inventory: [
@@ -380,16 +478,12 @@ describe("community, dashboard and search route structure", () => {
       assert.doesNotMatch(source, /from ["']\.\.\/policy\//);
     });
   }
-  it("preserves register positions and leaves only the approved service paths in main", () => {
+  it("preserves register positions and leaves no community paths in main", () => {
     assert.match(main, /registerObjectRoutes\(app\);\s*registerCommunityRoutes\(app\);\s*registerDashboardRoutes\(app\);\s*registerTaskRoutes\(app\);/);
     assert.match(main, /registerMapLayerRoutes\(app\);\s*registerSearchRoutes\(app\);\s*\/\/ ── Asset Types catalogue/);
     assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:dashboard|search)/);
-    // Explicitly approved F3h exception: these service routes belong to F3j.
-    assert.deepEqual(registrations(main).filter(path => /^\w+ \/api\/communities(?:\/|$)/.test(path)), [
-      "get /api/communities/:communityId/service-schedules",
-      "post /api/communities/:communityId/service-schedules",
-      "get /api/communities/:communityId/service-visits",
-    ]);
+    // Approved F3j exception: service routes now live in serviceSchedules.ts.
+    assert.deepEqual(registrations(main).filter(path => /^\w+ \/api\/communities(?:\/|$)/.test(path)), []);
   });
   it("reconstructs 10/2/3 handlers with the original cross-module fixture boundaries", () => {
     const harness = readFileSync(new URL("./testUtils/routeFixtureSource.ts", import.meta.url), "utf8");
@@ -1212,7 +1306,7 @@ describe("HOA and portfolio work-order route structure", () => {
     });
   }
   it("retains registration positions relative to unchanged neighboring routes", () => {
-    assert.ok(main.indexOf("registerHoaRoutes(app);") < main.indexOf('app.get("/api/notification-preferences",'));
+    assert.ok(main.indexOf("registerHoaRoutes(app);") < main.indexOf("registerNotificationRoutes(app);"));
     const workOrders = main.indexOf("registerPortfolioWorkOrderRoutes(app);");
     assert.ok(main.indexOf('app.delete("/api/portfolio/group-sets/:setId",') < workOrders);
     assert.ok(workOrders < main.indexOf('app.post("/api/admin/organizations",'));

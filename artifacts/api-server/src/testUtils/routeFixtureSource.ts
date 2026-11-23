@@ -26,6 +26,9 @@ export function readRouteFixtureSource(): string {
   for (const [file, register, expected] of [
     ["companies", "registerCompanyRoutes", 4],
     ["users", "registerUserRoutes", 11],
+    ["serviceSchedules", "registerServiceScheduleRoutes", 7],
+    ["notifications", "registerNotificationRoutes", 6],
+    ["push", "registerPushRoutes", 3],
     ["communities", "registerCommunityRoutes", 10],
     ["dashboard", "registerDashboardRoutes", 2],
     ["search", "registerSearchRoutes", 3],

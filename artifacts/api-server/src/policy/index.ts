@@ -11,3 +11,4 @@ export * from "./drive";
 export * from "./contacts";
 export * from "./communities";
 export * from "./users";
+export * from "./schedules";

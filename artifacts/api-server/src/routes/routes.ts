@@ -23,18 +23,18 @@ import { registerDashboardRoutes } from "./dashboard";
 import { registerSearchRoutes } from "./search";
 import { registerCompanyRoutes } from "./companies";
 import { registerUserRoutes } from "./users";
+import { registerServiceScheduleRoutes } from "./serviceSchedules";
+import { registerNotificationRoutes } from "./notifications";
+import { registerPushRoutes } from "./push";
 import { isUniqueViolation, pgErrorOf } from "./errors";
 import * as policy from "../policy";
 import { z } from "zod";
 import { requireAuth, requireAdmin, enforceOrgScoping, registerAuthRoutes, enforceHoaScoping } from "../auth";
 import { ObjectStorageService } from "../objectStorage";
 import * as storage from "../storage";
-import { sendDueReminders } from "../pushNotifications";
 import { getAssetTypeCache } from "../assetTypeCache";
 import {
-  registerPushTokenSchema,
   insertTaskTemplateSchema, generateFromTemplateSchema, insertTaskScheduleSchema,
-  insertServiceScheduleSchema, updateServiceScheduleSchema, logServiceVisitSchema,
 } from "@workspace/db";
 import { runDueSchedules, computeInitialNextRunAt } from "../scheduler";
 import { runExportGeneration } from "../exportGenerator";
@@ -51,8 +51,7 @@ import { db, pool } from "../db";
 import { eq, and, desc, ne, inArray, isNull } from "drizzle-orm";
 import { exportJobs as exportsTable, plannerRecords, xeriscapePackets, assets as assetsTable, assetProperties as assetPropertiesTable } from "@workspace/db";
 
-export const PUSH_TOKEN_RATE_LIMIT_MS = 86_400_000; // 24 hours
-export const pushTokenLastReg = new Map<string, { ts: number; token: string }>();
+export { PUSH_TOKEN_RATE_LIMIT_MS, pushTokenLastReg } from "./push";
 
 // 60-second in-process cache for GET /api/admin/dashboard
 let adminDashboardCache: { data: Awaited<ReturnType<typeof storage.getAdminDashboard>>; expiresAt: number } | null = null;
@@ -595,68 +594,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, ts: Date.now() });
   });
 
-  app.post("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const parsed = registerPushTokenSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-      }
-      const deviceId = parsed.data.deviceId;
-      const newToken = parsed.data.token;
-      const now = Date.now();
-      const lastReg = pushTokenLastReg.get(deviceId);
-      if (lastReg && lastReg.token === newToken && now - lastReg.ts < PUSH_TOKEN_RATE_LIMIT_MS) {
-        return void res.status(200).json({ rateLimited: true });
-      }
-      const pushToken = await storage.registerPushToken(
-        req.session.userId!,
-        newToken,
-        parsed.data.platform,
-        deviceId,
-      );
-      pushTokenLastReg.set(deviceId, { ts: now, token: newToken });
-      res.status(201).json(pushToken);
-    } catch (error) {
-      console.error("Register push token error:", error);
-      res.status(500).json({ error: "Failed to register push token" });
-    }
-  });
-
-  app.delete("/api/push-tokens", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { token, deviceId } = req.body;
-      if (deviceId) {
-        await storage.removePushTokenByDevice(req.session.userId!, deviceId);
-        pushTokenLastReg.delete(deviceId);
-      } else if (token) {
-        await storage.removePushToken(req.session.userId!, token);
-        // Clear any Map entry whose stored token matches, so account-switch flows
-        // don't leave a stale throttle behind when there is no deviceId to key on.
-        for (const [key, entry] of pushTokenLastReg.entries()) {
-          if (entry.token === token) {
-            pushTokenLastReg.delete(key);
-            break;
-          }
-        }
-      } else {
-        return void res.status(400).json({ error: "token or deviceId is required" });
-      }
-      res.json({ message: "Push token removed" });
-    } catch (error) {
-      console.error("Remove push token error:", error);
-      res.status(500).json({ error: "Failed to remove push token" });
-    }
-  });
-
-  app.post("/api/push/due-reminders", requireAdmin, async (_req: Request, res: Response) => {
-    try {
-      await sendDueReminders();
-      res.json({ message: "Due reminders sent" });
-    } catch (error) {
-      console.error("Due reminders error:", error);
-      res.status(500).json({ error: "Failed to send due reminders" });
-    }
-  });
+  registerPushRoutes(app);
 
   registerAssetRoutes(app);
 
@@ -1129,128 +1067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/communities/:communityId/service-schedules", requireAuth, async (req: Request, res: Response) => {
-    try {
-      if (!(await userCanAccessCommunity(req.currentUser!, req.params.communityId as string))) {
-        return void res.status(403).json({ error: "You do not have access to this community" });
-      }
-      const schedules = await storage.getServiceSchedulesByCommunity(req.params.communityId as string);
-      res.json(schedules);
-    } catch (error) {
-      console.error("Get service schedules error:", error);
-      res.status(500).json({ error: "Failed to get service schedules" });
-    }
-  });
-
-  app.post("/api/communities/:communityId/service-schedules", requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const parsed = insertServiceScheduleSchema.safeParse({
-        ...req.body,
-        communityId: req.params.communityId,
-      });
-      if (!parsed.success) {
-        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
-      }
-      const schedule = await storage.createServiceSchedule(parsed.data);
-      res.status(201).json(schedule);
-    } catch (error) {
-      console.error("Create service schedule error:", error);
-      res.status(500).json({ error: "Failed to create service schedule" });
-    }
-  });
-
-  app.patch("/api/service-schedules/:id", requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const parsed = updateServiceScheduleSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
-      }
-      const schedule = await storage.updateServiceSchedule(req.params.id as string, parsed.data);
-      if (!schedule) {
-        return void res.status(404).json({ error: "Service schedule not found" });
-      }
-      res.json(schedule);
-    } catch (error) {
-      console.error("Update service schedule error:", error);
-      res.status(500).json({ error: "Failed to update service schedule" });
-    }
-  });
-
-  app.delete("/api/service-schedules/:id", requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const deleted = await storage.deleteServiceSchedule(req.params.id as string);
-      if (!deleted) {
-        return void res.status(404).json({ error: "Service schedule not found" });
-      }
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Delete service schedule error:", error);
-      res.status(500).json({ error: "Failed to delete service schedule" });
-    }
-  });
-
-  app.get("/api/service-schedules/:scheduleId/visits", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const schedule = await storage.getServiceScheduleById(req.params.scheduleId as string);
-      if (!schedule) {
-        return void res.status(404).json({ error: "Service schedule not found" });
-      }
-      if (!(await userCanAccessCommunity(req.currentUser!, schedule.communityId))) {
-        return void res.status(403).json({ error: "You do not have access to this community" });
-      }
-      const { from, to } = req.query as { from?: string; to?: string };
-      const visits = await storage.getServiceVisits(req.params.scheduleId as string, { from, to });
-      res.json(visits);
-    } catch (error) {
-      console.error("Get service visits error:", error);
-      res.status(500).json({ error: "Failed to get service visits" });
-    }
-  });
-
-  app.get("/api/communities/:communityId/service-visits", requireAuth, async (req: Request, res: Response) => {
-    try {
-      if (!(await userCanAccessCommunity(req.currentUser!, req.params.communityId as string))) {
-        return void res.status(403).json({ error: "You do not have access to this community" });
-      }
-      const { from, to } = req.query as { from?: string; to?: string };
-      const visits = await storage.getServiceVisitsByCommunity(req.params.communityId as string, { from, to });
-      res.json(visits);
-    } catch (error) {
-      console.error("Get community service visits error:", error);
-      res.status(500).json({ error: "Failed to get service visits" });
-    }
-  });
-
-  app.post("/api/service-schedules/:scheduleId/log", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const parsed = logServiceVisitSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return void res.status(400).json({ error: "Invalid data", details: parsed.error.flatten() });
-      }
-      const schedule = await storage.getServiceScheduleById(req.params.scheduleId as string);
-      if (!schedule) {
-        return void res.status(404).json({ error: "Service schedule not found" });
-      }
-      const user = req.currentUser!;
-      if ((user.role !== "admin" && user.role !== "contractor") ||
-          !(await userCanAccessCommunity(user, schedule.communityId))) {
-        return void res.status(403).json({ error: "You do not have access to this community" });
-      }
-      const visit = await storage.upsertServiceVisit({
-        scheduleId: schedule.id,
-        communityId: schedule.communityId,
-        serviceDate: parsed.data.serviceDate,
-        completedAt: parsed.data.completedAt ? new Date(parsed.data.completedAt) : new Date(),
-        completedBy: user.id,
-        employeeSignOffName: parsed.data.employeeSignOffName,
-        notes: parsed.data.notes ?? null,
-      });
-      res.status(201).json(visit);
-    } catch (error) {
-      console.error("Log service visit error:", error);
-      res.status(500).json({ error: "Failed to log service visit" });
-    }
-  });
+  registerServiceScheduleRoutes(app);
 
   // ── Master Bill import routes ────────────────────────────────────────────
 
@@ -1535,84 +1352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   registerHoaRoutes(app);
 
-  app.get("/api/notification-preferences", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const prefs = await storage.getUserNotificationPreferences(req.session.userId!);
-      res.json(prefs);
-    } catch (error) {
-      console.error("Get notification preferences error:", error);
-      res.status(500).json({ error: "Failed to fetch notification preferences" });
-    }
-  });
-
-  app.put("/api/notification-preferences", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { taskAssigned, dueReminders, syncFailure, taskCompleted, requestSubmitted, requestCompleted, requestStatusUpdates } = req.body;
-      const prefs = {
-        taskAssigned: typeof taskAssigned === 'boolean' ? taskAssigned : true,
-        dueReminders: typeof dueReminders === 'boolean' ? dueReminders : true,
-        syncFailure: typeof syncFailure === 'boolean' ? syncFailure : true,
-        taskCompleted: typeof taskCompleted === 'boolean' ? taskCompleted : true,
-        requestSubmitted: typeof requestSubmitted === 'boolean' ? requestSubmitted : true,
-        requestCompleted: typeof requestCompleted === 'boolean' ? requestCompleted : true,
-        requestStatusUpdates: typeof requestStatusUpdates === 'boolean' ? requestStatusUpdates : true,
-      };
-      await storage.setUserNotificationPreferences(req.session.userId!, prefs);
-      res.json(prefs);
-    } catch (error) {
-      console.error("Set notification preferences error:", error);
-      res.status(500).json({ error: "Failed to save notification preferences" });
-    }
-  });
-
-  app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserById(req.session.userId!);
-      if (!user) return void res.status(401).json({ error: "Not authenticated" });
-
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
-      const notifs = await storage.getNotificationsForUser(user.id, limit, offset);
-      res.json(notifs);
-    } catch (error) {
-      console.error("Get notifications error:", error);
-      res.status(500).json({ error: "Failed to fetch notifications" });
-    }
-  });
-
-  app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUserById(req.session.userId!);
-      if (!user) return void res.status(401).json({ error: "Not authenticated" });
-
-      const count = await storage.getUnreadNotificationCount(user.id);
-      res.json({ count });
-    } catch (error) {
-      console.error("Get unread count error:", error);
-      res.status(500).json({ error: "Failed to get unread count" });
-    }
-  });
-
-  app.put("/api/notifications/read-all", requireAuth, async (req: Request, res: Response) => {
-    try {
-      await storage.markAllNotificationsRead(req.session.userId!);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Mark all read error:", error);
-      res.status(500).json({ error: "Failed to mark all read" });
-    }
-  });
-
-  app.put("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const notif = await storage.markNotificationRead((req.params.id as string), req.session.userId!);
-      if (!notif) return void res.status(404).json({ error: "Notification not found" });
-      res.json(notif);
-    } catch (error) {
-      console.error("Mark read error:", error);
-      res.status(500).json({ error: "Failed to mark notification read" });
-    }
-  });
+  registerNotificationRoutes(app);
 
   registerInvoiceRoutes(app);
   registerReportRoutes(app);

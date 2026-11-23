@@ -44,6 +44,59 @@ function actor(role: Actor["role"], extra: Partial<Actor> = {}): Actor {
   return { id: "actor", role, companyId: null, hoaCommunityId: null, organizationId: "org", ...extra };
 }
 
+describe("service schedule permission compatibility", () => {
+  const cases: {
+    name: string; person: Actor; member?: boolean; community?: string; view: boolean; log: boolean;
+  }[] = [
+    { name: "admin without membership", person: actor("admin"), view: true, log: true },
+    { name: "contractor member", person: actor("contractor"), member: true, view: true, log: true },
+    { name: "contractor nonmember", person: actor("contractor"), view: false, log: false },
+    { name: "account manager member", person: actor("contractor_manager", { companyId: "company" }), member: true, view: true, log: false },
+    { name: "account manager nonmember", person: actor("contractor_manager", { companyId: "company" }), view: false, log: false },
+    { name: "PM member", person: actor("property_manager"), member: true, view: true, log: false },
+    { name: "PM nonmember", person: actor("property_manager"), view: false, log: false },
+    { name: "map creator without membership", person: actor("map_creator"), view: true, log: false },
+    { name: "HOA admin assigned without membership", person: actor("hoa_admin", { hoaCommunityId: "community" }), view: true, log: false },
+    { name: "HOA member assigned without membership", person: actor("hoa_member", { hoaCommunityId: "community" }), view: true, log: false },
+    { name: "HOA admin foreign despite membership", person: actor("hoa_admin", { hoaCommunityId: "elsewhere" }), member: true, view: false, log: false },
+    { name: "HOA member foreign despite membership", person: actor("hoa_member", { hoaCommunityId: "elsewhere" }), member: true, view: false, log: false },
+    { name: "HOA admin unassigned despite membership", person: actor("hoa_admin"), member: true, view: false, log: false },
+    { name: "HOA member unassigned despite membership", person: actor("hoa_member"), member: true, view: false, log: false },
+    { name: "client admin organization branch without membership", person: actor("client_admin"), view: true, log: false },
+    { name: "client admin foreign organization despite membership", person: actor("client_admin", { organizationId: "foreign" }), member: true, view: false, log: false },
+    { name: "client admin unassigned despite membership", person: actor("client_admin", { organizationId: null }), member: true, view: false, log: false },
+    { name: "client admin noncommercial branch", person: actor("client_admin"), community: "noncommercial", view: false, log: false },
+    { name: "client admin missing branch", person: actor("client_admin"), community: "missing", view: false, log: false },
+  ];
+  for (const row of cases) {
+    for (const decision of ["view", "log"] as const) {
+      it(`${row.name}: ${decision}`, async () => {
+        const { api } = await policyFixture({
+          isUserMemberOfCommunity: async (id: string, community: string) =>
+            id === row.person.id && community === "community" && !!row.member,
+          getCommunityById: async (id: string) => id === "missing" ? undefined :
+            { id, organizationId: id === "community" ? "org" : null },
+        });
+        const check = decision === "view" ? api.canViewServiceSchedules : api.canLogServiceVisit;
+        assert.equal(await check({ ...row.person }, row.community ?? "community"), row[decision]);
+      });
+    }
+  }
+  it("checks the logging role before any community I/O", async () => {
+    const { api, calls } = await policyFixture({
+      isUserMemberOfCommunity: async () => { throw Error("membership unavailable"); },
+      getCommunityById: async () => { throw Error("community unavailable"); },
+    });
+    for (const role of ["contractor_manager", "property_manager", "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const) {
+      assert.equal(await api.canLogServiceVisit(actor(role), "community"), false);
+    }
+    assert.equal(await api.canLogServiceVisit(actor("admin"), "community"), true);
+    assert.deepEqual(calls, []);
+    await assert.rejects(api.canLogServiceVisit(actor("contractor"), "community"), /membership unavailable/);
+    await assert.rejects(api.canViewServiceSchedules(actor("client_admin"), "community"), /community unavailable/);
+  });
+});
+
 describe("user and company permission compatibility", () => {
   const roles = ["admin", "property_manager", "contractor", "contractor_manager",
     "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
