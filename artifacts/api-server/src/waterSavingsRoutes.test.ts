@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { readFileSync } from "node:fs";
+import { readRouteFixtureSource } from "./testUtils/routeFixtureSource";
 
-const routes = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const routes = readRouteFixtureSource();
 
 describe("portfolio Water Savings route security contract", () => {
   it("names authentication middleware on every Water Savings route", () => {

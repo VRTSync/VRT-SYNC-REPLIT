@@ -4438,6 +4438,14 @@ export async function updateBranch(communityId: string, data: {
 
 // ─── Branch Group CRUD ────────────────────────────────────────────────────────
 
+export async function getCommunityIdsForOrganization(orgId: string): Promise<string[]> {
+  const orgComms = await db
+    .select({ id: communities.id })
+    .from(communities)
+    .where(eq(communities.organizationId, orgId));
+  return orgComms.map(community => community.id);
+}
+
 export async function createBranchGroup(orgId: string, data: {
   name: string;
   color?: string;

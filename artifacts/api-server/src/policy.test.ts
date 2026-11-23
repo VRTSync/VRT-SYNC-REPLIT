@@ -209,3 +209,63 @@ describe("portfolio permission compatibility", () => {
     }
   });
 });
+
+describe("commercial portfolio ownership policies", () => {
+  for (const [name, current, session, expected] of [
+    ["current user organization", "current", "session", "current"],
+    ["session fallback", null, "session", "session"],
+    ["no organization", null, undefined, null],
+    ["empty user organization does not fall back", "", "session", ""],
+  ] as const) {
+    it(`resolves /me with ${name}`, async () => {
+      const { api } = await policyFixture();
+      assert.equal(api.clientPortfolioOrg({
+        currentUser: actor("client_admin", { organizationId: current }),
+        session: { organizationId: session },
+      } as unknown as Request), expected);
+    });
+  }
+
+  for (const kind of ["group", "group set"] as const) {
+    for (const [name, id, expected] of [
+      ["own record", "own", true],
+      ["another organization's record", "foreign", false],
+      ["unknown record", "unknown", false],
+    ] as const) {
+      it(`checks ${kind} ownership for ${name}`, async () => {
+        const lookups: string[] = [];
+        const lookup = async (orgId: string) => {
+          lookups.push(orgId);
+          return orgId === "org" ? [{ id: "own" }] : [{ id: "foreign" }];
+        };
+        const { api } = await policyFixture({
+          listBranchGroups: lookup,
+          getGroupSets: lookup,
+        });
+        const owns = kind === "group" ? api.orgOwnsGroup : api.orgOwnsGroupSet;
+        assert.equal(await owns("org", id), expected);
+        assert.deepEqual(lookups, ["org"]);
+      });
+    }
+  }
+
+  for (const [name, ids, expected, expectedLookups] of [
+    ["empty list", [], true, []],
+    ["all own locations", ["own-1", "own-2"], true, ["org"]],
+    ["a location from another organization", ["own-1", "foreign"], false, ["org"]],
+    ["an unknown location", ["own-1", "unknown"], false, ["org"]],
+    ["repeated own location", ["own-1", "own-1"], true, ["org"]],
+  ] as [string, string[], boolean, string[]][]) {
+    it(`checks location ownership for ${name}`, async () => {
+      const lookups: string[] = [];
+      const { api } = await policyFixture({
+        getCommunityIdsForOrganization: async (orgId: string) => {
+          lookups.push(orgId);
+          return orgId === "org" ? ["own-1", "own-2"] : ["foreign"];
+        },
+      });
+      assert.equal(await api.orgOwnsCommunities("org", ids), expected);
+      assert.deepEqual(lookups, expectedLookups);
+    });
+  }
+});

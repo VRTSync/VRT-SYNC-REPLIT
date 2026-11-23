@@ -24,6 +24,7 @@ export function readRouteFixtureSource(): string {
   for (const [file, register, expected] of [
     ["hoa", "registerHoaRoutes", 4],
     ["portfolioWorkOrders", "registerPortfolioWorkOrderRoutes", 9],
+    ["portfolio", "registerPortfolioRoutes", 25],
   ] as const) {
     const module = readFileSync(new URL(`../routes/${file}.ts`, import.meta.url), "utf8");
     const count = [...module.matchAll(/^  app\.(?:get|post|patch|put|delete)\("[^\n]*\n[\s\S]*?^  \}\)\);/gm)].length;

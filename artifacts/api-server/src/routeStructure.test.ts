@@ -155,3 +155,68 @@ describe("HOA and portfolio work-order route structure", () => {
     assert.ok(workOrders < main.indexOf('app.post("/api/admin/organizations",'));
   });
 });
+
+describe("commercial portfolio route structure", () => {
+  const portfolio = readFileSync(new URL("./routes/portfolio.ts", import.meta.url), "utf8");
+  const inventory = [
+    "get /api/portfolio/me",
+    "get /api/portfolio/dashboard",
+    "get /api/portfolio/branches",
+    "get /api/portfolio/branches/:communityId",
+    "get /api/portfolio/map",
+    "get /api/portfolio/water-savings/polygons",
+    "get /api/portfolio/water-savings",
+    "get /api/portfolio/water-savings/communities/:communityId",
+    "get /api/portfolio/water-savings/scenarios",
+    "get /api/portfolio/water-savings/scenarios/:scenarioId",
+    "post /api/portfolio/water-savings/scenarios",
+    "patch /api/portfolio/water-savings/scenarios/:scenarioId",
+    "delete /api/portfolio/water-savings/scenarios/:scenarioId",
+    "get /api/portfolio/branches/:communityId/layers/:layerId/geojson",
+    "get /api/portfolio/branches/:communityId/controllers",
+    "get /api/portfolio/groups",
+    "get /api/portfolio/analytics",
+    "get /api/portfolio/group-sets",
+    "post /api/portfolio/groups",
+    "patch /api/portfolio/groups/:groupId",
+    "delete /api/portfolio/groups/:groupId",
+    "put /api/portfolio/groups/:groupId/members",
+    "post /api/portfolio/group-sets",
+    "patch /api/portfolio/group-sets/:setId",
+    "delete /api/portfolio/group-sets/:setId",
+  ];
+  it("registers exactly the 25 original paths in order, outside the main module", () => {
+    assert.doesNotMatch(main, /app\.\w+\(["']\/api\/portfolio\//);
+    assert.deepEqual([...portfolio.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+      .map(([, method, path]) => `${method} ${path}`), inventory);
+    assert.equal((portfolio.match(/route\(async /g) ?? []).length, 25);
+    const declarations = portfolio.split("\n").filter(line => /^  app\./.test(line));
+    assert.match(declarations[0], /requireClient, route\(async /);
+    for (const declaration of declarations.slice(1)) {
+      assert.match(declaration, /requireClientOrAdmin, route\(async /);
+    }
+  });
+
+  it("registers once, directly before the unchanged work-order module", () => {
+    assert.equal(main.split("registerPortfolioRoutes(app);").length - 1, 1);
+    assert.match(main, /registerPortfolioRoutes\(app\);\s*registerPortfolioWorkOrderRoutes\(app\);/);
+  });
+
+  it("keeps ownership decisions and database queries outside the route module", () => {
+    assert.doesNotMatch(portfolio, /\.organizationId\s*(?:!==|===)|\.role\s*(?:===|!==)/);
+    assert.doesNotMatch(portfolio, /isClientRole\s*\(|listBranchGroups\s*\(|getGroupSets\s*\(|db\s*\.\s*select/);
+    assert.match(portfolio, /from "\.\.\/policy"/);
+    assert.doesNotMatch(portfolio, /from "\.\.\/portfolioOrgResolver"/);
+    assert.equal((portfolio.match(/resolvePortfolioOrg\(req\)/g) ?? []).length, 24);
+    assert.match(portfolio, /const orgId = clientPortfolioOrg\(req\);/);
+  });
+
+  it("preserves group authorization before input checks and non-empty location authorization", () => {
+    const start = portfolio.indexOf('app.put("/api/portfolio/groups/:groupId/members"');
+    const end = portfolio.indexOf('app.post("/api/portfolio/group-sets"', start);
+    const members = portfolio.slice(start, end);
+    assert.ok(members.indexOf("await orgOwnsGroup(orgId, groupId)") < members.indexOf("Array.isArray(communityIds)"));
+    assert.match(members, /if \(\(communityIds as string\[\]\)\.length > 0\) \{\s*if \(!await orgOwnsCommunities\(orgId, communityIds as string\[\]\)\)/);
+    assert.ok(members.indexOf("await orgOwnsCommunities(") < members.indexOf("await storage.setBranchGroupMembers("));
+  });
+});
