@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, afterEach, describe, it } from "node:test";
 import { readFileSync } from "node:fs";
+import { readRouteFixtureSource } from "./testUtils/routeFixtureSource";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
@@ -10,7 +11,7 @@ import { build } from "esbuild";
 // Exercise the production handlers, shared helper and live-user middleware over
 // HTTP with isolated storage. No accounts, sessions or database rows are changed.
 const require = createRequire(import.meta.url);
-const source = readFileSync(new URL("./routes/routes.ts", import.meta.url), "utf8");
+const source = readRouteFixtureSource();
 function between(start: string, end: string) {
   const from = source.indexOf(start);
   const to = source.indexOf(end, from + start.length);
@@ -66,6 +67,7 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
       stdin: {
         contents: `
           import * as policy from "./policy";
+          import { route } from "./routes/handler";
           import { loadCurrentUser, requireAuth, enforceHoaScoping, enforceOrgScoping, isHoaRole } from "./auth";
           import * as storage from "./storage";
           import { logServiceVisitSchema } from "@workspace/db";

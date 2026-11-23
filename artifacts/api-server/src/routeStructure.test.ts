@@ -34,7 +34,7 @@ describe("asset route structure", () => {
     assert.deepEqual(registrations(main).filter(path => assetInventory.includes(path)), []);
     assert.equal(main.split("registerAssetRoutes(app);").length - 1, 1);
     assert.equal((assets.match(/route\(async /g) ?? []).length, 16);
-    assert.ok(main.indexOf("registerAssetRoutes(app);") < main.indexOf('app.get("/api/map-layers",'));
+    assert.ok(main.indexOf("registerAssetRoutes(app);") < main.indexOf("registerMapLayerRoutes(app);"));
     assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/completeness"/);
     assert.match(main, /app\.get\("\/api\/communities\/:communityId\/assets\/incomplete"/);
   });
@@ -249,5 +249,66 @@ describe("commercial portfolio route structure", () => {
     assert.ok(members.indexOf("await orgOwnsGroup(orgId, groupId)") < members.indexOf("Array.isArray(communityIds)"));
     assert.match(members, /if \(\(communityIds as string\[\]\)\.length > 0\) \{\s*if \(!await orgOwnsCommunities\(orgId, communityIds as string\[\]\)\)/);
     assert.ok(members.indexOf("await orgOwnsCommunities(") < members.indexOf("await storage.setBranchGroupMembers("));
+  });
+});
+
+describe("map layers, asset types and offline pack route structure", () => {
+  const modules = [
+    {
+      file: "mapLayers", register: "registerMapLayerRoutes",
+      inventory: [
+        "get /api/map-layers", "get /api/map-layers/:id/geojson", "get /api/layer-hierarchy",
+        "post /api/map-layers", "post /api/map-layers/upload-validate", "post /api/map-layers/upload",
+        "post /api/map-layers/preview-irrigation", "post /api/map-layers/upload-irrigation",
+        "patch /api/map-layers/:id", "delete /api/map-layers/:id", "post /api/map-layers/:id/sync-assets",
+        "post /api/map-layers/:id/validate", "post /api/map-layers/:id/sync-preview",
+        "get /api/map-layers/:id/unlinked-features", "post /api/map-layers/:id/create-missing-assets",
+        "get /api/map-layers/:id/collisions", "get /api/map-layers/:id/summary",
+      ],
+    },
+    {
+      file: "assetTypes", register: "registerAssetTypeRoutes",
+      inventory: [
+        "get /api/asset-types", "post /api/asset-types",
+        "patch /api/asset-types/:key", "delete /api/asset-types/:key",
+      ],
+    },
+    {
+      file: "offlinePacks", register: "registerOfflinePackRoutes",
+      inventory: [
+        "get /api/communities/:communityId/offline-pack", "post /api/offline-packs",
+        "post /api/offline-packs/:id/download-urls", "get /api/offline-packs",
+        "delete /api/offline-packs/:id", "post /api/communities/:communityId/generate-offline-pack",
+        "get /api/communities/:communityId/offline-pack-data",
+      ],
+    },
+  ];
+  for (const module of modules) {
+    const source = readFileSync(new URL(`./routes/${module.file}.ts`, import.meta.url), "utf8");
+    it(`registers the exact ${module.file} inventory and order outside the main module`, () => {
+      assert.deepEqual([...source.matchAll(/app\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+        .map(([, method, path]) => `${method} ${path}`), module.inventory);
+      assert.equal(main.split(`${module.register}(app);`).length - 1, 1);
+      assert.equal((source.match(/route\(async /g) ?? []).length, module.inventory.length);
+      assert.doesNotMatch(main, /app\.\w+\(["']\/api\/(?:map-layers|layer-hierarchy|asset-types|offline-packs|communities\/:communityId\/(?:offline-pack|generate-offline-pack))/);
+    });
+    it(`keeps ${module.file} role and membership checks in policy`, () => {
+      assert.doesNotMatch(source, /\.role\s*(?:===|!==)/);
+      assert.doesNotMatch(source, /isUserMemberOfCommunity\s*\(|userCanAccessCommunity\s*\(|isHoaRole\s*\(|isMapCreatorRole\s*\(/);
+      assert.match(source, /import \* as policy from "\.\.\/policy"/);
+    });
+  }
+  it("preserves module positions, catalogue and task-template boundaries", () => {
+    assert.match(main, /registerAssetRoutes\(app\);\s*registerMapLayerRoutes\(app\);/);
+    assert.match(main, /\/\/ ── Asset Types catalogue \(data-driven\)[^\n]*\n\s*registerAssetTypeRoutes\(app\);\s*registerOfflinePackRoutes\(app\);/);
+    assert.ok(main.indexOf("registerMapLayerRoutes(app);") < main.indexOf("registerAssetTypeRoutes(app);"));
+    assert.ok(main.indexOf("registerOfflinePackRoutes(app);") < main.indexOf("// Task Templates CRUD"));
+  });
+  it("keeps upload middleware and the approved actor loading exception", () => {
+    const maps = readFileSync(new URL("./routes/mapLayers.ts", import.meta.url), "utf8");
+    assert.equal((maps.match(/upload\.single\("file"\)/g) ?? []).length, 3);
+    assert.match(maps, /import \{ upload \} from "\.\/upload"/);
+    assert.doesNotMatch(maps, /storage\.getUserById\(/);
+    assert.match(maps, /policy\.canAccessCommunity\(policy\.actorFromUser\(req\.currentUser!\), layer\.communityId\)/);
   });
 });

@@ -16,16 +16,14 @@ export function readRouteFixtureSource(): string {
     if (!source.includes(boundary)) throw new Error(`Missing production fixture boundary: ${boundary}`);
     source = source.replace(boundary, `${content}\n\n${boundary}`);
   };
-  if (!source.includes("  registerTaskRoutes(app);")) throw new Error("Missing task registration");
-  source = source.replace("  registerTaskRoutes(app);", handlers.slice(0, 13).join("\n\n"));
-  insertBefore('  app.get("/api/map-layers",', handlers.slice(13, 15).join("\n\n"));
-  insertBefore("  // CSV Task Import", handlers[15]);
-  insertBefore("  // Task Schedules CRUD", handlers[16]);
   for (const [file, register, expected] of [
     ["hoa", "registerHoaRoutes", 4],
     ["portfolioWorkOrders", "registerPortfolioWorkOrderRoutes", 9],
     ["portfolio", "registerPortfolioRoutes", 25],
     ["assets", "registerAssetRoutes", 16],
+    ["mapLayers", "registerMapLayerRoutes", 17],
+    ["assetTypes", "registerAssetTypeRoutes", 4],
+    ["offlinePacks", "registerOfflinePackRoutes", 7],
   ] as const) {
     const module = readFileSync(new URL(`../routes/${file}.ts`, import.meta.url), "utf8");
     const count = [...module.matchAll(/^  app\.(?:get|post|patch|put|delete)\("[^\n]*\n[\s\S]*?^  \}\)\);/gm)].length;
@@ -38,6 +36,13 @@ export function readRouteFixtureSource(): string {
     }
     source = source.replace(call, module.slice(start + signature.length, -2).trimEnd());
   }
+  // Restore module handlers first: the task link fixture boundary lives in the
+  // map-layer module now, but must retain its original position in this view.
+  if (!source.includes("  registerTaskRoutes(app);")) throw new Error("Missing task registration");
+  source = source.replace("  registerTaskRoutes(app);", handlers.slice(0, 13).join("\n\n"));
+  insertBefore('  app.get("/api/map-layers",', handlers.slice(13, 15).join("\n\n"));
+  insertBefore("  // CSV Task Import", handlers[15]);
+  insertBefore("  // Task Schedules CRUD", handlers[16]);
   return source;
 }
 

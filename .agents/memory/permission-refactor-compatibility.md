@@ -21,8 +21,8 @@ During behavior-preserving permission extraction, retain the legacy HOA submissi
 
 **How to apply:** Preserve the HOA logical-OR fallback and portfolio nullish fallback exactly. Close either gap only in a separately approved security change.
 
-Asset permission extraction must retain the narrower “admin or community membership row” rule, rather than granting access from an HOA assignment or commercial organization alone. Asset-note deletion retains author-or-admin access without a current membership check.
+Asset reads, layer lists, layer GeoJSON and offline packs must retain the narrower “admin or community membership row” rule, rather than granting access from an HOA assignment or commercial organization alone. Layer summaries intentionally use the broader general community rule. Asset-note deletion retains author-or-admin access without a current membership check.
 
-**Why:** The user explicitly designated both differences as intentional compatibility constraints, with broader asset access deferred to a product decision and former-member note deletion deferred to a security slice.
+**Why:** The user explicitly designated these differences as intentional compatibility constraints, with consistent asset/map access deferred to a product decision and former-member note deletion deferred to a security slice.
 
-**How to apply:** Keep asset-specific decisions separate from general community access. Do not broaden reads or tighten note deletion as part of structural refactors.
+**How to apply:** Keep asset/map-data decisions separate from general community access; do not make layer summaries use the narrower rule. Do not broaden reads or tighten note deletion as part of structural refactors.

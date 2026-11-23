@@ -320,3 +320,31 @@ describe("commercial portfolio ownership policies", () => {
     });
   }
 });
+
+describe("map and offline permission compatibility", () => {
+  const roles = ["admin", "property_manager", "contractor", "contractor_manager",
+    "map_creator", "hoa_admin", "hoa_member", "client_admin"] as const;
+  for (const role of roles) for (const member of [true, false]) {
+    it(`${role} ${member ? "member" : "non-member"} map data matches asset access`, async () => {
+      const { api } = await policyFixture();
+      const communityId = member ? "member-community" : "other-community";
+      const person = actor(role, { hoaCommunityId: communityId });
+      assert.equal(await api.canUseCommunityMapData(person, communityId), role === "admin" || member);
+      assert.equal(await api.canUseCommunityMapData(person, communityId),
+        await api.canUseCommunityAssets(person, communityId));
+    });
+  }
+  for (const role of roles) {
+    it(`limits inactive types and full search visibility for ${role}`, async () => {
+      const { api } = await policyFixture();
+      assert.equal(api.canSeeInactiveAssetTypes(actor(role)), role === "admin");
+      assert.equal(api.seesFullSearchIndex(actor(role)), role === "admin");
+    });
+  }
+  it("retains broader HOA summary access without granting layer payloads or offline packs", async () => {
+    const { api } = await policyFixture();
+    const person = actor("hoa_admin", { hoaCommunityId: "other-community" });
+    assert.equal(await api.canAccessCommunity(person, "other-community"), true);
+    assert.equal(await api.canUseCommunityMapData(person, "other-community"), false);
+  });
+});
