@@ -10,3 +10,13 @@ Replit's Publish flow diffs dev vs prod schemas and applies the diff **before** 
 - **How to apply:** every migration must be idempotent AND must not reference columns/tables that any later migration removes or renames. Seed data is never carried by the publish diff — only schema — so seeding must live in migrations and use ON CONFLICT DO NOTHING.
 - Also: FK constraints that depend on seed data can never be applied by the publish diff (it creates tables empty). If the diff tries, publish fails validation. Workaround used: drop the FK in the dev DB before publishing, let boot migration 0011 add it in prod (seed first, then FK), then re-add it in dev.
 - Debugging tip: reproduce prod state locally by dumping dev schema into a scratch DB, copying the drizzle tracker, and deleting the trailing tracker rows; then boot the production bundle against it.
+
+Migration notices that must appear in deployment logs need an explicit PostgreSQL
+notice-event logger; `RAISE NOTICE` alone does not print through node-postgres.
+
+**Why:** PostgreSQL successfully emits the notice, but the Node driver exposes it
+as an event rather than forwarding it to application stdout. A successful
+migration can therefore lack its required audit/count line.
+
+**How to apply:** When a future migration promises a logged count, verify that its
+notice prefix is forwarded to the application logger and test that forwarding.

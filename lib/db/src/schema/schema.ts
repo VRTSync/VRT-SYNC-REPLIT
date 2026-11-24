@@ -92,6 +92,7 @@ export const communityMembers = pgTable("community_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("community_members_community_user_idx").on(table.communityId, table.userId),
+  index("community_members_user_idx").on(table.userId),
 ]);
 
 export const branchGroupSets = pgTable("branch_group_sets", {
@@ -206,7 +207,7 @@ export const taskCompletions = pgTable("task_completions", {
   materialsUsed: text("materials_used"),
   followUpNeeded: text("follow_up_needed"),
   completedAt: timestamp("completed_at").defaultNow().notNull(),
-});
+}, (table) => [index("task_completions_task_idx").on(table.taskId)]);
 
 export const attachments = pgTable("attachments", {
   id: varchar("id")
@@ -316,6 +317,7 @@ export const assets = pgTable("assets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("assets_community_type_idx").on(table.communityId, table.assetType),
+  index("assets_map_layer_idx").on(table.mapLayerId),
   index("assets_community_feature_idx").on(table.communityId, table.featureRef),
   index("assets_community_type_archived_idx").on(table.communityId, table.assetType, table.isArchived),
   uniqueIndex("assets_community_layer_feature_idx").on(table.communityId, table.mapLayerId, table.featureRef),
@@ -345,7 +347,10 @@ export const taskLinks = pgTable("task_links", {
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("task_links_task_idx").on(table.taskId),
+  index("task_links_asset_idx").on(table.assetId),
+]);
 
 export const offlinePacks = pgTable("offline_packs", {
   id: varchar("id")
@@ -377,6 +382,7 @@ export const mapLayers = pgTable("map_layers", {
   displayName: text("display_name").notNull(),
   sourceFormat: text("source_format").notNull().default("geojson"),
   geojsonData: text("geojson_data"),
+  featureCount: integer("feature_count"),
   color: text("color"),
   strokeColor: text("stroke_color"),
   strokeWeight: integer("stroke_weight"),
@@ -1007,7 +1013,8 @@ export type PushToken = typeof pushTokens.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type AssetProperty = typeof assetProperties.$inferSelect;
 export type TaskLink = typeof taskLinks.$inferSelect;
-export type MapLayer = typeof mapLayers.$inferSelect;
+// The nullable feature-count cache is internal; keep existing layer contracts.
+export type MapLayer = Omit<typeof mapLayers.$inferSelect, "featureCount">;
 export type OfflinePack = typeof offlinePacks.$inferSelect;
 export type TaskTemplate = typeof taskTemplates.$inferSelect;
 export type TemplateRun = typeof templateRuns.$inferSelect;

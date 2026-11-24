@@ -98,14 +98,18 @@ export function registerMapLayerRoutes(app: Express): void {
         parsed.data.color = getDefaultLayerColor(parsed.data.subLayerKey, count);
       }
 
-      const layer = await storage.createMapLayer(parsed.data);
-      let syncResult = null;
       let featureCount = 0;
-      if (layer.geojsonData) {
+      let cachedCount: number | null = null;
+      if (parsed.data.geojsonData) {
         try {
-          const geo = JSON.parse(layer.geojsonData);
+          const geo = JSON.parse(parsed.data.geojsonData);
           featureCount = geo.features?.length || 0;
+          cachedCount = Array.isArray(geo.features) ? geo.features.length : null;
         } catch {}
+      }
+      const layer = await storage.createMapLayer(parsed.data, cachedCount);
+      let syncResult = null;
+      if (layer.geojsonData) {
         syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
       }
       const { geojsonData, ...rest } = layer;
@@ -203,7 +207,7 @@ export function registerMapLayerRoutes(app: Express): void {
           displayName,
           sourceFormat,
           geojsonData,
-        });
+        }, Array.isArray(uploadedFeatures) ? featureCount : null);
         if (!updated) {
           return void res.status(409).json({
             error: "Conflict: layer was modified. Please refresh and try again.",
@@ -246,7 +250,7 @@ export function registerMapLayerRoutes(app: Express): void {
           displayName,
           sourceFormat,
           geojsonData,
-        });
+        }, Array.isArray(uploadedFeatures) ? featureCount : null);
         if (!updated) {
           return void res.status(409).json({
             error: "Conflict: layer was modified. Please refresh and try again.",
@@ -286,7 +290,7 @@ export function registerMapLayerRoutes(app: Express): void {
           displayName: displayName || existingLayer.displayName,
           sourceFormat,
           geojsonData: mergedGeojson,
-        });
+        }, mergedFeatures.length);
         if (!updated) {
           return void res.status(409).json({
             error: "Conflict: layer was modified. Please refresh and try again.",
@@ -309,7 +313,7 @@ export function registerMapLayerRoutes(app: Express): void {
         sourceFormat,
         geojsonData,
         color: autoColor,
-      });
+      }, Array.isArray(uploadedFeatures) ? featureCount : null);
       const syncResult = await syncAssetsFromLayer(layer.communityId, layer.id, layer.layerKey, layer.subLayerKey, layer.geojsonData, req.session.userId!);
       const { geojsonData: _, ...rest } = layer;
       return void res.status(201).json({ ...rest, featureCount, syncResult });
@@ -436,7 +440,7 @@ export function registerMapLayerRoutes(app: Express): void {
           displayName: controllerDisplayName,
           sourceFormat: "kml",
           geojsonData: controllerGeojsonStr,
-        });
+        }, parseResult.controllerGeojson.features.length);
         if (updated) controllerLayer = updated;
       } else {
         controllerLayer = await storage.createMapLayer({
@@ -447,7 +451,7 @@ export function registerMapLayerRoutes(app: Express): void {
           sourceFormat: "kml",
           geojsonData: controllerGeojsonStr,
           color: getDefaultLayerColor("controller", irrLayerCount),
-        });
+        }, parseResult.controllerGeojson.features.length);
       }
 
       if (zoneLayer) {
@@ -455,7 +459,7 @@ export function registerMapLayerRoutes(app: Express): void {
           displayName: zoneDisplayName.includes("Zone") ? zoneDisplayName : "Zones",
           sourceFormat: "kml",
           geojsonData: zoneGeojsonStr,
-        });
+        }, parseResult.zoneGeojson.features.length);
         if (updated) zoneLayer = updated;
       } else {
         zoneLayer = await storage.createMapLayer({
@@ -466,7 +470,7 @@ export function registerMapLayerRoutes(app: Express): void {
           sourceFormat: "kml",
           geojsonData: zoneGeojsonStr,
           color: getDefaultLayerColor("zone", irrLayerCount + 1),
-        });
+        }, parseResult.zoneGeojson.features.length);
       }
 
       // Ensure sibling sub-layers exist and collect their IDs
@@ -537,7 +541,16 @@ export function registerMapLayerRoutes(app: Express): void {
       const parsed = updateMapLayerSchema.safeParse(req.body);
       if (!parsed.success) return void res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
       const { version, ...data } = parsed.data;
-      const updated = await storage.updateMapLayer(req.params.id as string, version, data);
+      let featureCount = 0;
+      let cachedCount: number | null = null;
+      if (parsed.data.geojsonData) {
+        try {
+          const geo = JSON.parse(parsed.data.geojsonData);
+          featureCount = geo.features?.length || 0;
+          cachedCount = Array.isArray(geo.features) ? geo.features.length : null;
+        } catch {}
+      }
+      const updated = await storage.updateMapLayer(req.params.id as string, version, data, cachedCount);
       if (!updated) {
         const existing = await storage.getMapLayerById(req.params.id as string);
         if (!existing) return void res.status(404).json({ error: "Layer not found" });
@@ -548,12 +561,7 @@ export function registerMapLayerRoutes(app: Express): void {
         });
       }
       let syncResult = null;
-      let featureCount = 0;
       if (parsed.data.geojsonData) {
-        try {
-          const geo = JSON.parse(updated.geojsonData || "{}");
-          featureCount = geo.features?.length || 0;
-        } catch {}
         syncResult = await syncAssetsFromLayer(updated.communityId, updated.id, updated.layerKey, updated.subLayerKey, updated.geojsonData, req.session.userId!);
       }
       const { geojsonData, ...rest } = updated;
@@ -720,14 +728,14 @@ export function registerMapLayerRoutes(app: Express): void {
 
   app.get("/api/map-layers/:id/summary", requireAuth, route(async (req: Request, res: Response) => {
     try {
-      const layer = await storage.getMapLayerById(req.params.id as string);
+      const layer = await storage.getMapLayerSummaryMetadata(req.params.id as string);
       if (!layer) return void res.status(404).json({ error: "Layer not found" });
       if (!(await policy.canAccessCommunity(policy.actorFromUser(req.currentUser!), layer.communityId))) {
         return void res.status(403).json({ error: "You do not have access to this community" });
       }
 
-      let featureCount = 0;
-      if (layer.geojsonData) {
+      let featureCount = layer.featureCount ?? 0;
+      if (layer.featureCount == null && layer.geojsonData) {
         try {
           const geo = JSON.parse(layer.geojsonData);
           featureCount = geo.features?.length || 0;

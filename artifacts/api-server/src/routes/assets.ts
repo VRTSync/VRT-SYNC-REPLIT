@@ -332,14 +332,14 @@ export function registerAssetRoutes(app: Express): void {
             displayName: layerDef.displayName,
             geojsonData: JSON.stringify({ type: "FeatureCollection", features: [newFeature] }),
             color,
-          });
+          }, 1);
         } else {
           let collection: { type: string; features: any[] } = { type: "FeatureCollection", features: [] };
           if (layer.geojsonData) {
             try { collection = JSON.parse(layer.geojsonData); } catch {}
           }
           collection.features = [...(collection.features || []), newFeature];
-          await storage.updateMapLayer(layer.id, layer.version, { geojsonData: JSON.stringify(collection) });
+          await storage.updateMapLayer(layer.id, layer.version, { geojsonData: JSON.stringify(collection) }, collection.features.length);
           layer = (await storage.getMapLayerById(layer.id)) ?? layer;
         }
 

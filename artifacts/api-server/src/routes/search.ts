@@ -2,7 +2,6 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, requireAdmin } from "../auth";
 import * as storage from "../storage";
 import * as policy from "../policy";
-import { getMissingRequiredKeys } from "../assetSync";
 import { route } from "./handler";
 
 export function registerSearchRoutes(app: Express): void {
@@ -15,9 +14,9 @@ export function registerSearchRoutes(app: Express): void {
       const archived = allAssets.filter(a => a.isArchived);
 
       const missingRequired: { id: string; label: string; assetType: string; missingKeys: string[] }[] = [];
+      const missingByAsset = await storage.getMissingRequiredKeysForAssets(active);
       for (const asset of active) {
-        const props = await storage.getAssetProperties(asset.id);
-        const missing = await getMissingRequiredKeys(asset.assetType, props);
+        const missing = missingByAsset.get(asset.id)!;
         if (missing.length > 0) {
           missingRequired.push({ id: asset.id, label: asset.label, assetType: asset.assetType, missingKeys: missing });
         }

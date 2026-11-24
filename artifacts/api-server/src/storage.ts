@@ -1,8 +1,8 @@
-import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count } from "drizzle-orm";
+import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count, getTableColumns } from "drizzle-orm";
 import { db, pool } from "./db";
 import { actorFromUser, canReadTask } from "./policy";
 import { isContractorSide } from "./auth";
-import { getAssetTypeCache, getAssetTypeTemplate } from "./assetTypeCache";
+import { getAssetTypeCache } from "./assetTypeCache";
 import {
   users, communities, communityMembers, tasks, taskCompletions, attachments, pushTokens,
   assets, assetProperties, taskLinks, mapLayers, offlinePacks, taskTemplates, templateRuns,
@@ -13,7 +13,7 @@ import {
   waterSavingsScenarios,
   type User, type InsertUser, type Community, type CommunityMember,
   type Task, type TaskCompletion, type Attachment, type PushToken,
-  type Asset, type AssetProperty, type TaskLink, type MapLayer, type OfflinePack,
+  type Asset, type AssetProperty, type TaskLink, type MapLayer as StoredMapLayer, type OfflinePack,
   type TaskTemplate, type TemplateRun,
   type TaskSchedule, type ScheduleRun, type ScheduleRunItem,
   type ServiceSchedule, type ServiceVisit, type AssetNote, type Notification,
@@ -31,6 +31,10 @@ import {
   resolveXeriscapePolygons,
   type XeriscapePolygonResolution,
 } from "./xeriscapePolygonResolver";
+
+// featureCount is an internal cache, not an addition to existing layer responses.
+type MapLayer = Omit<StoredMapLayer, "featureCount">;
+const { featureCount: cachedFeatureCount, ...publicLayerColumns } = getTableColumns(mapLayers);
 
 export async function createUser(data: InsertUser): Promise<User> {
   const [user] = await db.insert(users).values(data).returning();
@@ -752,21 +756,23 @@ export async function getAdminSummary(communityId?: string) {
   const taskCommunityFilter = communityId ? eq(tasks.communityId, communityId) : undefined;
   const layerCommunityFilter = communityId ? eq(mapLayers.communityId, communityId) : undefined;
 
-  const [commRes] = await db.select({ count: count() }).from(communities).where(communityFilter);
-  const [activeRes] = await db.select({ count: count() }).from(assets).where(
+  const [[commRes], [activeRes], [archivedRes], [taskRes], [pendingRes], [completedRes], [layerRes]] = await Promise.all([
+  db.select({ count: count() }).from(communities).where(communityFilter),
+  db.select({ count: count() }).from(assets).where(
     assetCommunityFilter ? and(assetCommunityFilter, eq(assets.isArchived, false)) : eq(assets.isArchived, false)
-  );
-  const [archivedRes] = await db.select({ count: count() }).from(assets).where(
+  ),
+  db.select({ count: count() }).from(assets).where(
     assetCommunityFilter ? and(assetCommunityFilter, eq(assets.isArchived, true)) : eq(assets.isArchived, true)
-  );
-  const [taskRes] = await db.select({ count: count() }).from(tasks).where(taskCommunityFilter);
-  const [pendingRes] = await db.select({ count: count() }).from(tasks).where(
+  ),
+  db.select({ count: count() }).from(tasks).where(taskCommunityFilter),
+  db.select({ count: count() }).from(tasks).where(
     taskCommunityFilter ? and(taskCommunityFilter, eq(tasks.status, 'pending')) : eq(tasks.status, 'pending')
-  );
-  const [completedRes] = await db.select({ count: count() }).from(tasks).where(
+  ),
+  db.select({ count: count() }).from(tasks).where(
     taskCommunityFilter ? and(taskCommunityFilter, eq(tasks.status, 'completed')) : eq(tasks.status, 'completed')
-  );
-  const [layerRes] = await db.select({ count: count() }).from(mapLayers).where(layerCommunityFilter);
+  ),
+  db.select({ count: count() }).from(mapLayers).where(layerCommunityFilter),
+  ]);
 
   let incompleteAssetsCount = 0;
   const layerStats: { layerId: string; activeAssets: number; archivedAssets: number }[] = [];
@@ -796,15 +802,19 @@ export async function getAdminSummary(communityId?: string) {
       }
     }
 
-    const communityLayers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, communityId));
+    const communityLayers = await db.select({ id: mapLayers.id }).from(mapLayers).where(eq(mapLayers.communityId, communityId));
+    // Filter by the selected layer IDs (not asset community): preserves the old
+    // counts even for legacy cross-community asset/layer references.
+    const grouped = communityLayers.length ? await db.select({
+      layerId: assets.mapLayerId,
+      active: sql<number>`count(*) filter (where not ${assets.isArchived})`.mapWith(Number),
+      archived: sql<number>`count(*) filter (where ${assets.isArchived})`.mapWith(Number),
+    }).from(assets).where(inArray(assets.mapLayerId, communityLayers.map(l => l.id)))
+      .groupBy(assets.mapLayerId) : [];
+    const countsByLayer = new Map(grouped.map(row => [row.layerId, row]));
     for (const layer of communityLayers) {
-      const [active] = await db.select({ count: count() }).from(assets).where(
-        and(eq(assets.mapLayerId, layer.id), eq(assets.isArchived, false))
-      );
-      const [archived] = await db.select({ count: count() }).from(assets).where(
-        and(eq(assets.mapLayerId, layer.id), eq(assets.isArchived, true))
-      );
-      layerStats.push({ layerId: layer.id, activeAssets: active.count, archivedAssets: archived.count });
+      const counts = countsByLayer.get(layer.id);
+      layerStats.push({ layerId: layer.id, activeAssets: counts?.active ?? 0, archivedAssets: counts?.archived ?? 0 });
     }
   }
 
@@ -1056,6 +1066,36 @@ export async function getAssetProperties(assetId: string): Promise<AssetProperty
     .orderBy(assetProperties.key);
 }
 
+/** Full property rows, bounded to 1,000 IDs per query; empty input does no I/O. */
+export async function getAssetPropertiesForAssets(assetIds: string[]): Promise<Map<string, AssetProperty[]>> {
+  const grouped = new Map<string, AssetProperty[]>();
+  const ids = [...new Set(assetIds)];
+  for (let offset = 0; offset < ids.length; offset += 1000) {
+    const rows = await db.select().from(assetProperties)
+      .where(inArray(assetProperties.assetId, ids.slice(offset, offset + 1000)))
+      .orderBy(assetProperties.key);
+    for (const row of rows) {
+      const list = grouped.get(row.assetId) ?? [];
+      list.push(row);
+      grouped.set(row.assetId, list);
+    }
+  }
+  return grouped;
+}
+
+/** Match the existing missing-field rule: key presence, even for empty values. */
+export async function getMissingRequiredKeysForAssets(assetList: Asset[]): Promise<Map<string, string[]>> {
+  const [properties, types] = await Promise.all([
+    getAssetPropertiesForAssets(assetList.map(asset => asset.id)),
+    getAssetTypeCache(),
+  ]);
+  const templates = new Map(types.map(type => [type.key, type]));
+  return new Map(assetList.map(asset => {
+    const present = new Set((properties.get(asset.id) ?? []).map(prop => prop.key));
+    return [asset.id, (templates.get(asset.assetType)?.requiredKeys ?? []).filter(key => !present.has(key))];
+  }));
+}
+
 export async function getAssetPropertiesBulk(assetIds: string[]): Promise<{ assetId: string; key: string; value: string }[]> {
   if (assetIds.length === 0) return [];
   const rows = await db.select({
@@ -1091,7 +1131,7 @@ export async function getXeriscapeCommunityPolygons(communityId: string): Promis
   const [properties, layers] = await Promise.all([
     assetIds.length > 0 ? getAssetPropertiesBulk(assetIds) : Promise.resolve([]),
     layerIds.length > 0
-      ? db.select().from(mapLayers).where(inArray(mapLayers.id, layerIds))
+      ? db.select(publicLayerColumns).from(mapLayers).where(inArray(mapLayers.id, layerIds))
       : Promise.resolve([]),
   ]);
 
@@ -1131,7 +1171,7 @@ export async function getPortfolioXeriscapePolygons(orgId: string): Promise<Xeri
   const [properties, layers] = await Promise.all([
     assetIds.length > 0 ? getAssetPropertiesBulk(assetIds) : Promise.resolve([]),
     layerIds.length > 0
-      ? db.select().from(mapLayers).where(inArray(mapLayers.id, layerIds))
+      ? db.select(publicLayerColumns).from(mapLayers).where(inArray(mapLayers.id, layerIds))
       : Promise.resolve([]),
   ]);
 
@@ -1325,11 +1365,9 @@ export async function getIncompleteAssets(
     .orderBy(assets.label);
 
   const results: (Asset & { missingRequiredKeys: string[] })[] = [];
+  const missingByAsset = await getMissingRequiredKeysForAssets(allAssets);
   for (const asset of allAssets) {
-    const props = await getAssetProperties(asset.id);
-    const tpl = await getAssetTypeTemplate(asset.assetType);
-    const propKeySet = new Set(props.map(p => p.key));
-    const missing = tpl ? tpl.requiredKeys.filter(k => !propKeySet.has(k)) : [];
+    const missing = missingByAsset.get(asset.id)!;
     if (missing.length === 0) continue;
     if (missingKey && !missing.includes(missingKey)) continue;
     results.push({ ...asset, missingRequiredKeys: missing });
@@ -1366,29 +1404,31 @@ export async function createMapLayer(data: {
   sourceFormat?: string;
   geojsonData?: string;
   color?: string;
-}): Promise<MapLayer> {
-  const [layer] = await db.insert(mapLayers).values(data).returning();
+}, featureCount?: number | null): Promise<MapLayer> {
+  const [layer] = await db.insert(mapLayers).values({
+    ...data, featureCount: featureCount === undefined ? layerFeatureCount(data.geojsonData) : featureCount,
+  }).returning(publicLayerColumns);
   return layer;
 }
 
 export async function getMapLayersByCommunity(communityId: string, layerKey?: string): Promise<MapLayer[]> {
   if (layerKey) {
-    return db.select().from(mapLayers)
+    return db.select(publicLayerColumns).from(mapLayers)
       .where(and(eq(mapLayers.communityId, communityId), eq(mapLayers.layerKey, layerKey)))
       .orderBy(mapLayers.displayName);
   }
-  return db.select().from(mapLayers)
+  return db.select(publicLayerColumns).from(mapLayers)
     .where(eq(mapLayers.communityId, communityId))
     .orderBy(mapLayers.layerKey, mapLayers.displayName);
 }
 
 export async function getMapLayerById(id: string): Promise<MapLayer | undefined> {
-  const [layer] = await db.select().from(mapLayers).where(eq(mapLayers.id, id));
+  const [layer] = await db.select(publicLayerColumns).from(mapLayers).where(eq(mapLayers.id, id));
   return layer;
 }
 
 export async function getMapLayerByKeys(communityId: string, layerKey: string, subLayerKey: string): Promise<MapLayer | undefined> {
-  const [layer] = await db.select().from(mapLayers).where(
+  const [layer] = await db.select(publicLayerColumns).from(mapLayers).where(
     and(
       eq(mapLayers.communityId, communityId),
       eq(mapLayers.layerKey, layerKey),
@@ -1407,12 +1447,36 @@ export async function updateMapLayer(id: string, expectedVersion: number, data: 
   strokeWeight: number;
   fillOpacity: string;
   isEnabled: boolean;
-}>): Promise<MapLayer | null> {
+}>, featureCount?: number | null): Promise<MapLayer | null> {
   const [updated] = await db.update(mapLayers)
-    .set({ ...data, version: expectedVersion + 1, updatedAt: new Date() })
+    .set({ ...data,
+      ...(data.geojsonData !== undefined ? {
+        featureCount: featureCount === undefined ? layerFeatureCount(data.geojsonData) : featureCount,
+      } : {}),
+      version: expectedVersion + 1, updatedAt: new Date() })
     .where(and(eq(mapLayers.id, id), eq(mapLayers.version, expectedVersion)))
-    .returning();
+    .returning(publicLayerColumns);
   return updated || null;
+}
+
+function layerFeatureCount(data: string | null | undefined): number | null {
+  try {
+    const geo = JSON.parse(data!);
+    return Array.isArray(geo?.features) ? geo.features.length : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Do not transfer GeoJSON for cached layers; preserve the legacy NULL fallback. */
+export async function getMapLayerSummaryMetadata(id: string) {
+  const [layer] = await db.select({
+    id: mapLayers.id, communityId: mapLayers.communityId,
+    sourceFormat: mapLayers.sourceFormat,
+    featureCount: cachedFeatureCount,
+    geojsonData: sql<string | null>`case when ${cachedFeatureCount} is null then ${mapLayers.geojsonData} else null end`,
+  }).from(mapLayers).where(eq(mapLayers.id, id));
+  return layer;
 }
 
 export async function getMapLayerSummary(mapLayerId: string, communityId: string): Promise<{
@@ -1427,15 +1491,9 @@ export async function getMapLayerSummary(mapLayerId: string, communityId: string
   const archived = allLayerAssets.filter(a => a.isArchived);
   
   let incompleteCount = 0;
+  const missingByAsset = await getMissingRequiredKeysForAssets(active);
   for (const asset of active) {
-    const tpl = await getAssetTypeTemplate(asset.assetType);
-    if (tpl && tpl.requiredKeys.length > 0) {
-      const props = await db.select().from(assetProperties)
-        .where(eq(assetProperties.assetId, asset.id));
-      const propKeys = new Set(props.map(p => p.key));
-      const missing = tpl.requiredKeys.filter(k => !propKeys.has(k));
-      if (missing.length > 0) incompleteCount++;
-    }
+    if (missingByAsset.get(asset.id)!.length > 0) incompleteCount++;
   }
   
   return {
@@ -1583,8 +1641,9 @@ export async function generateWorkHistorySnapshot(communityId: string, limit = 5
   const assetIds = communityAssets.map(a => a.id);
   const snapshot: Record<string, any[]> = {};
 
+  const histories = await getAssetWorkHistoryForAssets(assetIds, managerId);
   for (const assetId of assetIds) {
-    const history = await getAssetWorkHistory(assetId, managerId);
+    const history = histories.get(assetId) ?? [];
     if (history.length > 0) {
       snapshot[assetId] = history.slice(0, limit);
     }
@@ -1682,6 +1741,54 @@ export async function getAssetWorkHistory(assetId: string, managerId?: string) {
   if (linkedTasks.length === 0) return [];
 
   const taskIds = linkedTasks.map(t => t.taskId);
+  return getWorkHistoryForTasks(taskIds, managerId);
+}
+
+/** Batched equivalent of the single-asset lookup, including its company scope. */
+export async function getAssetWorkHistoryForAssets(assetIds: string[], managerId?: string) {
+  const selectHistory = (ids: string[]) => db.select({
+    assetId: taskLinks.assetId,
+    completion: taskCompletions,
+    taskTitle: tasks.title,
+    userDisplayName: users.displayName,
+  }).from(taskLinks)
+    .innerJoin(taskCompletions, eq(taskCompletions.taskId, taskLinks.taskId))
+    .innerJoin(tasks, eq(taskCompletions.taskId, tasks.id))
+    .innerJoin(users, eq(taskCompletions.completedBy, users.id))
+    .where(and(inArray(taskLinks.assetId, ids), eq(taskLinks.linkType, "asset"),
+      managerId ? managerTaskScope(managerId) : undefined))
+    .orderBy(desc(taskCompletions.completedAt));
+  const rows: Awaited<ReturnType<typeof selectHistory>> = [];
+  const ids = [...new Set(assetIds)];
+  for (let offset = 0; offset < ids.length; offset += 1000) {
+    rows.push(...await selectHistory(ids.slice(offset, offset + 1000)));
+  }
+  type History = Awaited<ReturnType<typeof getWorkHistoryForTasks>>;
+  const result = new Map<string, History>();
+  const photos = await getWorkHistoryAttachments([...new Set(rows.map(row => row.completion.id))]);
+  rows.sort((a, b) => b.completion.completedAt.getTime() - a.completion.completedAt.getTime());
+  const seen = new Map<string, Set<string>>();
+  for (const { assetId, completion: c, taskTitle, userDisplayName } of rows) {
+    if (!assetId) continue;
+    const completions = seen.get(assetId) ?? new Set<string>();
+    if (completions.has(c.id)) continue; // duplicate links never duplicate a completion
+    completions.add(c.id);
+    seen.set(assetId, completions);
+    const list = result.get(assetId) ?? [];
+    list.push({
+      id: c.id, type: "task_completion", completedAt: c.completedAt,
+      completedBy: { id: c.completedBy, displayName: userDisplayName },
+      employeeSignOffName: c.employeeSignOffName, notes: c.notes,
+      timeSpentMinutes: c.timeSpentMinutes, materialsUsed: c.materialsUsed,
+      followUpNeeded: c.followUpNeeded, task: { id: c.taskId, title: taskTitle },
+      attachments: photos.get(c.id) ?? [],
+    });
+    result.set(assetId, list);
+  }
+  return result;
+}
+
+async function getWorkHistoryForTasks(taskIds: string[], managerId?: string) {
 
   const completionRows = await db.select({
     id: taskCompletions.id,
@@ -1704,22 +1811,7 @@ export async function getAssetWorkHistory(assetId: string, managerId?: string) {
 
   if (completionRows.length === 0) return [];
 
-  const completionIds = completionRows.map(c => c.id);
-  const allAttachments = await db.select({
-    id: attachments.id,
-    url: attachments.url,
-    taskCompletionId: attachments.taskCompletionId,
-  })
-    .from(attachments)
-    .where(inArray(attachments.taskCompletionId, completionIds));
-
-  const attachmentMap = new Map<string, { id: string; url: string }[]>();
-  for (const a of allAttachments) {
-    if (!a.taskCompletionId) continue;
-    const list = attachmentMap.get(a.taskCompletionId) || [];
-    list.push({ id: a.id, url: a.url });
-    attachmentMap.set(a.taskCompletionId, list);
-  }
+  const attachmentMap = await getWorkHistoryAttachments(completionRows.map(c => c.id));
 
   return completionRows.map(c => ({
     id: c.id,
@@ -1740,6 +1832,29 @@ export async function getAssetWorkHistory(assetId: string, managerId?: string) {
     },
     attachments: attachmentMap.get(c.id) || [],
   }));
+}
+
+async function getWorkHistoryAttachments(completionIds: string[]) {
+  const allAttachments: { id: string; url: string; taskCompletionId: string | null }[] = [];
+  for (let offset = 0; offset < completionIds.length; offset += 1000) {
+    allAttachments.push(...await db.select({
+    id: attachments.id,
+    url: attachments.url,
+    taskCompletionId: attachments.taskCompletionId,
+  })
+    .from(attachments)
+    .where(inArray(attachments.taskCompletionId, completionIds.slice(offset, offset + 1000))));
+  }
+
+  const attachmentMap = new Map<string, { id: string; url: string }[]>();
+  for (const a of allAttachments) {
+    if (!a.taskCompletionId) continue;
+    const list = attachmentMap.get(a.taskCompletionId) || [];
+    list.push({ id: a.id, url: a.url });
+    attachmentMap.set(a.taskCompletionId, list);
+  }
+
+  return attachmentMap;
 }
 
 export async function getDashboardData(userId: string, communityId: string, isAdmin: boolean) {
@@ -3393,7 +3508,7 @@ export async function getAssetNoteById(noteId: string): Promise<AssetNote | unde
 }
 
 export async function getCommunityBounds(communityId: string): Promise<{ bounds: [[number, number], [number, number]]; center: [number, number] } | null> {
-  const layers = await db.select().from(mapLayers).where(eq(mapLayers.communityId, communityId));
+  const layers = await db.select(publicLayerColumns).from(mapLayers).where(eq(mapLayers.communityId, communityId));
   if (layers.length === 0) return null;
 
   let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;

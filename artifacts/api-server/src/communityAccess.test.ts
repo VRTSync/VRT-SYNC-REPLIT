@@ -135,6 +135,9 @@ describe("community access (isolated production-handler HTTP matrix)", () => {
       getMapLayerById: record("layer", (id: string) => communities[id] && ({
         id, communityId: id, sourceFormat: "geojson", geojsonData: '{"features":[{}]}',
       })),
+      getMapLayerSummaryMetadata: record("layer", (id: string) => communities[id] && ({
+        id, communityId: id, sourceFormat: "geojson", featureCount: null, geojsonData: '{"features":[{}]}',
+      })),
       getServiceScheduleById: record("schedule", (id: string) => communities[id] && ({ id, communityId: id })),
       getCommunityBounds: record("bounds", { bounds: [[1, 2], [3, 4]] }),
       getCommunityMembers: record("members", [{

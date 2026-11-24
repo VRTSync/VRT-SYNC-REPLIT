@@ -920,9 +920,9 @@ describe("community, dashboard and search handler response compatibility", () =>
           { id: "archived", assetType: "tree", isArchived: true },
         ];
       },
-      getAssetProperties: async (id: string) => {
-        propertyReads.push(id);
-        return id === "complete" ? [{ key: "species" }, { key: "size" }] : [{ key: "species" }];
+      getMissingRequiredKeysForAssets: async (assets: { id: string }[]) => {
+        propertyReads.push(...assets.map(asset => asset.id));
+        return new Map([["complete", []], ["incomplete", ["size"]]]);
       },
       getIncompleteAssets: async (...args: any[]) => args,
     }, async request => {
