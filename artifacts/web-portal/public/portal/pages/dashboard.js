@@ -269,7 +269,7 @@ function _overdueModule(rows, C) {
     <div class="portal-module ctrd-overdue-module" id="dash-overdue-col-inner">
       <div class="pm-header ctrd-overdue-header">
         <span class="pm-title ctrd-overdue-title">Overdue</span>
-        <button class="module-view-all" onclick="PortalRouter.navigate('tasks')">View all</button>
+        <button class="module-view-all" data-portal-nav="tasks">View all</button>
       </div>
       <div class="pm-body pm-body--list">${body}</div>
     </div>
@@ -367,7 +367,7 @@ function _renderServiceDayWidget(schedules, thisWeekVisits, opts) {
   const nextLabel = memberMode ? 'Next visit:' : 'Next:';
   const wrapAttrs = memberMode
     ? ''
-    : `onclick="PortalRouter.navigate('service-schedule')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();PortalRouter.navigate('service-schedule');}" role="button" tabindex="0"`;
+    : `data-portal-nav="service-schedule" role="button" tabindex="0"`;
 
   const active = schedules.filter(s => s.isActive);
   if (active.length === 0) {
@@ -462,7 +462,7 @@ function _renderWaterUsageWidget(rows) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6 8 4 12 4 15a8 8 0 0016 0c0-3-2-7-8-13z"/></svg>
           </span>
           <span class="cc-widget-title">Water Usage</span>
-          <button class="cc-widget-link" onclick="event.stopPropagation();PortalRouter.navigate('reports',true,{report:'water-usage'})">View Report →</button>
+          <button class="cc-widget-link" data-portal-nav="reports" data-portal-params='{"report":"water-usage"}' data-portal-stop>View Report →</button>
         </div>
         <div class="cc-widget-empty">No water usage data recorded yet</div>
       </div>`;
@@ -492,7 +492,7 @@ function _renderWaterUsageWidget(rows) {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6 8 4 12 4 15a8 8 0 0016 0c0-3-2-7-8-13z"/></svg>
         </span>
         <span class="cc-widget-title">Water Usage</span>
-        <button class="cc-widget-link" onclick="event.stopPropagation();PortalRouter.navigate('reports',true,{report:'water-usage'})">View Report →</button>
+        <button class="cc-widget-link" data-portal-nav="reports" data-portal-params='{"report":"water-usage"}' data-portal-stop>View Report →</button>
       </div>
       <div class="cc-widget-body">
         <div class="cc-water-latest">
@@ -544,9 +544,7 @@ function _renderAttentionRequired(items, copyObj) {
   } else {
     const rows = items.slice(0, 8).map(function(item) {
       /* Both tasks and requests use openTaskDetail — they share the same side panel */
-      const onclick = `typeof window.openTaskDetail==='function'&&window.openTaskDetail('${M.esc(item.id)}')`;
-      const onkeydown = `if(event.key==='Enter'||event.key===' '){event.preventDefault();${onclick};}`;
-      return `<div class="cc-attn-row" onclick="${onclick}" onkeydown="${onkeydown}" role="button" tabindex="0" title="${M.esc(item.reason)}">
+      return `<div class="cc-attn-row" data-portal-action="task-detail" data-portal-task-id="${M.esc(item.id)}" role="button" tabindex="0" title="${M.esc(item.reason)}">
         <span class="cc-attn-dot" style="background:${item.color}"></span>
         <span class="cc-attn-label">${M.esc(item.label)}</span>
         <span class="cc-attn-reason">${M.esc(item.reason)}</span>
@@ -636,7 +634,7 @@ async function renderHoa(container, ctx) {
         <div id="dash-open-reqs-col">
           <div class="hoa-admin-cta-bar">
             <span class="haa-label">${M.esc(C.sectionHeaders.requests)}</span>
-            <button class="hoa-admin-cta-btn" onclick="typeof window.openNewRequestForm==='function'&&window.openNewRequestForm()">
+            <button class="hoa-admin-cta-btn" data-portal-action="new-request">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New Request
             </button>
@@ -644,7 +642,7 @@ async function renderHoa(container, ctx) {
           <div class="portal-module portal-module--requests-lead module--accent-teal">
             <div class="pm-header">
               <span class="pm-title">${M.esc(C.sectionHeaders.requests)}</span>
-              <button class="module-view-all" onclick="PortalRouter.navigate('requests')">View all</button>
+              <button class="module-view-all" data-portal-nav="requests">View all</button>
             </div>
             <div class="pm-body pm-body--list">
               ${pendingReqs.slice(0, 5).length > 0
@@ -677,7 +675,7 @@ async function renderHoa(container, ctx) {
     <div class="dash-panel dash-panel--map">
       <div class="dash-panel-header">
         <span class="dash-panel-label">${M.esc(C.sectionHeaders.mapSection)}</span>
-        <button class="module-view-all" onclick="PortalRouter.navigate('map')">Open full map</button>
+        <button class="module-view-all" data-portal-nav="map">Open full map</button>
       </div>
       <div class="dash-panel-body">
         <div class="map-preview-body">
@@ -831,7 +829,7 @@ async function renderHoaMember(container, ctx) {
     <div class="dash-panel dash-panel--map">
       <div class="dash-panel-header">
         <span class="dash-panel-label">Community Map</span>
-        <button class="module-view-all" onclick="PortalRouter.navigate('map')">View community map</button>
+        <button class="module-view-all" data-portal-nav="map">View community map</button>
       </div>
       <div class="dash-panel-body">
         <div class="map-preview-body">
@@ -973,7 +971,7 @@ function _renderPMContextHeader(activeCommunity, isMultiCommunity) {
   const M = PortalModules;
   const homeIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
   const switchCta = isMultiCommunity
-    ? `<button class="pm-ctx-switch-btn" onclick="PortalRouter.navigate('communities')">Switch Community
+    ? `<button class="pm-ctx-switch-btn" data-portal-nav="communities">Switch Community
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </button>`
     : '';
@@ -1018,7 +1016,7 @@ function _renderRequestsBreakdown(hoaReqs) {
       <div class="pm-widget-header">
         <span class="pm-widget-icon" style="color:var(--amber)">${inboxIcon}</span>
         <span class="pm-widget-title">Requests by Status</span>
-        <button class="cc-widget-link" onclick="PortalRouter.navigate('tasks')">View all →</button>
+        <button class="cc-widget-link" data-portal-nav="tasks">View all →</button>
       </div>
       <div class="pm-rb-body">${rows}</div>
     </div>`;
@@ -1040,8 +1038,7 @@ function _renderMapLayersPanel(layers, communityId) {
     const items = displayable.slice(0, 8).map(function(l) {
       const color = l.color || '#25C1AC';
       const name  = M.esc(l.displayName || l.name || l.layerKey || 'Layer');
-      const onclick = `PortalRouter.navigate('map')`;
-      return `<div class="pm-ml-row" onclick="${onclick}" role="button" tabindex="0" title="Open ${name} on map">
+      return `<div class="pm-ml-row" data-portal-nav="map" role="button" tabindex="0" title="Open ${name} on map">
         <span class="pm-ml-dot" style="background:${color}"></span>
         <span class="pm-ml-name">${name}</span>
         <svg class="pm-ml-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -1055,7 +1052,7 @@ function _renderMapLayersPanel(layers, communityId) {
       <div class="pm-widget-header">
         <span class="pm-widget-icon" style="color:var(--teal)">${layerIcon}</span>
         <span class="pm-widget-title">Map Layers</span>
-        <button class="cc-widget-link" onclick="PortalRouter.navigate('map')">Open map →</button>
+        <button class="cc-widget-link" data-portal-nav="map">Open map →</button>
       </div>
       ${body}
     </div>`;
@@ -1104,7 +1101,7 @@ function _renderPMServiceSchedule(schedules) {
       <div class="pm-widget-header">
         <span class="pm-widget-icon" style="color:var(--teal)">${calIcon}</span>
         <span class="pm-widget-title">Service Schedule</span>
-        <button class="cc-widget-link" onclick="PortalRouter.navigate('service-schedule')">Manage →</button>
+        <button class="cc-widget-link" data-portal-nav="service-schedule">Manage →</button>
       </div>
       ${body}
     </div>`;

@@ -14,3 +14,10 @@ Any consumer of the shared map renderer's `ready` event must treat it as "data a
 `use.executablePath` at the top level of a Playwright test config is silently ignored — it must live under `use.launchOptions`.
 
 Custom layers are not part of the renderer's fetched `_mapLayers`, so `fit()` cannot derive their bounds. Consumers that display only custom geometry must calculate its bounds and send `fitBounds` explicitly. Set `directTap: true` when custom features should select immediately rather than opening the standard detail popup.
+
+## Development-preview CSP warnings
+Distinguish application handlers from development-preview injected handlers before diagnosing map iframe CSP errors.
+
+**Why:** the preview can inject a devtools script with an HTML `onerror` attribute into map/pin-picker iframes. This triggers the portal's strict `script-src-attr 'none'` even when the application sources and generated map documents contain no inline handlers. Browser violation events may have empty sourceFile/sample fields.
+
+**How to apply:** inspect the affected frame's runtime DOM and capture securitypolicyviolation events. Attribute only warnings whose injected element was actually inspected; do not infer every role's warning has the same origin. Keep the CSP unchanged and separately verify published behavior after user publishing.

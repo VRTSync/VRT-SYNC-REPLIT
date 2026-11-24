@@ -37,7 +37,7 @@ PortalRouter.register('tasks', async function (container) {
   if (fetchError) {
     container.innerHTML = M.pageHeader('Tasks', community)
       + '<div class="portal-module" style="margin-top:16px"><div class="module-empty" style="color:var(--red)">'
-      + 'Failed to load tasks. <button class="module-view-all" onclick="PortalRouter.refresh()">Retry</button></div></div>';
+      + 'Failed to load tasks. <button class="module-view-all" data-portal-action="refresh">Retry</button></div></div>';
     return;
   }
 

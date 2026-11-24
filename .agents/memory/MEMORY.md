@@ -1,6 +1,6 @@
 - [Asset Types Catalogue](asset-types-catalogue.md) — asset_types DB table is source of truth; resolveAssetType and getMissingRequiredKeys are now async; lib/db dist must be rebuilt after schema changes.
 - [Publish diff vs boot migrations](publish-diff-vs-boot-migrations.md) — publish pre-applies dev schema to prod; migrations must not reference columns later migrations drop; seed data never travels via the diff.
-- [Web-portal map testing & ready semantics](web-portal-map-testing.md) — Playwright executablePath must be under launchOptions; map renderer 'ready' can fire late/replayed, never reset UI state in it.
+- [Web-portal map testing](web-portal-map-testing.md) — late/replayed ready must not reset UI; executablePath belongs in launchOptions; preview injection can cause iframe CSP warnings.
 - [Migrations inSync 0011 drift](migrations-insync-0011-drift.md) — /api/admin/migrations reports inSync false from a pre-existing 0011 hash edit; verify your own tag applied instead.
 - [Web-portal static serving](web-portal-static-serving.md) — dev server serves a built copy from dist/; restart the workflow after editing public/ or templates/ or you'll test stale files.
 - [Pilot org data location](pilot-org-data-location.md) — pilot (PNC) org exists only in prod; dev has zero organizations, so pilot-keyed seeds/data steps are no-ops in dev.

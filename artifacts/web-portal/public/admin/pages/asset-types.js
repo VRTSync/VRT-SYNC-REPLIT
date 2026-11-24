@@ -115,6 +115,18 @@ AdminRouter.register('asset-types', async function(container) {
     document.getElementById('status-filter').addEventListener('change', renderTable);
 
     document.getElementById('type-form').addEventListener('submit', handleSubmit);
+    // This tbody survives filtering and action rerenders; attach only once.
+    document.getElementById('types-tbody').addEventListener('click', function(e) {
+      const button = e.target.closest('[data-type-action]');
+      if (!button) return;
+      const actions = {
+        edit: window._editAssetType,
+        deactivate: window._deactivateAssetType,
+        reactivate: window._reactivateAssetType,
+      };
+      const action = actions[button.dataset.typeAction];
+      if (action) action(button.dataset.key);
+    });
 
     // Close modal on backdrop click
     document.getElementById('type-modal').addEventListener('click', (e) => {
@@ -168,10 +180,10 @@ AdminRouter.register('asset-types', async function(container) {
             : '<span class="badge" style="background:#f5f5f5;color:#666">Inactive</span>'}
         </td>
         <td style="white-space:nowrap">
-          <button class="btn btn-ghost btn-sm" onclick="window._editAssetType('${esc(t.key)}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" data-type-action="edit" data-key="${esc(t.key)}">Edit</button>
           ${t.isActive
-            ? `<button class="btn btn-ghost btn-sm" style="color:#e53e3e" onclick="window._deactivateAssetType('${esc(t.key)}')">Deactivate</button>`
-            : `<button class="btn btn-ghost btn-sm" onclick="window._reactivateAssetType('${esc(t.key)}')">Reactivate</button>`}
+            ? `<button class="btn btn-ghost btn-sm" style="color:#e53e3e" data-type-action="deactivate" data-key="${esc(t.key)}">Deactivate</button>`
+            : `<button class="btn btn-ghost btn-sm" data-type-action="reactivate" data-key="${esc(t.key)}">Reactivate</button>`}
         </td>
       </tr>
     `).join('');

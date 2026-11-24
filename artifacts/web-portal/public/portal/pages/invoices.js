@@ -41,7 +41,7 @@ PortalRouter.register('invoices', async function(container) {
       renderTable(invoices);
     } catch (err) {
       console.error('Invoices load error:', err);
-      root.innerHTML = '<div class="empty-state" style="margin-top:40px;"><p style="color:var(--red)">Failed to load invoices. <button class="module-view-all" onclick="PortalRouter.refresh()">Retry</button></p></div>';
+      root.innerHTML = '<div class="empty-state" style="margin-top:40px;"><p style="color:var(--red)">Failed to load invoices. <button class="module-view-all" data-portal-action="refresh">Retry</button></p></div>';
     }
   }
 

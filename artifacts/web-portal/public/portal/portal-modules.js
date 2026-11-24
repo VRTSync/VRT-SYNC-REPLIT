@@ -5,6 +5,41 @@
  * PortalModules is available globally in all portal shells.
  */
 window.PortalModules = (function () {
+  // Reuse the topbar's existing Requests-page form and pending-open contract.
+  window.openNewRequestForm = function () {
+    window._pendingOpenNewRequest = true;
+    PortalRouter.navigate('requests', true, {});
+  };
+
+  // Installed once with this shell script, not on dashboard renders or syncs.
+  // Namespaced attributes avoid interfering with existing page-specific actions.
+  function activateControl(event) {
+    const control = event.target.closest('[data-portal-nav], [data-portal-action]');
+    if (!control || control.disabled) return;
+    if (event.type === 'keydown') {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      // Native buttons already synthesize clicks. Only emulate role buttons.
+      if (control.getAttribute('role') !== 'button' || event.target !== control) return;
+      event.preventDefault();
+    }
+    if (control.hasAttribute('data-portal-stop')) event.stopPropagation();
+    if (control.dataset.portalNav) {
+      const params = control.dataset.portalParams ? JSON.parse(control.dataset.portalParams) : {};
+      PortalRouter.navigate(control.dataset.portalNav, true, params);
+    } else if (control.dataset.portalAction === 'refresh') {
+      PortalRouter.refresh();
+    } else if (control.dataset.portalAction === 'new-request') {
+      if (typeof window.openNewRequestForm === 'function') window.openNewRequestForm();
+    } else if (control.dataset.portalAction === 'task-detail') {
+      if (typeof window.openTaskDetail === 'function') window.openTaskDetail(control.dataset.portalTaskId);
+    }
+  }
+  // Intercept propagation-stopping controls before ancestor card listeners.
+  document.addEventListener('click', function(event) {
+    if (event.target.closest('[data-portal-stop]')) activateControl(event);
+  }, true);
+  document.addEventListener('click', activateControl);
+  document.addEventListener('keydown', activateControl);
 
   /* ─── Priority / status maps ─────────────────────────────────────────── */
   const PRIORITY_COLOR = {
@@ -144,7 +179,7 @@ window.PortalModules = (function () {
       ? visible.map(r => taskRow(r)).join('')
       : `<div class="module-empty">${esc(emptyMsg || 'Nothing to show.')}</div>`;
     const viewAll = viewAllRoute
-      ? `<button class="module-view-all" onclick="PortalRouter.navigate('${viewAllRoute}')">View all</button>`
+      ? `<button class="module-view-all" data-portal-nav="${esc(viewAllRoute)}">View all</button>`
       : '';
     const cls = extraClass ? ' ' + extraClass : '';
     return `
@@ -302,9 +337,10 @@ window.PortalModules = (function () {
    * ══════════════════════════════════════════════════════════════════════ */
   function quickLinksModule({ title, links = [] }) {
     const items = links.map(l => {
-      const action = l.route ? `PortalRouter.navigate('${l.route}')` : (l.action || '');
+      // All current callers use routes; named actions share the dispatcher above.
+      const action = l.route ? `data-portal-nav="${esc(l.route)}"` : (l.action ? `data-portal-action="${esc(l.action)}"` : '');
       return `
-        <button class="ql-item" onclick="${action}" ${!action ? 'disabled' : ''}>
+        <button class="ql-item" ${action} ${!action ? 'disabled' : ''}>
           <span class="ql-icon">${l.icon || ''}</span>
           <span class="ql-label">${esc(l.label)}</span>
         </button>
@@ -327,7 +363,7 @@ window.PortalModules = (function () {
       <div class="portal-module portal-module--map" style="--map-h:${h}">
         <div class="pm-header">
           <span class="pm-title">Map</span>
-          <button class="module-view-all" onclick="PortalRouter.navigate('map')">Open full map</button>
+          <button class="module-view-all" data-portal-nav="map">Open full map</button>
         </div>
         <div class="map-preview-body">
           <iframe id="dash-map-iframe" src="/leaflet-map.html" class="map-preview-iframe" tabindex="-1" aria-hidden="true"></iframe>

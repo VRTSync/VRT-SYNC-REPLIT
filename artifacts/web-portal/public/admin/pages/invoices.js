@@ -1,5 +1,6 @@
 AdminRouter.register('invoices', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
   const communities = AdminState.getCommunities();
 
   const communityMap = {};
@@ -45,8 +46,6 @@ AdminRouter.register('invoices', async function(container) {
 
   const tbody = document.getElementById('invoices-tbody');
   const filterSelect = document.getElementById('inv-community-filter');
-
-  const esc = VRTUtils.esc;
 
   function formatDate(str) {
     if (!str) return '';

@@ -1,5 +1,6 @@
 AdminRouter.register('contracts', async function(container) {
   const { apiFetch, showToast } = AdminAPI;
+  const esc = VRTUtils.esc;
   const communities = AdminState.getCommunities();
 
   const communityMap = {};
@@ -70,8 +71,6 @@ AdminRouter.register('contracts', async function(container) {
   var communityFilter = document.getElementById('ct-community-filter');
   var contractorFilter = document.getElementById('ct-contractor-filter');
   var statusFilter = document.getElementById('ct-status-filter');
-
-  const esc = VRTUtils.esc;
 
   function formatDate(str) {
     if (!str) return '';

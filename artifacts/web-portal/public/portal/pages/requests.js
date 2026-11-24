@@ -34,7 +34,7 @@ PortalRouter.register('requests', async function (container) {
   if (fetchError) {
     container.innerHTML = M.pageHeader('Requests', community)
       + '<div class="portal-module" style="margin-top:16px"><div class="module-empty" style="color:var(--red)">'
-      + 'Failed to load requests. <button class="module-view-all" onclick="PortalRouter.refresh()">Retry</button></div></div>';
+      + 'Failed to load requests. <button class="module-view-all" data-portal-action="refresh">Retry</button></div></div>';
     return;
   }
 

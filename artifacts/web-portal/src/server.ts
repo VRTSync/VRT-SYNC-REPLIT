@@ -233,12 +233,12 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
       </div>
     </div>
     <button class="btn" id="btn">Log in</button>
-    <p class="forgot"><a href="javascript:void(0)" onclick="document.getElementById('fpBackdrop').classList.add('open')">Forgot your password?</a></p>
+    <p class="forgot"><a href="#" id="fpOpen">Forgot your password?</a></p>
   </div>
 </div>
-<div id="fpBackdrop" onclick="if(event.target===this)document.getElementById('fpBackdrop').classList.remove('open')">
+<div id="fpBackdrop">
   <div id="fpModal">
-    <button id="fpClose" onclick="document.getElementById('fpBackdrop').classList.remove('open')" aria-label="Close">&times;</button>
+    <button id="fpClose" aria-label="Close">&times;</button>
     <h3>Reset your password</h3>
     <p>To reset your password, please contact your administrator or reach out to our support team.</p>
     <p><a href="mailto:support@vrtsync.com">support@vrtsync.com</a></p>
@@ -247,6 +247,10 @@ footer{position:relative;z-index:10;padding:20px;text-align:center;font-size:12p
 <footer>&copy; 2026 VRTSync</footer>
 <script>
 const roleMap={admin:'/web/admin/dashboard',property_manager:'/web/pm/dashboard',contractor:'/web/contractor/dashboard',contractor_manager:'/web/contractor/dashboard',hoa_admin:'/web/hoa/dashboard',hoa_member:'/web/hoa/dashboard',client_admin:'/web/portfolio/dashboard'};
+const fpBackdrop=document.getElementById('fpBackdrop');
+document.getElementById('fpOpen').addEventListener('click',function(e){e.preventDefault();fpBackdrop.classList.add('open');});
+document.getElementById('fpClose').addEventListener('click',function(){fpBackdrop.classList.remove('open');});
+fpBackdrop.addEventListener('click',function(e){if(e.target===fpBackdrop)fpBackdrop.classList.remove('open');});
 document.getElementById('btn').addEventListener('click',doLogin);
 document.getElementById('u').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('p').focus()}});
 document.getElementById('p').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
