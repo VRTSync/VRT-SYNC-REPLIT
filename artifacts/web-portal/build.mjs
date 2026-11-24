@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
 import { rm, cp } from "node:fs/promises";
+import { computeStaticVersion } from "./static-version.mjs";
 
 globalThis.require = createRequire(import.meta.url);
 
@@ -13,7 +14,13 @@ async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 
+  // Hash exactly the snapshot shipped with the bundle, not runtime/startup time.
+  await cp(path.resolve(artifactDir, "templates"), path.resolve(distDir, "templates"), { recursive: true });
+  await cp(path.resolve(artifactDir, "public"), path.resolve(distDir, "public"), { recursive: true });
+  const staticVersion = await computeStaticVersion(path.resolve(distDir, "public"));
+
   await esbuild({
+    define: { __STATIC_VERSION__: JSON.stringify(staticVersion) },
     entryPoints: [path.resolve(artifactDir, "src/server.ts")],
     platform: "node",
     bundle: true,
@@ -48,9 +55,6 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     },
   });
 
-  // Copy templates and public into dist so they are accessible at runtime in prod.
-  await cp(path.resolve(artifactDir, "templates"), path.resolve(distDir, "templates"), { recursive: true });
-  await cp(path.resolve(artifactDir, "public"), path.resolve(distDir, "public"), { recursive: true });
 }
 
 buildAll().catch((err) => {

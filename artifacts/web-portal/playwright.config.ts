@@ -26,6 +26,8 @@ const NIX_CHROMIUM =
 
 export default defineConfig({
   testDir: './tests',
+  // Node-only build/version checks run separately via test:server.
+  testMatch: '**/*.spec.ts',
   timeout: 30_000,
   retries: 0,
   use: {

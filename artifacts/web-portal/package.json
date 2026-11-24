@@ -8,10 +8,12 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/server.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:server": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@workspace/leaflet-template": "workspace:*",
+    "compression": "^1.8.2",
     "connect-pg-simple": "^10.0.0",
     "express": "^5",
     "express-session": "^1.19.0",
@@ -22,6 +24,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
+    "@types/compression": "^1.8.1",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.18.2",

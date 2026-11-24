@@ -2,6 +2,8 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import pinoHttp from "pino-http";
 import helmet from "helmet";
+import compression from "compression";
+import { getStaticVersion, versionedStatic } from "./staticAssets";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -56,6 +58,8 @@ app.use(
   })
 );
 
+app.use(compression());
+
 const PORT = parseInt(process.env.PORT || "3100", 10);
 
 // Resolve asset directories — works both in dev (CWD = artifact dir) and in
@@ -74,7 +78,7 @@ function resolveDir(relative: string): string {
 const PUBLIC_ROOT = resolveDir("public");
 const TEMPLATES_ROOT = resolveDir("templates");
 
-const STATIC_VERSION = Date.now().toString(36);
+const STATIC_VERSION = getStaticVersion();
 
 function stampHtml(html: string): string {
   return html.replace(
@@ -127,10 +131,10 @@ app.use(
 );
 
 // ── Static asset mounts ──────────────────────────────────────────────────────
-app.use("/admin-static",     express.static(path.join(PUBLIC_ROOT, "admin")));
-app.use("/portal-static",    express.static(path.join(PUBLIC_ROOT, "portal")));
-app.use("/common-static",    express.static(path.join(PUBLIC_ROOT, "common")));
-app.use("/portfolio-static", express.static(path.join(PUBLIC_ROOT, "portfolio")));
+app.use("/admin-static",     versionedStatic(path.join(PUBLIC_ROOT, "admin")));
+app.use("/portal-static",    versionedStatic(path.join(PUBLIC_ROOT, "portal")));
+app.use("/common-static",    versionedStatic(path.join(PUBLIC_ROOT, "common")));
+app.use("/portfolio-static", versionedStatic(path.join(PUBLIC_ROOT, "portfolio")));
 
 // ── Load HTML shells ─────────────────────────────────────────────────────────
 const adminShell = stampHtml(
@@ -473,5 +477,5 @@ app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  logger.info({ port: PORT }, "Web portal server listening");
+  logger.info({ port: PORT, staticVersion: STATIC_VERSION }, "Web portal server listening");
 });

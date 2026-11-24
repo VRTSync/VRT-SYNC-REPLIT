@@ -5,6 +5,8 @@ import helmet from "helmet";
 import { setupSession, loadCurrentUser } from "./auth";
 import { logger } from "./lib/logger";
 import healthRouter from "./routes/health";
+import { responseCompression } from "./middleware/responseCompression";
+import { requestTiming } from "./middleware/requestTiming";
 
 const app: Express = express();
 
@@ -13,6 +15,8 @@ app.set("trust proxy", 1);
 // Security headers — CSP disabled so the API does not interfere with browser
 // clients; all other helmet defaults (X-Frame-Options, HSTS, etc.) are active.
 app.use(helmet({ contentSecurityPolicy: false }));
+app.use(responseCompression);
+app.use(requestTiming((line) => logger.info(line)));
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.header("origin");
