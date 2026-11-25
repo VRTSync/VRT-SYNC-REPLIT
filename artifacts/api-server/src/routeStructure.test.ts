@@ -20,6 +20,7 @@ describe("admin-only route extraction", () => {
   const modules = [
     { file: "adminOverview", register: "registerAdminOverviewRoutes", inventory: [
       "get /api/admin/migrations", "get /api/admin/summary",
+      "get /api/admin/community-summaries",
       "get /api/admin/dashboard", "get /api/admin/completed-tasks",
     ], comments: [] },
     { file: "xeriscape", register: "registerXeriscapeRoutes", inventory: [

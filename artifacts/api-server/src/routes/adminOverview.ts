@@ -85,6 +85,15 @@ export function registerAdminOverviewRoutes(app: Express): void {
     }
   }));
 
+  app.get("/api/admin/community-summaries", requireAdmin, route(async (req: Request, res: Response) => {
+    try {
+      res.json(await storage.getCommunityCardSummaries());
+    } catch (error) {
+      req.log.error({ err: error }, "Community card summaries error");
+      res.status(500).json({ error: "Failed to fetch community summaries" });
+    }
+  }));
+
   app.get("/api/admin/dashboard", requireAdmin, route(async (_req: Request, res: Response) => {
     try {
       const now = Date.now();

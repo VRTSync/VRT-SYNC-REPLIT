@@ -97,21 +97,17 @@ AdminRouter.register('communities', async function(container, params) {
 
   async function loadCommunities() {
     try {
-      // Fetch communities and org names in parallel (single extra request for org map)
-      const [list, orgs] = await Promise.all([
+      // One card-summary request, alongside communities and organization labels.
+      const [list, orgs, summaries] = await Promise.all([
         apiFetch('/api/communities'),
         apiFetch('/api/admin/organizations').catch(() => []),
+        apiFetch('/api/admin/community-summaries').catch(() => ({})),
       ]);
       allCommunities = list;
       orgMap = {};
       (orgs || []).forEach(o => { orgMap[o.id] = o.name; });
 
-      try {
-        const results = await Promise.all(list.map(c =>
-          apiFetch(`/api/admin/summary?communityId=${c.id}`).then(s => ({ id: c.id, ...s })).catch(() => ({ id: c.id }))
-        ));
-        results.forEach(s => { allSummaries[s.id] = s; });
-      } catch {}
+      allSummaries = summaries;
 
       // Apply initial search filter from ?q= param or search box
       const currentQ = document.getElementById('communities-search')

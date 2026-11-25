@@ -24,7 +24,7 @@ export function readRouteFixtureSource(): string {
     source = source.replace(boundary, `${content}\n\n${boundary}`);
   };
   for (const [file, register, expected] of [
-    ["adminOverview", "registerAdminOverviewRoutes", 4],
+    ["adminOverview", "registerAdminOverviewRoutes", 5],
     ["xeriscape", "registerXeriscapeRoutes", 9],
     ["taskTemplates", "registerTaskTemplateRoutes", 6],
     ["taskSchedules", "registerTaskScheduleRoutes", 6],

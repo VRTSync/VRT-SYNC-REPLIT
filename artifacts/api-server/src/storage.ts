@@ -750,6 +750,31 @@ export async function getUserCommunitiesList(userId: string): Promise<Community[
   return rows.map(r => r.community);
 }
 
+/** Card-only counts. Members deliberately stay zero to preserve the legacy UI contract. */
+export async function getCommunityCardSummaries(): Promise<Record<string, {
+  activeAssetsCount: number; tasksCount: number; mapLayersCount: number; membersCount: number;
+}>> {
+  const [communityRows, assetRows, taskRows, layerRows] = await Promise.all([
+    db.select({ id: communities.id }).from(communities),
+    db.select({
+      communityId: assets.communityId,
+      count: sql<number>`count(*) filter (where ${assets.isArchived} = false)`.mapWith(Number),
+    }).from(assets).groupBy(assets.communityId),
+    db.select({ communityId: tasks.communityId, count: count() }).from(tasks).groupBy(tasks.communityId),
+    db.select({ communityId: mapLayers.communityId, count: count() }).from(mapLayers).groupBy(mapLayers.communityId),
+  ]);
+  const assetCounts = new Map(assetRows.map(row => [row.communityId, row.count]));
+  const taskCounts = new Map(taskRows.map(row => [row.communityId, row.count]));
+  const layerCounts = new Map(layerRows.map(row => [row.communityId, row.count]));
+  return Object.fromEntries(communityRows.map(({ id }) => [id, {
+    activeAssetsCount: assetCounts.get(id) ?? 0,
+    tasksCount: taskCounts.get(id) ?? 0,
+    mapLayersCount: layerCounts.get(id) ?? 0,
+    // getAdminSummary omits membersCount; showing real counts needs separate approval.
+    membersCount: 0,
+  }]));
+}
+
 export async function getAdminSummary(communityId?: string) {
   const communityFilter = communityId ? eq(communities.id, communityId) : undefined;
   const assetCommunityFilter = communityId ? eq(assets.communityId, communityId) : undefined;
