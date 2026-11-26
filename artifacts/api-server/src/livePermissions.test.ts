@@ -32,6 +32,10 @@ const mobileRoutes = between(source, 'app.post("/api/push-tokens",', 'app.delete
   between(source, 'app.get("/api/communities/:communityId/offline-pack",', 'app.post("/api/offline-packs",') +
   between(source, 'app.post("/api/tasks/:id/complete",', 'app.post("/api/tasks/:id/attachments",');
 const hoaRequest = between(source, 'app.post("/api/hoa/requests",', 'app.get("/api/notification-preferences",');
+const s1Routes = between(source, 'app.get("/api/tasks/page-data",', 'app.get("/api/tasks",') +
+  between(source, 'app.post("/api/contacts",', 'app.put("/api/contacts/:id",') +
+  between(source, 'app.get("/api/communities",', 'app.post("/api/communities",') +
+  between(source, 'app.delete("/api/assets/:assetId/notes/:noteId",', 'app.patch("/api/communities/:id/map-creator-lock",');
 
 describe("live permissions and session revocation (isolated HTTP)", () => {
   let bundle: string;
@@ -46,6 +50,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
   let password: string;
   let deliveries: any[];
   let completions: any[];
+  let retainedMembership: boolean;
 
   before(async () => {
     password = await bcrypt.hash("old-password", 4);
@@ -56,7 +61,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
           import * as auth from "./auth";
           import * as realStorage from "./storage";
           import bcrypt from "bcryptjs";
-          import { userRoleEnum, registerPushTokenSchema, completeTaskSchema, createHoaRequestSchema } from "@workspace/db";
+          import { userRoleEnum, registerPushTokenSchema, completeTaskSchema, createHoaRequestSchema, insertContactSchema } from "@workspace/db";
           const { requireAuth, requireAdmin, isHoaRole, isContractorSide } = auth;
           const storage = { ...fixture.storage,
             toTaskView: realStorage.toTaskView,
@@ -79,6 +84,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
             ${management}
             ${mobileRoutes}
             ${hoaRequest}
+            ${s1Routes}
             app.get("/objects/test", requireAuth, (req, res) => res.json({ ok: true }));
             app.get("/scope", auth.enforceHoaScoping, (req, res) => res.json({ ok: true }));
             app.get("/org", auth.enforceOrgScoping, requireAuth, (req, res) => res.json({ ok: true }));
@@ -131,6 +137,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
     lookupError = false;
     deliveries = [];
     completions = [];
+    retainedMembership = true;
     store = new session.MemoryStore();
     for (const [id, role] of [["admin", "admin"], ["pm", "property_manager"], ["target", "hoa_member"]]) {
       users.set(id, { id, username: id, role, password, isActive: true, hoaCommunityId: "old", organizationId: null });
@@ -143,6 +150,13 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
     };
     const fixture = {
       storage: {
+        getTaskPageDataForRole: async () => ({ role: "hoa_member" }),
+        getAssetNoteById: async (id: string) => id === "missing" ? null :
+          { id, assetId: id === "wrong" ? "different" : "asset", createdBy: "target" },
+        getAssetById: async () => ({ id: "asset", communityId: "old" }),
+        deleteAssetNote: async () => { completions.push("note deleted"); },
+        createContact: async (data: any) => ({ id: "contact", ...data }),
+        getUserCommunities: async () => [{ community: { id: "old", organizationId: null } }],
         registerPushToken: async (id: string, token: string) => {
           tokens.set(id, [...(tokens.get(id) ?? []), token]);
           return { userId: id, token };
@@ -169,7 +183,7 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
         updateUserStatus: (id: string, isActive: boolean) => update(id, { isActive }),
         updateUserProfile: update,
         deleteUser: async (id: string) => users.delete(id),
-        isUserMemberOfCommunity: async () => true,
+        isUserMemberOfCommunity: async () => retainedMembership,
         removeCommunityMember: async () => {},
         removePushTokenByDevice: async (id: string) => tokens.delete(id),
       },
@@ -356,6 +370,107 @@ describe("live permissions and session revocation (isolated HTTP)", () => {
     assert.equal(await sessionCount(), 0);
     assert.equal(tokens.has("target"), true);
   });
+  it("removed active HOA member can sign in again but cannot read tasks or create contacts", async () => {
+    const previous = await login();
+    const pm = await login("pm");
+    assert.equal((await request("/api/portal/users/target", pm, "DELETE")).status, 200);
+    assert.equal(users.get("target").isActive, true);
+    assert.equal(users.get("target").hoaCommunityId, null);
+    assert.equal(await sessionCount(), 0);
+    assert.equal((await request("/api/auth/me", previous)).status, 401);
+    const cookie = await login();
+    assert.equal((await request("/api/auth/me", cookie)).status, 200);
+    const tasks = await request("/api/tasks/page-data?communityId=old", cookie);
+    assert.equal(tasks.status, 403);
+    assert.deepEqual(await tasks.json(), { error: "You are not a member of this community" });
+    const contacts = await request("/api/contacts", cookie, "POST", { communityId: "old", name: "Blocked" });
+    assert.equal(contacts.status, 403);
+    assert.deepEqual(await contacts.json(), { error: "Access denied" });
+  });
+  for (const [path, method, body] of [
+    ["/api/portal/users/target", "PUT", { displayName: "Must not edit" }],
+    ["/api/portal/users/target", "DELETE", undefined],
+    ["/api/users/target/status", "PUT", { isActive: false }],
+  ] as const) it(`unassigned HOA admin cannot ${method} ${path} for an unassigned member`, async () => {
+    users.get("pm").role = "hoa_admin";
+    users.get("pm").hoaCommunityId = null;
+    users.get("target").hoaCommunityId = null;
+    const cookie = await login("pm");
+    const targetCookie = await login();
+    tokens.set("target", ["retained"]);
+    const response = await request(path, cookie, method, body);
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "User is not in your community" });
+    assert.equal(users.get("target").isActive, true);
+    assert.equal(await sessionCount(), 1);
+    assert.equal(tokens.has("target"), true);
+    assert.equal((await request("/api/auth/me", targetCookie)).status, 200);
+  });
+  for (const role of ["hoa_admin", "hoa_member"]) {
+    it(`${role} with retained membership cannot download an offline pack or list communities`, async () => {
+      users.get("target").role = role;
+      users.get("target").hoaCommunityId = null;
+      const cookie = await login();
+      const pack = await request("/api/communities/old/offline-pack", cookie);
+      assert.equal(pack.status, 403);
+      const list = await request("/api/communities", cookie);
+      assert.equal(list.status, 200);
+      assert.deepEqual(await list.json(), []);
+    });
+    it(`${role} cannot delete their note after losing assignment despite a retained membership`, async () => {
+      users.get("target").role = role;
+      users.get("target").hoaCommunityId = null;
+      const cookie = await login();
+      const response = await request("/api/assets/asset/notes/note", cookie, "DELETE");
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { error: "Access denied" });
+      assert.deepEqual(completions, []);
+    });
+  }
+  it("unassigned HOA admin contact creation retains its existing denial message", async () => {
+    users.get("target").role = "hoa_admin";
+    users.get("target").hoaCommunityId = null;
+    const response = await request("/api/contacts", await login(), "POST", { communityId: "old", name: "Blocked" });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "Cannot create contacts for other communities" });
+  });
+  it("note deletion preserves missing/wrong-asset 404s before authorization", async () => {
+    users.get("target").hoaCommunityId = null;
+    const cookie = await login();
+    for (const id of ["missing", "wrong"]) {
+      const response = await request(`/api/assets/asset/notes/${id}`, cookie, "DELETE");
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), { error: "Note not found" });
+    }
+  });
+  it("former non-HOA note authors get the existing 403 and cannot delete data", async () => {
+    users.get("target").role = "contractor";
+    retainedMembership = false;
+    const response = await request("/api/assets/asset/notes/note", await login(), "DELETE");
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: "Access denied" });
+    assert.deepEqual(completions, []);
+  });
+  for (const role of ["admin", "contractor", "hoa_admin", "hoa_member"]) {
+    it(`${role} retains note deletion when currently authorized`, async () => {
+      users.get("target").role = role;
+      const response = await request("/api/assets/asset/notes/note", await login(), "DELETE");
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { success: true });
+      assert.deepEqual(completions, ["note deleted"]);
+    });
+  }
+  for (const role of ["hoa_admin", "hoa_member"]) {
+    it(`assigned ${role} retains tasks, communities and offline downloads`, async () => {
+      users.get("target").role = role;
+      const cookie = await login();
+      assert.equal((await request("/api/tasks/page-data?communityId=old", cookie)).status, 200);
+      assert.equal((await request("/api/communities/old/offline-pack", cookie)).status, 200);
+      const communities = await request("/api/communities", cookie);
+      assert.equal(communities.status, 200);
+      assert.equal((await communities.json())[0].id, "old");
+    });
+  }
   it("account deletion revokes sessions and deletes push tokens", async () => {
     const cookie = await login();
     const admin = await login("admin");

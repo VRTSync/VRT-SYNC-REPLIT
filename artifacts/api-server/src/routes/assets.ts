@@ -172,7 +172,9 @@ export function registerAssetRoutes(app: Express): void {
       if (note.assetId !== assetId) return void res.status(404).json({ error: "Note not found" });
       const user = await storage.getUserById(req.session.userId!);
       if (!user) return void res.status(401).json({ error: "User not found" });
-      if (!policy.canDeleteAssetNote(policy.actorFromUser(user), note)) {
+      const asset = await storage.getAssetById(assetId);
+      if (!asset) return void res.status(404).json({ error: "Asset not found" });
+      if (!await policy.canDeleteAssetNote(policy.actorFromUser(user), note, asset.communityId)) {
         return void res.status(403).json({ error: "Access denied" });
       }
       await storage.deleteAssetNote(noteId);

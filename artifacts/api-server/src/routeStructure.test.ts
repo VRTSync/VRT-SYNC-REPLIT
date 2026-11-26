@@ -552,8 +552,8 @@ describe("user and company handler response compatibility", () => {
       assert.deepEqual(calls.filter(([name]) => !["lookup", "membership"].includes(name)),
         [["unlink", "member", "target"], ["role", "target", "hoa_member", null], ["revoke", "target"]]);
       assert.equal(users.target.hoaCommunityId, "member", "fixture records were not mutated");
-      assert.equal((await request("unassigned", "/api/users/noCommunity/status", "PUT", { isActive: true })).status, 200);
-      assert.equal((await request("unassigned", "/api/portal/users/noCommunity", "PUT", { isActive: true })).status, 200);
+      assert.equal((await request("unassigned", "/api/users/noCommunity/status", "PUT", { isActive: true })).status, 403);
+      assert.equal((await request("unassigned", "/api/portal/users/noCommunity", "PUT", { isActive: true })).status, 403);
     });
   });
   it("keeps the status route's failing membership lookup and portal short-circuit responses", async () => {
@@ -751,7 +751,7 @@ describe("community, dashboard and search handler response compatibility", () =>
           status: 200, body: role === "admin" || role === "map_creator" ? communities : [communities[0]],
         });
       }
-      assert.deepEqual(await request("unassigned", "/api/communities"), { status: 200, body: [communities[0]] });
+      assert.deepEqual(await request("unassigned", "/api/communities"), { status: 200, body: [] });
     });
     await withHandlers({ getCommunityById: async () => undefined }, async request => {
       assert.deepEqual(await request("hoa_admin", "/api/communities"), { status: 200, body: [] });
@@ -1272,23 +1272,25 @@ describe("drive and contact handler response compatibility", () => {
     });
   });
 
-  it("preserves unassigned HOA-admin writes and prohibits every HOA-admin move", async () => {
+  it("denies unassigned HOA-admin writes and preserves the assigned HOA-admin move denial", async () => {
     await withHandlers({
       createContact: async (data: any) => data, updateContact: async (_id: string, data: any) => data,
       deleteContact: async () => {},
     }, async request => {
       for (const user of ["admin", "pm", "hoa", "unassigned"]) {
         const communityId = user === "unassigned" ? "outside" : "member-community";
-        assert.deepEqual(await request(user, "/api/contacts", "POST", { communityId, name: "Contact", extra: true }), {
+        assert.deepEqual(await request(user, "/api/contacts", "POST", { communityId, name: "Contact", extra: true }), user === "unassigned" ?
+          { status: 403, body: { error: "Cannot create contacts for other communities" } } : {
           status: 201, body: { communityId, name: "Contact", title: null, company: null, phone: null, email: null, contactType: "Other", notes: null },
         });
         assert.deepEqual(await request(user, "/api/contacts/existing", "PUT", { name: "Renamed", extra: true }),
-          { status: 200, body: { name: "Renamed" } });
-        assert.deepEqual(await request(user, "/api/contacts/existing", "DELETE"), { status: 204, body: null });
+          user === "unassigned" ? { status: 403, body: { error: "Access denied" } } : { status: 200, body: { name: "Renamed" } });
+        assert.deepEqual(await request(user, "/api/contacts/existing", "DELETE"),
+          user === "unassigned" ? { status: 403, body: { error: "Access denied" } } : { status: 204, body: null });
       }
       for (const user of ["hoa", "unassigned"]) assert.deepEqual(
         await request(user, "/api/contacts/existing", "PUT", { communityId: "outside" }),
-        { status: 403, body: { error: "Cannot move contacts to another community" } });
+        { status: 403, body: { error: user === "unassigned" ? "Access denied" : "Cannot move contacts to another community" } });
       assert.deepEqual(await request("pm", "/api/contacts/existing", "PUT", { communityId: "outside" }),
         { status: 403, body: { error: "Not a member of the target community" } });
       assert.deepEqual(await request("admin", "/api/contacts/existing", "PUT", { communityId: "outside" }),
@@ -1666,7 +1668,7 @@ describe("billing route structure", () => {
       if (i) assert.ok(create.indexOf(ordered[i - 1]) < create.indexOf(expression));
     });
     assert.match(source, /updateInvoiceSchema\.omit\(\{ contractorCompanyId: true \}\)/);
-    assert.equal((source.match(/sessionOrganizationId: req\.session\.organizationId/g) ?? []).length, 2);
+    assert.equal((source.match(/sessionOrganizationId: req\.session\.organizationId/g) ?? []).length, 0);
   });
 });
 
@@ -1736,7 +1738,7 @@ describe("billing handler response compatibility", () => {
     });
   });
 
-  it("dispatches each invoice list plan and retains the logical-OR session fallback", async () => {
+  it("dispatches each invoice list plan and rejects stale session organizations", async () => {
     await withBilling({
       getInvoices: async (communityId: string | undefined) => ({ communityId: communityId ?? "all" }),
       getManagerInvoices: async (id: string, communityId: string | undefined) => ({ id, communityId: communityId ?? "all" }),
@@ -1748,8 +1750,10 @@ describe("billing handler response compatibility", () => {
       assert.deepEqual((await request("manager", "/api/invoices")).body, { id: "manager", communityId: "all" });
       assert.deepEqual(await request("manager", "/api/invoices?communityId=outside"), { status: 403, body: { error: "Access denied" } });
       assert.deepEqual((await request("client", "/api/invoices", "GET", undefined, "ignored")).body, { orgId: "org" });
-      assert.deepEqual((await request("sessionClient", "/api/invoices", "GET", undefined, "session")).body, { orgId: "session" });
-      assert.deepEqual((await request("sessionClient", "/api/invoices?communityId=selected", "GET", undefined, "session")).body, { communityId: "selected" });
+      assert.deepEqual(await request("sessionClient", "/api/invoices", "GET", undefined, "session"),
+        { status: 403, body: { error: "Access denied: no organization" } });
+      assert.deepEqual(await request("sessionClient", "/api/invoices?communityId=selected", "GET", undefined, "session"),
+        { status: 403, body: { error: "Access denied: no organization" } });
       assert.deepEqual(await request("sessionClient", "/api/invoices"), { status: 403, body: { error: "Access denied: no organization" } });
       assert.deepEqual(await request("pm", "/api/invoices"), { status: 400, body: { error: "communityId is required" } });
       assert.deepEqual((await request("pm", "/api/invoices?communityId=member-community")).body, { communityId: "member-community" });
@@ -1757,12 +1761,12 @@ describe("billing handler response compatibility", () => {
     });
   });
 
-  it("retains detail organization fallback and checks existence before client organization", async () => {
+  it("rejects stale detail organization scope and checks existence before client organization", async () => {
     const invoice = { id: "existing", communityId: "member-community", contractorCompanyId: "company" };
     await withBilling({ getInvoiceById: async (id: string) => id === "existing" ? invoice : undefined }, async request => {
-      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "org"), { status: 200, body: invoice });
+      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "org"), { status: 403, body: { error: "Access denied: no organization" } });
       assert.deepEqual(await request("sessionClient", "/api/invoices/existing"), { status: 403, body: { error: "Access denied: no organization" } });
-      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "foreign"), { status: 403, body: { error: "Access denied" } });
+      assert.deepEqual(await request("sessionClient", "/api/invoices/existing", "GET", undefined, "foreign"), { status: 403, body: { error: "Access denied: no organization" } });
       assert.deepEqual(await request("sessionClient", "/api/invoices/missing"), { status: 404, body: { error: "Invoice not found" } });
     });
   });

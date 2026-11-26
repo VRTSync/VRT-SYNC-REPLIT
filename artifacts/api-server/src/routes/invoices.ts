@@ -12,7 +12,6 @@ export function registerInvoiceRoutes(app: Express): void {
       if (!user) return void res.status(401).json({ error: "User not found" });
       const plan = await policy.invoiceListPlan(policy.actorFromUser(user), {
         communityId: req.query.communityId as string | undefined,
-        sessionOrganizationId: req.session.organizationId,
       });
       switch (plan.kind) {
         case "denied":
@@ -45,7 +44,7 @@ export function registerInvoiceRoutes(app: Express): void {
 
       const invoice = await storage.getInvoiceById((req.params.id as string));
       if (!invoice) return void res.status(404).json({ error: "Invoice not found" });
-      const access = await policy.invoiceReadAccess(actor, invoice, { sessionOrganizationId: req.session.organizationId });
+      const access = await policy.invoiceReadAccess(actor, invoice);
       if (access === "no_organization") return void res.status(403).json({ error: "Access denied: no organization" });
       if (access === "denied") return void res.status(403).json({ error: "Access denied" });
       res.json(invoice);

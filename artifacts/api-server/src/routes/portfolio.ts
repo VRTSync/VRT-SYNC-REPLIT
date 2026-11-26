@@ -32,7 +32,7 @@ export function registerPortfolioRoutes(app: Express): void {
   //
   // Org resolution:
   //   admin → uses ?organizationId= query param (400 if absent)
-  //   client_admin → uses session.organizationId (ignores any param)
+  //   client_admin → uses the current user record's organization (ignores any param)
   // enforceOrgScoping already blocks client_admin cross-org param abuse.
   app.get("/api/portfolio/dashboard", requireClientOrAdmin, route(async (req: Request, res: Response) => {
     const t0 = Date.now();

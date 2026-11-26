@@ -4,8 +4,9 @@ export function canUseCommunityAssets(actor: Actor, communityId: string): Promis
   return actor.role === "admin" ? Promise.resolve(true) : isCommunityMember(actor, communityId);
 }
 
-export function canDeleteAssetNote(actor: Actor, note: { createdBy: string }): boolean {
-  return actor.role === "admin" || note.createdBy === actor.id;
+export async function canDeleteAssetNote(actor: Actor, note: { createdBy: string }, communityId: string): Promise<boolean> {
+  return actor.role === "admin" ||
+    (note.createdBy === actor.id && await canUseCommunityAssets(actor, communityId));
 }
 
 export function assetHistoryCompanyScope(actor: Actor): string | undefined {

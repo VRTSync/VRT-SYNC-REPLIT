@@ -44,6 +44,92 @@ function actor(role: Actor["role"], extra: Partial<Actor> = {}): Actor {
   return { id: "actor", role, companyId: null, hoaCommunityId: null, organizationId: "org", ...extra };
 }
 
+describe("S1 unassigned HOA security", () => {
+  for (const role of ["hoa_admin", "hoa_member"] as const) for (const assignment of [null, ""]) {
+    const person = () => actor(role, { hoaCommunityId: assignment });
+    const decisions: [string, (api: any, who: Actor) => unknown, unknown][] = [
+      ["task list", (p, a) => p.canListTasks(a, "member-community", "list"), false],
+      ["task page-data", (p, a) => p.canListTasks(a, "member-community", "page-data"), false],
+      ["task without query", (p, a) => p.canListTasks(a), false],
+      ["contact list", (p, a) => p.contactListPlan(a), "denied"],
+      ["contact create", (p, a) => p.contactCreateAccess(a, "member-community"), "other_community"],
+      ["contact change", (p, a) => p.contactChangeAccess(a, { communityId: "member-community" }), "denied"],
+      ["user list", (p, a) => p.userListAccess(a), "other_community"],
+      ["portal list", (p, a) => p.portalUserListAccess(a, "member-community"), "other_community"],
+      ["portal create", (p, a) => p.portalCreateAccess(a, "hoa_member", "member-community"), "other_community"],
+      ["portal role", (p, a) => p.portalRoleAssignAccess(a, "hoa_member"), "hoa_role_only"],
+      ...(["portal", "status"] as const).map(context => [
+        `portal target ${context}`, (p: any, a: Actor) => p.portalTargetAccess(a,
+          { role: "hoa_member", hoaCommunityId: assignment }, context), "not_in_community",
+      ] as [string, (api: any, who: Actor) => unknown, unknown]),
+      ["community list", (p, a) => p.communityListPlan(a), { kind: "none" }],
+      ["invoice list", (p, a) => p.invoiceListPlan(a, { communityId: "member-community" }), { kind: "denied" }],
+      ["invoice read", (p, a) => p.invoiceReadAccess(a, { communityId: "member-community" }, {}), "denied"],
+      ["report", (p, a) => p.reportCommunity(a, "member-community"), "not_member"],
+      ["report without query", (p, a) => p.reportCommunity(a), "not_member"],
+      ["search", (p, a) => p.searchScope(a, "member-community"), "not_member"],
+      ["search without query", (p, a) => p.searchScope(a), "not_member"],
+      ["retained membership", (p, a) => p.isCommunityMember(a, "member-community"), false],
+      ["file attachment", (p, a) => p.canAttachFileToCommunity(a, "member-community"), false],
+      ["asset access", (p, a) => p.canUseCommunityAssets(a, "member-community"), false],
+      ["map/offline access", (p, a) => p.canUseCommunityMapData(a, "member-community"), false],
+      ["dashboard access", (p, a) => p.dashboardAccess(a, "member-community"), false],
+      ["asset write", (p, a) => p.assetWriteAccess(a, { id: "member-community" }), "not_member"],
+      ["general community", (p, a) => p.canAccessCommunity(a, "member-community"), false],
+      ["task read", (p, a) => p.canReadTask(a, { communityId: "member-community", assignedTo: a.id }), false],
+      ["HOA portal", (p, a) => p.hoaPortalCommunity(a), null],
+      ["role dashboard", (p, a) => p.roleDashboardCommunity(a, "member-community"), "hoa_unassigned"],
+    ];
+    for (const [name, decision, expected] of decisions) {
+      it(`${role} assignment=${JSON.stringify(assignment)} denies ${name} without storage I/O`, async () => {
+        const { api, calls } = await policyFixture();
+        assert.deepEqual(await decision(api, person()), expected);
+        assert.deepEqual(calls, []);
+      });
+    }
+    it(`${role} assignment=${JSON.stringify(assignment)} cannot reuse an actor or request cached grant`, async () => {
+      const { api, calls } = await policyFixture();
+      const req = { currentUser: actor(role, { hoaCommunityId: "member-community" }) } as Request;
+      const original = api.actorFrom(req);
+      assert.equal(await api.isCommunityMember(original, "member-community"), true);
+      original.hoaCommunityId = assignment;
+      assert.equal(await api.isCommunityMember(original, "member-community"), false);
+      req.currentUser!.hoaCommunityId = assignment;
+      assert.equal(await api.isCommunityMember(api.actorFrom(req), "member-community"), false);
+      assert.equal(calls.length, 1);
+    });
+  }
+  for (const role of ["hoa_admin", "hoa_member", "property_manager", "contractor", "contractor_manager", "map_creator", "client_admin", "admin"] as const) {
+    it(`shared membership preserves assigned/non-HOA ${role} behavior and cache`, async () => {
+      const { api, calls } = await policyFixture();
+      const person = actor(role, { hoaCommunityId: role.startsWith("hoa_") ? "assigned" : null });
+      assert.equal(await api.isCommunityMember(person, "member-community"), true);
+      assert.equal(await api.isCommunityMember(person, "member-community"), true);
+      assert.equal(await api.isCommunityMember(person, "other-community"), false);
+      assert.equal(calls.length, 2);
+    });
+  }
+  for (const [name, role, author, member, expected] of [
+    ["admin", "admin", "other", false, true],
+    ["current author", "contractor", "actor", true, true],
+    ["former author", "contractor", "actor", false, false],
+    ["non-author member", "contractor", "other", true, false],
+    ["unassigned HOA author with leftover row", "hoa_member", "actor", true, false],
+  ] as const) {
+    it(`note deletion: ${name}`, async () => {
+      const { api } = await policyFixture({ isUserMemberOfCommunity: async () => member });
+      assert.equal(await api.canDeleteAssetNote(actor(role), { createdBy: author }, "member-community"), expected);
+    });
+  }
+  for (const current of [null, ""]) {
+    it(`portfolio /me rejects stale session organization with current=${JSON.stringify(current)}`, async () => {
+      const { api } = await policyFixture();
+      assert.equal(api.clientPortfolioOrg({ currentUser: actor("client_admin", { organizationId: current }),
+        session: { organizationId: "stale" } } as Request), current);
+    });
+  }
+});
+
 describe("service schedule permission compatibility", () => {
   const cases: {
     name: string; person: Actor; member?: boolean; community?: string; view: boolean; log: boolean;
@@ -143,16 +229,16 @@ describe("user and company permission compatibility", () => {
       assign: hoaAssignments, createScope: ["other_community", "ok", "other_community", "other_community"] },
     { name: "HOA admin unassigned null", person: actor("hoa_admin"),
       status: true, portal: true, contractors: Array(4).fill("denied"),
-      users: ["other_community", "other_community", "community_required", "community_required"],
-      portalList: ["other_community", "other_community", "ok", "other_community"],
-      targets: ["not_in_community", "not_in_community", "ok", "not_in_community"], memberTargetsOnly: true,
-      assign: hoaAssignments, createScope: ["other_community", "other_community", "ok", "other_community"] },
+      users: Array(4).fill("other_community"),
+      portalList: Array(4).fill("other_community"),
+      targets: Array(4).fill("not_in_community"), memberTargetsOnly: true,
+      assign: Array(8).fill("hoa_role_only"), createScope: Array(4).fill("other_community") },
     { name: "HOA admin unassigned empty", person: actor("hoa_admin", { hoaCommunityId: "" }),
       status: true, portal: true, contractors: Array(4).fill("denied"),
-      users: ["other_community", "other_community", "community_required", "community_required"],
-      portalList: ["other_community", "other_community", "other_community", "ok"],
-      targets: ["not_in_community", "not_in_community", "not_in_community", "ok"], memberTargetsOnly: true,
-      assign: hoaAssignments, createScope: ["other_community", "other_community", "other_community", "ok"] },
+      users: Array(4).fill("other_community"),
+      portalList: Array(4).fill("other_community"),
+      targets: Array(4).fill("not_in_community"), memberTargetsOnly: true,
+      assign: Array(8).fill("hoa_role_only"), createScope: Array(4).fill("other_community") },
     ...(["hoa_member", "contractor", "contractor_manager", "map_creator", "client_admin"] as const).map(role => ({
       name: role, person: actor(role, { hoaCommunityId: "member-community" }), member: true,
       status: false, portal: false, contractors: Array(4).fill("denied"),
@@ -179,8 +265,7 @@ describe("user and company permission compatibility", () => {
         const query = community ?? undefined;
         assert.equal(await api.contractorListAccess({ ...row.person }, query), row.contractors[i]);
         assert.equal(await api.userListAccess({ ...row.person }, query), row.users[i]);
-        // Portal policy runs after the route's required-community check; retain
-        // raw equality even for malformed/null inputs in the legacy comparison.
+        // The route validates required community input before this policy.
         assert.equal(await api.portalUserListAccess({ ...row.person }, community as string), row.portalList[i]);
       });
       for (const targetRole of roles) {
@@ -199,7 +284,8 @@ describe("user and company permission compatibility", () => {
           const { api } = await fixture();
           assert.equal(api.portalRoleAssignAccess(row.person, role), row.assign[r]);
           assert.equal(await api.portalCreateAccess({ ...row.person }, role, community as string),
-            row.assign[r] === "ok" ? row.createScope[i] : row.assign[r]);
+            row.name.startsWith("HOA admin unassigned") ? "other_community" :
+              row.assign[r] === "ok" ? row.createScope[i] : row.assign[r]);
         });
       }
     }
@@ -208,7 +294,8 @@ describe("user and company permission compatibility", () => {
       for (const role of [undefined, null, "", "invalid", [], {}]) {
         const expected = row.assign[0];
         assert.equal(api.portalRoleAssignAccess(row.person, role), expected);
-        assert.equal(await api.portalCreateAccess({ ...row.person }, role, "outside"), expected);
+        assert.equal(await api.portalCreateAccess({ ...row.person }, role, "outside"),
+          row.name.startsWith("HOA admin unassigned") ? "other_community" : expected);
       }
     });
   }
@@ -224,8 +311,8 @@ describe("user and company permission compatibility", () => {
     assert.equal(await api.portalCreateAccess(pm(), "admin", "outside"), "pm_role_only");
     assert.equal(await api.contractorListAccess(actor("contractor"), "member-community"), "denied");
     assert.equal(await api.userListAccess(pm()), "community_required");
-    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), target), "ok");
-    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), { ...target, role: "hoa_admin" }), "hoa_member_only");
+    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), target), "not_in_community");
+    assert.equal(await api.portalTargetAccess(actor("hoa_admin"), { ...target, role: "hoa_admin" }), "not_in_community");
     assert.deepEqual(calls, []);
   });
   it("preserves membership failures before status denial but after portal's no-community denial", async () => {
@@ -284,8 +371,8 @@ describe("community, dashboard and search permission compatibility", () => {
       });
     }
     for (const [query, commercial, expected] of [
-      [undefined, false, row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
-      ["", false, row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
+      [undefined, false, row.list === "hoa" ? "not_member" : row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
+      ["", false, row.list === "hoa" ? "not_member" : row.admin ? { kind: "all" } : { kind: "memberships_non_commercial" }],
       ["member-community", false, { kind: "one", communityId: "member-community" }],
       ["member-community", true, row.admin ? { kind: "one", communityId: "member-community" } : "not_member"],
       ["other-community", false, row.admin ? { kind: "one", communityId: "other-community" } : "not_member"],
@@ -306,10 +393,10 @@ describe("community, dashboard and search permission compatibility", () => {
   }
   for (const role of ["hoa_admin", "hoa_member"] as const) {
     for (const assignment of [null, ""] as const) {
-      it(`${role} without assignment lists memberships but cannot use the role dashboard`, async () => {
+      it(`${role} without assignment lists nothing and cannot use the role dashboard`, async () => {
         const { api, calls } = await policyFixture();
         const person = actor(role, { hoaCommunityId: assignment });
-        assert.deepEqual(api.communityListPlan(person), { kind: "memberships_non_commercial" });
+        assert.deepEqual(api.communityListPlan(person), { kind: "none" });
         for (const query of [undefined, "member-community", "outside"]) {
           assert.equal(await api.roleDashboardCommunity(person, query), "hoa_unassigned");
         }
@@ -377,7 +464,7 @@ describe("file, drive and contact permission compatibility", () => {
     ["HOA admin mismatch", actor("hoa_admin", { hoaCommunityId: "elsewhere" }), "other-community", false],
     ["HOA member mismatch", actor("hoa_member", { hoaCommunityId: "elsewhere" }), "other-community", false],
     ["HOA mismatch but member", actor("hoa_admin", { hoaCommunityId: "elsewhere" }), "member-community", true],
-    ["HOA unassigned member", actor("hoa_member"), "member-community", true],
+    ["HOA unassigned member", actor("hoa_member"), "member-community", false],
     ["member", actor("contractor"), "member-community", true],
     ["nonmember", actor("contractor"), "other-community", false],
     ["organization alone", actor("client_admin"), "other-community", false],
@@ -416,13 +503,13 @@ describe("file, drive and contact permission compatibility", () => {
       create: ["ok", "other_community"], change: ["ok", "denied"], move: ["hoa_cannot_move", "hoa_cannot_move"] },
     { name: "HOA admin without assignment", person: actor("hoa_admin"),
       list: ["denied", "denied", "denied"],
-      create: ["ok", "ok"], change: ["ok", "ok"], move: ["hoa_cannot_move", "hoa_cannot_move"] },
+      create: ["other_community", "other_community"], change: ["denied", "denied"], move: ["hoa_cannot_move", "hoa_cannot_move"] },
     { name: "HOA member matching and other (write gate denies)", person: actor("hoa_member", { hoaCommunityId: member }),
       list: [ownCommunity, ownCommunity, ownCommunity],
       create: ["ok", "other_community"], change: ["ok", "ok"], move: ["ok", "ok"] },
     { name: "HOA member without assignment (write gate denies)", person: actor("hoa_member"),
       list: ["denied", "denied", "denied"],
-      create: ["ok", "ok"], change: ["ok", "ok"], move: ["ok", "ok"] },
+      create: ["other_community", "other_community"], change: ["denied", "denied"], move: ["ok", "ok"] },
     ...(["contractor", "contractor_manager", "client_admin", "map_creator"] as const).map(role => ({
       name: `${role} (write gate denies)`, person: actor(role),
       list: ["denied", "denied", "denied"] as [unknown, unknown, unknown],
@@ -497,13 +584,13 @@ describe("permission engine role matrix", () => {
     }
   });
 
-  it("preserves the list/page-data difference for HOA accounts with no assignment", async () => {
+  it("denies both task surfaces for HOA accounts with no assignment", async () => {
     const { api } = await policyFixture();
     for (const role of ["hoa_admin", "hoa_member"] as const) {
       const person = actor(role);
       assert.equal(await api.canListTasks(person, "other-community"), false);
-      assert.equal(await api.canListTasks(person, "other-community", "page-data"), true);
-      assert.equal(await api.canListTasks(person), true);
+      assert.equal(await api.canListTasks(person, "other-community", "page-data"), false);
+      assert.equal(await api.canListTasks(person), false);
       const assigned = actor(role, { hoaCommunityId: "elsewhere" });
       assert.equal(await api.canListTasks(assigned, "other-community"), true);
       assert.equal(api.taskListScope(assigned, "list").hoaCommunityId, "elsewhere");
@@ -562,7 +649,7 @@ describe("asset permission compatibility", () => {
     ["admin", "other", true], ["contractor", "actor", true], ["contractor", "other", false],
   ] as const) it(`checks note deletion for ${role} with author ${author}`, async () => {
     const { api } = await policyFixture();
-    assert.equal(api.canDeleteAssetNote(actor(role), { createdBy: author }), expected);
+    assert.equal(await api.canDeleteAssetNote(actor(role), { createdBy: author }, "member-community"), expected);
   });
 
   it("scopes history only for account managers and selects only the map-creator pin path", async () => {
@@ -632,26 +719,26 @@ describe("HOA permission compatibility", () => {
     ], row.expected);
   });
 
-  it("preserves user-first logical-OR session fallback for request submission", async () => {
+  it("uses only live assignment for request submission", async () => {
     const { api } = await policyFixture();
     const cases: [string | null, string | undefined, string | null][] = [
-      ["current", "session", "current"], [null, "session", "session"], [null, undefined, null],
-      ["", "session", "session"], [null, "", null],
+      ["current", "session", "current"], [null, "session", null], [null, undefined, null],
+      ["", "session", ""], [null, "", null],
     ];
     for (const [current, session, expected] of cases) {
-      assert.equal(api.hoaRequestCommunity(actor("hoa_admin", { hoaCommunityId: current }), session), expected);
+      assert.equal((api.hoaRequestCommunity as any)(actor("hoa_admin", { hoaCommunityId: current }), session), expected);
     }
   });
 });
 
 describe("portfolio permission compatibility", () => {
-  it("preserves explicit admin selection and nullish client session fallback", async () => {
+  it("preserves explicit admin selection and rejects stale client session scope", async () => {
     const { api } = await policyFixture();
     const cases: [Actor["role"], string | null, string | undefined, string | undefined, object][] = [
       ["admin", "ignored", "session", "selected", { orgId: "selected" }],
       ["admin", "ignored", "session", undefined, { orgId: null, status: 400, error: "organizationId query param is required for admin" }],
       ["client_admin", "current", "session", "ignored", { orgId: "current" }],
-      ["client_admin", null, "session", "ignored", { orgId: "session" }],
+      ["client_admin", null, "session", "ignored", { orgId: null, status: 403, error: "No organization assigned to this account" }],
       ["client_admin", null, undefined, undefined, { orgId: null, status: 403, error: "No organization assigned to this account" }],
       ["client_admin", "", "session", undefined, { orgId: null, status: 403, error: "No organization assigned to this account" }],
     ];
@@ -677,7 +764,7 @@ describe("portfolio permission compatibility", () => {
 describe("commercial portfolio ownership policies", () => {
   for (const [name, current, session, expected] of [
     ["current user organization", "current", "session", "current"],
-    ["session fallback", null, "session", "session"],
+    ["stale session cannot restore scope", null, "session", null],
     ["no organization", null, undefined, null],
     ["empty user organization does not fall back", "", "session", ""],
   ] as const) {
@@ -780,15 +867,15 @@ describe("billing permission compatibility", () => {
     ["admin empty query", actor("admin"), "", undefined, { kind: "all", communityId: undefined }],
     ["HOA assignment ignores query", hoa, outside, undefined, { kind: "community", communityId: member }],
     ["HOA assignment without query", hoa, undefined, undefined, { kind: "community", communityId: member }],
-    ["HOA without assignment or query", actor("hoa_admin"), undefined, undefined, { kind: "community_required" }],
-    ["HOA without assignment member", actor("hoa_admin"), member, undefined, { kind: "community", communityId: member }],
-    ["HOA without assignment nonmember", actor("hoa_admin"), outside, undefined, { kind: "not_member" }],
+    ["HOA without assignment or query", actor("hoa_admin"), undefined, undefined, { kind: "denied" }],
+    ["HOA without assignment member", actor("hoa_admin"), member, undefined, { kind: "denied" }],
+    ["HOA without assignment nonmember", actor("hoa_admin"), outside, undefined, { kind: "denied" }],
     ["HOA member assignment", actor("hoa_member", { hoaCommunityId: outside }), member, undefined, { kind: "community", communityId: outside }],
     ["client user org wins", client, undefined, "other", { kind: "organization", orgId: "org" }],
     ["client user org branch", client, member, undefined, { kind: "community", communityId: member }],
-    ["client session org", actor("client_admin", { organizationId: null }), undefined, "org", { kind: "organization", orgId: "org" }],
-    ["client session org branch", actor("client_admin", { organizationId: null }), member, "org", { kind: "community", communityId: member }],
-    ["client empty user org falls back", actor("client_admin", { organizationId: "" }), undefined, "org", { kind: "organization", orgId: "org" }],
+    ["client session org", actor("client_admin", { organizationId: null }), undefined, "org", { kind: "no_organization" }],
+    ["client session org branch", actor("client_admin", { organizationId: null }), member, "org", { kind: "no_organization" }],
+    ["client empty user org falls back", actor("client_admin", { organizationId: "" }), undefined, "org", { kind: "no_organization" }],
     ["client no org", actor("client_admin", { organizationId: null }), undefined, undefined, { kind: "no_organization" }],
     ["client no org with branch", actor("client_admin", { organizationId: null }), member, undefined, { kind: "no_organization" }],
     ["client branch relies on middleware", client, outside, undefined, { kind: "community", communityId: outside }],
@@ -800,7 +887,7 @@ describe("billing permission compatibility", () => {
   for (const [name, person, communityId, sessionOrganizationId, expected] of listCases) {
     it(`invoice list: ${name}`, async () => {
       const { api } = await policyFixture();
-      assert.deepEqual(await api.invoiceListPlan(person, { communityId, sessionOrganizationId }), expected);
+      assert.deepEqual(await api.invoiceListPlan(person, { communityId, sessionOrganizationId } as any), expected);
     });
   }
 
@@ -815,15 +902,15 @@ describe("billing permission compatibility", () => {
     ["admin outside", actor("admin"), outside, null, undefined, "ok"],
     ["HOA own", hoa, member, null, undefined, "ok"],
     ["HOA outside despite membership", actor("hoa_admin", { hoaCommunityId: outside }), member, null, undefined, "denied"],
-    ["HOA unassigned member", actor("hoa_admin"), member, null, undefined, "ok"],
+    ["HOA unassigned member", actor("hoa_admin"), member, null, undefined, "denied"],
     ["HOA unassigned nonmember", actor("hoa_admin"), outside, null, undefined, "denied"],
     ["HOA member own", actor("hoa_member", { hoaCommunityId: member }), member, null, undefined, "ok"],
     ["HOA member outside", actor("hoa_member", { hoaCommunityId: outside }), member, null, undefined, "denied"],
     ["client user org", client, member, null, "foreign", "ok"],
     ["client foreign org", actor("client_admin", { organizationId: "foreign" }), member, null, "org", "denied"],
-    ["client session org", actor("client_admin", { organizationId: null }), member, null, "org", "ok"],
-    ["client foreign session org", actor("client_admin", { organizationId: null }), member, null, "foreign", "denied"],
-    ["client empty org falls back", actor("client_admin", { organizationId: "" }), member, null, "org", "ok"],
+    ["client session org", actor("client_admin", { organizationId: null }), member, null, "org", "no_organization"],
+    ["client foreign session org", actor("client_admin", { organizationId: null }), member, null, "foreign", "no_organization"],
+    ["client empty org falls back", actor("client_admin", { organizationId: "" }), member, null, "org", "no_organization"],
     ["client no org", actor("client_admin", { organizationId: null }), member, null, undefined, "no_organization"],
     ["PM member", actor("property_manager"), member, null, undefined, "ok"],
     ["PM nonmember", actor("property_manager"), outside, null, undefined, "denied"],
@@ -833,13 +920,13 @@ describe("billing permission compatibility", () => {
   for (const [name, person, communityId, contractorCompanyId, sessionOrganizationId, expected] of readCases) {
     it(`invoice read: ${name}`, async () => {
       const { api } = await policyFixture();
-      assert.equal(await api.invoiceReadAccess(person, { communityId, contractorCompanyId }, { sessionOrganizationId }), expected);
+      assert.equal(await (api.invoiceReadAccess as any)(person, { communityId, contractorCompanyId }, { sessionOrganizationId }), expected);
     });
   }
   for (const community of [undefined, { organizationId: null }, { organizationId: "foreign" }]) {
     it(`denies client invoice when community is ${JSON.stringify(community)}`, async () => {
       const { api } = await policyFixture({ getCommunityById: async () => community });
-      assert.equal(await api.invoiceReadAccess(client, invoice, {}), "denied");
+      assert.equal(await api.invoiceReadAccess(client, invoice), "denied");
     });
   }
 
@@ -908,8 +995,8 @@ describe("billing permission compatibility", () => {
     ["HOA assigned ignores query", hoa, outside, { communityId: member }],
     ["HOA assigned no query", hoa, undefined, { communityId: member }],
     ["HOA member assigned", actor("hoa_member", { hoaCommunityId: member }), outside, { communityId: member }],
-    ["HOA unassigned missing query", actor("hoa_admin"), undefined, "community_required"],
-    ["HOA unassigned member", actor("hoa_admin"), member, { communityId: member }],
+    ["HOA unassigned missing query", actor("hoa_admin"), undefined, "not_member"],
+    ["HOA unassigned member", actor("hoa_admin"), member, "not_member"],
     ["HOA unassigned nonmember", actor("hoa_member"), outside, "not_member"],
     ["PM missing query", actor("property_manager"), undefined, "community_required"],
     ["PM member", actor("property_manager"), member, { communityId: member }],

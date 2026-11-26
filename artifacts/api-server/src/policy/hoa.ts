@@ -14,7 +14,6 @@ export function canCreateHoaRequest(actor: Actor): boolean {
   return actor.role === "hoa_admin";
 }
 
-/** Preserve the existing session fallback in this behavior-only extraction. */
-export function hoaRequestCommunity(actor: Actor, sessionHoaCommunityId?: string | null): string | null {
-  return actor.hoaCommunityId || sessionHoaCommunityId || null;
+export function hoaRequestCommunity(actor: Actor): string | null {
+  return actor.hoaCommunityId ?? null;
 }

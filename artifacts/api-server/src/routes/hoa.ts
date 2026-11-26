@@ -120,13 +120,10 @@ export function registerHoaRoutes(app: Express): void {
       }
 
       const actor = policy.actorFromUser(user);
-      const communityId = policy.hoaRequestCommunity(actor, req.session.hoaCommunityId);
+      const communityId = policy.hoaRequestCommunity(actor);
       if (!communityId) {
-        console.error(`[HOA Request] No communityId: user.hoaCommunityId=${user.hoaCommunityId}, session=${req.session.hoaCommunityId}`);
+        console.error(`[HOA Request] No communityId: user.hoaCommunityId=${user.hoaCommunityId}`);
         return void res.status(400).json({ error: "No HOA community associated with this user" });
-      }
-      if (!user.hoaCommunityId && req.session.hoaCommunityId) {
-        console.warn(`[HOA Request] Using session fallback for communityId=${communityId}`);
       }
 
       const parsed = createHoaRequestSchema.safeParse(req.body);

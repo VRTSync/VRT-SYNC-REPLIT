@@ -1,11 +1,12 @@
-import { isCommunityMember, type Actor } from "./actor";
+import { isCommunityMember, isUnassignedHoa, type Actor } from "./actor";
 import { canUseCommunityAssets } from "./assets";
 import * as storage from "../storage";
 
-type CommunityListPlan = { kind: "all" } | { kind: "hoa"; communityId: string } |
+type CommunityListPlan = { kind: "all" | "none" } | { kind: "hoa"; communityId: string } |
   { kind: "memberships_non_commercial" };
 
 export function communityListPlan(actor: Actor): CommunityListPlan {
+  if (isUnassignedHoa(actor)) return { kind: "none" };
   if (actor.role === "admin" || actor.role === "map_creator") return { kind: "all" };
   if ((actor.role === "hoa_admin" || actor.role === "hoa_member") && actor.hoaCommunityId) {
     return { kind: "hoa", communityId: actor.hoaCommunityId };
@@ -56,6 +57,7 @@ export async function searchScope(
   actor: Actor, communityId?: string,
 ): Promise<{ kind: "one"; communityId: string } | { kind: "all" } |
   { kind: "memberships_non_commercial" } | "not_member"> {
+  if (isUnassignedHoa(actor)) return "not_member";
   if (communityId) {
     if (actor.role !== "admin") {
       if (!await isCommunityMember(actor, communityId)) return "not_member";

@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "gBrjoQEHLmfozKbo9CVDD"
+uri = "file://artifacts/api-server/S1-SECURITY-REPORT.md"
+type = "text"
+title = "Unassigned HOA security report"
+description = "Scope, baseline and final checks, negative-test evidence, every changed existing expectation, and post-publish limits."
+logical_id = "2b122999-29ff-44d8-8cf0-db88d449f166"
+content_hash = "sha256:7c138f794aa87fd48268ffa2664449add57f78b528996631c8b12afa52101a27"
+size = 14926
+mtime_ms = 1795725750803
+storage_uri = "gcs://replit-rams-assets-spock/rams/assets/repl:73b5a909-393a-4824-bfca-0442f7227201/2b122999-29ff-44d8-8cf0-db88d449f166/d2617488-8ce8-4be2-9539-859acfb58e9a"
+storage_version_token = "1795725764216320"
+content_type = "text/markdown"

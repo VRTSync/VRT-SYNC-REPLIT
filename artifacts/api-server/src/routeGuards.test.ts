@@ -84,13 +84,34 @@ function violations(file: string, source: string, allowlist: readonly Exception[
 }
 
 const excluded = new Set(["handler.ts", "upload.ts", "errors.ts", "userRules.ts"]);
-function routeFiles(directory: URL, prefix = ""): string[] {
+function routeFiles(directory: URL, prefix = "", exclusions = excluded): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const file = `${prefix}${entry.name}`;
-    if (entry.isDirectory()) return routeFiles(new URL(`${entry.name}/`, directory), `${file}/`);
-    return entry.isFile() && entry.name.endsWith(".ts") && !excluded.has(file) ? [file] : [];
+    if (entry.isDirectory()) return routeFiles(new URL(`${entry.name}/`, directory), `${file}/`, exclusions);
+    return entry.isFile() && entry.name.endsWith(".ts") && !exclusions.has(file) ? [file] : [];
   }).sort();
 }
+
+const sessionScope = /\bsession\s*(?:\??\.\s*(?:hoaCommunityId|organizationId)\b|\??\.?\s*\[\s*["'](?:hoaCommunityId|organizationId)["']\s*\])/g;
+
+describe("live-record scope source guard", () => {
+  it("rejects session scope throughout every route and policy file, including infrastructure", () => {
+    const errors: string[] = [];
+    for (const directory of ["routes", "policy"]) {
+      const root = new URL(`./${directory}/`, import.meta.url);
+      for (const file of routeFiles(root, "", new Set())) {
+        const source = readFileSync(new URL(file, root), "utf8");
+        for (const match of source.matchAll(sessionScope)) errors.push(`${directory}/${file}: ${match[0]}`);
+      }
+    }
+    assert.deepEqual(errors, [], `Session-scope guard failed:\n${errors.join("\n")}`);
+  });
+  for (const probe of [
+    "req.session.hoaCommunityId", "req.session.organizationId",
+    "req.session?.hoaCommunityId", 'req.session["organizationId"]',
+    "req.session?.['hoaCommunityId']",
+  ]) it(`detects ${probe}`, () => assert.equal([...probe.matchAll(sessionScope)].length, 1));
+});
 
 describe("route-wide central permission guard", () => {
   it("scans every route file except the four named infrastructure modules", () => {

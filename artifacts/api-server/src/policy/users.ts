@@ -1,4 +1,4 @@
-import { isCommunityMember, type Actor } from "./actor";
+import { isCommunityMember, isUnassignedHoa, type Actor } from "./actor";
 
 export async function contractorListAccess(
   actor: Actor, communityId?: string,
@@ -14,6 +14,7 @@ export async function contractorListAccess(
 export async function userListAccess(
   actor: Actor, communityId?: string,
 ): Promise<"all" | "community" | "community_required" | "not_member" | "other_community" | "not_authorized"> {
+  if (isUnassignedHoa(actor)) return "other_community";
   if (actor.role === "admin") return "all";
   if (actor.role === "property_manager" || actor.role === "hoa_admin") {
     if (!communityId) return "community_required";
@@ -37,6 +38,7 @@ export async function portalTargetAccess(
   actor: Actor, target: { role: string; hoaCommunityId: string | null },
   context: "portal" | "status" = "portal",
 ): Promise<"ok" | "no_community" | "not_in_community" | "hoa_member_only"> {
+  if (isUnassignedHoa(actor)) return "not_in_community";
   if (actor.role === "property_manager") {
     // Status historically queries membership even for an unassigned target;
     // portal edit/removal reject that target before querying. Keep both orders.
@@ -45,8 +47,7 @@ export async function portalTargetAccess(
     if (!target.hoaCommunityId) return "no_community";
     if (!member) return "not_in_community";
   } else if (actor.role === "hoa_admin") {
-    // Deliberately retain null === null and "" === "" for unassigned accounts.
-    if (target.hoaCommunityId !== actor.hoaCommunityId) return "not_in_community";
+    if (!target.hoaCommunityId || target.hoaCommunityId !== actor.hoaCommunityId) return "not_in_community";
     if (target.role !== "hoa_member") return "hoa_member_only";
   }
   // Other roles are rejected by each route's separate caller gate.
@@ -56,6 +57,7 @@ export async function portalTargetAccess(
 export async function portalUserListAccess(
   actor: Actor, communityId: string,
 ): Promise<"ok" | "not_member" | "other_community" | "not_authorized"> {
+  if (isUnassignedHoa(actor)) return "other_community";
   if (actor.role === "property_manager") {
     if (!await isCommunityMember(actor, communityId)) return "not_member";
   } else if (actor.role === "hoa_admin") {
@@ -67,6 +69,7 @@ export async function portalUserListAccess(
 export async function portalCreateAccess(
   actor: Actor, role: unknown, communityId: string,
 ): Promise<"ok" | "hoa_role_only" | "other_community" | "pm_role_only" | "not_member"> {
+  if (isUnassignedHoa(actor)) return "other_community";
   if (actor.role === "hoa_admin") {
     if (role !== "hoa_member") return "hoa_role_only";
     if (communityId !== actor.hoaCommunityId) return "other_community";
@@ -80,6 +83,7 @@ export async function portalCreateAccess(
 export function portalRoleAssignAccess(
   actor: Actor, role: unknown,
 ): "ok" | "hoa_role_only" | "pm_role_only" {
+  if (isUnassignedHoa(actor)) return "hoa_role_only";
   if (actor.role === "hoa_admin" && role !== "hoa_member") return "hoa_role_only";
   if (actor.role === "property_manager" && role !== "hoa_admin" && role !== "hoa_member") return "pm_role_only";
   return "ok";

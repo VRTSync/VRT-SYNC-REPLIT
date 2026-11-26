@@ -29,8 +29,13 @@ export function actorFrom(req: Request): Actor {
   return actor;
 }
 
+export function isUnassignedHoa(actor: Actor): boolean {
+  return (actor.role === "hoa_admin" || actor.role === "hoa_member") && !actor.hoaCommunityId;
+}
+
 /** Cache the promise too, so concurrent policy checks share one lookup. */
 export function isCommunityMember(actor: Actor, communityId: string): Promise<boolean> {
+  if (isUnassignedHoa(actor)) return Promise.resolve(false);
   let cache = actorMemberships.get(actor);
   if (!cache) { cache = new Map(); actorMemberships.set(actor, cache); }
   // Include actor identity so changing the request's actor cannot reuse a grant.

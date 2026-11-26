@@ -9,6 +9,7 @@ export function registerCommunityRoutes(app: Express): void {
   app.get("/api/communities", requireAuth, route(async (req: Request, res: Response) => {
     try {
       const plan = policy.communityListPlan(policy.actorFromUser(req.currentUser!));
+      if (plan.kind === "none") return void res.json([]);
       if (plan.kind === "all") {
         // Admins and map creators see all communities, including commercial branches
         const allCommunities = await storage.getCommunities();

@@ -69,6 +69,7 @@ export async function loadCurrentUser(req: Request, res: Response, next: NextFun
     // Legacy handlers still read scope from the session. Keep those fields
     // authoritative too: a null assignment means access was removed, not that
     // the previous login-time assignment may be used as a fallback.
+    // Permissions must read the user record, not these session fields.
     if (isHoaRole(user.role) && user.hoaCommunityId) {
       req.session.hoaCommunityId = user.hoaCommunityId;
     } else {

@@ -17,9 +17,7 @@ export function resolvePortfolioOrg(req: Request): PortfolioOrgResolution {
     return { orgId };
   }
 
-  // currentUser was loaded fresh from the DB by requireClientOrAdmin. The
-  // session value only supports older sessions that predate that middleware.
-  const orgId = user?.organizationId ?? req.session.organizationId;
+  const orgId = user?.organizationId;
   if (!orgId) return { orgId: null, status: 403, error: "No organization assigned to this account" };
   return { orgId };
 }
@@ -32,7 +30,7 @@ export function orgOwnsCommunity<T extends { organizationId: string | null }>(
 
 /** The /me endpoint keeps its own historical missing-organization response. */
 export function clientPortfolioOrg(req: Request): string | null {
-  return req.currentUser?.organizationId ?? req.session.organizationId ?? null;
+  return req.currentUser?.organizationId ?? null;
 }
 
 export async function orgOwnsGroup(orgId: string, groupId: string): Promise<boolean> {

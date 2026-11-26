@@ -1,5 +1,5 @@
 import type { Actor } from "./actor";
-import { isCommunityMember } from "./actor";
+import { isCommunityMember, isUnassignedHoa } from "./actor";
 import * as storage from "../storage";
 
 type InvoiceScope = { communityId: string; contractorCompanyId: string | null };
@@ -8,7 +8,6 @@ type InvoiceListPlan =
   | { kind: "manager" | "all"; communityId?: string }
   | { kind: "community"; communityId: string }
   | { kind: "organization"; orgId: string };
-type OrganizationContext = { sessionOrganizationId?: string };
 
 /** This gate precedes the detail lookup, including a missing invoice's 404. */
 export function canRequestInvoice(actor: Actor): boolean {
@@ -16,8 +15,9 @@ export function canRequestInvoice(actor: Actor): boolean {
 }
 
 export async function invoiceListPlan(actor: Actor, {
-  communityId, sessionOrganizationId,
-}: OrganizationContext & { communityId?: string }): Promise<InvoiceListPlan> {
+  communityId,
+}: { communityId?: string }): Promise<InvoiceListPlan> {
+  if (isUnassignedHoa(actor)) return { kind: "denied" };
   if (!canRequestInvoice(actor)) return { kind: "denied" };
   if (hasFixedInvoiceCompany(actor)) {
     if (communityId && !await isCommunityMember(actor, communityId)) return { kind: "not_member" };
@@ -28,7 +28,7 @@ export async function invoiceListPlan(actor: Actor, {
     return { kind: "community", communityId: actor.hoaCommunityId };
   }
   if (actor.role === "client_admin") {
-    const orgId = actor.organizationId || sessionOrganizationId;
+    const orgId = actor.organizationId;
     if (!orgId) return { kind: "no_organization" };
     // The original route relies on enforceOrgScoping for a selected branch.
     return communityId ? { kind: "community", communityId } : { kind: "organization", orgId };
@@ -38,13 +38,12 @@ export async function invoiceListPlan(actor: Actor, {
   return { kind: "community", communityId };
 }
 
-export async function invoiceReadAccess(actor: Actor, invoice: InvoiceScope, {
-  sessionOrganizationId,
-}: OrganizationContext): Promise<"ok" | "denied" | "no_organization"> {
+export async function invoiceReadAccess(actor: Actor, invoice: InvoiceScope): Promise<"ok" | "denied" | "no_organization"> {
+  if (isUnassignedHoa(actor)) return "denied";
   if (!canRequestInvoice(actor)) return "denied";
   if (hasFixedInvoiceCompany(actor)) return await managerCanWriteInvoice(actor, invoice) ? "ok" : "denied";
   if (actor.role === "client_admin") {
-    const orgId = actor.organizationId || sessionOrganizationId;
+    const orgId = actor.organizationId;
     if (!orgId) return "no_organization";
     const community = await storage.getCommunityById(invoice.communityId);
     return community && community.organizationId === orgId ? "ok" : "denied";
@@ -91,6 +90,7 @@ export function canReadReports(actor: Actor): boolean {
 
 export async function reportCommunity(actor: Actor, queryCommunityId?: string):
 Promise<{ communityId: string } | "community_required" | "not_member"> {
+  if (isUnassignedHoa(actor)) return "not_member";
   if (actor.role === "admin") return queryCommunityId ? { communityId: queryCommunityId } : "community_required";
   if ((actor.role === "hoa_admin" || actor.role === "hoa_member") && actor.hoaCommunityId) {
     return { communityId: actor.hoaCommunityId };

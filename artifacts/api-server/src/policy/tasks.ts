@@ -1,5 +1,5 @@
 import type { Task } from "@workspace/db";
-import { isCommunityMember, type Actor } from "./actor";
+import { isCommunityMember, isUnassignedHoa, type Actor } from "./actor";
 
 type TaskRecord = Pick<Task, "assignedTo" | "communityId" | "contractorCompanyId">;
 export type TaskEditLevel = "manager" | "manager_fixed_company" | "field" | null;
@@ -46,10 +46,11 @@ export function canImportTasks(actor: Actor): boolean { return actor.role === "a
 export function canBulkAssign(actor: Actor): boolean { return ["admin", "contractor_manager"].includes(actor.role); }
 
 /**
- * Preserve the historical list/page-data difference for unassigned HOA users.
+ * Unassigned HOA users cannot list community tasks on either surface.
  * This is intentionally NOT the general community-access policy.
  */
 export async function canListTasks(actor: Actor, communityId?: string | null, surface: TaskListSurface = "list"): Promise<boolean> {
+  if (isUnassignedHoa(actor)) return false;
   if (!communityId || actor.role === "admin") return true;
   if (actor.role === "hoa_admin" || actor.role === "hoa_member") {
     if (surface === "page-data" || actor.hoaCommunityId) return true;
