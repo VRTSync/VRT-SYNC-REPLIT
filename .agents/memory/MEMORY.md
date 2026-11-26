@@ -15,7 +15,7 @@
 - [Imported placeholder labels](imported-placeholder-labels.md) — treat “Untitled polygon” as absent and preserve corrected canonical labels during GeoJSON re-sync.
 - [HOA acknowledgement policy](hoa-acknowledgement-policy.md) — acknowledgement means contractor receipt; HOA users have no task-edit exception.
 - [Installed-client compatibility](installed-client-compatibility.md) — installed mobile clients send extra JSON fields; strip unknown fields rather than rejecting requests.
-- [Live account scope](live-account-scope.md) — null community or organization assignments mean access was removed; legacy session fallbacks must never retain prior access.
+- [Live account scope](live-account-scope.md) — cleared assignments cannot regain scope through sessions; unassigned HOA denial must also cover leftover memberships.
 - [Company label scope](company-label-scope.md) — companies do not grant community access; managers require a contractor company, while crew and PM selection stays optional.
 - [Transactional test fixtures](transactional-test-fixtures.md) — raw BEGIN plus drizzle(client) does not protect fixtures from nested storage transactions; use savepoints.
 - [Permission refactor compatibility](permission-refactor-compatibility.md) — preserve legacy endpoint differences during policy extraction; broader security changes require a separate slice.
