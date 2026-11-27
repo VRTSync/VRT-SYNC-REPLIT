@@ -140,7 +140,7 @@ describe("admin-only route extraction", () => {
       "registerHoaRoutes", "registerNotificationRoutes", "registerInvoiceRoutes",
       "registerReportRoutes", "registerContractRoutes", "registerDriveRoutes",
       "registerContactRoutes", "registerPortfolioRoutes", "registerPortfolioWorkOrderRoutes",
-      "registerOrganizationRoutes",
+      "registerOrganizationRoutes", "registerScheduleRoutes",
     ]);
   });
   it("retains the task insertion and extraction boundaries", () => {
@@ -1850,6 +1850,8 @@ describe("billing handler response compatibility", () => {
     await withBilling({
       getUserById: async (id: string) => { lookups.push(id); return users[id]; },
       getContractById: async () => ({ id: "contract", startDate: "2026-01-01", endDate: "2026-12-31" }),
+      createContract: async (data: any) => ({ id: "contract", ...data, contractorCompanyId: "company" }),
+      updateContract: async (id: string, data: any) => ({ id, ...data, contractorCompanyId: "company" }),
     }, async request => {
       const input = { communityId: "member-community", contractorUserId: "manager",
         contractType: "Fixture", startDate: "2026-01-01", endDate: "2026-12-31" };
@@ -1857,7 +1859,13 @@ describe("billing handler response compatibility", () => {
         status: 400, body: { error: "End date must be on or after start date" },
       });
       assert.deepEqual(lookups, []);
-      for (const contractorUserId of ["manager", "admin", "missing"]) {
+      // SC1 intentionally allows an account manager as the legacy holder.
+      for (const method of ["POST", "PUT"]) {
+        const result = await request("admin", method === "POST" ? "/api/contracts" : "/api/contracts/contract", method, input);
+        assert.equal(result.status, method === "POST" ? 201 : 200);
+        assert.equal(result.body.contractorUserId, "manager");
+      }
+      for (const contractorUserId of ["admin", "missing"]) {
         assert.deepEqual(await request("admin", "/api/contracts", "POST", { ...input, contractorUserId }), {
           status: 400, body: { error: "Selected user is not a contractor" },
         });

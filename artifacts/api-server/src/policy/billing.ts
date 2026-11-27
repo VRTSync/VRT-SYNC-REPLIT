@@ -111,5 +111,5 @@ Promise<"ok" | "community_required" | "not_member"> {
 }
 
 export function canHoldContract(user: Pick<Actor, "role">): boolean {
-  return user.role === "contractor";
+  return user.role === "contractor" || user.role === "contractor_manager";
 }

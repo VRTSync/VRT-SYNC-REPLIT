@@ -353,7 +353,10 @@ describe("contractor work isolation (production handlers and rollback-only Postg
   it("derives contract ownership on create and update and preserves the active string-ID notification API", async () => {
     assert.deepEqual(await request("POST", "/api/contracts", contractBody(noCompany.id)),
       { status: 400, body: { error: "Contractor must have a company" } });
-    const created = await request("POST", "/api/contracts", { ...contractBody(), contractorCompanyId: y.id, extra: true });
+    // SC1 accepts the explicit holder now; conflicting user/company inputs must
+    // be refused rather than stripping the company and silently taking the user.
+    assert.equal((await request("POST", "/api/contracts", { ...contractBody(), contractorCompanyId: y.id })).status, 400);
+    const created = await request("POST", "/api/contracts", { ...contractBody(), extra: true });
     assert.equal(created.status, 201); assert.equal(created.body.contractorCompanyId, x.id);
     assert.equal((await api.storage.getContracts(a))[0].contractorCompanyId, x.id);
     let ids = await api.storage.getActiveContractorUserIdsForCommunity(a);

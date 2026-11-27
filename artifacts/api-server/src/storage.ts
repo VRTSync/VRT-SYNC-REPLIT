@@ -1,6 +1,7 @@
 import { eq, and, desc, asc, ne, inArray, gte, lte, lt, gt, isNotNull, isNull, ilike, or, sql, count, getTableColumns } from "drizzle-orm";
+export * from "./scheduleStorage";
 import { db, pool } from "./db";
-import { actorFromUser, canReadTask } from "./policy";
+import { actorFromUser, canReadTask, canHoldContract } from "./policy";
 import { isContractorSide } from "./auth";
 import { getAssetTypeCache } from "./assetTypeCache";
 import {
@@ -593,7 +594,9 @@ export async function getActiveContractorUserIdsForCommunity(communityId: string
       eq(users.role, "contractor"),
       eq(users.isActive, true),
     ));
-  return rows.map((row) => row.contractorUserId);
+  // The inner join above excludes company-only holders; nullable schema only
+  // changes the inferred type, not this legacy lookup's SQL or results.
+  return rows.map((row) => row.contractorUserId!);
 }
 
 export async function updateUserProfile(
@@ -3966,40 +3969,52 @@ export async function getContractById(id: string): Promise<(Contract & { communi
   return { ...rows[0].contract, communityName: rows[0].communityName || undefined, contractorName: rows[0].contractorName || undefined };
 }
 
-export async function createContract(data: {
+type ContractWrite = {
   communityId: string;
-  contractorUserId: string;
+  contractorUserId?: string;
+  contractorCompanyId?: string;
   contractType: string;
   startDate: string;
   endDate: string;
   servicesIncluded?: string[];
   pdfObjectKey?: string | null;
   isActive?: boolean;
-}): Promise<Contract> {
-  const contractor = await getUserById(data.contractorUserId);
-  if (!contractor?.companyId) throw new WorkValidationError("Contractor must have a company");
-  const [contract] = await db.insert(contracts).values({ ...data, contractorCompanyId: contractor.companyId }).returning();
-  return contract;
+};
+
+async function resolveContractHolder(
+  data: Pick<ContractWrite, "contractorUserId" | "contractorCompanyId">,
+  database: Pick<typeof db, "select">, existing?: Contract,
+) {
+  // A changed legacy user infers its company. A changed company alone retains
+  // the effective user and must agree with it; neither field silently wins.
+  const userId = data.contractorUserId ?? existing?.contractorUserId ?? null;
+  const [user] = userId ? await database.select().from(users).where(eq(users.id, userId)) : [];
+  if (userId && (!user || !canHoldContract(user))) throw new WorkValidationError("Selected user is not a contractor");
+  const companyId = data.contractorCompanyId ??
+    (data.contractorUserId !== undefined ? user?.companyId : existing?.contractorCompanyId) ?? user?.companyId;
+  if (!companyId) throw new WorkValidationError("Contractor must have a company");
+  await validateContractorCompany(companyId, database);
+  if (user && user.companyId !== companyId) throw new WorkValidationError("Contractor user and company must match");
+  return { contractorUserId: userId, contractorCompanyId: companyId };
 }
 
-export async function updateContract(id: string, data: Partial<{
-  contractorUserId: string;
-  contractType: string;
-  startDate: string;
-  endDate: string;
-  servicesIncluded: string[];
-  pdfObjectKey: string | null;
-  isActive: boolean;
-}>): Promise<Contract | null> {
-  const existing = await getContractById(id);
-  if (!existing) return null;
-  const contractor = await getUserById(data.contractorUserId ?? existing.contractorUserId);
-  if (!contractor?.companyId) throw new WorkValidationError("Contractor must have a company");
-  const [contract] = await db.update(contracts)
-    .set({ ...data, contractorCompanyId: contractor.companyId, updatedAt: new Date() })
-    .where(eq(contracts.id, id))
-    .returning();
-  return contract || null;
+export async function createContract(data: ContractWrite): Promise<Contract> {
+  return db.transaction(async tx => {
+    const holder = await resolveContractHolder(data, tx);
+    const [contract] = await tx.insert(contracts).values({ ...data, ...holder }).returning();
+    return contract;
+  });
+}
+
+export async function updateContract(id: string, data: Partial<Omit<ContractWrite, "communityId">>): Promise<Contract | null> {
+  return db.transaction(async tx => {
+    const [existing] = await tx.select().from(contracts).where(eq(contracts.id, id)).for("update");
+    if (!existing) return null;
+    const holder = await resolveContractHolder(data, tx, existing);
+    const [contract] = await tx.update(contracts).set({ ...data, ...holder, updatedAt: new Date() })
+      .where(eq(contracts.id, id)).returning();
+    return contract;
+  });
 }
 
 export async function deleteContract(id: string): Promise<void> {

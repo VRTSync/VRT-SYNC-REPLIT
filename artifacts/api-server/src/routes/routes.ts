@@ -11,6 +11,7 @@ import { registerPortfolioWorkOrderRoutes } from "./portfolioWorkOrders";
 import { registerInvoiceRoutes } from "./invoices";
 import { registerReportRoutes } from "./reports";
 import { registerContractRoutes } from "./contracts";
+import { registerScheduleRoutes } from "./schedule";
 import { registerObjectRoutes } from "./objects";
 import { registerDriveRoutes } from "./drive";
 import { registerContactRoutes } from "./contacts";
@@ -95,6 +96,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPortfolioWorkOrderRoutes(app);
 
   registerOrganizationRoutes(app);
+  registerScheduleRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

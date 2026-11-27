@@ -966,7 +966,7 @@ describe("billing permission compatibility", () => {
       assert.equal(api.hasFixedInvoiceCompany(person), role === "contractor_manager");
       assert.equal(api.canReadReports(person), ["admin", "property_manager", "hoa_admin", "hoa_member"].includes(role));
       assert.equal(api.canReadContracts(person), role === "admin" || role === "property_manager");
-      assert.equal(api.canHoldContract(person), role === "contractor");
+      assert.equal(api.canHoldContract(person), role === "contractor" || role === "contractor_manager");
     });
   }
 

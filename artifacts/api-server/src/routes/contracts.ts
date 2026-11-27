@@ -73,8 +73,8 @@ export function registerContractRoutes(app: Express): void {
         return void res.status(400).json({ error: "End date must be on or after start date" });
       }
 
-      const contractorUser = await storage.getUserById(parsed.data.contractorUserId);
-      if (!contractorUser || !policy.canHoldContract(contractorUser)) {
+      const contractorUser = parsed.data.contractorUserId ? await storage.getUserById(parsed.data.contractorUserId) : null;
+      if (parsed.data.contractorUserId && (!contractorUser || !policy.canHoldContract(contractorUser))) {
         return void res.status(400).json({ error: "Selected user is not a contractor" });
       }
 

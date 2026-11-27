@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, timestamp, date, doublePrecision, pgEnum, uniqueIndex, index, boolean, jsonb, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -1186,7 +1186,7 @@ export const contracts = pgTable("contracts", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   communityId: varchar("community_id").notNull().references(() => communities.id, { onDelete: 'cascade' }),
-  contractorUserId: varchar("contractor_user_id").notNull().references(() => users.id),
+  contractorUserId: varchar("contractor_user_id").references(() => users.id),
   contractType: text("contract_type").notNull(),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
@@ -1210,17 +1210,19 @@ export const contractsRelations = relations(contracts, ({ one }) => ({
 
 export const insertContractSchema = z.object({
   communityId: z.string().min(1, "Community is required"),
-  contractorUserId: z.string().min(1, "Contractor is required"),
+  contractorUserId: z.string().min(1, "Contractor is required").optional(),
+  contractorCompanyId: z.string().min(1).optional(),
   contractType: z.string().min(1, "Contract type is required"),
   startDate: z.string().min(1, "Start date is required"),
   endDate: z.string().min(1, "End date is required"),
   servicesIncluded: z.array(z.string()).default([]),
   pdfObjectKey: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
-});
+}).refine(data => !!data.contractorUserId || !!data.contractorCompanyId, "Contractor user or company is required");
 
 export const updateContractSchema = z.object({
   contractorUserId: z.string().min(1).optional(),
+  contractorCompanyId: z.string().min(1).optional(),
   contractType: z.string().min(1).optional(),
   startDate: z.string().min(1).optional(),
   endDate: z.string().min(1).optional(),
@@ -1228,6 +1230,137 @@ export const updateContractSchema = z.object({
   pdfObjectKey: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
+
+export const contractServiceKindEnum = pgEnum("contract_service_kind", ["counted", "repeating", "as_needed", "on_request"]);
+export const serviceCategoryEnum = pgEnum("service_category", ["landscape", "irrigation", "tree", "snow"]);
+
+export const contractServices = pgTable("contract_services", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: serviceCategoryEnum("category").notNull(),
+  kind: contractServiceKindEnum("kind").notNull(),
+  includedText: text("included_text"),
+  cadenceText: text("cadence_text"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, t => [
+  index("contract_services_contract_sort_idx").on(t.contractId, t.sortOrder),
+  check("contract_services_name_length", sql`length(${t.name}) BETWEEN 1 AND 120`),
+  check("contract_services_description_length", sql`length(${t.description}) <= 500`),
+  check("contract_services_included_length", sql`length(${t.includedText}) <= 60`),
+  check("contract_services_cadence_length", sql`length(${t.cadenceText}) <= 160`),
+]);
+
+export const contractServiceWindows = pgTable("contract_service_windows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceId: varchar("service_id").notNull().references(() => contractServices.id, { onDelete: "cascade" }),
+  seq: integer("seq").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, t => [
+  check("contract_service_windows_dates", sql`${t.startDate} <= ${t.endDate}`),
+  check("contract_service_windows_seq", sql`${t.seq} > 0`),
+  uniqueIndex("contract_service_windows_active_seq_idx").on(t.serviceId, t.seq).where(sql`${t.archivedAt} IS NULL`),
+  index("contract_service_windows_dates_idx").on(t.startDate, t.endDate),
+]);
+
+export const contractServiceCompletions = pgTable("contract_service_completions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  windowId: varchar("window_id").notNull().references(() => contractServiceWindows.id, { onDelete: "restrict" }),
+  completedOn: date("completed_on").notNull(),
+  completedBy: varchar("completed_by").notNull().references(() => users.id),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  undoneAt: timestamp("undone_at"),
+  undoneBy: varchar("undone_by").references(() => users.id),
+}, t => [
+  uniqueIndex("contract_service_completions_live_idx").on(t.windowId).where(sql`${t.undoneAt} IS NULL`),
+  index("contract_service_completions_window_idx").on(t.windowId),
+  check("contract_service_completions_note_length", sql`length(${t.note}) <= 1000`),
+]);
+
+export const contractCompletionPhotos = pgTable("contract_completion_photos", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  completionId: varchar("completion_id").notNull().references(() => contractServiceCompletions.id, { onDelete: "cascade" }),
+  objectPath: text("object_path").notNull(),
+  idempotencyKey: text("idempotency_key").notNull(),
+  uploadedBy: varchar("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, t => [
+  uniqueIndex("contract_completion_photos_key_idx").on(t.completionId, t.idempotencyKey),
+]);
+
+export const contractRates = pgTable("contract_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  amountCents: integer("amount_cents").notNull(),
+  unit: text("unit"),
+  note: text("note"),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, t => [
+  index("contract_rates_contract_sort_idx").on(t.contractId, t.sortOrder),
+  check("contract_rates_amount", sql`${t.amountCents} >= 0`),
+  check("contract_rates_label_length", sql`length(${t.label}) BETWEEN 1 AND 120`),
+  check("contract_rates_unit_length", sql`length(${t.unit}) <= 40`),
+  check("contract_rates_note_length", sql`length(${t.note}) <= 200`),
+]);
+
+export const scheduleDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value && value >= "0001-01-01";
+}, "Invalid calendar date");
+const scheduleWindowSchema = z.object({
+  id: z.string().min(1).optional(),
+  startDate: scheduleDateSchema,
+  endDate: scheduleDateSchema,
+});
+export const replaceContractScheduleSchema = z.object({
+  services: z.array(z.object({
+    id: z.string().min(1).optional(),
+    name: z.string().min(1).max(120),
+    description: z.string().max(500).nullable().optional(),
+    category: z.enum(serviceCategoryEnum.enumValues),
+    kind: z.enum(contractServiceKindEnum.enumValues),
+    includedText: z.string().max(60).nullable().optional(),
+    cadenceText: z.string().max(160).nullable().optional(),
+    sortOrder: z.number().int(),
+    windows: z.array(scheduleWindowSchema),
+  })),
+  rates: z.array(z.object({
+    label: z.string().min(1).max(120),
+    amountCents: z.number().int().min(0).max(2147483647),
+    unit: z.string().max(40).nullable().optional(),
+    note: z.string().max(200).nullable().optional(),
+    sortOrder: z.number().int(),
+  })),
+});
+export const completeContractServiceSchema = z.object({
+  completedOn: scheduleDateSchema,
+  note: z.string().max(1000).nullable().optional(),
+});
+export const contractCompletionPhotoSchema = z.object({
+  uploadURL: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+});
+export const insertContractServiceSchema = createInsertSchema(contractServices).omit({ id: true, createdAt: true, updatedAt: true, archivedAt: true });
+export const insertContractServiceWindowSchema = createInsertSchema(contractServiceWindows).omit({ id: true, createdAt: true, updatedAt: true, archivedAt: true });
+export const insertContractServiceCompletionSchema = completeContractServiceSchema;
+export const insertContractCompletionPhotoSchema = contractCompletionPhotoSchema;
+export const insertContractRateSchema = createInsertSchema(contractRates).omit({ id: true });
+export type ContractService = typeof contractServices.$inferSelect;
+export type ContractServiceWindow = typeof contractServiceWindows.$inferSelect;
+export type ContractServiceCompletion = typeof contractServiceCompletions.$inferSelect;
+export type ContractCompletionPhoto = typeof contractCompletionPhotos.$inferSelect;
+export type ContractRate = typeof contractRates.$inferSelect;
+export type ReplaceContractSchedule = z.infer<typeof replaceContractScheduleSchema>;
 
 export const pushTickets = pgTable("push_tickets", {
   id: varchar("id")
