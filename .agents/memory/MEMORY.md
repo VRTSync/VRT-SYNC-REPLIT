@@ -20,3 +20,4 @@
 - [Transactional test fixtures](transactional-test-fixtures.md) — raw BEGIN plus drizzle(client) does not protect fixtures from nested storage transactions; use savepoints.
 - [Permission refactor compatibility](permission-refactor-compatibility.md) — preserve legacy endpoint differences during policy extraction; broader security changes require a separate slice.
 - [Community card counts](community-card-counts.md) — user explicitly chose to preserve displayed member-count zeros; real member counts require separate approval.
+- [Incremental React rollout](react-rollout-scope.md) — keep the old portal until explicit cutover; staff task-link support is approved within the existing community Tasks view.
