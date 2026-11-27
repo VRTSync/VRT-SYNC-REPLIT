@@ -64,14 +64,14 @@ describe("community card summaries preserve displayed counts with bounded reads"
       await api.storage.addCommunityMember(ids[i], admin.id);
       if (i === 0) await api.storage.addCommunityMember(ids[i], member.id);
       for (let n = 0; n <= i; n++) {
-        await api.storage.createAsset({ communityId: ids[i], assetType: "fixture", label: "Active" });
+        await api.storage.createAsset({ communityId: ids[i], assetType: "tree", label: "Active" });
         await client.query("INSERT INTO tasks(community_id,title,created_by,status) VALUES($1,'Fixture',$2,$3)",
           [ids[i], admin.id, n === 0 ? "completed" : "pending"]);
         await api.storage.createMapLayer({
           communityId: ids[i], layerKey: "fixture", subLayerKey: `layer-${n}`, displayName: "Fixture",
         });
       }
-      await client.query("INSERT INTO assets(community_id,asset_type,label,is_archived) VALUES($1,'fixture','Archived',true)", [ids[i]]);
+      await client.query("INSERT INTO assets(community_id,asset_type,label,is_archived) VALUES($1,'tree','Archived',true)", [ids[i]]);
     }
     const app = express();
     app.use((req, _res, next) => {

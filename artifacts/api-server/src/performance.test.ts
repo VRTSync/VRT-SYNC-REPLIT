@@ -326,7 +326,7 @@ describe("P2 result equivalence and bounded database queries", () => {
     assert.deepEqual(next.enums, previous.enums);
     const journal = JSON.parse(readFileSync(new URL("../../../lib/db/migrations/meta/_journal.json", import.meta.url), "utf8"));
     assert.equal(journal.entries.filter((entry: any) => entry.idx === 25).length, 1);
-    assert.equal(journal.entries.at(-1).tag, "0025_performance_indexes");
+    assert.equal(journal.entries.find((entry: any) => entry.idx === 25)?.tag, "0025_performance_indexes");
   });
 
   it("updates cached counts on direct creates/edits and keeps caches out of existing responses", async () => {

@@ -21,3 +21,4 @@
 - [Permission refactor compatibility](permission-refactor-compatibility.md) — preserve legacy endpoint differences during policy extraction; broader security changes require a separate slice.
 - [Community card counts](community-card-counts.md) — user explicitly chose to preserve displayed member-count zeros; real member counts require separate approval.
 - [Incremental React rollout](react-rollout-scope.md) — keep the old portal until explicit cutover; staff task-link support is approved within the existing community Tasks view.
+- [Session schema ownership](session-schema-ownership.md) — custom single-column PK names are lost on Drizzle introspection; keep sessions migration-owned and excluded from push.
