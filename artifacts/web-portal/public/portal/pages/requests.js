@@ -266,6 +266,11 @@ PortalRouter.register('requests', async function (container) {
     if (window._pendingOpenNewRequest) {
       window._pendingOpenNewRequest = false;
       overlay.style.display = 'flex';
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('action') === 'create_request') {
+        url.searchParams.delete('action');
+        history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+      }
     }
   }
 

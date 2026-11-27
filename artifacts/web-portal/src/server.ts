@@ -77,6 +77,7 @@ function resolveDir(relative: string): string {
 
 const PUBLIC_ROOT = resolveDir("public");
 const TEMPLATES_ROOT = resolveDir("templates");
+const APP_ROOT = resolveDir("app");
 
 const STATIC_VERSION = getStaticVersion();
 
@@ -135,6 +136,9 @@ app.use("/admin-static",     versionedStatic(path.join(PUBLIC_ROOT, "admin")));
 app.use("/portal-static",    versionedStatic(path.join(PUBLIC_ROOT, "portal")));
 app.use("/common-static",    versionedStatic(path.join(PUBLIC_ROOT, "common")));
 app.use("/portfolio-static", versionedStatic(path.join(PUBLIC_ROOT, "portfolio")));
+app.use("/app/assets", express.static(path.join(APP_ROOT, "assets"), {
+  maxAge: "1y", immutable: true, fallthrough: false,
+}));
 
 // ── Load HTML shells ─────────────────────────────────────────────────────────
 const adminShell = stampHtml(
@@ -323,7 +327,31 @@ const roleDashboard: Record<string, string> = {
   hoa_admin: "/web/hoa/dashboard",
   hoa_member: "/web/hoa/dashboard",
   client_admin: "/web/portfolio/dashboard",
+  map_creator: "/web/login",
 };
+
+async function requireAppUser(req: Request, res: Response, next: NextFunction) {
+  res.setHeader("Cache-Control", "no-store");
+  try {
+    const role = await getUserRole(req);
+    if (!role) return res.redirect("/web/login");
+    if (role === "client_admin") return res.redirect("/web/portfolio/dashboard");
+    if (role === "map_creator") {
+      return res.type("html").send(stampHtml(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VRTSync — Mobile app</title><link rel="stylesheet" href="/common-static/mobile-notice.css">
+<script src="/common-static/mobile-notice.js" defer></script></head>
+<body><main><img src="/portal-static/brand/mark.svg" width="48" height="58" alt="VRTSync">
+<h1>Map Creator accounts use the VRTSync mobile app.</h1>
+<button type="button" id="mobile-logout">Log out</button><p id="logout-error" role="alert"></p>
+</main></body></html>`));
+    }
+    if (!["admin", "property_manager", "hoa_admin", "hoa_member", "contractor_manager", "contractor"].includes(role)) {
+      return res.redirect("/web/login");
+    }
+    return next();
+  } catch (err) { return next(err); }
+}
 
 function requireRole(allowed: string[]) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -347,6 +375,11 @@ function requireRole(allowed: string[]) {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // Login
+app.get(/^\/app(?:\/(?!assets(?:\/|$)).*)?$/, requireAppUser, (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(APP_ROOT, "index.html"));
+});
+
 app.get("/web/login", (_req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "text/html; charset=utf-8");

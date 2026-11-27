@@ -1,0 +1,197 @@
+/* /app shell additions. Everything is scoped under .vrt-app; admin.css and portal-ext.css are imported unchanged. */
+
+.vrt-app {
+  --vrt-ring: 0 0 0 3px rgba(37, 193, 172, 0.35);
+  min-height: 100dvh;
+}
+
+.vrt-app :focus { outline: none; }
+.vrt-app :focus-visible { outline: 2px solid transparent; box-shadow: var(--vrt-ring); border-radius: 8px; }
+.vrt-app .nav-link:focus-visible { box-shadow: inset 0 0 0 2px rgba(37, 193, 172, 0.7), var(--vrt-ring); }
+
+/* Sidebar */
+.vrt-app #sidebar {
+  display: flex;
+  background: linear-gradient(rgba(12, 29, 49, 0.9), rgba(6, 16, 28, 0.95)), url(/portal-static/brand/topo-teal.png) 0 0 / 560px auto repeat;
+  background-color: var(--navy);
+}
+.vrt-app .sidebar-brand { padding: 22px 20px 22px 24px; }
+.vrt-app .vrt-brand-tile {
+  width: 36px; height: 36px; flex: 0 0 36px;
+  background: #ffffff; border-radius: 10px;
+  display: grid; place-items: center;
+  box-shadow: 0 2px 8px rgba(6, 16, 28, 0.35);
+}
+.vrt-app .vrt-brand-tile img { width: 24px; height: 29px; display: block; }
+.vrt-app .vrt-brand-copy { min-width: 0; flex: 1; }
+.vrt-app .vrt-nav-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 24px; }
+.vrt-app .vrt-nav-group + .vrt-nav-group { margin-top: 10px; }
+.vrt-app .vrt-nav-heading {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 10px 24px 6px;
+}
+.vrt-app .vrt-drawer-close {
+  width: 40px; height: 40px; border-radius: 10px; border: 0; cursor: pointer;
+  background: rgba(255, 255, 255, 0.06); color: rgba(255, 255, 255, 0.8);
+  display: grid; place-items: center; flex: 0 0 40px;
+}
+.vrt-app .vrt-drawer-close:hover { background: rgba(255, 255, 255, 0.12); color: #ffffff; }
+
+/* Page area */
+.vrt-app #main-content { height: 100dvh; min-height: 0; min-width: 0; }
+.vrt-app #page-content {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: linear-gradient(rgba(240, 244, 248, 0.9), rgba(240, 244, 248, 0.9)), url(/portal-static/brand/topo-navy.png) 0 0 / 720px auto repeat;
+  background-color: var(--bg);
+  background-attachment: local;
+}
+
+/* Top bar */
+.vrt-app #topbar { gap: 12px; min-width: 0; }
+.vrt-app .vrt-topbar-left { min-width: 0; flex: 1; gap: 12px; }
+.vrt-app .topbar-right { flex-shrink: 0; }
+.vrt-app .vrt-menu { position: relative; display: inline-flex; min-width: 0; }
+.vrt-app .vrt-menu-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 200;
+  display: flex; flex-direction: column; max-width: calc(100vw - 24px);
+}
+.vrt-app .vrt-menu-panel--left { right: auto; left: 0; }
+.vrt-app .vrt-menu-panel.tb-notif-panel { max-width: calc(100vw - 24px); }
+.vrt-app .tb-menu-item { width: 100%; text-align: left; text-decoration: none; background: none; border: 0; font: inherit; cursor: pointer; min-height: 36px; }
+.vrt-app .tb-menu-item:focus-visible { box-shadow: inset 0 0 0 2px rgba(37, 193, 172, 0.6); border-radius: 0; background: var(--gray-50); }
+.vrt-app .tb-menu-item:disabled { opacity: 0.6; cursor: progress; }
+
+.vrt-app .vrt-switcher { min-width: 0; flex-shrink: 1; }
+.vrt-app .vrt-switcher-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 10px 0 12px; min-width: 0; max-width: 100%;
+  background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius);
+  color: var(--navy); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.vrt-app .vrt-switcher-btn:hover { border-color: var(--teal); background: var(--gray-50); }
+.vrt-app .vrt-switcher-btn[aria-expanded="true"] { border-color: var(--teal); box-shadow: var(--vrt-ring); }
+.vrt-app .vrt-switcher-btn > svg:first-child { color: var(--teal-dark); flex-shrink: 0; }
+.vrt-app .vrt-switcher-name { max-width: 220px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrt-app .vrt-count-pill {
+  font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 999px;
+  background: var(--teal-light); color: var(--teal-dark); flex-shrink: 0;
+}
+.vrt-app .vrt-caret { color: var(--gray-400); flex-shrink: 0; }
+.vrt-app .vrt-fixed-community { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.vrt-app .vrt-fixed-community span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.vrt-app .vrt-community-item .tb-menu-item-label { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.vrt-app .vrt-community-item svg { color: var(--teal-dark); flex-shrink: 0; }
+.vrt-app .vrt-menu-list { max-height: 340px; overflow-y: auto; padding-bottom: 4px; }
+.vrt-app .vrt-menu-search {
+  display: flex; align-items: center; gap: 8px; margin: 4px 12px 6px; padding: 0 10px; height: 36px;
+  border: 1px solid var(--gray-200); border-radius: 8px; color: var(--gray-400); background: var(--gray-50);
+}
+.vrt-app .vrt-menu-search:focus-within { border-color: var(--teal); box-shadow: var(--vrt-ring); }
+.vrt-app .vrt-menu-search input { border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; flex: 1; min-width: 0; color: var(--gray-800); box-shadow: none; }
+.vrt-app .vrt-menu-empty, .vrt-app .vrt-menu-msg { padding: 12px 16px 14px; font-size: 13px; color: var(--gray-500); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+/* Search */
+.vrt-app .vrt-search { position: relative; flex: 1; max-width: 360px; min-width: 160px; }
+.vrt-app .vrt-search-icon { position: absolute; left: 11px; top: 10px; color: var(--gray-400); pointer-events: none; }
+.vrt-app .vrt-search input {
+  width: 100%; height: 36px; padding: 0 12px 0 34px;
+  border: 1px solid var(--gray-200); border-radius: var(--radius);
+  background: var(--gray-50); font: inherit; font-size: 13px; color: var(--gray-800);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.vrt-app .vrt-search input:focus { border-color: var(--teal); background: var(--white); box-shadow: var(--vrt-ring); border-radius: var(--radius); }
+.vrt-app .vrt-search-panel {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 200;
+  background: var(--white); border: 1px solid var(--gray-200); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); overflow: hidden; padding: 4px 0;
+}
+.vrt-app .vrt-search-list { list-style: none; margin: 0; padding: 0; }
+.vrt-app .vrt-search-opt { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; font-size: 13px; color: var(--gray-700); }
+.vrt-app .vrt-search-opt.is-hi { background: rgba(37, 193, 172, 0.08); color: var(--navy); }
+.vrt-app .vrt-search-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrt-app .vrt-type-tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; flex-shrink: 0; }
+.vrt-app .vrt-type-tag--task { background: var(--teal-light); color: var(--teal-dark); }
+.vrt-app .vrt-type-tag--asset { background: rgba(12, 29, 49, 0.07); color: var(--navy-lighter); }
+.vrt-app .vrt-search-msg { padding: 10px 14px; font-size: 13px; color: var(--gray-500); display: flex; flex-direction: column; gap: 8px; }
+
+/* Notifications */
+.vrt-app .vrt-plain-list { list-style: none; margin: 0; padding: 0; }
+.vrt-app .vrt-notif-btn { width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--gray-100); font: inherit; cursor: pointer; background-color: transparent; }
+.vrt-app .vrt-notif-btn.tb-notif-unread { background: rgba(37, 193, 172, 0.04); }
+.vrt-app .vrt-notif-btn:disabled { cursor: progress; }
+.vrt-app .vrt-notif-btn .tb-notif-item-body > span { display: block; }
+.vrt-app .vrt-notif-btn:focus-visible { box-shadow: inset 0 0 0 2px rgba(37, 193, 172, 0.6); border-radius: 0; }
+.vrt-app .vrt-inline-error { margin: 6px 12px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; background: var(--red-light); color: #b42318; }
+
+/* Profile */
+.vrt-app .user-profile-chip { border: 0; font: inherit; text-align: left; background-color: transparent; cursor: pointer; min-height: 36px; }
+.vrt-app .vrt-chip-text { display: flex; flex-direction: column; min-width: 0; }
+.vrt-app .vrt-chip-text .user-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrt-app .vrt-profile-head { padding: 14px 16px 10px; }
+.vrt-app .vrt-profile-name { font-weight: 700; color: var(--navy); font-size: 14px; overflow-wrap: anywhere; }
+.vrt-app .vrt-profile-role { font-size: 12px; color: var(--teal-dark); font-weight: 600; margin-top: 2px; }
+.vrt-app .vrt-profile-company { font-size: 12px; color: var(--gray-500); margin-top: 2px; overflow-wrap: anywhere; }
+
+/* Pages and states */
+.vrt-app .vrt-page { max-width: 1100px; }
+.vrt-app .vrt-state-card {
+  background: rgba(255, 255, 255, 0.92); border: 1px solid var(--gray-200); border-radius: 14px;
+  padding: 28px; max-width: 560px; margin: 24px auto; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  box-shadow: 0 1px 2px rgba(12, 29, 49, 0.04), 0 8px 24px rgba(12, 29, 49, 0.05);
+}
+.vrt-app .vrt-state-card--left { margin: 8px 0 0; text-align: left; align-items: flex-start; }
+.vrt-app .vrt-state-title { font-size: 17px; font-weight: 700; color: var(--navy); margin: 0; line-height: 1.4; }
+.vrt-app .vrt-state-copy { margin: 0; color: var(--gray-600); font-size: 14.5px; line-height: 1.55; }
+.vrt-app a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.vrt-app .vrt-skel { display: block; height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--gray-100), var(--gray-200), var(--gray-100)); background-size: 200% 100%; animation: vrt-shimmer 1.2s linear infinite; }
+@keyframes vrt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* 900px and up: fixed sidebar (undo admin.css max-width:900px rule at exactly 900) */
+@media (min-width: 900px) {
+  .vrt-app #sidebar { display: flex; transform: none; visibility: visible; }
+  .vrt-app #main-content { margin-left: var(--sidebar-width); }
+}
+
+/* Below 900px: drawer */
+@media (max-width: 899.98px) {
+  .vrt-app #main-content { margin-left: 0; }
+  .vrt-app #sidebar {
+    display: flex; z-index: 300; width: min(280px, 86vw);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+    box-shadow: none;
+  }
+  .vrt-app #sidebar.is-open {
+    transform: translateX(0); visibility: visible;
+    transition: transform 0.22s ease, visibility 0s;
+    box-shadow: 12px 0 40px rgba(6, 16, 28, 0.35);
+  }
+  .vrt-app #sidebar .nav-link { min-height: 40px; }
+  .vrt-app .vrt-overlay {
+    position: fixed; inset: 0; z-index: 250; background: rgba(6, 16, 28, 0.4);
+    opacity: 0; pointer-events: none; transition: opacity 0.22s ease;
+  }
+  .vrt-app .vrt-overlay.is-visible { opacity: 1; pointer-events: auto; }
+  .vrt-app .vrt-search { display: none; }
+  .vrt-app #topbar { padding-left: 12px; padding-right: 12px; }
+  .vrt-app .vrt-switcher-name { max-width: min(220px, 34vw); }
+}
+
+@media (max-width: 599.98px) {
+  .vrt-app .vrt-chip-text, .vrt-app .vrt-chip-caret { display: none; }
+  .vrt-app .topbar-divider { display: none; }
+  .vrt-app .topbar-right { gap: 8px; }
+  .vrt-app .vrt-switcher-name { max-width: 30vw; }
+  .vrt-app .vrt-count-pill { display: none; }
+  .vrt-app .vrt-menu-panel { position: fixed; top: 64px; left: 12px; right: 12px; width: auto !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vrt-app #notif-btn.has-unread { animation: none; }
+  .vrt-app #sidebar, .vrt-app #sidebar.is-open, .vrt-app .vrt-overlay { transition: none; }
+  .vrt-app .tb-dropdown { animation: none; }
+  .vrt-app .vrt-skel { animation: none; }
+}

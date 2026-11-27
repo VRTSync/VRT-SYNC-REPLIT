@@ -73,7 +73,7 @@ AdminRouter.register('community-detail', async function(container, params) {
   });
 
   const tabContent = document.getElementById('community-tab-content');
-  renderTab(activeTab, tabContent);
+  await renderTab(activeTab, tabContent);
 
   async function renderTab(tab, el) {
     switch (tab) {
@@ -89,7 +89,7 @@ AdminRouter.register('community-detail', async function(container, params) {
         else el.innerHTML = '<div class="empty-state">Assets module not loaded</div>';
         break;
       case 'tasks':
-        if (window._renderTasks) await window._renderTasks(el, communityId);
+        if (window._renderTasks) await window._renderTasks(el, communityId, params.task);
         else el.innerHTML = '<div class="empty-state">Tasks module not loaded</div>';
         break;
       case 'members':

@@ -1,4 +1,4 @@
-window._renderTasks = async function(container, communityId) {
+window._renderTasks = async function(container, communityId, selectedTaskId) {
   const { apiFetch, showToast } = AdminAPI;
   const esc = VRTUtils.esc;
 
@@ -52,6 +52,25 @@ window._renderTasks = async function(container, communityId) {
   document.getElementById('import-csv-btn').addEventListener('click', () => showImportCsvModal());
   document.getElementById('task-status-filter').addEventListener('change', renderTasks);
   await loadTasks();
+  if (selectedTaskId && container.isConnected) {
+    try {
+      // Re-resolve the task through the existing authorized endpoint. Never use a
+      // task from another community or infer permissions from a posted URL.
+      const task = await apiFetch('/api/tasks/' + encodeURIComponent(selectedTaskId));
+      if (task.communityId !== communityId || !allTasks.some(t => t.id === task.id)) {
+        throw new Error('This task is not available in this community.');
+      }
+      if (!container.isConnected) return;
+      showTaskModal(task);
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('task') === selectedTaskId) {
+        url.searchParams.delete('task');
+        history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+      }
+    } catch (err) {
+      showToast(err.message || 'Unable to open this task. It may no longer be accessible.', 'error');
+    }
+  }
 
   async function loadTasks() {
     try {

@@ -26,6 +26,8 @@
 
       const name = currentUser.displayName || currentUser.username || '';
       document.getElementById('user-display').textContent = name;
+      const roleTag = document.querySelector('.user-role-tag');
+      if (roleTag) roleTag.textContent = window.VRT_ROLE_LABELS[currentUser.role] || currentUser.role;
 
       const avatar = document.getElementById('user-avatar');
       if (avatar) {
@@ -49,6 +51,38 @@
 
       AdminRouter.init();
       const parsed = AdminRouter.parseRoute();
+      const bootUrl = new URL(window.location.href);
+      if (parsed.route === 'community-detail' && parsed.params.tab === 'tasks') {
+        parsed.params.task = bootUrl.searchParams.get('task');
+      }
+      const action = bootUrl.searchParams.get('action');
+      const formButton = parsed.route === 'users' && action === 'create_user' ? 'create-user-btn'
+        : parsed.route === 'communities' && action === 'new_community' ? 'add-community-btn' : null;
+      if (formButton) {
+        // These pages render asynchronously. Observe only until this initial form is ready.
+        const container = document.getElementById('page-content');
+        const observer = new MutationObserver(openBootForm);
+        const timeout = setTimeout(() => {
+          observer.disconnect();
+          showToast('Unable to open the requested form. Please try again.', 'error');
+        }, 15000);
+        function openBootForm() {
+          const button = document.getElementById(formButton);
+          if (!button) return;
+          observer.disconnect();
+          clearTimeout(timeout);
+          setTimeout(() => {
+            if (!button.isConnected || AdminRouter.getCurrentRoute() !== parsed.route) return;
+            button.click();
+            const url = new URL(window.location.href);
+            if (url.searchParams.get('action') === action) {
+              url.searchParams.delete('action');
+              history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+            }
+          }, 0);
+        }
+        observer.observe(container, { childList: true, subtree: true });
+      }
       AdminRouter.navigate(parsed.route, false, parsed.params);
     } catch (err) {
       console.error('Bootstrap failed:', err);

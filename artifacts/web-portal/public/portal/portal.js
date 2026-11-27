@@ -44,6 +44,7 @@
       { route: 'requests',   label: 'Requests',        icon: iconInbox() },
       { route: 'map',        label: 'Map',             icon: iconMap() },
       { route: 'invoices',   label: 'Invoices',        icon: iconDollar() },
+      { route: 'documents',  label: 'Documents',       icon: iconFile() },
       { route: 'reports',    label: 'Reports',         icon: iconBarChart() },
       { route: 'contacts',   label: 'Contacts',        icon: iconUsers() },
     ],
@@ -114,7 +115,8 @@
       if (currentUser.hoaCommunityId) {
         activeCommunity = communities.find(c => c.id === currentUser.hoaCommunityId) || communities[0] || null;
       } else {
-        const savedId = localStorage.getItem(_lsKey);
+        let savedId = null;
+        try { savedId = localStorage.getItem(_lsKey); } catch {}
         const savedMatch = savedId && communities.find(c => c.id === savedId);
         if (savedMatch) {
           activeCommunity = savedMatch;
@@ -141,6 +143,19 @@
         PortalRouter.navigate('communities', false);
       } else {
         const parsed = PortalRouter.parseRoute();
+        // Install the existing one-shot flags before the destination starts rendering.
+        const bootUrl = new URL(window.location.href);
+        if (parsed.route === 'tasks') {
+          if (bootUrl.searchParams.get('action') === 'create_task' && role === 'property_manager') {
+            window._pendingOpenCreateTask = true;
+          }
+          if (bootUrl.searchParams.get('task')) {
+            window._pendingOpenTaskDetail = bootUrl.searchParams.get('task');
+          }
+        }
+        if (parsed.route === 'requests' && role === 'hoa_admin' && bootUrl.searchParams.get('action') === 'create_request') {
+          window._pendingOpenNewRequest = true;
+        }
         /* Avoid sending single-community users to the selector */
         const startRoute = parsed.route === 'communities' && communities.length <= 1
           ? 'dashboard'
@@ -205,10 +220,9 @@
     }
 
     /* Role tag (hoa shell has a dynamic id for this) */
-    const roleTagEl = document.getElementById('user-role-tag');
+    const roleTagEl = document.getElementById('user-role-tag') || document.querySelector('.user-role-tag');
     if (roleTagEl) {
-      const roleMap = { hoa_admin: 'HOA Admin', hoa_member: 'HOA Member', contractor: 'Contractor', property_manager: 'Prop. Mgr' };
-      roleTagEl.textContent = roleMap[currentUser.role] || currentUser.role;
+      roleTagEl.textContent = window.VRT_ROLE_LABELS[currentUser.role] || currentUser.role;
     }
 
     /* Community area */
@@ -233,7 +247,7 @@
     activeCommunity = communities.find(c => c.id === communityId) || activeCommunity;
     /* Persist selection */
     if (currentUser && activeCommunity) {
-      localStorage.setItem('vrtsync_community_' + currentUser.id, activeCommunity.id);
+      try { localStorage.setItem('vrtsync_community_' + currentUser.id, activeCommunity.id); } catch {}
     }
     /* Re-render topbar community area */
     renderTopbar();

@@ -5,13 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
+    "build": "node --import tsx/esm ./build.mjs",
+    "build:app": "vite build --config app/vite.config.ts",
     "start": "node --enable-source-maps ./dist/server.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p app/tsconfig.json --noEmit",
     "test": "playwright test",
     "test:server": "node --test tests/*.test.mjs"
   },
   "dependencies": {
+    "@workspace/roles": "workspace:*",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "wouter": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "@workspace/leaflet-template": "workspace:*",
     "compression": "^1.8.2",
     "connect-pg-simple": "^10.0.0",
@@ -23,6 +29,12 @@
     "pino-http": "^10"
   },
   "devDependencies": {
+    "vite": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "~5.9.2",
+    "tsx": "catalog:",
     "@playwright/test": "^1.62.1",
     "@types/compression": "^1.8.1",
     "@types/connect-pg-simple": "^7.0.3",

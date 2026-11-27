@@ -3,7 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm, cp } from "node:fs/promises";
+import { rm, cp, mkdir, writeFile } from "node:fs/promises";
+import { ROLE_LABELS } from "@workspace/roles";
+import { build as viteBuild } from "vite";
 import { computeStaticVersion } from "./static-version.mjs";
 
 globalThis.require = createRequire(import.meta.url);
@@ -13,6 +15,9 @@ const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  const labels = `window.VRT_ROLE_LABELS = ${JSON.stringify(ROLE_LABELS)};`;
+  await mkdir(path.resolve(artifactDir, "public/common"), { recursive: true });
+  await writeFile(path.resolve(artifactDir, "public/common/role-labels.js"), labels);
 
   // Hash exactly the snapshot shipped with the bundle, not runtime/startup time.
   await cp(path.resolve(artifactDir, "templates"), path.resolve(distDir, "templates"), { recursive: true });
@@ -54,7 +59,7 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
 `,
     },
   });
-
+  await viteBuild({ configFile: path.resolve(artifactDir, "app/vite.config.ts") });
 }
 
 buildAll().catch((err) => {

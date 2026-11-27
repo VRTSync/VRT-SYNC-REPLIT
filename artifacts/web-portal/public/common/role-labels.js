@@ -1,0 +1,1 @@
+window.VRT_ROLE_LABELS = {"admin":"VRTSync Staff","property_manager":"Property Manager","hoa_admin":"HOA Admin","hoa_member":"Board Member","contractor_manager":"Account Manager","contractor":"Crew Supervisor","client_admin":"Client","map_creator":"Map Creator"};

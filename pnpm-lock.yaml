@@ -63,6 +63,9 @@ catalogs:
     vite:
       specifier: ^7.3.2
       version: 7.3.2
+    wouter:
+      specifier: ^3.3.5
+      version: 3.13.0
     zod:
       specifier: ^3.25.76
       version: 3.25.76
@@ -687,9 +690,15 @@ importers:
 
   artifacts/web-portal:
     dependencies:
+      '@tanstack/react-query':
+        specifier: 'catalog:'
+        version: 5.90.21(react@19.1.0)
       '@workspace/leaflet-template':
         specifier: workspace:*
         version: link:../../lib/leaflet-template
+      '@workspace/roles':
+        specifier: workspace:*
+        version: link:../../lib/roles
       compression:
         specifier: ^1.8.2
         version: 1.8.2
@@ -714,6 +723,15 @@ importers:
       pino-http:
         specifier: ^10
         version: 10.5.0
+      react:
+        specifier: 'catalog:'
+        version: 19.1.0
+      react-dom:
+        specifier: 'catalog:'
+        version: 19.1.0(react@19.1.0)
+      wouter:
+        specifier: 'catalog:'
+        version: 3.13.0(react@19.1.0)
     devDependencies:
       '@playwright/test':
         specifier: ^1.62.1
@@ -736,6 +754,15 @@ importers:
       '@types/pg':
         specifier: ^8.16.0
         version: 8.18.0
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 'catalog:'
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitejs/plugin-react':
+        specifier: 'catalog:'
+        version: 5.1.4(vite@7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.2))
       esbuild:
         specifier: 0.27.3
         version: 0.27.3
@@ -748,6 +775,15 @@ importers:
       thread-stream:
         specifier: 3.1.0
         version: 3.1.0
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+      vite:
+        specifier: 'catalog:'
+        version: 7.3.2(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.31.1)(terser@5.46.2)(tsx@4.21.0)(yaml@2.8.2)
 
   lib/api-client-react:
     dependencies:
@@ -813,6 +849,18 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 25.3.5
+      typescript:
+        specifier: ~5.9.2
+        version: 5.9.3
+
+  lib/roles:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+      tsx:
+        specifier: 'catalog:'
+        version: 4.21.0
       typescript:
         specifier: ~5.9.2
         version: 5.9.3
@@ -6370,6 +6418,10 @@ packages:
   regenerator-runtime@0.13.11:
     resolution: {integrity: sha512-kY1AZVr2Ra+t+piVaJ4gxaFaReZVH40AKNo7UCX6W+dEwBo/2oZJzqfuN1qLq1oL45o56cPaTXELwrTh8Fpggg==}
 
+  regexparam@3.0.0:
+    resolution: {integrity: sha512-RSYAtP31mvYLkAHrOlh25pCNQ5hWnT106VukGaaFfuJrZFkGRX5GhUAdPqpSDXxOhA2c4akmRuplv1mRqnBn6Q==}
+    engines: {node: '>=8'}
+
   regexpu-core@6.4.0:
     resolution: {integrity: sha512-0ghuzq67LI9bLXpOX/ISfve/Mq33a4aFRzoQYhnnok1JOFpmE/A2TBGkNVenOGEeSBCjIiWcc6MVOG5HEQv0sA==}
     engines: {node: '>=4'}
@@ -7251,6 +7303,11 @@ packages:
   word@0.3.0:
     resolution: {integrity: sha512-OELeY0Q61OXpdUfTp+oweA/vtLVg5VDOXh+3he3PNzLGG/y0oylSOC1xRVj0+l4vQ3tj/bB1HVHv1ocXkQceFA==}
     engines: {node: '>=0.8'}
+
+  wouter@3.13.0:
+    resolution: {integrity: sha512-p1RoCuVyxwb3X5jLjDdkwDzlXj+/UGZqZb+806uaJOVEHvNfGkjET0KiQ/CGiDKC90rLsALMgMj4onNVKxgNdQ==}
+    peerDependencies:
+      react: '>=16.8.0'
 
   wrap-ansi@7.0.0:
     resolution: {integrity: sha512-YVGIj2kamLSTxw6NsZjoBxfSwsn0ycdesmc4p+Q21c5zPuZ1pl+NfxVdxPtdHvmNVOQ6XSYG4AUtyt/Fi7D16Q==}
@@ -14464,6 +14521,8 @@ snapshots:
 
   regenerator-runtime@0.13.11: {}
 
+  regexparam@3.0.0: {}
+
   regexpu-core@6.4.0:
     dependencies:
       regenerate: 1.4.2
@@ -15333,6 +15392,12 @@ snapshots:
   wonka@6.3.6: {}
 
   word@0.3.0: {}
+
+  wouter@3.13.0(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+      regexparam: 3.0.0
+      use-sync-external-store: 1.6.0(react@19.1.0)
 
   wrap-ansi@7.0.0:
     dependencies:

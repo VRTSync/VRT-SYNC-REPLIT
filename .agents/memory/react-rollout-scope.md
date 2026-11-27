@@ -14,3 +14,9 @@ Staff task search results and notifications may receive narrowly scoped support 
 **Why:** On 2026-11-26 the user explicitly approved this exception after inspection found the proposed standalone staff Tasks destination was not registered.
 
 **How to apply:** Implement community-task deep linking without introducing a standalone staff Tasks page, restoring the excluded Create Task menu item, or changing API permissions. This records approved scope, not a claim that the shell or link support has shipped.
+
+For staff document notifications, show an explicit “Documents are not available in the staff portal” message instead of linking to a missing page or silently returning Home.
+
+**Why:** On 2026-11-27 the user approved this behavior after inspection confirmed there is no staff Documents route.
+
+**How to apply:** Keep the unavailable message in the React shell notification panel; this does not authorize creating a staff Documents page.

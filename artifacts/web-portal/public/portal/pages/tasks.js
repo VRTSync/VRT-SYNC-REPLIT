@@ -110,15 +110,26 @@ PortalRouter.register('tasks', async function (container) {
 
   if (window._pendingOpenCreateTask) {
     window._pendingOpenCreateTask = false;
-    if (isPMorAdmin) showCreateTaskModal();
+    if (isPMorAdmin) {
+      showCreateTaskModal();
+      consumeBootParam('action', 'create_task');
+    }
   }
 
   if (window._pendingOpenTaskDetail) {
     var pendingTaskId = window._pendingOpenTaskDetail;
     window._pendingOpenTaskDetail = null;
     if (typeof window.openTaskDetail === 'function') {
-      window.openTaskDetail(pendingTaskId);
+      await window.openTaskDetail(pendingTaskId);
+      consumeBootParam('task', pendingTaskId);
     }
+  }
+
+  function consumeBootParam(name, value) {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get(name) !== value) return;
+    url.searchParams.delete(name);
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
   }
 
   function renderPage(tabs, current) {

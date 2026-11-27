@@ -28,15 +28,6 @@
     });
   }
 
-  var roleMap = {
-    admin:            'Admin',
-    client_admin:     'Client Admin',
-    hoa_admin:        'HOA Admin',
-    hoa_member:       'HOA Member',
-    contractor:       'Contractor',
-    property_manager: 'Property Manager',
-  };
-
   PortfolioRouter.register('account', function (container) {
     // Get current user from the bootstrap fetch result stored in a closure
     fetch('/api/auth/me', { credentials: 'same-origin' })
@@ -56,7 +47,7 @@
 
   function renderPage(container, user) {
     var orgName = (window.PortfolioState && window.PortfolioState.organization && window.PortfolioState.organization.name) || '';
-    var roleLabel = esc(roleMap[user.role] || user.role);
+    var roleLabel = esc(window.VRT_ROLE_LABELS[user.role] || user.role);
     var displayName = user.displayName || '';
 
     container.innerHTML =

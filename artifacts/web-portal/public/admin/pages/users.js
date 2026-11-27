@@ -81,12 +81,12 @@ AdminRouter.register('users', async function(container) {
           <div class="form-group">
             <label class="form-label">Role</label>
             <select class="form-select" id="new-role">
-              <option value="contractor">Contractor</option>
-              <option value="admin">Admin</option>
-              <option value="hoa_admin">HOA Admin</option>
-              <option value="hoa_member">HOA Member</option>
-              <option value="property_manager">Property Manager</option>
-              <option value="map_creator">Map Creator</option>
+              <option value="contractor">${esc(window.VRT_ROLE_LABELS.contractor)}</option>
+              <option value="admin">${esc(window.VRT_ROLE_LABELS.admin)}</option>
+              <option value="hoa_admin">${esc(window.VRT_ROLE_LABELS.hoa_admin)}</option>
+              <option value="hoa_member">${esc(window.VRT_ROLE_LABELS.hoa_member)}</option>
+              <option value="property_manager">${esc(window.VRT_ROLE_LABELS.property_manager)}</option>
+              <option value="map_creator">${esc(window.VRT_ROLE_LABELS.map_creator)}</option>
             </select>
           </div>
           <div class="form-group" id="community-select-group" style="display:none">
@@ -225,13 +225,7 @@ AdminRouter.register('users', async function(container) {
           : u.role === 'property_manager' ? 'badge-amber'
           : u.role === 'map_creator' ? 'badge-green'
           : 'badge-teal';
-        const roleLabel = u.role === 'admin' ? 'Admin'
-          : u.role === 'contractor' ? 'Contractor'
-          : u.role === 'hoa_admin' ? 'HOA Admin'
-          : u.role === 'hoa_member' ? 'HOA Member'
-          : u.role === 'property_manager' ? 'Property Manager'
-          : u.role === 'map_creator' ? 'Map Creator'
-          : u.role;
+        const roleLabel = window.VRT_ROLE_LABELS[u.role] || u.role;
 
         const isActive = u.isActive !== false;
         const statusBadge = isActive
@@ -247,10 +241,10 @@ AdminRouter.register('users', async function(container) {
             ${editBtn}
             <select class="form-select role-select" data-id="${u.id}" data-current="${u.role}" style="display:inline-block;width:auto;padding:3px 8px;font-size:12px;margin-right:4px">
               <option value="" disabled selected>Change role…</option>
-              <option value="contractor">Contractor</option>
-              <option value="admin">Admin</option>
-              <option value="property_manager">Property Manager</option>
-              <option value="map_creator">Map Creator</option>
+              <option value="contractor">${esc(window.VRT_ROLE_LABELS.contractor)}</option>
+              <option value="admin">${esc(window.VRT_ROLE_LABELS.admin)}</option>
+              <option value="property_manager">${esc(window.VRT_ROLE_LABELS.property_manager)}</option>
+              <option value="map_creator">${esc(window.VRT_ROLE_LABELS.map_creator)}</option>
             </select>
             <button class="btn btn-secondary btn-xs status-btn" data-id="${u.id}" data-active="${isActive}" style="margin-left:4px">
               ${toggleLabel}

@@ -261,8 +261,7 @@ window.PortalTopbar = (function () {
     const state = window.PortalState || window.AdminState;
     const user = state ? state.getUser() : null;
     const name = user ? (user.displayName || user.username || 'User') : 'User';
-    const roleMap = { admin: 'Admin', hoa_admin: 'HOA Admin', hoa_member: 'HOA Member', contractor: 'Contractor', property_manager: 'Property Manager' };
-    const roleLabel = user ? (roleMap[user.role] || user.role) : '';
+    const roleLabel = user ? (window.VRT_ROLE_LABELS[user.role] || user.role) : '';
 
     const dd = document.createElement('div');
     dd.className = 'tb-menu-dropdown';
